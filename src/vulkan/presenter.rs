@@ -11,6 +11,7 @@ const REQUIRED_API_VERSION: u32 = vk::make_api_version(0, 1, 4, 0);
 struct DeviceInner {
     _entry: ash::Entry,
     instance: ash::Instance,
+    physical_device: vk::PhysicalDevice,
     device: ash::Device,
     memory_properties: vk::PhysicalDeviceMemoryProperties,
     graphics_queue: vk::Queue,
@@ -40,6 +41,24 @@ impl RenderDevice {
 
     pub(crate) fn queue_family_index(&self) -> u32 {
         self.0.queue_family_index
+    }
+
+    pub(crate) fn supported_color_sample_counts(&self, format: vk::Format) -> vk::SampleCountFlags {
+        unsafe {
+            self.0
+                .instance
+                .get_physical_device_image_format_properties(
+                    self.0.physical_device,
+                    format,
+                    vk::ImageType::TYPE_2D,
+                    vk::ImageTiling::OPTIMAL,
+                    vk::ImageUsageFlags::COLOR_ATTACHMENT,
+                    vk::ImageCreateFlags::empty(),
+                )
+                .map_or(vk::SampleCountFlags::TYPE_1, |properties| {
+                    properties.sample_counts
+                })
+        }
     }
 
     pub(crate) fn find_memory_type(
@@ -177,6 +196,7 @@ impl Presenter {
             let device = RenderDevice(Arc::new(DeviceInner {
                 _entry: entry,
                 instance,
+                physical_device,
                 device,
                 memory_properties,
                 graphics_queue,

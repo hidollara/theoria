@@ -119,10 +119,12 @@ struct Pipeline {
 
 struct Pipelines {
     format: vk::Format,
+    sample_count: vk::SampleCountFlags,
     triangle: Pipeline,
     image: Pipeline,
     composites: HashMap<CompositeOperator, Pipeline>,
     mask: Pipeline,
+    present: Pipeline,
 }
 
 impl Pipelines {
@@ -157,11 +159,12 @@ impl CanvasRenderer {
         view: CanvasView,
     ) -> Result<()> {
         let (image_view, format, extent) = target.surface();
+        let sample_count = preferred_sample_count(&self.device, format);
         let target_region = target_region(viewport, extent);
         self.ensure_image_cache()?;
         upload_canvas_images(self.image_cache.as_mut().unwrap(), canvas)?;
-        self.ensure_pipelines(format)?;
-        self.ensure_render_images(format, extent, required_render_images(canvas))?;
+        self.ensure_pipelines(format, sample_count)?;
+        self.ensure_render_images(format, extent, sample_count, required_render_images(canvas))?;
         let pipelines = self.pipelines.as_ref().unwrap();
         let image_cache = self.image_cache.as_ref().unwrap();
         let device = target.device.raw();
@@ -206,12 +209,12 @@ impl CanvasRenderer {
             device.cmd_bind_pipeline(
                 command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
-                pipelines.composite(CompositeOperator::SourceOver).handle,
+                pipelines.present.handle,
             );
             device.cmd_bind_descriptor_sets(
                 command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
-                pipelines.composite(CompositeOperator::SourceOver).layout,
+                pipelines.present.layout,
                 0,
                 &[self.render_images[canvas_image].descriptor_set()],
                 &[],
@@ -229,18 +232,21 @@ impl CanvasRenderer {
         Ok(())
     }
 
-    fn ensure_pipelines(&mut self, format: vk::Format) -> Result<()> {
-        if self
-            .pipelines
-            .as_ref()
-            .is_some_and(|pipelines| pipelines.format == format)
-        {
+    fn ensure_pipelines(
+        &mut self,
+        format: vk::Format,
+        sample_count: vk::SampleCountFlags,
+    ) -> Result<()> {
+        if self.pipelines.as_ref().is_some_and(|pipelines| {
+            pipelines.format == format && pipelines.sample_count == sample_count
+        }) {
             return Ok(());
         }
         self.destroy_pipelines();
         let descriptor_layout = self.image_cache.as_ref().unwrap().descriptor_set_layout();
-        self.pipelines =
-            Some(unsafe { create_pipelines(self.device.raw(), format, descriptor_layout)? });
+        self.pipelines = Some(unsafe {
+            create_pipelines(self.device.raw(), format, sample_count, descriptor_layout)?
+        });
         Ok(())
     }
 
@@ -248,13 +254,12 @@ impl CanvasRenderer {
         &mut self,
         format: vk::Format,
         extent: vk::Extent2D,
+        sample_count: vk::SampleCountFlags,
         required: usize,
     ) -> Result<()> {
-        if self
-            .render_images
-            .first()
-            .is_some_and(|image| image.format != format || image.extent != extent)
-        {
+        if self.render_images.first().is_some_and(|image| {
+            image.format != format || image.extent != extent || image.sample_count != sample_count
+        }) {
             self.render_images.clear();
         }
         while self.render_images.len() < required {
@@ -263,6 +268,7 @@ impl CanvasRenderer {
                 self.image_cache.as_ref().unwrap(),
                 format,
                 extent,
+                sample_count,
             )?);
         }
         Ok(())
@@ -271,9 +277,14 @@ impl CanvasRenderer {
     fn destroy_pipelines(&mut self) {
         if let Some(pipelines) = self.pipelines.take() {
             unsafe {
-                for pipeline in [pipelines.triangle, pipelines.image, pipelines.mask]
-                    .into_iter()
-                    .chain(pipelines.composites.into_values())
+                for pipeline in [
+                    pipelines.triangle,
+                    pipelines.image,
+                    pipelines.mask,
+                    pipelines.present,
+                ]
+                .into_iter()
+                .chain(pipelines.composites.into_values())
                 {
                     self.device.raw().destroy_pipeline(pipeline.handle, None);
                     self.device
@@ -636,19 +647,38 @@ impl CanvasRecorder<'_> {
     }
 
     fn apply_mask(&self, content: usize, mask: usize) {
-        let content_image = self.render_images[content].image;
+        let content_image = &self.render_images[content];
+        let sampled_destination_access = if content_image.is_multisampled() {
+            vk::AccessFlags2::COLOR_ATTACHMENT_WRITE
+        } else {
+            vk::AccessFlags2::COLOR_ATTACHMENT_READ | vk::AccessFlags2::COLOR_ATTACHMENT_WRITE
+        };
         unsafe {
             transition_image(
                 self.device,
                 self.command_buffer,
-                content_image,
+                content_image.sampled_image(),
                 vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                 vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
                 vk::PipelineStageFlags2::FRAGMENT_SHADER,
                 vk::AccessFlags2::SHADER_SAMPLED_READ,
                 vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
-                vk::AccessFlags2::COLOR_ATTACHMENT_READ | vk::AccessFlags2::COLOR_ATTACHMENT_WRITE,
+                sampled_destination_access,
             );
+            if content_image.is_multisampled() {
+                transition_image(
+                    self.device,
+                    self.command_buffer,
+                    content_image.attachment_image(),
+                    vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                    vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                    vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
+                    vk::AccessFlags2::COLOR_ATTACHMENT_WRITE,
+                    vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
+                    vk::AccessFlags2::COLOR_ATTACHMENT_READ
+                        | vk::AccessFlags2::COLOR_ATTACHMENT_WRITE,
+                );
+            }
         }
         self.begin_accumulator(content, vk::AttachmentLoadOp::LOAD);
         self.draw_fullscreen(
@@ -664,7 +694,7 @@ impl CanvasRecorder<'_> {
             transition_image(
                 self.device,
                 self.command_buffer,
-                self.render_images[index].image,
+                self.render_images[index].sampled_image(),
                 vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
                 vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                 vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
@@ -682,7 +712,7 @@ impl CanvasRecorder<'_> {
                 transition_image(
                     self.device,
                     self.command_buffer,
-                    image.image,
+                    image.attachment_image(),
                     vk::ImageLayout::UNDEFINED,
                     vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
                     vk::PipelineStageFlags2::NONE,
@@ -690,16 +720,35 @@ impl CanvasRecorder<'_> {
                     vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
                     vk::AccessFlags2::COLOR_ATTACHMENT_WRITE,
                 );
+                if image.is_multisampled() {
+                    transition_image(
+                        self.device,
+                        self.command_buffer,
+                        image.sampled_image(),
+                        vk::ImageLayout::UNDEFINED,
+                        vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                        vk::PipelineStageFlags2::NONE,
+                        vk::AccessFlags2::NONE,
+                        vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
+                        vk::AccessFlags2::COLOR_ATTACHMENT_WRITE,
+                    );
+                }
             }
         }
-        let attachment = vk::RenderingAttachmentInfo::default()
-            .image_view(image.view)
+        let mut attachment = vk::RenderingAttachmentInfo::default()
+            .image_view(image.attachment_view())
             .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
             .load_op(load_op)
             .store_op(vk::AttachmentStoreOp::STORE)
             .clear_value(vk::ClearValue {
                 color: vk::ClearColorValue { float32: [0.0; 4] },
             });
+        if image.is_multisampled() {
+            attachment = attachment
+                .resolve_mode(vk::ResolveModeFlags::AVERAGE)
+                .resolve_image_view(image.sampled_view())
+                .resolve_image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
+        }
         let rendering = vk::RenderingInfo::default()
             .render_area(self.attachment_area)
             .layer_count(1)
@@ -715,7 +764,7 @@ impl CanvasRecorder<'_> {
             transition_image(
                 self.device,
                 self.command_buffer,
-                self.render_images[index].image,
+                self.render_images[index].attachment_image(),
                 vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
                 vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
                 vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
@@ -1302,9 +1351,22 @@ fn full_viewport(extent: vk::Extent2D) -> vk::Viewport {
     }
 }
 
+fn preferred_sample_count(device: &RenderDevice, format: vk::Format) -> vk::SampleCountFlags {
+    choose_sample_count(device.supported_color_sample_counts(format))
+}
+
+fn choose_sample_count(supported: vk::SampleCountFlags) -> vk::SampleCountFlags {
+    if supported.contains(vk::SampleCountFlags::TYPE_4) {
+        vk::SampleCountFlags::TYPE_4
+    } else {
+        vk::SampleCountFlags::TYPE_1
+    }
+}
+
 unsafe fn create_pipelines(
     device: &ash::Device,
     color_format: vk::Format,
+    sample_count: vk::SampleCountFlags,
     image_descriptor_set_layout: vk::DescriptorSetLayout,
 ) -> Result<Pipelines> {
     let triangle = unsafe {
@@ -1315,6 +1377,7 @@ unsafe fn create_pipelines(
             TRIANGLE_FRAGMENT_SHADER,
             size_of::<TrianglePushConstants>() as u32,
             &[],
+            sample_count,
             CompositeOperator::SourceOver,
         )?
     };
@@ -1326,6 +1389,7 @@ unsafe fn create_pipelines(
             IMAGE_FRAGMENT_SHADER,
             size_of::<ImagePushConstants>() as u32,
             &[image_descriptor_set_layout],
+            sample_count,
             CompositeOperator::SourceOver,
         )
     } {
@@ -1346,6 +1410,7 @@ unsafe fn create_pipelines(
             COMPOSITE_FRAGMENT_SHADER,
             0,
             &[image_descriptor_set_layout],
+            sample_count,
             CompositeOperator::SourceOver,
         )
     } {
@@ -1373,6 +1438,7 @@ unsafe fn create_pipelines(
                 COMPOSITE_FRAGMENT_SHADER,
                 0,
                 &[image_descriptor_set_layout],
+                sample_count,
                 operator,
             )
         } {
@@ -1400,6 +1466,7 @@ unsafe fn create_pipelines(
             MASK_FRAGMENT_SHADER,
             0,
             &[image_descriptor_set_layout],
+            sample_count,
             CompositeOperator::DestinationIn,
         )
     } {
@@ -1417,12 +1484,40 @@ unsafe fn create_pipelines(
             return Err(error);
         }
     };
+    let present = match unsafe {
+        create_pipeline(
+            device,
+            color_format,
+            COMPOSITE_VERTEX_SHADER,
+            COMPOSITE_FRAGMENT_SHADER,
+            0,
+            &[image_descriptor_set_layout],
+            vk::SampleCountFlags::TYPE_1,
+            CompositeOperator::SourceOver,
+        )
+    } {
+        Ok(present) => present,
+        Err(error) => {
+            unsafe {
+                for pipeline in [triangle, image, mask]
+                    .into_iter()
+                    .chain(composites.into_values())
+                {
+                    device.destroy_pipeline(pipeline.handle, None);
+                    device.destroy_pipeline_layout(pipeline.layout, None);
+                }
+            }
+            return Err(error);
+        }
+    };
     Ok(Pipelines {
         format: color_format,
+        sample_count,
         triangle,
         image,
         composites,
         mask,
+        present,
     })
 }
 
@@ -1460,6 +1555,7 @@ fn composite_blend_factors(operator: CompositeOperator) -> (vk::BlendFactor, vk:
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 unsafe fn create_pipeline(
     device: &ash::Device,
     color_format: vk::Format,
@@ -1467,6 +1563,7 @@ unsafe fn create_pipeline(
     fragment_shader: &[u8],
     push_constant_size: u32,
     descriptor_set_layouts: &[vk::DescriptorSetLayout],
+    sample_count: vk::SampleCountFlags,
     blend: CompositeOperator,
 ) -> Result<Pipeline> {
     let vertex_code = ash::util::read_spv(&mut Cursor::new(vertex_shader))?;
@@ -1540,8 +1637,8 @@ unsafe fn create_pipeline(
             .cull_mode(vk::CullModeFlags::NONE)
             .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
             .line_width(1.0);
-        let multisample = vk::PipelineMultisampleStateCreateInfo::default()
-            .rasterization_samples(vk::SampleCountFlags::TYPE_1);
+        let multisample =
+            vk::PipelineMultisampleStateCreateInfo::default().rasterization_samples(sample_count);
         let color_blend = vk::PipelineColorBlendStateCreateInfo::default()
             .attachments(std::slice::from_ref(&blend_attachment));
         let dynamic = vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&dynamic_states);
@@ -1615,6 +1712,22 @@ mod tests {
     use super::*;
     use crate::canvas::{Color, ConicGradient, GradientPoint, GradientStop, RadialGradient};
     use crate::path::{Path, Subpath};
+
+    #[test]
+    fn four_sample_msaa_is_preferred_with_a_single_sample_fallback() {
+        assert_eq!(
+            choose_sample_count(
+                vk::SampleCountFlags::TYPE_1
+                    | vk::SampleCountFlags::TYPE_2
+                    | vk::SampleCountFlags::TYPE_4,
+            ),
+            vk::SampleCountFlags::TYPE_4
+        );
+        assert_eq!(
+            choose_sample_count(vk::SampleCountFlags::TYPE_1 | vk::SampleCountFlags::TYPE_2),
+            vk::SampleCountFlags::TYPE_1
+        );
+    }
 
     #[test]
     fn only_coverage_boundaries_reserve_independent_results() {
