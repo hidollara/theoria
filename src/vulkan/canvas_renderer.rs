@@ -8,8 +8,12 @@ use crate::{
         GradientPoint, GradientStop, ImagePattern, LinearGradient, MeshGradient, Source,
     },
     geometry::Point,
+    path::{Path, PathSegment},
     target::Viewport,
-    tessellation::{Mesh, flatten_subpaths, tessellate_fill, tessellate_stroke},
+    tessellation::{
+        DEFAULT_TESSELLATION_TOLERANCE, Mesh, flatten_subpaths, tessellate_fill_with_tolerance,
+        tessellate_stroke_with_tolerance,
+    },
     transform::Projective2,
 };
 
@@ -463,11 +467,13 @@ impl CanvasRecorder<'_> {
         match draw.coverage.node() {
             CoverageNode::All => self.render_unbounded_source(&draw.source, draw_to_root),
             CoverageNode::Fill { path, rule } => {
-                let mesh = tessellate_fill(path, *rule);
+                let tolerance = self.path_tolerance(path, draw_to_root);
+                let mesh = tessellate_fill_with_tolerance(path, *rule, tolerance);
                 self.render_mesh(&mesh, &draw.source, draw_to_root);
             }
             CoverageNode::Stroke { path, style } => {
-                let mesh = tessellate_stroke(path, style);
+                let tolerance = self.path_tolerance(path, draw_to_root);
+                let mesh = tessellate_stroke_with_tolerance(path, style, tolerance);
                 self.render_mesh(&mesh, &draw.source, draw_to_root);
             }
             CoverageNode::SourceAlpha(coverage_source) => {
@@ -497,11 +503,13 @@ impl CanvasRecorder<'_> {
             CoverageNode::All => None,
             CoverageNode::SourceAlpha(source) => Some(self.evaluate_source(source, draw_to_root)),
             CoverageNode::Fill { path, rule } => {
-                let mesh = tessellate_fill(path, *rule);
+                let tolerance = self.path_tolerance(path, draw_to_root);
+                let mesh = tessellate_fill_with_tolerance(path, *rule, tolerance);
                 Some(self.evaluate_geometry_mask(&mesh, draw_to_root))
             }
             CoverageNode::Stroke { path, style } => {
-                let mesh = tessellate_stroke(path, style);
+                let tolerance = self.path_tolerance(path, draw_to_root);
+                let mesh = tessellate_stroke_with_tolerance(path, style, tolerance);
                 Some(self.evaluate_geometry_mask(&mesh, draw_to_root))
             }
         };
@@ -575,8 +583,14 @@ impl CanvasRecorder<'_> {
             return;
         }
         let path_sampler = match source {
-            Source::AlongPathGradient(gradient) => Some(PathSampler::new(gradient.path())),
-            Source::AcrossPathGradient(gradient) => Some(PathSampler::new(gradient.path())),
+            Source::AlongPathGradient(gradient) => Some(PathSampler::new(
+                gradient.path(),
+                self.path_tolerance(gradient.path(), mesh_to_root),
+            )),
+            Source::AcrossPathGradient(gradient) => Some(PathSampler::new(
+                gradient.path(),
+                self.path_tolerance(gradient.path(), mesh_to_root),
+            )),
             _ => None,
         };
         unsafe {
@@ -776,6 +790,14 @@ impl CanvasRecorder<'_> {
         self.begin_accumulator(index, vk::AttachmentLoadOp::LOAD);
     }
 
+    fn path_tolerance(&self, path: &Path, path_to_root: Projective2) -> f32 {
+        let Some((viewport, _)) = self.target_region else {
+            return DEFAULT_TESSELLATION_TOLERANCE;
+        };
+        let path_to_view = path_to_root.then(self.view.canvas_to_view);
+        screen_space_tolerance(path, path_to_view, viewport.width, viewport.height)
+    }
+
     fn set_canvas_region(&self) -> bool {
         let Some((viewport, scissor)) = self.target_region else {
             return false;
@@ -846,8 +868,14 @@ struct GradientVertex {
 #[cfg(test)]
 fn paint_triangle(points: [Point; 3], source: &Source) -> Vec<PaintedTriangle> {
     let path_sampler = match source {
-        Source::AlongPathGradient(gradient) => Some(PathSampler::new(gradient.path())),
-        Source::AcrossPathGradient(gradient) => Some(PathSampler::new(gradient.path())),
+        Source::AlongPathGradient(gradient) => Some(PathSampler::new(
+            gradient.path(),
+            DEFAULT_TESSELLATION_TOLERANCE,
+        )),
+        Source::AcrossPathGradient(gradient) => Some(PathSampler::new(
+            gradient.path(),
+            DEFAULT_TESSELLATION_TOLERANCE,
+        )),
         _ => None,
     };
     paint_triangle_prepared(points, source, path_sampler.as_ref())
@@ -922,8 +950,8 @@ struct PathSample {
 }
 
 impl PathSampler {
-    fn new(path: &crate::path::Path) -> Self {
-        let subpaths = flatten_subpaths(path)
+    fn new(path: &Path, tolerance: f32) -> Self {
+        let subpaths = flatten_subpaths(path, tolerance)
             .into_iter()
             .map(|points| {
                 let mut length = 0.0;
@@ -1300,6 +1328,121 @@ fn transformed_point_to_clip(point: Point, canvas_to_view: Projective2) -> [f32;
         0.0,
         view_point.z,
     ]
+}
+
+fn screen_space_tolerance(
+    path: &Path,
+    path_to_view: Projective2,
+    viewport_width: f32,
+    viewport_height: f32,
+) -> f32 {
+    const MIN_TOLERANCE: f32 = 1.0e-4;
+    let mut maximum_scale = 0.0_f32;
+    let points = path_reference_points(path);
+    let points: &[Point] = if points.is_empty() {
+        &[Point::new(0.0, 0.0)]
+    } else {
+        &points
+    };
+
+    for &point in points {
+        let Some(scale) = local_pixel_scale(
+            path_to_view,
+            point,
+            viewport_width.abs(),
+            viewport_height.abs(),
+        ) else {
+            return MIN_TOLERANCE;
+        };
+        maximum_scale = maximum_scale.max(scale);
+    }
+
+    if maximum_scale == 0.0 {
+        return DEFAULT_TESSELLATION_TOLERANCE;
+    }
+    let tolerance = DEFAULT_TESSELLATION_TOLERANCE / maximum_scale;
+    if tolerance.is_finite() {
+        tolerance.max(MIN_TOLERANCE)
+    } else {
+        MIN_TOLERANCE
+    }
+}
+
+fn local_pixel_scale(
+    transform: Projective2,
+    point: Point,
+    viewport_width: f32,
+    viewport_height: f32,
+) -> Option<f32> {
+    let [[a, b, c], [d, e, f], [g, h, i]] = transform.rows();
+    let numerator_x = a * point.x + b * point.y + c;
+    let numerator_y = d * point.x + e * point.y + f;
+    let denominator = g * point.x + h * point.y + i;
+    if !denominator.is_finite() || denominator.abs() <= f32::EPSILON {
+        return None;
+    }
+    let denominator_squared = denominator * denominator;
+    let j00 = viewport_width * (a * denominator - g * numerator_x) / denominator_squared;
+    let j01 = viewport_width * (b * denominator - h * numerator_x) / denominator_squared;
+    let j10 = viewport_height * (d * denominator - g * numerator_y) / denominator_squared;
+    let j11 = viewport_height * (e * denominator - h * numerator_y) / denominator_squared;
+    if ![j00, j01, j10, j11].into_iter().all(f32::is_finite) {
+        return None;
+    }
+
+    // Largest singular value of the 2x2 Jacobian: the greatest local stretch
+    // from one Canvas unit to target pixels, independent of direction.
+    let column0_squared = j00 * j00 + j10 * j10;
+    let column1_squared = j01 * j01 + j11 * j11;
+    let column_dot = j00 * j01 + j10 * j11;
+    let discriminant =
+        ((column0_squared - column1_squared).powi(2) + 4.0 * column_dot * column_dot).sqrt();
+    let largest_eigenvalue = 0.5 * (column0_squared + column1_squared + discriminant);
+    let scale = largest_eigenvalue.max(0.0).sqrt();
+    scale.is_finite().then_some(scale)
+}
+
+fn path_reference_points(path: &Path) -> Vec<Point> {
+    let mut points = Vec::new();
+    for subpath in path.subpaths().iter().filter(|subpath| subpath.is_finite()) {
+        let mut current = subpath.start();
+        points.push(current);
+        for segment in subpath.segments() {
+            match *segment {
+                PathSegment::LineTo(end) => points.push(end),
+                PathSegment::QuadraticTo { control, end } => {
+                    points.extend([control, end]);
+                }
+                PathSegment::CubicTo {
+                    control1,
+                    control2,
+                    end,
+                } => {
+                    points.extend([control1, control2, end]);
+                }
+                PathSegment::EllipticalArcTo { radii, end, .. } => {
+                    // SVG endpoint arcs may enlarge their supplied radii. This
+                    // box deliberately overestimates the likely arc region so
+                    // projective scale changes do not get missed completely.
+                    let radius = radii
+                        .x
+                        .abs()
+                        .max(radii.y.abs())
+                        .max((end - current).length() * 0.5);
+                    let center = Point::new((current.x + end.x) * 0.5, (current.y + end.y) * 0.5);
+                    points.extend([
+                        end,
+                        Point::new(center.x - radius, center.y - radius),
+                        Point::new(center.x + radius, center.y - radius),
+                        Point::new(center.x + radius, center.y + radius),
+                        Point::new(center.x - radius, center.y + radius),
+                    ]);
+                }
+            }
+            current = segment.end();
+        }
+    }
+    points
 }
 
 fn target_region(viewport: Viewport, extent: vk::Extent2D) -> Option<(vk::Viewport, vk::Rect2D)> {
@@ -1730,6 +1873,28 @@ mod tests {
     }
 
     #[test]
+    fn path_tolerance_tracks_target_pixel_scale() {
+        let path = Path::polyline([Point::new(0.0, 0.0), Point::new(1.0, 1.0)]);
+        let identity = screen_space_tolerance(&path, Projective2::IDENTITY, 100.0, 100.0);
+        let enlarged = screen_space_tolerance(
+            &path,
+            Projective2::from_rows([[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 1.0]]),
+            100.0,
+            100.0,
+        );
+        let reduced = screen_space_tolerance(
+            &path,
+            Projective2::from_rows([[0.1, 0.0, 0.0], [0.0, 0.1, 0.0], [0.0, 0.0, 1.0]]),
+            100.0,
+            100.0,
+        );
+
+        assert!((identity - DEFAULT_TESSELLATION_TOLERANCE / 100.0).abs() < 1.0e-6);
+        assert!((enlarged - identity / 10.0).abs() < 1.0e-6);
+        assert!((reduced - identity * 10.0).abs() < 1.0e-6);
+    }
+
+    #[test]
     fn only_coverage_boundaries_reserve_independent_results() {
         let masked = Canvas::draw(Canvas::empty(), Coverage::from_alpha(Canvas::empty()))
             .transformed(Projective2::IDENTITY);
@@ -1802,7 +1967,7 @@ mod tests {
             Subpath::new(Point::new(0.0, 0.0)).line_to(Point::new(10.0, 0.0)),
             Subpath::new(Point::new(0.0, 20.0)).line_to(Point::new(100.0, 20.0)),
         ]);
-        let sampler = PathSampler::new(&path);
+        let sampler = PathSampler::new(&path, DEFAULT_TESSELLATION_TOLERANCE);
 
         assert!((sampler.nearest_offset(Point::new(2.5, 1.0)).unwrap() - 0.25).abs() < 0.001);
         assert!((sampler.nearest_offset(Point::new(25.0, 19.0)).unwrap() - 0.25).abs() < 0.001);

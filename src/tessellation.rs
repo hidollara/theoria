@@ -17,6 +17,8 @@ use lyon_tessellation::{
     },
 };
 
+pub(crate) const DEFAULT_TESSELLATION_TOLERANCE: f32 = StrokeOptions::DEFAULT_TOLERANCE;
+
 fn append_segment(builder: &mut impl SvgPathBuilder, segment: PathSegment) {
     match segment {
         PathSegment::LineTo(end) => builder.line_to(point(end.x, end.y)),
@@ -56,15 +58,22 @@ pub(crate) struct Mesh {
     pub indices: Vec<u32>,
 }
 
+#[cfg(test)]
 pub(crate) fn tessellate_fill(path: &Path, rule: FillRule) -> Mesh {
+    tessellate_fill_with_tolerance(path, rule, FillOptions::DEFAULT_TOLERANCE)
+}
+
+pub(crate) fn tessellate_fill_with_tolerance(path: &Path, rule: FillRule, tolerance: f32) -> Mesh {
     let mut buffers: VertexBuffers<LyonPoint, u32> = VertexBuffers::new();
     let result = {
         let mut output = BuffersBuilder::new(&mut buffers, Positions);
         let mut tessellator = FillTessellator::new();
-        let options = FillOptions::default().with_fill_rule(match rule {
-            FillRule::NonZero => LyonFillRule::NonZero,
-            FillRule::EvenOdd => LyonFillRule::EvenOdd,
-        });
+        let options = FillOptions::default()
+            .with_tolerance(tolerance)
+            .with_fill_rule(match rule {
+                FillRule::NonZero => LyonFillRule::NonZero,
+                FillRule::EvenOdd => LyonFillRule::EvenOdd,
+            });
         let mut builder = tessellator.builder(&options, &mut output).with_svg();
         for subpath in path.subpaths() {
             if !subpath.is_finite() {
@@ -105,7 +114,16 @@ pub(crate) fn tessellate_fill(path: &Path, rule: FillRule) -> Mesh {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn tessellate_stroke(path: &Path, style: impl Borrow<StrokeStyle>) -> Mesh {
+    tessellate_stroke_with_tolerance(path, style, StrokeOptions::DEFAULT_TOLERANCE)
+}
+
+pub(crate) fn tessellate_stroke_with_tolerance(
+    path: &Path,
+    style: impl Borrow<StrokeStyle>,
+    tolerance: f32,
+) -> Mesh {
     let style = style.borrow();
     if style.width() == 0.0 {
         return Mesh {
@@ -118,6 +136,7 @@ pub(crate) fn tessellate_stroke(path: &Path, style: impl Borrow<StrokeStyle>) ->
         let mut output = BuffersBuilder::new(&mut buffers, Positions);
         let mut tessellator = StrokeTessellator::new();
         let options = StrokeOptions::default()
+            .with_tolerance(tolerance)
             .with_line_width(style.width())
             .with_line_cap(match style.cap() {
                 LineCap::Butt => LyonLineCap::Butt,
@@ -132,7 +151,7 @@ pub(crate) fn tessellate_stroke(path: &Path, style: impl Borrow<StrokeStyle>) ->
         if let Some(pattern) = style.dash_pattern() {
             let source = build_lyon_path(path);
             let mut builder = tessellator.builder(&options, &mut output);
-            append_dashed_path(&mut builder, &source, pattern);
+            append_dashed_path(&mut builder, &source, pattern, tolerance);
             builder.build()
         } else {
             let mut builder = tessellator.builder(&options, &mut output).with_svg();
@@ -158,11 +177,11 @@ pub(crate) fn tessellate_stroke(path: &Path, style: impl Borrow<StrokeStyle>) ->
 }
 
 /// Flattens each valid Subpath independently while preserving closure.
-pub(crate) fn flatten_subpaths(path: &Path) -> Vec<Vec<Point>> {
+pub(crate) fn flatten_subpaths(path: &Path, tolerance: f32) -> Vec<Vec<Point>> {
     let source = build_lyon_path(path);
     let mut output = Vec::new();
     let mut current = Vec::new();
-    for event in source.iter().flattened(StrokeOptions::DEFAULT_TOLERANCE) {
+    for event in source.iter().flattened(tolerance) {
         match event {
             PathEvent::Begin { at } => {
                 current = vec![Point::new(at.x, at.y)];
@@ -204,11 +223,16 @@ fn build_lyon_path(path: &Path) -> LyonPath {
     builder.build()
 }
 
-fn append_dashed_path(builder: &mut impl PathBuilder, path: &LyonPath, pattern: &DashPattern) {
+fn append_dashed_path(
+    builder: &mut impl PathBuilder,
+    path: &LyonPath,
+    pattern: &DashPattern,
+    tolerance: f32,
+) {
     let mut cursor = DashCursor::new(pattern);
     let mut output_open = false;
 
-    for event in path.iter().flattened(StrokeOptions::DEFAULT_TOLERANCE) {
+    for event in path.iter().flattened(tolerance) {
         match event {
             PathEvent::Begin { .. } => {
                 cursor = DashCursor::new(pattern);
@@ -612,6 +636,21 @@ mod tests {
 
         assert!(mesh.vertices.len() > 8);
         assert!(mesh.indices.len() > 12);
+    }
+
+    #[test]
+    fn explicit_tolerance_controls_curve_subdivision() {
+        let path = Path::new().add_subpath(Subpath::new(Point::new(0.0, 0.0)).cubic_to(
+            Point::new(0.0, 100.0),
+            Point::new(100.0, -100.0),
+            Point::new(100.0, 0.0),
+        ));
+        let style = StrokeStyle::new(1.0).unwrap();
+        let coarse = tessellate_stroke_with_tolerance(&path, &style, 4.0);
+        let fine = tessellate_stroke_with_tolerance(&path, &style, 0.01);
+
+        assert!(fine.vertices.len() > coarse.vertices.len());
+        assert!(fine.indices.len() > coarse.indices.len());
     }
 
     #[test]
