@@ -728,6 +728,10 @@ impl ImagePattern {
     }
 }
 
+/// A backend-independent RGBA field over the unbounded Canvas plane.
+///
+/// Alpha belongs to the source itself (for example an image's alpha or a
+/// translucent gradient); it is not the amount by which a draw is applied.
 #[derive(Clone, Debug)]
 pub enum Source {
     Solid(Color),
@@ -990,10 +994,13 @@ pub(crate) enum CoverageNode {
     SourceAlpha(Source),
 }
 
-/// Describes how strongly a [`Source`] contributes at each Canvas point.
+/// Describes how strongly a completed blend/composite candidate is applied at
+/// each Canvas point.
 ///
-/// Its representation is intentionally private so coverage can gain richer
-/// operations without exposing the Canvas expression tree as public API.
+/// Zero preserves the existing destination, one applies the candidate fully,
+/// and fractional values represent masks or antialiased sample coverage. Its
+/// representation is intentionally private so this semantic does not become a
+/// public rendering or expression graph.
 #[derive(Clone, Debug)]
 pub struct Coverage {
     node: CoverageNode,
@@ -1041,6 +1048,8 @@ impl Coverage {
 #[derive(Clone, Debug)]
 pub(crate) struct Draw {
     pub(crate) source: Source,
+    pub(crate) blend_mode: BlendMode,
+    pub(crate) composite: Composite,
     pub(crate) coverage: Coverage,
 }
 
@@ -1055,13 +1064,64 @@ pub(crate) enum CanvasNode {
     Composite {
         backdrop: Canvas,
         source: Canvas,
-        operator: CompositeOperator,
+        blend_mode: BlendMode,
+        composite: Composite,
     },
 }
 
-/// Determines how a source Canvas is combined with a backdrop Canvas.
+/// Determines the RGB color in regions where source and destination overlap.
+///
+/// Blend modes do not define alpha, compositing, or geometric coverage.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub enum CompositeOperator {
+pub enum BlendMode {
+    #[default]
+    Normal,
+    Multiply,
+    Screen,
+    Overlay,
+    Darken,
+    Lighten,
+    ColorDodge,
+    ColorBurn,
+    HardLight,
+    SoftLight,
+    Difference,
+    Exclusion,
+    Hue,
+    Saturation,
+    Color,
+    Luminosity,
+}
+
+impl BlendMode {
+    /// All blend modes defined by W3C Compositing and Blending Level 1.
+    pub const ALL: [Self; 16] = [
+        Self::Normal,
+        Self::Multiply,
+        Self::Screen,
+        Self::Overlay,
+        Self::Darken,
+        Self::Lighten,
+        Self::ColorDodge,
+        Self::ColorBurn,
+        Self::HardLight,
+        Self::SoftLight,
+        Self::Difference,
+        Self::Exclusion,
+        Self::Hue,
+        Self::Saturation,
+        Self::Color,
+        Self::Luminosity,
+    ];
+}
+
+/// Determines how source and destination RGBA values become a candidate result.
+///
+/// The region-selecting variants are the standard Porter-Duff operators.
+/// Coverage is applied after this operation. `Plus` adds premultiplied
+/// compositing values, including alpha, without imposing a semantic clamp.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Composite {
     /// Produces transparent black regardless of either operand.
     Clear,
     /// Replaces the backdrop with the source.
@@ -1087,10 +1147,12 @@ pub enum CompositeOperator {
     DestinationAtop,
     /// Keeps portions covered by exactly one operand.
     Xor,
+    /// Adds source and destination premultiplied RGBA values.
+    Plus,
 }
 
-impl CompositeOperator {
-    pub(crate) const ALL: [Self; 12] = [
+impl Composite {
+    pub(crate) const ALL: [Self; 13] = [
         Self::Clear,
         Self::Copy,
         Self::Destination,
@@ -1103,8 +1165,13 @@ impl CompositeOperator {
         Self::SourceAtop,
         Self::DestinationAtop,
         Self::Xor,
+        Self::Plus,
     ];
 }
+
+/// Compatibility name retained for code written before `Composite` became the
+/// single public identity for built-in composition operations.
+pub type CompositeOperator = Composite;
 
 /// A shareable drawing value on an unbounded, backend-independent affine plane.
 ///
@@ -1126,21 +1193,44 @@ impl Canvas {
 
     /// Forms a Canvas drawing by applying `source` through `coverage`.
     pub fn draw(source: impl Into<Source>, coverage: Coverage) -> Self {
+        Self::draw_with(source, BlendMode::Normal, Composite::default(), coverage)
+    }
+
+    /// Forms one semantic Source -> Blend -> Composite -> Coverage operation.
+    pub fn draw_with(
+        source: impl Into<Source>,
+        blend_mode: BlendMode,
+        composite: Composite,
+        coverage: Coverage,
+    ) -> Self {
         Self {
             node: Arc::new(CanvasNode::Draw(Draw {
                 source: source.into(),
+                blend_mode,
+                composite,
                 coverage,
             })),
         }
     }
 
-    /// Combines this backdrop with `source` using `operator`.
-    pub fn composite(self, source: Canvas, operator: CompositeOperator) -> Self {
+    /// Combines this backdrop with `source` using Normal blend and `composite`.
+    pub fn composite(self, source: Canvas, composite: Composite) -> Self {
+        self.blend_composite(source, BlendMode::Normal, composite)
+    }
+
+    /// Combines two complete Canvas fields while preserving source/destination roles.
+    pub fn blend_composite(
+        self,
+        source: Canvas,
+        blend_mode: BlendMode,
+        composite: Composite,
+    ) -> Self {
         Self {
             node: Arc::new(CanvasNode::Composite {
                 backdrop: self,
                 source,
-                operator,
+                blend_mode,
+                composite,
             }),
         }
     }
@@ -1205,7 +1295,8 @@ mod tests {
         assert!(matches!(canvas.node(), CanvasNode::Composite {
             backdrop,
             source,
-            operator: CompositeOperator::SourceOver,
+            blend_mode: BlendMode::Normal,
+            composite: Composite::SourceOver,
         } if Arc::ptr_eq(&source.node, &second.node)
             && matches!(backdrop.node(), CanvasNode::Composite {
                 source,
@@ -1260,6 +1351,7 @@ mod tests {
             coverage: Coverage {
                 node: CoverageNode::All,
             },
+            ..
         }) = canvas.node()
         else {
             panic!("the draw must preserve its explicit full coverage");
@@ -1365,6 +1457,7 @@ mod tests {
             coverage: Coverage {
                 node: CoverageNode::SourceAlpha(Source::Canvas(recorded_mask))
             },
+            ..
         }) if Arc::ptr_eq(&recorded_content.node, &content.node)
             && Arc::ptr_eq(&recorded_mask.node, &coverage_canvas.node))));
     }
@@ -1387,8 +1480,74 @@ mod tests {
                 coverage: Coverage {
                     node: CoverageNode::SourceAlpha(Source::Image(_))
                 },
+                ..
             })
         ));
+    }
+
+    #[test]
+    fn draw_keeps_source_blend_composite_and_coverage_as_distinct_semantics() {
+        let source = Source::Solid(Color::rgba(0.8, 0.2, 0.1, 0.4).unwrap());
+        let coverage = Coverage::fill(Path::polygon([
+            Point::new(0.0, 0.0),
+            Point::new(1.0, 0.0),
+            Point::new(0.0, 1.0),
+        ]));
+        let canvas = Canvas::draw_with(
+            source.clone(),
+            BlendMode::Multiply,
+            Composite::Plus,
+            coverage.clone(),
+        );
+
+        assert!(matches!(
+            canvas.node(),
+            CanvasNode::Draw(Draw {
+                source: Source::Solid(_),
+                blend_mode: BlendMode::Multiply,
+                composite: Composite::Plus,
+                coverage: Coverage {
+                    node: CoverageNode::Fill { .. }
+                },
+            })
+        ));
+    }
+
+    #[test]
+    fn draw_sugar_is_normal_source_over_without_erasing_coverage() {
+        let coverage = Coverage::all();
+        let canvas = Canvas::draw(Color::rgb8(1, 2, 3), coverage.clone());
+
+        assert!(matches!(
+            canvas.node(),
+            CanvasNode::Draw(Draw {
+                blend_mode: BlendMode::Normal,
+                composite: Composite::SourceOver,
+                coverage: Coverage {
+                    node: CoverageNode::All
+                },
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn destination_over_keeps_source_and_backdrop_roles_in_the_ir() {
+        let backdrop = Canvas::draw(Color::rgb8(10, 20, 30), Coverage::all());
+        let source = Canvas::draw(Color::rgb8(40, 50, 60), Coverage::all());
+        let canvas = backdrop.clone().blend_composite(
+            source.clone(),
+            BlendMode::Screen,
+            Composite::DestinationOver,
+        );
+
+        assert!(matches!(canvas.node(), CanvasNode::Composite {
+            backdrop: recorded_backdrop,
+            source: recorded_source,
+            blend_mode: BlendMode::Screen,
+            composite: Composite::DestinationOver,
+        } if Arc::ptr_eq(&recorded_backdrop.node, &backdrop.node)
+            && Arc::ptr_eq(&recorded_source.node, &source.node)));
     }
 
     #[test]

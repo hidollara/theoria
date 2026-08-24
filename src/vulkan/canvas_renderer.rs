@@ -333,6 +333,7 @@ impl CanvasGpuResources {
                     pipelines.image,
                     pipelines.mask,
                     pipelines.present,
+                    pipelines.blend,
                 ]
                 .into_iter()
                 .chain(pipelines.composites.into_values())
@@ -455,7 +456,7 @@ mod tests {
     use super::super::image::GpuAlphaMode;
     use super::*;
     use crate::canvas::{
-        Color, CompositeOperator, ConicGradient, Coverage, GradientPoint, GradientStop,
+        Color, Composite, CompositeOperator, ConicGradient, Coverage, GradientPoint, GradientStop,
         ImagePattern, LinearGradient, MeshGradient, RadialGradient, Source,
     };
     use crate::geometry::Point;
@@ -577,6 +578,20 @@ mod tests {
     }
 
     #[test]
+    fn destination_reading_blends_reserve_source_and_backdrop_images() {
+        let backdrop = Canvas::draw(Color::rgb8(64, 128, 255), Coverage::all());
+        let source = Canvas::draw(Color::rgb8(255, 128, 64), Coverage::all());
+        let blended = backdrop.blend_composite(
+            source,
+            crate::canvas::BlendMode::Multiply,
+            CompositeOperator::SourceOver,
+        );
+
+        assert!(!can_record_directly(&blended));
+        assert_eq!(required_scratch_images(&blended), 3);
+    }
+
+    #[test]
     fn porter_duff_operators_use_premultiplied_alpha_factors() {
         let zero = vk::BlendFactor::ZERO;
         let one = vk::BlendFactor::ONE;
@@ -621,6 +636,11 @@ mod tests {
         for (operator, factors) in expected {
             assert_eq!(composite_blend_factors(operator), factors);
         }
+
+        assert_eq!(
+            composite_blend_factors(Composite::Plus),
+            (vk::BlendFactor::ONE, vk::BlendFactor::ONE)
+        );
     }
 
     #[test]

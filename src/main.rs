@@ -10,9 +10,10 @@ mod vulkan;
 mod window;
 
 use canvas::{
-    AcrossPathGradient, AlongPathGradient, Canvas, CanvasView, Color, ColorRamp, CompositeOperator,
-    ConicGradient, Coverage, DashPattern, FillRule, GradientPoint, GradientStop, ImageExtend,
-    ImagePattern, LineCap, LineJoin, LinearGradient, MeshGradient, RadialGradient, StrokeStyle,
+    AcrossPathGradient, AlongPathGradient, BlendMode, Canvas, CanvasView, Color, ColorRamp,
+    Composite, CompositeOperator, ConicGradient, Coverage, DashPattern, FillRule, GradientPoint,
+    GradientStop, ImageExtend, ImagePattern, LineCap, LineJoin, LinearGradient, MeshGradient,
+    RadialGradient, StrokeStyle,
 };
 use geometry::Point;
 use image::Image;
@@ -214,8 +215,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ),
                 );
                 let content = masked_content
-                    .composite(mesh_layer, CompositeOperator::SourceOver)
-                    .composite(radial_layer, CompositeOperator::SourceOver)
+                    .blend_composite(mesh_layer, BlendMode::Multiply, Composite::SourceOver)
+                    .composite(radial_layer, Composite::Plus)
                     .composite(conic_layer, CompositeOperator::SourceOver)
                     .composite(across_layer, CompositeOperator::DestinationOver)
                     .composite(stroke_layer, CompositeOperator::SourceOver);

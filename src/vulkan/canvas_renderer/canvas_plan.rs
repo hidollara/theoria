@@ -1,5 +1,5 @@
 use crate::{
-    canvas::{Canvas, CanvasNode, CompositeOperator, CoverageNode, Draw, Source},
+    canvas::{BlendMode, Canvas, CanvasNode, Composite, CoverageNode, Draw, Source},
     image::Image,
 };
 
@@ -45,31 +45,48 @@ pub(super) fn required_scratch_images(canvas: &Canvas) -> usize {
 fn additional_scratch_images(canvas: &Canvas) -> usize {
     match canvas.node() {
         CanvasNode::Empty => 0,
-        CanvasNode::Draw(draw) => match &draw.source {
-            Source::Canvas(content) => {
-                required_scratch_images(content)
-                    + match draw.coverage.node() {
-                        CoverageNode::All => 0,
-                        CoverageNode::Fill { .. } | CoverageNode::Stroke { .. } => 1,
-                        CoverageNode::SourceAlpha(source) => required_source_scratch_images(source),
+        CanvasNode::Draw(draw) => {
+            let source_work = match &draw.source {
+                Source::Canvas(content) => {
+                    required_scratch_images(content)
+                        + match draw.coverage.node() {
+                            CoverageNode::All => 0,
+                            CoverageNode::Fill { .. } | CoverageNode::Stroke { .. } => 1,
+                            CoverageNode::SourceAlpha(source) => {
+                                required_source_scratch_images(source)
+                            }
+                        }
+                }
+                _ => match draw.coverage.node() {
+                    CoverageNode::SourceAlpha(source) => 1 + required_source_scratch_images(source),
+                    CoverageNode::All | CoverageNode::Fill { .. } | CoverageNode::Stroke { .. } => {
+                        0
                     }
+                },
+            };
+            if draw.blend_mode == BlendMode::Normal && draw.composite == Composite::SourceOver {
+                source_work
+            } else {
+                // A non-default draw is first evaluated as an isolated source.
+                // Destination-reading blends additionally preserve the accumulator.
+                source_work + 1 + usize::from(draw.blend_mode != BlendMode::Normal)
             }
-            _ => match draw.coverage.node() {
-                CoverageNode::SourceAlpha(source) => 1 + required_source_scratch_images(source),
-                CoverageNode::All | CoverageNode::Fill { .. } | CoverageNode::Stroke { .. } => 0,
-            },
-        },
+        }
         CanvasNode::Transform { content, .. } => additional_scratch_images(content),
         CanvasNode::Composite {
             backdrop,
             source,
-            operator,
+            blend_mode,
+            composite,
         } => {
             additional_scratch_images(backdrop)
-                + if *operator == CompositeOperator::SourceOver && can_record_directly(source) {
+                + if *blend_mode == BlendMode::Normal
+                    && *composite == Composite::SourceOver
+                    && can_record_directly(source)
+                {
                     additional_scratch_images(source)
                 } else {
-                    required_scratch_images(source)
+                    required_scratch_images(source) + usize::from(*blend_mode != BlendMode::Normal)
                 }
         }
     }
@@ -77,12 +94,16 @@ fn additional_scratch_images(canvas: &Canvas) -> usize {
 
 pub(super) fn can_record_directly(canvas: &Canvas) -> bool {
     match canvas.node() {
-        CanvasNode::Empty | CanvasNode::Draw(_) => true,
+        CanvasNode::Empty => true,
+        CanvasNode::Draw(draw) => {
+            draw.blend_mode == BlendMode::Normal && draw.composite == Composite::SourceOver
+        }
         CanvasNode::Transform { content, .. } => can_record_directly(content),
         CanvasNode::Composite {
             backdrop,
             source,
-            operator: CompositeOperator::SourceOver,
+            blend_mode: BlendMode::Normal,
+            composite: Composite::SourceOver,
         } => can_record_directly(backdrop) && can_record_directly(source),
         CanvasNode::Composite { .. } => false,
     }

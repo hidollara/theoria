@@ -2,9 +2,9 @@ use std::{collections::HashMap, error::Error, ffi::CStr, io::Cursor, mem::size_o
 
 use ash::vk;
 
-use crate::canvas::CompositeOperator;
+use crate::canvas::Composite;
 
-use super::encoding::{ImagePushConstants, TrianglePushConstants};
+use super::encoding::{BlendCompositePushConstants, ImagePushConstants, TrianglePushConstants};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -20,6 +20,8 @@ const COMPOSITE_FRAGMENT_SHADER: &[u8] =
     include_bytes!(concat!(env!("OUT_DIR"), "/composite.frag.spv"));
 const MASK_VERTEX_SHADER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/mask.vert.spv"));
 const MASK_FRAGMENT_SHADER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/mask.frag.spv"));
+const BLEND_VERTEX_SHADER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/blend.vert.spv"));
+const BLEND_FRAGMENT_SHADER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/blend.frag.spv"));
 
 pub(super) struct Pipeline {
     pub(super) layout: vk::PipelineLayout,
@@ -31,14 +33,15 @@ pub(super) struct Pipelines {
     pub(super) sample_count: vk::SampleCountFlags,
     pub(super) triangle: Pipeline,
     pub(super) image: Pipeline,
-    pub(super) composites: HashMap<CompositeOperator, Pipeline>,
+    pub(super) composites: HashMap<Composite, Pipeline>,
     pub(super) mask: Pipeline,
     pub(super) present: Pipeline,
+    pub(super) blend: Pipeline,
 }
 
 impl Pipelines {
-    pub(super) fn composite(&self, operator: CompositeOperator) -> &Pipeline {
-        &self.composites[&operator]
+    pub(super) fn composite(&self, composite: Composite) -> &Pipeline {
+        &self.composites[&composite]
     }
 }
 
@@ -55,9 +58,10 @@ pub(super) unsafe fn create_pipelines(
             TRIANGLE_VERTEX_SHADER,
             TRIANGLE_FRAGMENT_SHADER,
             size_of::<TrianglePushConstants>() as u32,
+            vk::ShaderStageFlags::VERTEX,
             &[],
             sample_count,
-            CompositeOperator::SourceOver,
+            Composite::SourceOver,
         )?
     };
     let image = match unsafe {
@@ -67,9 +71,10 @@ pub(super) unsafe fn create_pipelines(
             IMAGE_VERTEX_SHADER,
             IMAGE_FRAGMENT_SHADER,
             size_of::<ImagePushConstants>() as u32,
+            vk::ShaderStageFlags::VERTEX,
             &[image_descriptor_set_layout],
             sample_count,
-            CompositeOperator::SourceOver,
+            Composite::SourceOver,
         )
     } {
         Ok(image) => image,
@@ -88,9 +93,10 @@ pub(super) unsafe fn create_pipelines(
             COMPOSITE_VERTEX_SHADER,
             COMPOSITE_FRAGMENT_SHADER,
             0,
+            vk::ShaderStageFlags::VERTEX,
             &[image_descriptor_set_layout],
-            sample_count,
-            CompositeOperator::SourceOver,
+            vk::SampleCountFlags::TYPE_1,
+            Composite::SourceOver,
         )
     } {
         Ok(composite) => composite,
@@ -104,21 +110,22 @@ pub(super) unsafe fn create_pipelines(
             return Err(error);
         }
     };
-    let mut composites = HashMap::from([(CompositeOperator::SourceOver, source_over)]);
-    for operator in CompositeOperator::ALL {
-        if operator == CompositeOperator::SourceOver {
+    let mut composites = HashMap::from([(Composite::SourceOver, source_over)]);
+    for composite in Composite::ALL {
+        if composite == Composite::SourceOver {
             continue;
         }
-        let composite = match unsafe {
+        let composite_pipeline = match unsafe {
             create_pipeline(
                 device,
                 color_format,
                 COMPOSITE_VERTEX_SHADER,
                 COMPOSITE_FRAGMENT_SHADER,
                 0,
+                vk::ShaderStageFlags::VERTEX,
                 &[image_descriptor_set_layout],
                 sample_count,
-                operator,
+                composite,
             )
         } {
             Ok(composite) => composite,
@@ -135,7 +142,7 @@ pub(super) unsafe fn create_pipelines(
                 return Err(error);
             }
         };
-        composites.insert(operator, composite);
+        composites.insert(composite, composite_pipeline);
     }
     let mask = match unsafe {
         create_pipeline(
@@ -144,9 +151,10 @@ pub(super) unsafe fn create_pipelines(
             MASK_VERTEX_SHADER,
             MASK_FRAGMENT_SHADER,
             0,
+            vk::ShaderStageFlags::VERTEX,
             &[image_descriptor_set_layout],
             sample_count,
-            CompositeOperator::DestinationIn,
+            Composite::DestinationIn,
         )
     } {
         Ok(mask) => mask,
@@ -170,15 +178,43 @@ pub(super) unsafe fn create_pipelines(
             COMPOSITE_VERTEX_SHADER,
             COMPOSITE_FRAGMENT_SHADER,
             0,
+            vk::ShaderStageFlags::VERTEX,
             &[image_descriptor_set_layout],
             vk::SampleCountFlags::TYPE_1,
-            CompositeOperator::SourceOver,
+            Composite::SourceOver,
         )
     } {
         Ok(present) => present,
         Err(error) => {
             unsafe {
                 for pipeline in [triangle, image, mask]
+                    .into_iter()
+                    .chain(composites.into_values())
+                {
+                    device.destroy_pipeline(pipeline.handle, None);
+                    device.destroy_pipeline_layout(pipeline.layout, None);
+                }
+            }
+            return Err(error);
+        }
+    };
+    let blend = match unsafe {
+        create_pipeline(
+            device,
+            color_format,
+            BLEND_VERTEX_SHADER,
+            BLEND_FRAGMENT_SHADER,
+            size_of::<BlendCompositePushConstants>() as u32,
+            vk::ShaderStageFlags::FRAGMENT,
+            &[image_descriptor_set_layout, image_descriptor_set_layout],
+            sample_count,
+            Composite::Copy,
+        )
+    } {
+        Ok(blend) => blend,
+        Err(error) => {
+            unsafe {
+                for pipeline in [triangle, image, mask, present]
                     .into_iter()
                     .chain(composites.into_values())
                 {
@@ -197,39 +233,31 @@ pub(super) unsafe fn create_pipelines(
         composites,
         mask,
         present,
+        blend,
     })
 }
 
-pub(super) fn composite_blend_factors(
-    operator: CompositeOperator,
-) -> (vk::BlendFactor, vk::BlendFactor) {
-    match operator {
-        CompositeOperator::Clear => (vk::BlendFactor::ZERO, vk::BlendFactor::ZERO),
-        CompositeOperator::Copy => (vk::BlendFactor::ONE, vk::BlendFactor::ZERO),
-        CompositeOperator::Destination => (vk::BlendFactor::ZERO, vk::BlendFactor::ONE),
-        CompositeOperator::SourceOver => {
-            (vk::BlendFactor::ONE, vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
-        }
-        CompositeOperator::DestinationOver => {
-            (vk::BlendFactor::ONE_MINUS_DST_ALPHA, vk::BlendFactor::ONE)
-        }
-        CompositeOperator::SourceIn => (vk::BlendFactor::DST_ALPHA, vk::BlendFactor::ZERO),
-        CompositeOperator::DestinationIn => (vk::BlendFactor::ZERO, vk::BlendFactor::SRC_ALPHA),
-        CompositeOperator::SourceOut => {
-            (vk::BlendFactor::ONE_MINUS_DST_ALPHA, vk::BlendFactor::ZERO)
-        }
-        CompositeOperator::DestinationOut => {
-            (vk::BlendFactor::ZERO, vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
-        }
-        CompositeOperator::SourceAtop => (
+pub(super) fn composite_blend_factors(composite: Composite) -> (vk::BlendFactor, vk::BlendFactor) {
+    match composite {
+        Composite::Plus => (vk::BlendFactor::ONE, vk::BlendFactor::ONE),
+        Composite::Clear => (vk::BlendFactor::ZERO, vk::BlendFactor::ZERO),
+        Composite::Copy => (vk::BlendFactor::ONE, vk::BlendFactor::ZERO),
+        Composite::Destination => (vk::BlendFactor::ZERO, vk::BlendFactor::ONE),
+        Composite::SourceOver => (vk::BlendFactor::ONE, vk::BlendFactor::ONE_MINUS_SRC_ALPHA),
+        Composite::DestinationOver => (vk::BlendFactor::ONE_MINUS_DST_ALPHA, vk::BlendFactor::ONE),
+        Composite::SourceIn => (vk::BlendFactor::DST_ALPHA, vk::BlendFactor::ZERO),
+        Composite::DestinationIn => (vk::BlendFactor::ZERO, vk::BlendFactor::SRC_ALPHA),
+        Composite::SourceOut => (vk::BlendFactor::ONE_MINUS_DST_ALPHA, vk::BlendFactor::ZERO),
+        Composite::DestinationOut => (vk::BlendFactor::ZERO, vk::BlendFactor::ONE_MINUS_SRC_ALPHA),
+        Composite::SourceAtop => (
             vk::BlendFactor::DST_ALPHA,
             vk::BlendFactor::ONE_MINUS_SRC_ALPHA,
         ),
-        CompositeOperator::DestinationAtop => (
+        Composite::DestinationAtop => (
             vk::BlendFactor::ONE_MINUS_DST_ALPHA,
             vk::BlendFactor::SRC_ALPHA,
         ),
-        CompositeOperator::Xor => (
+        Composite::Xor => (
             vk::BlendFactor::ONE_MINUS_DST_ALPHA,
             vk::BlendFactor::ONE_MINUS_SRC_ALPHA,
         ),
@@ -243,9 +271,10 @@ unsafe fn create_pipeline(
     vertex_shader: &[u8],
     fragment_shader: &[u8],
     push_constant_size: u32,
+    push_constant_stages: vk::ShaderStageFlags,
     descriptor_set_layouts: &[vk::DescriptorSetLayout],
     sample_count: vk::SampleCountFlags,
-    blend: CompositeOperator,
+    blend: Composite,
 ) -> Result<Pipeline> {
     let vertex_code = ash::util::read_spv(&mut Cursor::new(vertex_shader))?;
     let fragment_code = ash::util::read_spv(&mut Cursor::new(fragment_shader))?;
@@ -291,7 +320,7 @@ unsafe fn create_pipeline(
                     | vk::ColorComponentFlags::A,
             );
         let push_range = vk::PushConstantRange::default()
-            .stage_flags(vk::ShaderStageFlags::VERTEX)
+            .stage_flags(push_constant_stages)
             .size(push_constant_size);
         let push_ranges = if push_constant_size == 0 {
             &[][..]

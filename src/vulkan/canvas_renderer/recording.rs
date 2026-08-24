@@ -2,7 +2,7 @@ use ash::vk;
 
 use crate::{
     canvas::{
-        Canvas, CanvasNode, CanvasView, Color, CompositeOperator, Coverage, CoverageNode, Draw,
+        BlendMode, Canvas, CanvasNode, CanvasView, Color, Composite, Coverage, CoverageNode, Draw,
         ImagePattern, Source,
     },
     geometry::Point,
@@ -16,7 +16,7 @@ use crate::{
 
 use super::{
     canvas_plan::can_record_directly,
-    encoding::{ImagePushConstants, TrianglePushConstants},
+    encoding::{BlendCompositePushConstants, ImagePushConstants, TrianglePushConstants},
     full_viewport,
     mesh_paint::{PathSampler, paint_triangle_prepared, screen_space_tolerance},
     pipeline::{Pipeline, Pipelines},
@@ -59,25 +59,61 @@ impl CanvasRecorder<'_> {
             CanvasNode::Composite {
                 backdrop,
                 source,
-                operator,
+                blend_mode,
+                composite,
             } => {
                 self.render_node(accumulator, backdrop, canvas_to_root);
-                if *operator == CompositeOperator::SourceOver && can_record_directly(source) {
+                if *blend_mode == BlendMode::Normal
+                    && *composite == Composite::SourceOver
+                    && can_record_directly(source)
+                {
                     self.render_node(accumulator, source, canvas_to_root);
                 } else {
                     self.end_rendering();
                     let source_image = self.evaluate(source, canvas_to_root);
-                    self.resume_accumulator(accumulator);
-                    self.draw_fullscreen(
-                        self.pipelines.composite(*operator),
-                        self.scratch_images[source_image].descriptor_set(),
-                    );
+                    if *blend_mode == BlendMode::Normal {
+                        self.resume_accumulator(accumulator);
+                        self.draw_fullscreen(
+                            self.pipelines.composite(*composite),
+                            self.scratch_images[source_image].descriptor_set(),
+                        );
+                    } else {
+                        self.blend_composite(accumulator, source_image, *blend_mode, *composite);
+                    }
                 }
             }
         }
     }
 
     fn render_draw(&mut self, accumulator: usize, draw: &Draw, draw_to_root: Projective2) {
+        if draw.blend_mode != BlendMode::Normal || draw.composite != Composite::SourceOver {
+            self.end_rendering();
+            let source_image = self.next_image;
+            self.next_image += 1;
+            self.begin_accumulator(source_image, vk::AttachmentLoadOp::CLEAR);
+            self.render_source_with_coverage(source_image, draw, draw_to_root);
+            self.end_rendering();
+            self.transition_to_sampled(source_image);
+            if draw.blend_mode == BlendMode::Normal {
+                self.resume_accumulator(accumulator);
+                self.draw_fullscreen(
+                    self.pipelines.composite(draw.composite),
+                    self.scratch_images[source_image].descriptor_set(),
+                );
+            } else {
+                self.blend_composite(accumulator, source_image, draw.blend_mode, draw.composite);
+            }
+            return;
+        }
+        self.render_source_with_coverage(accumulator, draw, draw_to_root);
+    }
+
+    fn render_source_with_coverage(
+        &mut self,
+        accumulator: usize,
+        draw: &Draw,
+        draw_to_root: Projective2,
+    ) {
         if !self.set_canvas_region() {
             return;
         }
@@ -106,10 +142,58 @@ impl CanvasRecorder<'_> {
                 self.apply_mask(content_image, mask_image);
                 self.resume_accumulator(accumulator);
                 self.draw_fullscreen(
-                    self.pipelines.composite(CompositeOperator::SourceOver),
+                    self.pipelines.composite(Composite::SourceOver),
                     self.scratch_images[content_image].descriptor_set(),
                 );
             }
+        }
+    }
+
+    fn blend_composite(
+        &mut self,
+        accumulator: usize,
+        source: usize,
+        blend_mode: BlendMode,
+        composite: Composite,
+    ) {
+        self.transition_to_sampled(accumulator);
+        let destination = self.next_image;
+        self.next_image += 1;
+        self.begin_accumulator(destination, vk::AttachmentLoadOp::CLEAR);
+        self.draw_fullscreen(
+            self.pipelines.composite(Composite::Copy),
+            self.scratch_images[accumulator].descriptor_set(),
+        );
+        self.end_rendering();
+        self.transition_to_sampled(destination);
+
+        self.begin_accumulator(accumulator, vk::AttachmentLoadOp::CLEAR);
+        let constants = BlendCompositePushConstants::new(blend_mode, composite);
+        unsafe {
+            self.device.cmd_bind_pipeline(
+                self.command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.pipelines.blend.handle,
+            );
+            self.device.cmd_bind_descriptor_sets(
+                self.command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.pipelines.blend.layout,
+                0,
+                &[
+                    self.scratch_images[destination].descriptor_set(),
+                    self.scratch_images[source].descriptor_set(),
+                ],
+                &[],
+            );
+            self.device.cmd_push_constants(
+                self.command_buffer,
+                self.pipelines.blend.layout,
+                vk::ShaderStageFlags::FRAGMENT,
+                0,
+                constants.as_bytes(),
+            );
+            self.device.cmd_draw(self.command_buffer, 3, 1, 0, 0);
         }
     }
 
@@ -141,7 +225,7 @@ impl CanvasRecorder<'_> {
         }
         self.resume_accumulator(accumulator);
         self.draw_fullscreen(
-            self.pipelines.composite(CompositeOperator::SourceOver),
+            self.pipelines.composite(Composite::SourceOver),
             self.scratch_images[content_image].descriptor_set(),
         );
     }
