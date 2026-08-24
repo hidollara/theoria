@@ -27,7 +27,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut window = Window::new("Theoria — Vulkan Canvas", 960, 640)?;
     let mut presenter = Presenter::new(window.presentation_target())?;
     let mut canvas_renderer = CanvasRenderer::new(presenter.device());
-    let image = make_sample_image()?;
+    let source_image = make_sample_image()?;
+    let image_width = source_image.width();
+    let image_height = source_image.height();
+    let image_canvas = Canvas::draw(source_image, Coverage::all());
+    let image = Image::from_canvas(
+        image_width,
+        image_height,
+        image_canvas,
+        CanvasView::axis_aligned(
+            Point::new(0.0, 0.0),
+            Point::new(image_width as f32, image_height as f32),
+        )
+        .expect("the sample image view is non-degenerate"),
+    )?;
 
     while let Some(event) = window.next_event()? {
         match event {

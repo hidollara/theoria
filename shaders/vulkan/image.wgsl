@@ -1,6 +1,7 @@
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) uvw: vec3<f32>,
+    @location(1) @interpolate(flat) premultiplied: f32,
 }
 
 struct ImageTriangle {
@@ -27,20 +28,26 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
         triangle.position_1,
         triangle.position_2,
     );
-    let uvws = array(
-        triangle.uv_0.xyz,
-        triangle.uv_1.xyz,
-        triangle.uv_2.xyz,
+    let uvs = array(
+        triangle.uv_0,
+        triangle.uv_1,
+        triangle.uv_2,
     );
 
     var output: VertexOutput;
     output.position = positions[vertex_index];
-    output.uvw = uvws[vertex_index];
+    output.uvw = uvs[vertex_index].xyz;
+    output.premultiplied = uvs[vertex_index].w;
     return output;
 }
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    let straight = textureSample(image_texture, image_sampler, input.uvw.xy / input.uvw.z);
-    return vec4<f32>(straight.rgb * straight.a, straight.a);
+    let sampled = textureSample(image_texture, image_sampler, input.uvw.xy / input.uvw.z);
+    let premultiplied_rgb = mix(
+        sampled.rgb * sampled.a,
+        sampled.rgb,
+        input.premultiplied,
+    );
+    return vec4<f32>(premultiplied_rgb, sampled.a);
 }

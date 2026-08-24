@@ -1,10 +1,10 @@
-use std::{collections::HashMap, error::Error, ptr};
+use std::{collections::HashMap, error::Error, ptr, sync::Arc};
 
 use ash::vk;
 
 use crate::{
     canvas::{ImageExtend, ImagePattern, ImageSampling},
-    image::{Image, ImageInstanceKey},
+    image::{Image, ImageContent, ImageInstanceKey},
 };
 
 use super::presenter::RenderDevice;
@@ -12,11 +12,25 @@ use super::presenter::RenderDevice;
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 pub(super) struct GpuImage {
-    image: vk::Image,
-    view: vk::ImageView,
-    memory: vk::DeviceMemory,
+    _backing: Arc<VulkanImage>,
     descriptor_pool: vk::DescriptorPool,
     descriptor_sets: HashMap<SamplerKey, vk::DescriptorSet>,
+    alpha_mode: GpuAlphaMode,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum GpuAlphaMode {
+    Straight,
+    Premultiplied,
+}
+
+pub(super) struct VulkanImage {
+    device: RenderDevice,
+    pub(super) image: vk::Image,
+    pub(super) view: vk::ImageView,
+    memory: vk::DeviceMemory,
+    pub(super) format: vk::Format,
+    pub(super) extent: vk::Extent2D,
 }
 
 pub(super) struct ImageCache {
@@ -52,6 +66,20 @@ impl SamplerKey {
 impl GpuImage {
     pub(super) fn descriptor_set(&self, pattern: &ImagePattern) -> vk::DescriptorSet {
         self.descriptor_sets[&SamplerKey::from_pattern(pattern)]
+    }
+
+    pub(super) fn alpha_mode(&self) -> GpuAlphaMode {
+        self.alpha_mode
+    }
+}
+
+impl Drop for VulkanImage {
+    fn drop(&mut self) {
+        unsafe {
+            self.device.raw().destroy_image_view(self.view, None);
+            self.device.raw().destroy_image(self.image, None);
+            self.device.raw().free_memory(self.memory, None);
+        }
     }
 }
 
@@ -164,17 +192,56 @@ impl ImageCache {
         self.descriptor_set_layout
     }
 
-    pub(super) fn get_or_upload(&mut self, image: &Image) -> Result<&GpuImage> {
+    pub(super) fn ensure_uploaded(&mut self, image: &Image) -> Result<()> {
+        self.prune_unused();
         let key = image.instance_key();
         if !self.images.contains_key(&key) {
+            if !matches!(image.content(), ImageContent::Rgba8(_)) {
+                return Err("only CPU raster Images can be uploaded directly".into());
+            }
             let gpu_image = unsafe { self.upload(image)? };
             self.images.insert(key.clone(), gpu_image);
         }
-        Ok(self.images.get(&key).unwrap())
+        Ok(())
+    }
+
+    pub(super) fn insert_rendered(
+        &mut self,
+        image: &Image,
+        backing: Arc<VulkanImage>,
+    ) -> Result<()> {
+        self.prune_unused();
+        let gpu_image = unsafe { self.bind_backing(backing, GpuAlphaMode::Premultiplied)? };
+        self.images.insert(image.instance_key(), gpu_image);
+        Ok(())
+    }
+
+    pub(super) fn contains(&mut self, image: &Image) -> bool {
+        self.prune_unused();
+        self.images.contains_key(&image.instance_key())
     }
 
     pub(super) fn get(&self, image: &Image) -> Option<&GpuImage> {
         self.images.get(&image.instance_key())
+    }
+
+    fn prune_unused(&mut self) {
+        self.images.retain(|key, _| key.is_alive());
+    }
+
+    pub(super) fn create_render_target(
+        &self,
+        format: vk::Format,
+        extent: vk::Extent2D,
+    ) -> Result<Arc<VulkanImage>> {
+        Ok(Arc::new(unsafe {
+            create_vulkan_image(
+                self.device.clone(),
+                format,
+                extent,
+                vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
+            )?
+        }))
     }
 
     pub(super) fn bind_sampled_view(
@@ -239,7 +306,10 @@ impl ImageCache {
 
     unsafe fn upload(&self, source: &Image) -> Result<GpuImage> {
         let device = self.device.raw();
-        let byte_size = source.rgba8().len() as vk::DeviceSize;
+        let pixels = source
+            .rgba8()
+            .ok_or("the Image has neither RGBA8 pixels nor a compatible Vulkan materialization")?;
+        let byte_size = pixels.len() as vk::DeviceSize;
 
         let staging_buffer = unsafe {
             device.create_buffer(
@@ -271,71 +341,45 @@ impl ImageCache {
             device.map_memory(staging_memory, 0, byte_size, vk::MemoryMapFlags::empty())?
         };
         unsafe {
-            ptr::copy_nonoverlapping(source.rgba8().as_ptr(), mapped.cast(), source.rgba8().len());
+            ptr::copy_nonoverlapping(pixels.as_ptr(), mapped.cast(), pixels.len());
             device.unmap_memory(staging_memory);
         }
 
-        let extent = vk::Extent3D {
+        let extent = vk::Extent2D {
             width: source.width(),
             height: source.height(),
-            depth: 1,
         };
-        let image = unsafe {
-            device.create_image(
-                &vk::ImageCreateInfo::default()
-                    .image_type(vk::ImageType::TYPE_2D)
-                    .format(vk::Format::R8G8B8A8_SRGB)
-                    .extent(extent)
-                    .mip_levels(1)
-                    .array_layers(1)
-                    .samples(vk::SampleCountFlags::TYPE_1)
-                    .tiling(vk::ImageTiling::OPTIMAL)
-                    .usage(vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED)
-                    .sharing_mode(vk::SharingMode::EXCLUSIVE)
-                    .initial_layout(vk::ImageLayout::UNDEFINED),
-                None,
+        let backing = Arc::new(unsafe {
+            create_vulkan_image(
+                self.device.clone(),
+                vk::Format::R8G8B8A8_SRGB,
+                extent,
+                vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
             )?
-        };
-        let image_requirements = unsafe { device.get_image_memory_requirements(image) };
-        let image_memory_type = self
-            .device
-            .find_memory_type(
-                image_requirements.memory_type_bits,
-                vk::MemoryPropertyFlags::DEVICE_LOCAL,
-            )
-            .ok_or("no device-local Vulkan memory type for sampled image")?;
-        let memory = unsafe {
-            device.allocate_memory(
-                &vk::MemoryAllocateInfo::default()
-                    .allocation_size(image_requirements.size)
-                    .memory_type_index(image_memory_type),
-                None,
-            )?
-        };
-        unsafe { device.bind_image_memory(image, memory, 0)? };
+        });
 
         unsafe {
-            self.copy_to_image(staging_buffer, image, extent)?;
+            self.copy_to_image(
+                staging_buffer,
+                backing.image,
+                vk::Extent3D {
+                    width: extent.width,
+                    height: extent.height,
+                    depth: 1,
+                },
+            )?;
             device.destroy_buffer(staging_buffer, None);
             device.free_memory(staging_memory, None);
         }
+        unsafe { self.bind_backing(backing, GpuAlphaMode::Straight) }
+    }
 
-        let view = unsafe {
-            device.create_image_view(
-                &vk::ImageViewCreateInfo::default()
-                    .image(image)
-                    .view_type(vk::ImageViewType::TYPE_2D)
-                    .format(vk::Format::R8G8B8A8_SRGB)
-                    .subresource_range(
-                        vk::ImageSubresourceRange::default()
-                            .aspect_mask(vk::ImageAspectFlags::COLOR)
-                            .level_count(1)
-                            .layer_count(1),
-                    ),
-                None,
-            )?
-        };
-
+    unsafe fn bind_backing(
+        &self,
+        backing: Arc<VulkanImage>,
+        alpha_mode: GpuAlphaMode,
+    ) -> Result<GpuImage> {
+        let device = self.device.raw();
         let descriptor_count = u32::try_from(self.samplers.len())?;
         let pool_sizes = [
             vk::DescriptorPoolSize::default()
@@ -365,7 +409,7 @@ impl ImageCache {
         for ((key, sampler), descriptor_set) in self.samplers.iter().zip(descriptor_sets) {
             let sampler_info = [vk::DescriptorImageInfo::default().sampler(*sampler)];
             let image_info = [vk::DescriptorImageInfo::default()
-                .image_view(view)
+                .image_view(backing.view)
                 .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
             let writes = [
                 vk::WriteDescriptorSet::default()
@@ -384,11 +428,10 @@ impl ImageCache {
         }
 
         Ok(GpuImage {
-            image,
-            view,
-            memory,
+            _backing: backing,
             descriptor_pool,
             descriptor_sets: sets_by_sampler,
+            alpha_mode,
         })
     }
 
@@ -484,9 +527,6 @@ impl Drop for ImageCache {
                 self.device
                     .raw()
                     .destroy_descriptor_pool(gpu_image.descriptor_pool, None);
-                self.device.raw().destroy_image_view(gpu_image.view, None);
-                self.device.raw().destroy_image(gpu_image.image, None);
-                self.device.raw().free_memory(gpu_image.memory, None);
             }
             for sampler in self.samplers.drain().map(|(_, sampler)| sampler) {
                 self.device.raw().destroy_sampler(sampler, None);
@@ -496,6 +536,96 @@ impl Drop for ImageCache {
                 .destroy_descriptor_set_layout(self.descriptor_set_layout, None);
         }
     }
+}
+
+unsafe fn create_vulkan_image(
+    device: RenderDevice,
+    format: vk::Format,
+    extent: vk::Extent2D,
+    usage: vk::ImageUsageFlags,
+) -> Result<VulkanImage> {
+    let raw = device.raw();
+    let image = unsafe {
+        raw.create_image(
+            &vk::ImageCreateInfo::default()
+                .image_type(vk::ImageType::TYPE_2D)
+                .format(format)
+                .extent(vk::Extent3D {
+                    width: extent.width,
+                    height: extent.height,
+                    depth: 1,
+                })
+                .mip_levels(1)
+                .array_layers(1)
+                .samples(vk::SampleCountFlags::TYPE_1)
+                .tiling(vk::ImageTiling::OPTIMAL)
+                .usage(usage)
+                .sharing_mode(vk::SharingMode::EXCLUSIVE)
+                .initial_layout(vk::ImageLayout::UNDEFINED),
+            None,
+        )?
+    };
+    let requirements = unsafe { raw.get_image_memory_requirements(image) };
+    let Some(memory_type_index) = device.find_memory_type(
+        requirements.memory_type_bits,
+        vk::MemoryPropertyFlags::DEVICE_LOCAL,
+    ) else {
+        unsafe { raw.destroy_image(image, None) };
+        return Err("no device-local Vulkan memory type for image".into());
+    };
+    let memory = match unsafe {
+        raw.allocate_memory(
+            &vk::MemoryAllocateInfo::default()
+                .allocation_size(requirements.size)
+                .memory_type_index(memory_type_index),
+            None,
+        )
+    } {
+        Ok(memory) => memory,
+        Err(error) => {
+            unsafe { raw.destroy_image(image, None) };
+            return Err(error.into());
+        }
+    };
+    if let Err(error) = unsafe { raw.bind_image_memory(image, memory, 0) } {
+        unsafe {
+            raw.free_memory(memory, None);
+            raw.destroy_image(image, None);
+        }
+        return Err(error.into());
+    }
+    let view = match unsafe {
+        raw.create_image_view(
+            &vk::ImageViewCreateInfo::default()
+                .image(image)
+                .view_type(vk::ImageViewType::TYPE_2D)
+                .format(format)
+                .subresource_range(
+                    vk::ImageSubresourceRange::default()
+                        .aspect_mask(vk::ImageAspectFlags::COLOR)
+                        .level_count(1)
+                        .layer_count(1),
+                ),
+            None,
+        )
+    } {
+        Ok(view) => view,
+        Err(error) => {
+            unsafe {
+                raw.destroy_image(image, None);
+                raw.free_memory(memory, None);
+            }
+            return Err(error.into());
+        }
+    };
+    Ok(VulkanImage {
+        device,
+        image,
+        view,
+        memory,
+        format,
+        extent,
+    })
 }
 
 #[allow(clippy::too_many_arguments)]

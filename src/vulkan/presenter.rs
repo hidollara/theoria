@@ -93,10 +93,10 @@ struct SurfaceRenderTarget {
 
 /// An acquired destination that a renderer can record commands into.
 pub(crate) struct RenderTarget<'a> {
-    pub(crate) device: &'a RenderDevice,
     pub(crate) command_buffer: vk::CommandBuffer,
     surface: SurfaceRenderTarget,
     clear_color: Color,
+    _frame: std::marker::PhantomData<&'a ()>,
 }
 
 impl RenderTarget<'_> {
@@ -349,10 +349,10 @@ impl PresentFrame<'_> {
     pub(crate) fn render_target(&self, clear_color: Color) -> RenderTarget<'_> {
         let resources = self.presenter.swapchain.as_ref().unwrap();
         RenderTarget {
-            device: &self.presenter.device,
             command_buffer: self.command_buffer,
             surface: resources.render_targets[self.image_index as usize],
             clear_color,
+            _frame: std::marker::PhantomData,
         }
     }
 

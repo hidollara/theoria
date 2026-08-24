@@ -1,4 +1,12 @@
-use std::{collections::HashMap, error::Error, ffi::CStr, io::Cursor, mem::size_of, slice};
+use std::{
+    collections::{HashMap, HashSet},
+    error::Error,
+    ffi::CStr,
+    io::Cursor,
+    mem::size_of,
+    slice,
+    sync::Arc,
+};
 
 use ash::vk;
 
@@ -8,6 +16,7 @@ use crate::{
         GradientPoint, GradientStop, ImagePattern, LinearGradient, MeshGradient, Source,
     },
     geometry::Point,
+    image::{Image, ImageContent, ImageInstanceKey},
     path::{Path, PathSegment},
     target::Viewport,
     tessellation::{
@@ -18,9 +27,9 @@ use crate::{
 };
 
 use super::{
-    image::ImageCache,
+    image::{GpuAlphaMode, ImageCache, VulkanImage},
     presenter::{RenderDevice, RenderTarget},
-    render_image::RenderImage,
+    scratch_image::ScratchImage,
 };
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
@@ -81,12 +90,17 @@ struct ImagePushConstants {
 impl ImagePushConstants {
     fn new(
         pattern: &ImagePattern,
+        alpha_mode: GpuAlphaMode,
         points: [Point; 3],
         image_to_root: Projective2,
         view: CanvasView,
     ) -> Self {
         let width = pattern.image().width() as f32;
         let height = pattern.image().height() as f32;
+        let premultiplied = match alpha_mode {
+            GpuAlphaMode::Straight => 0.0,
+            GpuAlphaMode::Premultiplied => 1.0,
+        };
         let image_to_view = image_to_root.then(view.canvas_to_view);
         Self {
             vertices: points.map(|point| {
@@ -97,7 +111,7 @@ impl ImagePushConstants {
                         image_point.x / width,
                         image_point.y / height,
                         image_point.z,
-                        0.0,
+                        premultiplied,
                     ],
                 }
             }),
@@ -142,7 +156,8 @@ pub struct CanvasRenderer {
     device: RenderDevice,
     pipelines: Option<Pipelines>,
     image_cache: Option<ImageCache>,
-    render_images: Vec<RenderImage>,
+    scratch_images: Vec<ScratchImage>,
+    resolving_images: HashSet<ImageInstanceKey>,
 }
 
 impl CanvasRenderer {
@@ -151,7 +166,8 @@ impl CanvasRenderer {
             device,
             pipelines: None,
             image_cache: None,
-            render_images: Vec::new(),
+            scratch_images: Vec::new(),
+            resolving_images: HashSet::new(),
         }
     }
 
@@ -162,18 +178,173 @@ impl CanvasRenderer {
         canvas: &Canvas,
         view: CanvasView,
     ) -> Result<()> {
+        self.materialize_canvas_images(canvas)?;
         let (image_view, format, extent) = target.surface();
+        self.record_to_image_view(
+            target.command_buffer,
+            image_view,
+            format,
+            extent,
+            viewport,
+            canvas,
+            view,
+            target.clear_color().to_premultiplied_array(),
+        )
+    }
+
+    fn materialize_canvas_image(
+        &mut self,
+        width: u32,
+        height: u32,
+        canvas: &Canvas,
+        view: CanvasView,
+    ) -> Result<Arc<VulkanImage>> {
+        let extent = vk::Extent2D { width, height };
+        let format = vk::Format::R8G8B8A8_SRGB;
+        self.ensure_image_cache()?;
+        let backing = self
+            .image_cache
+            .as_ref()
+            .unwrap()
+            .create_render_target(format, extent)?;
+        let render_device = self.device.clone();
+        let device = render_device.raw();
+        let command_pool = unsafe {
+            device.create_command_pool(
+                &vk::CommandPoolCreateInfo::default()
+                    .flags(vk::CommandPoolCreateFlags::TRANSIENT)
+                    .queue_family_index(self.device.queue_family_index()),
+                None,
+            )?
+        };
+        let result = (|| -> Result<()> {
+            let command_buffer = unsafe {
+                device.allocate_command_buffers(
+                    &vk::CommandBufferAllocateInfo::default()
+                        .command_pool(command_pool)
+                        .level(vk::CommandBufferLevel::PRIMARY)
+                        .command_buffer_count(1),
+                )?[0]
+            };
+            unsafe {
+                device.begin_command_buffer(
+                    command_buffer,
+                    &vk::CommandBufferBeginInfo::default()
+                        .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT),
+                )?;
+                transition_image(
+                    device,
+                    command_buffer,
+                    backing.image,
+                    vk::ImageLayout::UNDEFINED,
+                    vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                    vk::PipelineStageFlags2::NONE,
+                    vk::AccessFlags2::NONE,
+                    vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
+                    vk::AccessFlags2::COLOR_ATTACHMENT_WRITE,
+                );
+            }
+            self.record_to_image_view(
+                command_buffer,
+                backing.view,
+                backing.format,
+                backing.extent,
+                Viewport::new(0.0, 0.0, width as f32, height as f32),
+                canvas,
+                view,
+                [0.0; 4],
+            )?;
+            unsafe {
+                transition_image(
+                    device,
+                    command_buffer,
+                    backing.image,
+                    vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                    vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                    vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
+                    vk::AccessFlags2::COLOR_ATTACHMENT_WRITE,
+                    vk::PipelineStageFlags2::FRAGMENT_SHADER,
+                    vk::AccessFlags2::SHADER_SAMPLED_READ,
+                );
+                device.end_command_buffer(command_buffer)?;
+                let command_buffers = [command_buffer];
+                let submit = vk::SubmitInfo::default().command_buffers(&command_buffers);
+                device.queue_submit(self.device.graphics_queue(), &[submit], vk::Fence::null())?;
+                device.queue_wait_idle(self.device.graphics_queue())?;
+            }
+            Ok(())
+        })();
+        unsafe { device.destroy_command_pool(command_pool, None) };
+        result?;
+        Ok(backing)
+    }
+
+    fn materialize_canvas_images(&mut self, canvas: &Canvas) -> Result<()> {
+        let mut images = Vec::new();
+        collect_canvas_images(canvas, &mut images);
+        for image in images {
+            self.materialize_image(&image)?;
+        }
+        Ok(())
+    }
+
+    fn materialize_image(&mut self, image: &Image) -> Result<()> {
+        self.ensure_image_cache()?;
+        if self.image_cache.as_mut().unwrap().contains(image) {
+            return Ok(());
+        }
+
+        let key = image.instance_key();
+        if !self.resolving_images.insert(key.clone()) {
+            return Err("cyclic Image producer dependency".into());
+        }
+        let result = (|| -> Result<()> {
+            match image.content() {
+                ImageContent::Rgba8(_) => self.image_cache.as_mut().unwrap().ensure_uploaded(image),
+                ImageContent::Canvas { canvas, view } => {
+                    self.materialize_canvas_images(canvas)?;
+                    let backing = self.materialize_canvas_image(
+                        image.width(),
+                        image.height(),
+                        canvas,
+                        *view,
+                    )?;
+                    self.image_cache
+                        .as_mut()
+                        .unwrap()
+                        .insert_rendered(image, backing)
+                }
+            }
+        })();
+        self.resolving_images.remove(&key);
+        result
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn record_to_image_view(
+        &mut self,
+        command_buffer: vk::CommandBuffer,
+        image_view: vk::ImageView,
+        format: vk::Format,
+        extent: vk::Extent2D,
+        viewport: Viewport,
+        canvas: &Canvas,
+        view: CanvasView,
+        clear_color: [f32; 4],
+    ) -> Result<()> {
         let sample_count = preferred_sample_count(&self.device, format);
         let target_region = target_region(viewport, extent);
         self.ensure_image_cache()?;
-        upload_canvas_images(self.image_cache.as_mut().unwrap(), canvas)?;
         self.ensure_pipelines(format, sample_count)?;
-        self.ensure_render_images(format, extent, sample_count, required_render_images(canvas))?;
+        self.ensure_scratch_images(
+            format,
+            extent,
+            sample_count,
+            required_scratch_images(canvas),
+        )?;
         let pipelines = self.pipelines.as_ref().unwrap();
         let image_cache = self.image_cache.as_ref().unwrap();
-        let device = target.device.raw();
-        let command_buffer = target.command_buffer;
-        let clear_color = target.clear_color();
+        let device = self.device.raw();
         let attachment_area = vk::Rect2D {
             offset: vk::Offset2D::default(),
             extent,
@@ -185,7 +356,7 @@ impl CanvasRenderer {
                 command_buffer,
                 pipelines,
                 image_cache,
-                render_images: &self.render_images,
+                scratch_images: &self.scratch_images,
                 attachment_area,
                 target_region,
                 view,
@@ -200,7 +371,7 @@ impl CanvasRenderer {
                 .store_op(vk::AttachmentStoreOp::STORE)
                 .clear_value(vk::ClearValue {
                     color: vk::ClearColorValue {
-                        float32: clear_color.to_premultiplied_array(),
+                        float32: clear_color,
                     },
                 });
             let rendering_info = vk::RenderingInfo::default()
@@ -220,7 +391,7 @@ impl CanvasRenderer {
                 vk::PipelineBindPoint::GRAPHICS,
                 pipelines.present.layout,
                 0,
-                &[self.render_images[canvas_image].descriptor_set()],
+                &[self.scratch_images[canvas_image].descriptor_set()],
                 &[],
             );
             device.cmd_draw(command_buffer, 3, 1, 0, 0);
@@ -254,20 +425,20 @@ impl CanvasRenderer {
         Ok(())
     }
 
-    fn ensure_render_images(
+    fn ensure_scratch_images(
         &mut self,
         format: vk::Format,
         extent: vk::Extent2D,
         sample_count: vk::SampleCountFlags,
         required: usize,
     ) -> Result<()> {
-        if self.render_images.first().is_some_and(|image| {
+        if self.scratch_images.first().is_some_and(|image| {
             image.format != format || image.extent != extent || image.sample_count != sample_count
         }) {
-            self.render_images.clear();
+            self.scratch_images.clear();
         }
-        while self.render_images.len() < required {
-            self.render_images.push(RenderImage::new(
+        while self.scratch_images.len() < required {
+            self.scratch_images.push(ScratchImage::new(
                 self.device.clone(),
                 self.image_cache.as_ref().unwrap(),
                 format,
@@ -300,35 +471,33 @@ impl CanvasRenderer {
     }
 }
 
-fn upload_canvas_images(image_cache: &mut ImageCache, canvas: &Canvas) -> Result<()> {
+fn collect_canvas_images(canvas: &Canvas, images: &mut Vec<Image>) {
     match canvas.node() {
         CanvasNode::Empty => {}
-        CanvasNode::Draw(draw) => upload_draw_images(image_cache, draw)?,
-        CanvasNode::Transform { content, .. } => upload_canvas_images(image_cache, content)?,
+        CanvasNode::Draw(draw) => collect_draw_images(draw, images),
+        CanvasNode::Transform { content, .. } => collect_canvas_images(content, images),
         CanvasNode::Composite {
             backdrop, source, ..
         } => {
-            upload_canvas_images(image_cache, backdrop)?;
-            upload_canvas_images(image_cache, source)?;
+            collect_canvas_images(backdrop, images);
+            collect_canvas_images(source, images);
         }
     }
-    Ok(())
 }
 
-fn upload_draw_images(image_cache: &mut ImageCache, draw: &Draw) -> Result<()> {
-    upload_source_images(image_cache, &draw.source)?;
+fn collect_draw_images(draw: &Draw, images: &mut Vec<Image>) {
+    collect_source_images(&draw.source, images);
     if let CoverageNode::SourceAlpha(source) = draw.coverage.node() {
-        upload_source_images(image_cache, source)?;
+        collect_source_images(source, images);
     }
-    Ok(())
 }
 
-fn upload_source_images(image_cache: &mut ImageCache, source: &Source) -> Result<()> {
+fn collect_source_images(source: &Source, images: &mut Vec<Image>) {
     match source {
         Source::Image(pattern) => {
-            image_cache.get_or_upload(pattern.image())?;
+            images.push(pattern.image().clone());
         }
-        Source::Canvas(canvas) => upload_canvas_images(image_cache, canvas)?,
+        Source::Canvas(canvas) => collect_canvas_images(canvas, images),
         Source::Solid(_)
         | Source::LinearGradient(_)
         | Source::RadialGradient(_)
@@ -337,43 +506,42 @@ fn upload_source_images(image_cache: &mut ImageCache, source: &Source) -> Result
         | Source::AcrossPathGradient(_)
         | Source::MeshGradient(_) => {}
     }
-    Ok(())
 }
 
-fn required_render_images(canvas: &Canvas) -> usize {
-    1 + additional_render_images(canvas)
+fn required_scratch_images(canvas: &Canvas) -> usize {
+    1 + additional_scratch_images(canvas)
 }
 
-fn additional_render_images(canvas: &Canvas) -> usize {
+fn additional_scratch_images(canvas: &Canvas) -> usize {
     match canvas.node() {
         CanvasNode::Empty => 0,
         CanvasNode::Draw(draw) => match &draw.source {
             Source::Canvas(content) => {
-                required_render_images(content)
+                required_scratch_images(content)
                     + match draw.coverage.node() {
                         CoverageNode::All => 0,
                         CoverageNode::Fill { .. } | CoverageNode::Stroke { .. } => 1,
-                        CoverageNode::SourceAlpha(source) => required_source_images(source),
+                        CoverageNode::SourceAlpha(source) => required_source_scratch_images(source),
                     }
             }
             _ => match draw.coverage.node() {
-                CoverageNode::SourceAlpha(source) => 1 + required_source_images(source),
+                CoverageNode::SourceAlpha(source) => 1 + required_source_scratch_images(source),
                 CoverageNode::All | CoverageNode::Fill { .. } | CoverageNode::Stroke { .. } => 0,
             },
         },
-        CanvasNode::Transform { content, .. } => additional_render_images(content),
+        CanvasNode::Transform { content, .. } => additional_scratch_images(content),
         CanvasNode::Composite {
             backdrop,
             source,
             operator,
         } => {
-            additional_render_images(backdrop)
+            additional_scratch_images(backdrop)
                 + if *operator == CompositeOperator::SourceOver
                     && can_render_source_over_directly(source)
                 {
-                    additional_render_images(source)
+                    additional_scratch_images(source)
                 } else {
-                    required_render_images(source)
+                    required_scratch_images(source)
                 }
         }
     }
@@ -392,9 +560,9 @@ fn can_render_source_over_directly(canvas: &Canvas) -> bool {
     }
 }
 
-fn required_source_images(source: &Source) -> usize {
+fn required_source_scratch_images(source: &Source) -> usize {
     match source {
-        Source::Canvas(canvas) => required_render_images(canvas),
+        Source::Canvas(canvas) => required_scratch_images(canvas),
         _ => 1,
     }
 }
@@ -404,7 +572,7 @@ struct CanvasRecorder<'a> {
     command_buffer: vk::CommandBuffer,
     pipelines: &'a Pipelines,
     image_cache: &'a ImageCache,
-    render_images: &'a [RenderImage],
+    scratch_images: &'a [ScratchImage],
     attachment_area: vk::Rect2D,
     target_region: Option<(vk::Viewport, vk::Rect2D)>,
     view: CanvasView,
@@ -447,7 +615,7 @@ impl CanvasRecorder<'_> {
                     self.resume_accumulator(accumulator);
                     self.draw_fullscreen(
                         self.pipelines.composite(*operator),
-                        self.render_images[source_image].descriptor_set(),
+                        self.scratch_images[source_image].descriptor_set(),
                     );
                 }
             }
@@ -484,7 +652,7 @@ impl CanvasRecorder<'_> {
                 self.resume_accumulator(accumulator);
                 self.draw_fullscreen(
                     self.pipelines.composite(CompositeOperator::SourceOver),
-                    self.render_images[content_image].descriptor_set(),
+                    self.scratch_images[content_image].descriptor_set(),
                 );
             }
         }
@@ -519,7 +687,7 @@ impl CanvasRecorder<'_> {
         self.resume_accumulator(accumulator);
         self.draw_fullscreen(
             self.pipelines.composite(CompositeOperator::SourceOver),
-            self.render_images[content_image].descriptor_set(),
+            self.scratch_images[content_image].descriptor_set(),
         );
     }
 
@@ -647,7 +815,13 @@ impl CanvasRecorder<'_> {
                     mesh.vertices[triangle[1] as usize],
                     mesh.vertices[triangle[2] as usize],
                 ];
-                let constants = ImagePushConstants::new(pattern, points, mesh_to_root, self.view);
+                let constants = ImagePushConstants::new(
+                    pattern,
+                    gpu_image.alpha_mode(),
+                    points,
+                    mesh_to_root,
+                    self.view,
+                );
                 self.device.cmd_push_constants(
                     self.command_buffer,
                     self.pipelines.image.layout,
@@ -661,7 +835,7 @@ impl CanvasRecorder<'_> {
     }
 
     fn apply_mask(&self, content: usize, mask: usize) {
-        let content_image = &self.render_images[content];
+        let content_image = &self.scratch_images[content];
         let sampled_destination_access = if content_image.is_multisampled() {
             vk::AccessFlags2::COLOR_ATTACHMENT_WRITE
         } else {
@@ -697,7 +871,7 @@ impl CanvasRecorder<'_> {
         self.begin_accumulator(content, vk::AttachmentLoadOp::LOAD);
         self.draw_fullscreen(
             &self.pipelines.mask,
-            self.render_images[mask].descriptor_set(),
+            self.scratch_images[mask].descriptor_set(),
         );
         self.end_rendering();
         self.transition_to_sampled(content);
@@ -708,7 +882,7 @@ impl CanvasRecorder<'_> {
             transition_image(
                 self.device,
                 self.command_buffer,
-                self.render_images[index].sampled_image(),
+                self.scratch_images[index].sampled_image(),
                 vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
                 vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                 vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
@@ -720,7 +894,7 @@ impl CanvasRecorder<'_> {
     }
 
     fn begin_accumulator(&self, index: usize, load_op: vk::AttachmentLoadOp) {
-        let image = &self.render_images[index];
+        let image = &self.scratch_images[index];
         if load_op == vk::AttachmentLoadOp::CLEAR {
             unsafe {
                 transition_image(
@@ -778,7 +952,7 @@ impl CanvasRecorder<'_> {
             transition_image(
                 self.device,
                 self.command_buffer,
-                self.render_images[index].attachment_image(),
+                self.scratch_images[index].attachment_image(),
                 vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
                 vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
                 vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
@@ -847,7 +1021,7 @@ impl Drop for CanvasRenderer {
         unsafe {
             let _ = self.device.raw().device_wait_idle();
         }
-        self.render_images.clear();
+        self.scratch_images.clear();
         self.destroy_pipelines();
         self.image_cache = None;
     }
@@ -1857,6 +2031,62 @@ mod tests {
     use crate::path::{Path, Subpath};
 
     #[test]
+    fn image_is_a_raster_boundary_while_canvas_source_stays_semantic() {
+        let pixels = Image::from_rgba8(1, 1, vec![255; 4]).unwrap();
+        let producer = Canvas::draw(pixels.clone(), Coverage::all());
+        let view = CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(1.0, 1.0)).unwrap();
+        let image = Image::from_canvas(1, 1, producer.clone(), view).unwrap();
+
+        let mut image_dependencies = Vec::new();
+        collect_canvas_images(
+            &Canvas::draw(image.clone(), Coverage::all()),
+            &mut image_dependencies,
+        );
+        assert_eq!(image_dependencies.len(), 1);
+        assert_eq!(image_dependencies[0].instance_key(), image.instance_key());
+
+        let mut canvas_dependencies = Vec::new();
+        collect_canvas_images(
+            &Canvas::draw(producer, Coverage::all()),
+            &mut canvas_dependencies,
+        );
+        assert_eq!(canvas_dependencies.len(), 1);
+        assert_eq!(canvas_dependencies[0].instance_key(), pixels.instance_key());
+    }
+
+    #[test]
+    fn image_sampling_respects_the_gpu_images_alpha_representation() {
+        let straight = Image::from_rgba8(1, 1, vec![255, 128, 64, 128]).unwrap();
+        let premultiplied = Image::from_canvas(
+            1,
+            1,
+            Canvas::empty(),
+            CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(1.0, 1.0)).unwrap(),
+        )
+        .unwrap();
+        let points = [Point::new(0.0, 0.0); 3];
+        let view = CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(1.0, 1.0)).unwrap();
+
+        let straight_constants = ImagePushConstants::new(
+            &ImagePattern::new(straight),
+            GpuAlphaMode::Straight,
+            points,
+            Projective2::IDENTITY,
+            view,
+        );
+        let premultiplied_constants = ImagePushConstants::new(
+            &ImagePattern::new(premultiplied),
+            GpuAlphaMode::Premultiplied,
+            points,
+            Projective2::IDENTITY,
+            view,
+        );
+
+        assert_eq!(straight_constants.vertices[0].uv[3], 0.0);
+        assert_eq!(premultiplied_constants.vertices[0].uv[3], 1.0);
+    }
+
+    #[test]
     fn four_sample_msaa_is_preferred_with_a_single_sample_fallback() {
         assert_eq!(
             choose_sample_count(
@@ -1900,7 +2130,7 @@ mod tests {
             .transformed(Projective2::IDENTITY);
         let root = Canvas::empty().composite(masked, CompositeOperator::SourceOver);
 
-        assert_eq!(required_render_images(&root), 3);
+        assert_eq!(required_scratch_images(&root), 3);
     }
 
     #[test]
@@ -1910,8 +2140,8 @@ mod tests {
         let root = Canvas::empty().composite(grouped.clone(), CompositeOperator::SourceOver);
 
         assert!(!can_render_source_over_directly(&grouped));
-        assert_eq!(required_render_images(&grouped), 2);
-        assert_eq!(required_render_images(&root), 3);
+        assert_eq!(required_scratch_images(&grouped), 2);
+        assert_eq!(required_scratch_images(&root), 3);
     }
 
     #[test]

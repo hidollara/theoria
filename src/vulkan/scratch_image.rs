@@ -15,9 +15,9 @@ struct ImageAllocation {
     memory: vk::DeviceMemory,
 }
 
-/// A reusable Canvas result. Multisampled rendering is resolved into the
-/// single-sample image exposed through `descriptor_set`.
-pub(super) struct RenderImage {
+/// A reusable renderer-owned intermediate. Multisampled rendering is resolved
+/// into the single-sample image exposed through `descriptor_set`.
+pub(super) struct ScratchImage {
     device: RenderDevice,
     color: ImageAllocation,
     resolve: Option<ImageAllocation>,
@@ -27,7 +27,7 @@ pub(super) struct RenderImage {
     pub(super) sample_count: vk::SampleCountFlags,
 }
 
-impl RenderImage {
+impl ScratchImage {
     pub(super) fn new(
         device: RenderDevice,
         image_cache: &ImageCache,
@@ -114,7 +114,7 @@ impl RenderImage {
     }
 }
 
-impl Drop for RenderImage {
+impl Drop for ScratchImage {
     fn drop(&mut self) {
         self.binding = None;
         unsafe {
