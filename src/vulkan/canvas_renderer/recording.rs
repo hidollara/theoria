@@ -2,9 +2,10 @@ use ash::vk;
 
 use crate::{
     canvas::{
-        BlendMode, Canvas, CanvasNode, CanvasView, Color, Composite, Coverage, CoverageNode, Draw,
-        ImagePattern, Source,
+        BlendMode, Canvas, CanvasNode, CanvasView, ColorField, Composite, Coverage, CoverageNode,
+        Draw, ImagePattern,
     },
+    color::Color,
     geometry::Point,
     path::Path,
     tessellation::{
@@ -118,13 +119,13 @@ impl CanvasRecorder<'_> {
             return;
         }
 
-        if let Source::Canvas(content) = &draw.source {
+        if let ColorField::Canvas(content) = &draw.source {
             self.render_canvas_source(accumulator, content, &draw.coverage, draw_to_root);
             return;
         }
 
         match draw.coverage.node() {
-            CoverageNode::All => self.render_unbounded_source(&draw.source, draw_to_root),
+            CoverageNode::All => self.render_unbounded_color_field(&draw.source, draw_to_root),
             CoverageNode::Fill { path, rule } => {
                 let tolerance = self.path_tolerance(path, draw_to_root);
                 let mesh = tessellate_fill_with_tolerance(path, *rule, tolerance);
@@ -135,10 +136,10 @@ impl CanvasRecorder<'_> {
                 let mesh = tessellate_stroke_with_tolerance(path, style, tolerance);
                 self.render_mesh(&mesh, &draw.source, draw_to_root);
             }
-            CoverageNode::SourceAlpha(coverage_source) => {
+            CoverageNode::AlphaOf(coverage_source) => {
                 self.end_rendering();
-                let content_image = self.evaluate_source(&draw.source, draw_to_root);
-                let mask_image = self.evaluate_source(coverage_source, draw_to_root);
+                let content_image = self.evaluate_color_field(&draw.source, draw_to_root);
+                let mask_image = self.evaluate_color_field(coverage_source, draw_to_root);
                 self.apply_mask(content_image, mask_image);
                 self.resume_accumulator(accumulator);
                 self.draw_fullscreen(
@@ -208,7 +209,7 @@ impl CanvasRecorder<'_> {
         let content_image = self.evaluate(content, draw_to_root);
         let mask_image = match coverage.node() {
             CoverageNode::All => None,
-            CoverageNode::SourceAlpha(source) => Some(self.evaluate_source(source, draw_to_root)),
+            CoverageNode::AlphaOf(source) => Some(self.evaluate_color_field(source, draw_to_root)),
             CoverageNode::Fill { path, rule } => {
                 let tolerance = self.path_tolerance(path, draw_to_root);
                 let mesh = tessellate_fill_with_tolerance(path, *rule, tolerance);
@@ -230,21 +231,21 @@ impl CanvasRecorder<'_> {
         );
     }
 
-    fn evaluate_source(&mut self, source: &Source, source_to_root: Projective2) -> usize {
-        if let Source::Canvas(canvas) = source {
+    fn evaluate_color_field(&mut self, source: &ColorField, source_to_root: Projective2) -> usize {
+        if let ColorField::Canvas(canvas) = source {
             return self.evaluate(canvas, source_to_root);
         }
 
         let image = self.next_image;
         self.next_image += 1;
         self.begin_accumulator(image, vk::AttachmentLoadOp::CLEAR);
-        self.render_unbounded_source(source, source_to_root);
+        self.render_unbounded_color_field(source, source_to_root);
         self.end_rendering();
         self.transition_to_sampled(image);
         image
     }
 
-    fn render_unbounded_source(&self, source: &Source, source_to_root: Projective2) {
+    fn render_unbounded_color_field(&self, source: &ColorField, source_to_root: Projective2) {
         let source_to_view = source_to_root.then(self.view.canvas_to_view);
         if let Some(view_to_source) = source_to_view.try_inverse() {
             let corners = [
@@ -276,7 +277,7 @@ impl CanvasRecorder<'_> {
         self.begin_accumulator(image, vk::AttachmentLoadOp::CLEAR);
         self.render_mesh(
             mesh,
-            &Source::Solid(Color::rgb8(255, 255, 255)),
+            &ColorField::Solid(Color::rgb8(255, 255, 255)),
             mask_to_root,
         );
         self.end_rendering();
@@ -284,17 +285,17 @@ impl CanvasRecorder<'_> {
         image
     }
 
-    fn render_mesh(&self, mesh: &Mesh, source: &Source, mesh_to_root: Projective2) {
-        if let Source::Image(pattern) = source {
+    fn render_mesh(&self, mesh: &Mesh, source: &ColorField, mesh_to_root: Projective2) {
+        if let ColorField::Image(pattern) = source {
             self.render_image_mesh(mesh, pattern, mesh_to_root);
             return;
         }
         let path_sampler = match source {
-            Source::AlongPathGradient(gradient) => Some(PathSampler::new(
+            ColorField::AlongPathGradient(gradient) => Some(PathSampler::new(
                 gradient.path(),
                 self.path_tolerance(gradient.path(), mesh_to_root),
             )),
-            Source::AcrossPathGradient(gradient) => Some(PathSampler::new(
+            ColorField::AcrossPathGradient(gradient) => Some(PathSampler::new(
                 gradient.path(),
                 self.path_tolerance(gradient.path(), mesh_to_root),
             )),

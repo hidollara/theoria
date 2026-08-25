@@ -1,9 +1,10 @@
 use std::borrow::Borrow;
 
 use crate::{
-    canvas::{DashPattern, FillRule, LineCap, LineJoin, StrokeStyle},
     geometry::Point,
-    path::{ArcSize, ArcSweep, Path, PathSegment},
+    path::{
+        ArcSize, ArcSweep, DashPattern, FillRule, LineCap, LineJoin, Path, PathSegment, StrokeStyle,
+    },
 };
 use lyon_tessellation::{
     FillOptions, FillRule as LyonFillRule, FillTessellator, LineCap as LyonLineCap,

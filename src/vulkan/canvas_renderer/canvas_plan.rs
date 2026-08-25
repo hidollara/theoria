@@ -1,5 +1,5 @@
 use crate::{
-    canvas::{BlendMode, Canvas, CanvasNode, Composite, CoverageNode, Draw, Source},
+    canvas::{BlendMode, Canvas, CanvasNode, ColorField, Composite, CoverageNode, Draw},
     image::Image,
 };
 
@@ -18,23 +18,23 @@ pub(super) fn collect_images(canvas: &Canvas, images: &mut Vec<Image>) {
 }
 
 fn collect_draw_images(draw: &Draw, images: &mut Vec<Image>) {
-    collect_source_images(&draw.source, images);
-    if let CoverageNode::SourceAlpha(source) = draw.coverage.node() {
-        collect_source_images(source, images);
+    collect_color_field_images(&draw.source, images);
+    if let CoverageNode::AlphaOf(source) = draw.coverage.node() {
+        collect_color_field_images(source, images);
     }
 }
 
-fn collect_source_images(source: &Source, images: &mut Vec<Image>) {
+fn collect_color_field_images(source: &ColorField, images: &mut Vec<Image>) {
     match source {
-        Source::Image(pattern) => images.push(pattern.image().clone()),
-        Source::Canvas(canvas) => collect_images(canvas, images),
-        Source::Solid(_)
-        | Source::LinearGradient(_)
-        | Source::RadialGradient(_)
-        | Source::ConicGradient(_)
-        | Source::AlongPathGradient(_)
-        | Source::AcrossPathGradient(_)
-        | Source::MeshGradient(_) => {}
+        ColorField::Image(pattern) => images.push(pattern.image().clone()),
+        ColorField::Canvas(canvas) => collect_images(canvas, images),
+        ColorField::Solid(_)
+        | ColorField::LinearGradient(_)
+        | ColorField::RadialGradient(_)
+        | ColorField::ConicGradient(_)
+        | ColorField::AlongPathGradient(_)
+        | ColorField::AcrossPathGradient(_)
+        | ColorField::MeshGradient(_) => {}
     }
 }
 
@@ -47,18 +47,20 @@ fn additional_scratch_images(canvas: &Canvas) -> usize {
         CanvasNode::Empty => 0,
         CanvasNode::Draw(draw) => {
             let source_work = match &draw.source {
-                Source::Canvas(content) => {
+                ColorField::Canvas(content) => {
                     required_scratch_images(content)
                         + match draw.coverage.node() {
                             CoverageNode::All => 0,
                             CoverageNode::Fill { .. } | CoverageNode::Stroke { .. } => 1,
-                            CoverageNode::SourceAlpha(source) => {
-                                required_source_scratch_images(source)
+                            CoverageNode::AlphaOf(source) => {
+                                required_color_field_scratch_images(source)
                             }
                         }
                 }
                 _ => match draw.coverage.node() {
-                    CoverageNode::SourceAlpha(source) => 1 + required_source_scratch_images(source),
+                    CoverageNode::AlphaOf(source) => {
+                        1 + required_color_field_scratch_images(source)
+                    }
                     CoverageNode::All | CoverageNode::Fill { .. } | CoverageNode::Stroke { .. } => {
                         0
                     }
@@ -109,9 +111,9 @@ pub(super) fn can_record_directly(canvas: &Canvas) -> bool {
     }
 }
 
-fn required_source_scratch_images(source: &Source) -> usize {
+fn required_color_field_scratch_images(source: &ColorField) -> usize {
     match source {
-        Source::Canvas(canvas) => required_scratch_images(canvas),
+        ColorField::Canvas(canvas) => required_scratch_images(canvas),
         _ => 1,
     }
 }

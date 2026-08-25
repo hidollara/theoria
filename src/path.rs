@@ -2,6 +2,12 @@ use std::sync::Arc;
 
 use crate::{geometry::Point, math::Vector2};
 
+mod style;
+
+pub use style::{
+    DashPattern, DashPatternError, FillRule, LineCap, LineJoin, StrokeStyle, StrokeStyleError,
+};
+
 /// Selects the shorter or longer of the two elliptical arcs for a sweep direction.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ArcSize {

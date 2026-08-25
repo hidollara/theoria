@@ -1,5 +1,5 @@
 use crate::{
-    canvas::{GradientPoint, GradientStop, LinearGradient, MeshGradient, Source},
+    canvas::{ColorField, GradientPoint, GradientStop, LinearGradient, MeshGradient},
     geometry::Point,
     path::{Path, PathSegment},
     tessellation::{DEFAULT_TESSELLATION_TOLERANCE, flatten_subpaths},
@@ -22,13 +22,13 @@ struct GradientVertex {
 }
 
 #[cfg(test)]
-pub(super) fn paint_triangle(points: [Point; 3], source: &Source) -> Vec<PaintedTriangle> {
+pub(super) fn paint_triangle(points: [Point; 3], source: &ColorField) -> Vec<PaintedTriangle> {
     let path_sampler = match source {
-        Source::AlongPathGradient(gradient) => Some(PathSampler::new(
+        ColorField::AlongPathGradient(gradient) => Some(PathSampler::new(
             gradient.path(),
             DEFAULT_TESSELLATION_TOLERANCE,
         )),
-        Source::AcrossPathGradient(gradient) => Some(PathSampler::new(
+        ColorField::AcrossPathGradient(gradient) => Some(PathSampler::new(
             gradient.path(),
             DEFAULT_TESSELLATION_TOLERANCE,
         )),
@@ -39,34 +39,34 @@ pub(super) fn paint_triangle(points: [Point; 3], source: &Source) -> Vec<Painted
 
 pub(super) fn paint_triangle_prepared(
     points: [Point; 3],
-    source: &Source,
+    source: &ColorField,
     path_sampler: Option<&PathSampler>,
 ) -> Vec<PaintedTriangle> {
     match source {
-        Source::Solid(color) => vec![PaintedTriangle {
+        ColorField::Solid(color) => vec![PaintedTriangle {
             points,
             colors: [color.to_premultiplied_array(); 3],
         }],
-        Source::LinearGradient(gradient) => paint_linear_gradient(points, gradient),
-        Source::RadialGradient(gradient) => paint_sampled_gradient(points, |point| {
+        ColorField::LinearGradient(gradient) => paint_linear_gradient(points, gradient),
+        ColorField::RadialGradient(gradient) => paint_sampled_gradient(points, |point| {
             let offset = (point - gradient.center()).length() / gradient.radius();
             evaluate_gradient_stops(gradient.stops(), offset)
         }),
-        Source::ConicGradient(gradient) => paint_sampled_gradient(points, |point| {
+        ColorField::ConicGradient(gradient) => paint_sampled_gradient(points, |point| {
             let delta = point - gradient.center();
             let angle = delta.y.atan2(delta.x);
             let offset = (angle - gradient.start_angle()).rem_euclid(std::f32::consts::TAU)
                 / std::f32::consts::TAU;
             evaluate_gradient_stops(gradient.stops(), offset)
         }),
-        Source::AlongPathGradient(gradient) => {
+        ColorField::AlongPathGradient(gradient) => {
             let sampler = path_sampler.expect("along-Path sources prepare their Path once");
             paint_sampled_gradient(points, |point| {
                 let offset = sampler.nearest_offset(point).unwrap_or(0.0);
                 evaluate_gradient_stops(gradient.ramp().stops(), offset)
             })
         }
-        Source::AcrossPathGradient(gradient) => {
+        ColorField::AcrossPathGradient(gradient) => {
             let sampler = path_sampler.expect("across-Path sources prepare their Path once");
             paint_sampled_gradient(points, |point| {
                 let distance = sampler
@@ -77,9 +77,13 @@ pub(super) fn paint_triangle_prepared(
                 evaluate_gradient_stops(gradient.ramp().stops(), offset)
             })
         }
-        Source::MeshGradient(gradient) => paint_mesh_gradient(points, gradient),
-        Source::Image(_) => unreachable!("image sources use the sampled-image pipeline"),
-        Source::Canvas(_) => unreachable!("Canvas sources are evaluated before mesh drawing"),
+        ColorField::MeshGradient(gradient) => paint_mesh_gradient(points, gradient),
+        ColorField::Image(_) => {
+            unreachable!("image color fields use the sampled-image pipeline")
+        }
+        ColorField::Canvas(_) => {
+            unreachable!("Canvas color fields are evaluated before mesh drawing")
+        }
     }
 }
 

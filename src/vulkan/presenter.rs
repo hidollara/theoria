@@ -2,7 +2,7 @@ use std::{error::Error, sync::Arc};
 
 use ash::{khr, vk};
 
-use crate::{canvas::Color, target::PresentationTarget, window::WindowSize};
+use crate::{color::Color, target::PresentationTarget, window::WindowSize};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 

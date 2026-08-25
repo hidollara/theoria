@@ -1,4 +1,5 @@
 pub mod canvas;
+pub mod color;
 pub mod geometry;
 pub mod image;
 pub mod math;
@@ -10,15 +11,17 @@ mod vulkan;
 mod window;
 
 use canvas::{
-    AcrossPathGradient, AlongPathGradient, BlendMode, Canvas, CanvasView, Color, ColorRamp,
-    Composite, CompositeOperator, ConicGradient, Coverage, DashPattern, FillRule, GradientPoint,
-    GradientStop, ImageExtend, ImagePattern, LineCap, LineJoin, LinearGradient, MeshGradient,
-    RadialGradient, StrokeStyle,
+    AcrossPathGradient, AlongPathGradient, BlendMode, Canvas, CanvasView, ColorRamp, Composite,
+    ConicGradient, Coverage, GradientPoint, GradientStop, ImageExtend, ImagePattern,
+    LinearGradient, MeshGradient, RadialGradient,
 };
+use color::Color;
 use geometry::Point;
 use image::Image;
 use math::Vector2;
-use path::{ArcSize, ArcSweep, Path, Subpath};
+use path::{
+    ArcSize, ArcSweep, DashPattern, FillRule, LineCap, LineJoin, Path, StrokeStyle, Subpath,
+};
 use target::Viewport;
 use transform::Affine2;
 use vulkan::{CanvasRenderer, Presenter};
@@ -100,7 +103,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ])),
                 );
                 let masked_content = Canvas::draw(
-                    image_layer.composite(linear_layer, CompositeOperator::SourceOver),
+                    image_layer.composite(linear_layer, Composite::SourceOver),
                     Coverage::from_alpha(coverage_canvas),
                 );
                 let mesh_layer = Canvas::draw(
@@ -217,9 +220,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let content = masked_content
                     .blend_composite(mesh_layer, BlendMode::Multiply, Composite::SourceOver)
                     .composite(radial_layer, Composite::Plus)
-                    .composite(conic_layer, CompositeOperator::SourceOver)
-                    .composite(across_layer, CompositeOperator::DestinationOver)
-                    .composite(stroke_layer, CompositeOperator::SourceOver);
+                    .composite(conic_layer, Composite::SourceOver)
+                    .composite(across_layer, Composite::DestinationOver)
+                    .composite(stroke_layer, Composite::SourceOver);
                 let canvas = content;
                 // Deliberately use a non-parallelogram Canvas region here so
                 // the sample exercises the projective path all the way to the

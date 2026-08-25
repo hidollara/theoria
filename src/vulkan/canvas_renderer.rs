@@ -456,15 +456,16 @@ mod tests {
     use super::super::image::GpuAlphaMode;
     use super::*;
     use crate::canvas::{
-        Color, Composite, CompositeOperator, ConicGradient, Coverage, GradientPoint, GradientStop,
-        ImagePattern, LinearGradient, MeshGradient, RadialGradient, Source,
+        ColorField, Composite, ConicGradient, Coverage, GradientPoint, GradientStop, ImagePattern,
+        LinearGradient, MeshGradient, RadialGradient,
     };
+    use crate::color::Color;
     use crate::geometry::Point;
     use crate::path::{Path, Subpath};
     use crate::tessellation::DEFAULT_TESSELLATION_TOLERANCE;
 
     #[test]
-    fn image_is_a_raster_boundary_while_canvas_source_stays_semantic() {
+    fn image_is_a_raster_boundary_while_canvas_color_field_stays_semantic() {
         let pixels = Image::from_rgba8(1, 1, vec![255; 4]).unwrap();
         let producer = Canvas::draw(pixels.clone(), Coverage::all());
         let view = CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(1.0, 1.0)).unwrap();
@@ -561,7 +562,7 @@ mod tests {
     fn only_coverage_boundaries_reserve_independent_results() {
         let masked = Canvas::draw(Canvas::empty(), Coverage::from_alpha(Canvas::empty()))
             .transformed(Projective2::IDENTITY);
-        let root = Canvas::empty().composite(masked, CompositeOperator::SourceOver);
+        let root = Canvas::empty().composite(masked, Composite::SourceOver);
 
         assert_eq!(required_scratch_images(&root), 3);
     }
@@ -569,8 +570,8 @@ mod tests {
     #[test]
     fn non_source_over_composites_create_group_boundaries() {
         let leaf = Canvas::draw(Color::rgb8(255, 255, 255), Coverage::all());
-        let grouped = leaf.clone().composite(leaf, CompositeOperator::SourceIn);
-        let root = Canvas::empty().composite(grouped.clone(), CompositeOperator::SourceOver);
+        let grouped = leaf.clone().composite(leaf, Composite::SourceIn);
+        let root = Canvas::empty().composite(grouped.clone(), Composite::SourceOver);
 
         assert!(!can_record_directly(&grouped));
         assert_eq!(required_scratch_images(&grouped), 2);
@@ -584,7 +585,7 @@ mod tests {
         let blended = backdrop.blend_composite(
             source,
             crate::canvas::BlendMode::Multiply,
-            CompositeOperator::SourceOver,
+            Composite::SourceOver,
         );
 
         assert!(!can_record_directly(&blended));
@@ -601,34 +602,28 @@ mod tests {
         let one_minus_destination_alpha = vk::BlendFactor::ONE_MINUS_DST_ALPHA;
 
         let expected = [
-            (CompositeOperator::Clear, (zero, zero)),
-            (CompositeOperator::Copy, (one, zero)),
-            (CompositeOperator::Destination, (zero, one)),
-            (CompositeOperator::SourceOver, (one, one_minus_source_alpha)),
+            (Composite::Clear, (zero, zero)),
+            (Composite::Copy, (one, zero)),
+            (Composite::Destination, (zero, one)),
+            (Composite::SourceOver, (one, one_minus_source_alpha)),
             (
-                CompositeOperator::DestinationOver,
+                Composite::DestinationOver,
                 (one_minus_destination_alpha, one),
             ),
-            (CompositeOperator::SourceIn, (destination_alpha, zero)),
-            (CompositeOperator::DestinationIn, (zero, source_alpha)),
+            (Composite::SourceIn, (destination_alpha, zero)),
+            (Composite::DestinationIn, (zero, source_alpha)),
+            (Composite::SourceOut, (one_minus_destination_alpha, zero)),
+            (Composite::DestinationOut, (zero, one_minus_source_alpha)),
             (
-                CompositeOperator::SourceOut,
-                (one_minus_destination_alpha, zero),
-            ),
-            (
-                CompositeOperator::DestinationOut,
-                (zero, one_minus_source_alpha),
-            ),
-            (
-                CompositeOperator::SourceAtop,
+                Composite::SourceAtop,
                 (destination_alpha, one_minus_source_alpha),
             ),
             (
-                CompositeOperator::DestinationAtop,
+                Composite::DestinationAtop,
                 (one_minus_destination_alpha, source_alpha),
             ),
             (
-                CompositeOperator::Xor,
+                Composite::Xor,
                 (one_minus_destination_alpha, one_minus_source_alpha),
             ),
         ];
@@ -744,7 +739,7 @@ mod tests {
                 Point::new(10.0, 0.0),
                 Point::new(0.0, 10.0),
             ],
-            &Source::LinearGradient(gradient),
+            &ColorField::LinearGradient(gradient),
         );
 
         assert!(triangles.len() > 1);
@@ -787,7 +782,7 @@ mod tests {
                 Point::new(-2.0, 0.0),
                 Point::new(-10.0, 8.0),
             ],
-            &Source::LinearGradient(gradient),
+            &ColorField::LinearGradient(gradient),
         );
 
         assert_eq!(triangles.len(), 1);
@@ -810,7 +805,7 @@ mod tests {
             GradientPoint::new(positions[index], colors[index])
         }))
         .unwrap();
-        let triangles = paint_triangle(positions, &Source::MeshGradient(gradient));
+        let triangles = paint_triangle(positions, &ColorField::MeshGradient(gradient));
 
         assert_eq!(triangles.len(), 1);
         for (point, color) in positions.into_iter().zip(colors) {
@@ -837,7 +832,7 @@ mod tests {
                 Point::new(20.0, -10.0),
                 Point::new(-10.0, 20.0),
             ],
-            &Source::MeshGradient(gradient),
+            &ColorField::MeshGradient(gradient),
         );
 
         assert!(!triangles.is_empty());
@@ -870,7 +865,7 @@ mod tests {
                 Point::new(10.0, 0.0),
                 Point::new(0.0, 10.0),
             ],
-            &Source::RadialGradient(gradient),
+            &ColorField::RadialGradient(gradient),
         );
 
         assert!(triangles.len() > 16);
@@ -915,7 +910,7 @@ mod tests {
                 Point::new(-10.0, 0.0),
                 Point::new(0.0, 10.0),
             ],
-            &Source::ConicGradient(gradient),
+            &ColorField::ConicGradient(gradient),
         );
 
         assert!(triangles.len() > 16);
