@@ -10,10 +10,10 @@ use windows::{
             WindowsAndMessaging::{
                 CREATESTRUCTW, CS_HREDRAW, CS_OWNDC, CS_VREDRAW, CW_USEDEFAULT, CreateWindowExW,
                 DefWindowProcW, DestroyWindow, DispatchMessageW, GWLP_USERDATA, GetMessageW,
-                GetWindowLongPtrW, MSG, PostQuitMessage, RegisterClassExW, SW_SHOW,
-                SetWindowLongPtrW, ShowWindow, TranslateMessage, WINDOW_EX_STYLE, WM_CLOSE,
-                WM_DESTROY, WM_ERASEBKGND, WM_NCCREATE, WM_PAINT, WM_SIZE, WNDCLASSEXW,
-                WS_OVERLAPPEDWINDOW, WS_VISIBLE,
+                GetWindowLongPtrW, MSG, PM_REMOVE, PeekMessageW, PostQuitMessage, RegisterClassExW,
+                SW_SHOW, SetWindowLongPtrW, ShowWindow, TranslateMessage, WINDOW_EX_STYLE,
+                WM_CLOSE, WM_DESTROY, WM_ERASEBKGND, WM_NCCREATE, WM_PAINT, WM_QUIT, WM_SIZE,
+                WNDCLASSEXW, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
             },
         },
     },
@@ -31,6 +31,34 @@ pub struct WindowSize {
 struct WindowState {
     size: WindowSize,
     events: VecDeque<WindowEvent>,
+}
+
+impl WindowState {
+    fn request_redraw(&mut self) {
+        if !self.events.contains(&WindowEvent::RedrawRequested) {
+            self.events.push_back(WindowEvent::RedrawRequested);
+        }
+    }
+
+    fn resize(&mut self, size: WindowSize) {
+        self.size = size;
+
+        // A renderer only needs the newest surface size. Keep the resize ahead
+        // of its redraw so stale intermediate window sizes cannot build up
+        // while an expensive frame is being prepared.
+        self.events
+            .retain(|event| *event != WindowEvent::RedrawRequested);
+        if let Some(event) = self
+            .events
+            .iter_mut()
+            .find(|event| matches!(event, WindowEvent::Resized(_)))
+        {
+            *event = WindowEvent::Resized(size);
+        } else {
+            self.events.push_back(WindowEvent::Resized(size));
+        }
+        self.request_redraw();
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -68,7 +96,7 @@ impl Window {
 
             let mut state = Box::new(WindowState {
                 size: WindowSize { width, height },
-                events: VecDeque::from([WindowEvent::RedrawRequested]),
+                events: VecDeque::new(),
             });
             let state_ptr = (&mut *state as *mut WindowState).cast::<c_void>();
 
@@ -87,6 +115,7 @@ impl Window {
                 Some(state_ptr.cast_const()),
             )?;
             let _ = ShowWindow(hwnd, SW_SHOW);
+            state.request_redraw();
 
             Ok(Self {
                 hwnd,
@@ -108,11 +137,22 @@ impl Window {
     pub fn next_event(&mut self) -> Result<Option<WindowEvent>> {
         unsafe {
             loop {
+                // Drain the native queue before returning semantic work. This
+                // lets resize/paint bursts collapse into one redraw instead of
+                // blocking message dispatch for one expensive frame each.
+                let mut message = MSG::default();
+                while PeekMessageW(&mut message, None, 0, 0, PM_REMOVE).as_bool() {
+                    if message.message == WM_QUIT {
+                        return Ok(None);
+                    }
+                    let _ = TranslateMessage(&message);
+                    DispatchMessageW(&message);
+                }
+
                 if let Some(event) = self.state.events.pop_front() {
                     return Ok(Some(event));
                 }
 
-                let mut message = MSG::default();
                 let result = GetMessageW(&mut message, None, 0, 0).0;
                 if result == -1 {
                     return Err(Error::from_thread());
@@ -155,18 +195,16 @@ unsafe extern "system" fn window_proc(
         WM_SIZE => {
             if let Some(state) = state {
                 let packed = lparam.0 as u32;
-                state.size = WindowSize {
+                state.resize(WindowSize {
                     width: packed & 0xffff,
                     height: packed >> 16,
-                };
-                state.events.push_back(WindowEvent::Resized(state.size));
-                state.events.push_back(WindowEvent::RedrawRequested);
+                });
             }
             LRESULT(0)
         }
         WM_PAINT => {
             if let Some(state) = state {
-                state.events.push_back(WindowEvent::RedrawRequested);
+                state.request_redraw();
             }
             let mut paint = PAINTSTRUCT::default();
             unsafe {
@@ -187,5 +225,56 @@ unsafe extern "system" fn window_proc(
             LRESULT(0)
         }
         _ => unsafe { DefWindowProcW(hwnd, message, wparam, lparam) },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn redraw_requests_are_coalesced() {
+        let mut state = WindowState {
+            size: WindowSize {
+                width: 100,
+                height: 100,
+            },
+            events: VecDeque::new(),
+        };
+
+        state.request_redraw();
+        state.request_redraw();
+
+        assert_eq!(state.events, VecDeque::from([WindowEvent::RedrawRequested]));
+    }
+
+    #[test]
+    fn resize_bursts_keep_only_the_latest_size_and_one_redraw() {
+        let mut state = WindowState {
+            size: WindowSize {
+                width: 100,
+                height: 100,
+            },
+            events: VecDeque::from([WindowEvent::RedrawRequested]),
+        };
+
+        state.resize(WindowSize {
+            width: 200,
+            height: 150,
+        });
+        state.resize(WindowSize {
+            width: 320,
+            height: 240,
+        });
+
+        assert_eq!(state.size.width, 320);
+        assert_eq!(state.size.height, 240);
+        assert_eq!(
+            state.events,
+            VecDeque::from([
+                WindowEvent::Resized(state.size),
+                WindowEvent::RedrawRequested,
+            ])
+        );
     }
 }
