@@ -640,6 +640,69 @@ fn radial_and_conic_gradients_keep_their_canvas_coordinates() {
 }
 
 #[test]
+fn gradients_retain_extended_color_line_geometry() {
+    let stops = [
+        GradientStop::new(0.0, Color::rgb8(255, 255, 255)).unwrap(),
+        GradientStop::new(1.0, Color::rgb8(0, 0, 0)).unwrap(),
+    ];
+    let radial = RadialGradient::between_circles(
+        Point::new(1.0, 2.0),
+        3.0,
+        Point::new(8.0, 9.0),
+        12.0,
+        stops,
+    )
+    .unwrap()
+    .with_extend(GradientExtend::Reflect);
+    let conic = ConicGradient::sweeping(Point::new(4.0, 5.0), -0.5, 1.25, stops)
+        .unwrap()
+        .with_extend(GradientExtend::Repeat);
+
+    assert_eq!(radial.start_center(), Point::new(1.0, 2.0));
+    assert_eq!(radial.start_radius(), 3.0);
+    assert_eq!(radial.end_center(), Point::new(8.0, 9.0));
+    assert_eq!(radial.end_radius(), 12.0);
+    assert_eq!(radial.extend(), GradientExtend::Reflect);
+    assert_eq!(conic.end_angle(), 1.25);
+    assert_eq!(conic.extend(), GradientExtend::Repeat);
+}
+
+#[test]
+fn two_circle_radial_gradient_preserves_signed_radii() {
+    let stops = [
+        GradientStop::new(0.0, Color::rgb8(255, 255, 255)).unwrap(),
+        GradientStop::new(1.0, Color::rgb8(0, 0, 0)).unwrap(),
+    ];
+    let gradient = RadialGradient::between_circles(
+        Point::new(1.0, 2.0),
+        -3.0,
+        Point::new(8.0, 9.0),
+        12.0,
+        stops,
+    )
+    .unwrap();
+
+    assert_eq!(gradient.start_radius(), -3.0);
+    assert_eq!(gradient.end_radius(), 12.0);
+}
+
+#[test]
+fn degenerate_gradients_remain_representable() {
+    let stops = [
+        GradientStop::new(0.0, Color::rgb8(255, 255, 255)).unwrap(),
+        GradientStop::new(1.0, Color::rgb8(0, 0, 0)).unwrap(),
+    ];
+    let circle = Point::new(1.0, 2.0);
+
+    let radial = RadialGradient::between_circles(circle, 3.0, circle, 3.0, stops).unwrap();
+    let conic = ConicGradient::sweeping(circle, 0.5, 0.5, stops).unwrap();
+
+    assert_eq!(radial.start_center(), radial.end_center());
+    assert_eq!(radial.start_radius(), radial.end_radius());
+    assert_eq!(conic.start_angle(), conic.end_angle());
+}
+
+#[test]
 fn radial_and_conic_gradients_reject_invalid_geometry() {
     let stops = [
         GradientStop::new(0.0, Color::rgb8(255, 255, 255)).unwrap(),

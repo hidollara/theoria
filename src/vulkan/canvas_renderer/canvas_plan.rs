@@ -46,6 +46,16 @@ fn additional_scratch_images(canvas: &Canvas) -> usize {
     match canvas.node() {
         CanvasNode::Empty => 0,
         CanvasNode::Draw(draw) => {
+            if (draw.blend_mode != BlendMode::Normal || draw.composite != Composite::SourceOver)
+                && !matches!(draw.coverage.node(), CoverageNode::All)
+            {
+                // Full semantic lowering keeps the original destination, the
+                // composite candidate, the isolated source, and the coverage
+                // field alive until the final coverage interpolation.
+                return required_color_field_scratch_images(&draw.source)
+                    + required_coverage_scratch_images(&draw.coverage)
+                    + 2;
+            }
             let source_work = match &draw.source {
                 ColorField::Canvas(content) => {
                     required_scratch_images(content)
@@ -91,6 +101,14 @@ fn additional_scratch_images(canvas: &Canvas) -> usize {
                     required_scratch_images(source) + usize::from(*blend_mode != BlendMode::Normal)
                 }
         }
+    }
+}
+
+fn required_coverage_scratch_images(coverage: &crate::canvas::Coverage) -> usize {
+    match coverage.node() {
+        CoverageNode::All => 0,
+        CoverageNode::AlphaOf(source) => required_color_field_scratch_images(source),
+        CoverageNode::Fill { .. } | CoverageNode::Stroke { .. } => 1,
     }
 }
 

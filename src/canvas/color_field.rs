@@ -7,9 +7,9 @@ mod image_pattern;
 
 pub use gradient::{
     AcrossPathGradient, AcrossPathGradientError, AlongPathGradient, ColorRamp, ColorRampError,
-    ConicGradient, ConicGradientError, GradientPoint, GradientStop, GradientStopError,
-    LinearGradient, LinearGradientError, MeshGradient, MeshGradientError, RadialGradient,
-    RadialGradientError,
+    ConicGradient, ConicGradientError, GradientExtend, GradientPoint, GradientStop,
+    GradientStopError, LinearGradient, LinearGradientError, MeshGradient, MeshGradientError,
+    RadialGradient, RadialGradientError,
 };
 pub use image_pattern::{ImageExtend, ImagePattern, ImageSampling};
 

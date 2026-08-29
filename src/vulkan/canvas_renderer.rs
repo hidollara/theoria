@@ -334,6 +334,7 @@ impl CanvasGpuResources {
                     pipelines.mask,
                     pipelines.present,
                     pipelines.blend,
+                    pipelines.coverage,
                 ]
                 .into_iter()
                 .chain(pipelines.composites.into_values())
@@ -456,8 +457,8 @@ mod tests {
     use super::super::image::GpuAlphaMode;
     use super::*;
     use crate::canvas::{
-        ColorField, Composite, ConicGradient, Coverage, GradientPoint, GradientStop, ImagePattern,
-        LinearGradient, MeshGradient, RadialGradient,
+        ColorField, Composite, ConicGradient, Coverage, GradientExtend, GradientPoint,
+        GradientStop, ImagePattern, LinearGradient, MeshGradient, RadialGradient,
     };
     use crate::color::Color;
     use crate::geometry::Point;
@@ -890,6 +891,141 @@ mod tests {
     }
 
     #[test]
+    fn two_circle_radial_gradient_is_transparent_where_no_circle_reaches() {
+        let gradient = RadialGradient::between_circles(
+            Point::new(0.0, 0.0),
+            1.0,
+            Point::new(10.0, 0.0),
+            1.0,
+            [
+                GradientStop::new(0.0, Color::rgb8(255, 0, 0)).unwrap(),
+                GradientStop::new(1.0, Color::rgb8(0, 0, 255)).unwrap(),
+            ],
+        )
+        .unwrap();
+        let triangles = paint_triangle(
+            [
+                Point::new(0.0, 100.0),
+                Point::new(1.0, 100.0),
+                Point::new(0.0, 101.0),
+            ],
+            &ColorField::RadialGradient(gradient),
+        );
+
+        assert!(
+            triangles
+                .iter()
+                .flat_map(|triangle| triangle.colors)
+                .all(|color| color == [0.0; 4])
+        );
+    }
+
+    #[test]
+    fn coincident_radial_circles_paint_nothing() {
+        let gradient = RadialGradient::between_circles(
+            Point::new(2.0, 3.0),
+            4.0,
+            Point::new(2.0, 3.0),
+            4.0,
+            [
+                GradientStop::new(0.0, Color::rgb8(255, 0, 0)).unwrap(),
+                GradientStop::new(1.0, Color::rgb8(0, 0, 255)).unwrap(),
+            ],
+        )
+        .unwrap();
+        let triangles = paint_triangle(
+            [
+                Point::new(0.0, 0.0),
+                Point::new(10.0, 0.0),
+                Point::new(0.0, 10.0),
+            ],
+            &ColorField::RadialGradient(gradient),
+        );
+
+        assert!(
+            triangles
+                .iter()
+                .flat_map(|triangle| triangle.colors)
+                .all(|color| color == [0.0; 4])
+        );
+    }
+
+    #[test]
+    fn signed_radial_gradient_uses_only_nonnegative_radius_solutions() {
+        let red = Color::rgb8(255, 0, 0);
+        let blue = Color::rgb8(0, 0, 255);
+        let gradient = RadialGradient::between_circles(
+            Point::new(0.0, 0.0),
+            -1.0,
+            Point::new(0.0, 0.0),
+            1.0,
+            [
+                GradientStop::new(0.0, red).unwrap(),
+                GradientStop::new(1.0, blue).unwrap(),
+            ],
+        )
+        .unwrap();
+        let triangles = paint_triangle(
+            [
+                Point::new(1.0, 0.0),
+                Point::new(0.0, 1.0),
+                Point::new(-1.0, 0.0),
+            ],
+            &ColorField::RadialGradient(gradient),
+        );
+
+        for point in [
+            Point::new(1.0, 0.0),
+            Point::new(0.0, 1.0),
+            Point::new(-1.0, 0.0),
+        ] {
+            assert!(triangles.iter().any(|triangle| {
+                triangle
+                    .points
+                    .iter()
+                    .zip(triangle.colors)
+                    .any(|(candidate, color)| {
+                        *candidate == point && color == blue.to_premultiplied_array()
+                    })
+            }));
+        }
+    }
+
+    #[test]
+    fn negative_radial_endpoints_can_reach_a_positive_extended_cone() {
+        let red = Color::rgb8(255, 0, 0);
+        let gradient = RadialGradient::between_circles(
+            Point::new(0.0, 0.0),
+            -1.0,
+            Point::new(0.0, 0.0),
+            -2.0,
+            [
+                GradientStop::new(0.0, red).unwrap(),
+                GradientStop::new(1.0, Color::rgb8(0, 0, 255)).unwrap(),
+            ],
+        )
+        .unwrap();
+        let triangles = paint_triangle(
+            [
+                Point::new(1.0, 0.0),
+                Point::new(0.0, 1.0),
+                Point::new(-1.0, 0.0),
+            ],
+            &ColorField::RadialGradient(gradient),
+        );
+
+        assert!(triangles.iter().any(|triangle| {
+            triangle
+                .points
+                .iter()
+                .zip(triangle.colors)
+                .any(|(point, color)| {
+                    *point == Point::new(1.0, 0.0) && color == red.to_premultiplied_array()
+                })
+        }));
+    }
+
+    #[test]
     fn conic_gradient_uses_positive_parameter_angle() {
         let red = Color::rgb8(255, 0, 0);
         let green = Color::rgb8(0, 255, 0);
@@ -932,5 +1068,120 @@ mod tests {
                     *point == Point::new(-10.0, 0.0) && color == green.to_premultiplied_array()
                 })
         }));
+    }
+
+    #[test]
+    fn partial_conic_gradient_pads_on_the_absolute_turn() {
+        let red = Color::rgb8(255, 0, 0);
+        let blue = Color::rgb8(0, 0, 255);
+        let gradient = ConicGradient::sweeping(
+            Point::new(0.0, 0.0),
+            std::f32::consts::FRAC_PI_2,
+            std::f32::consts::PI,
+            [
+                GradientStop::new(0.0, red).unwrap(),
+                GradientStop::new(1.0, blue).unwrap(),
+            ],
+        )
+        .unwrap();
+        let triangles = paint_triangle(
+            [
+                Point::new(10.0, 0.0),
+                Point::new(0.0, 10.0),
+                Point::new(-10.0, 0.0),
+            ],
+            &ColorField::ConicGradient(gradient),
+        );
+
+        let color_at = |point| {
+            triangles.iter().find_map(|triangle| {
+                triangle
+                    .points
+                    .iter()
+                    .position(|candidate| *candidate == point)
+                    .map(|index| triangle.colors[index])
+            })
+        };
+        assert_eq!(
+            color_at(Point::new(10.0, 0.0)),
+            Some(red.to_premultiplied_array())
+        );
+        assert_eq!(
+            color_at(Point::new(-10.0, 0.0)),
+            Some(blue.to_premultiplied_array())
+        );
+    }
+
+    #[test]
+    fn coincident_conic_angles_form_a_pad_step() {
+        let red = Color::rgb8(255, 0, 0);
+        let blue = Color::rgb8(0, 0, 255);
+        let gradient = ConicGradient::sweeping(
+            Point::new(0.0, 0.0),
+            std::f32::consts::FRAC_PI_2,
+            std::f32::consts::FRAC_PI_2,
+            [
+                GradientStop::new(0.0, red).unwrap(),
+                GradientStop::new(1.0, blue).unwrap(),
+            ],
+        )
+        .unwrap();
+        let triangles = paint_triangle(
+            [
+                Point::new(10.0, 0.0),
+                Point::new(-10.0, 0.0),
+                Point::new(0.0, 10.0),
+            ],
+            &ColorField::ConicGradient(gradient),
+        );
+
+        assert!(triangles.iter().any(|triangle| {
+            triangle
+                .points
+                .iter()
+                .zip(triangle.colors)
+                .any(|(point, color)| {
+                    *point == Point::new(10.0, 0.0) && color == red.to_premultiplied_array()
+                })
+        }));
+        assert!(triangles.iter().any(|triangle| {
+            triangle
+                .points
+                .iter()
+                .zip(triangle.colors)
+                .any(|(point, color)| {
+                    *point == Point::new(-10.0, 0.0) && color == blue.to_premultiplied_array()
+                })
+        }));
+    }
+
+    #[test]
+    fn coincident_repeating_conic_angles_paint_nothing() {
+        let gradient = ConicGradient::sweeping(
+            Point::new(0.0, 0.0),
+            0.0,
+            0.0,
+            [
+                GradientStop::new(0.0, Color::rgb8(255, 0, 0)).unwrap(),
+                GradientStop::new(1.0, Color::rgb8(0, 0, 255)).unwrap(),
+            ],
+        )
+        .unwrap()
+        .with_extend(GradientExtend::Repeat);
+        let triangles = paint_triangle(
+            [
+                Point::new(0.0, 0.0),
+                Point::new(10.0, 0.0),
+                Point::new(0.0, 10.0),
+            ],
+            &ColorField::ConicGradient(gradient),
+        );
+
+        assert!(
+            triangles
+                .iter()
+                .flat_map(|triangle| triangle.colors)
+                .all(|color| color == [0.0; 4])
+        );
     }
 }

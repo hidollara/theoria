@@ -6,7 +6,7 @@ mod view;
 
 pub use color_field::{
     AcrossPathGradient, AcrossPathGradientError, AlongPathGradient, ColorField, ColorRamp,
-    ColorRampError, ConicGradient, ConicGradientError, GradientPoint, GradientStop,
+    ColorRampError, ConicGradient, ConicGradientError, GradientExtend, GradientPoint, GradientStop,
     GradientStopError, ImageExtend, ImagePattern, ImageSampling, LinearGradient,
     LinearGradientError, MeshGradient, MeshGradientError, RadialGradient, RadialGradientError,
 };

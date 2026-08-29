@@ -22,6 +22,10 @@ const MASK_VERTEX_SHADER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/mask
 const MASK_FRAGMENT_SHADER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/mask.frag.spv"));
 const BLEND_VERTEX_SHADER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/blend.vert.spv"));
 const BLEND_FRAGMENT_SHADER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/blend.frag.spv"));
+const COVERAGE_VERTEX_SHADER: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/coverage.vert.spv"));
+const COVERAGE_FRAGMENT_SHADER: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/coverage.frag.spv"));
 
 pub(super) struct Pipeline {
     pub(super) layout: vk::PipelineLayout,
@@ -37,6 +41,7 @@ pub(super) struct Pipelines {
     pub(super) mask: Pipeline,
     pub(super) present: Pipeline,
     pub(super) blend: Pipeline,
+    pub(super) coverage: Pipeline,
 }
 
 impl Pipelines {
@@ -225,6 +230,37 @@ pub(super) unsafe fn create_pipelines(
             return Err(error);
         }
     };
+    let coverage = match unsafe {
+        create_pipeline(
+            device,
+            color_format,
+            COVERAGE_VERTEX_SHADER,
+            COVERAGE_FRAGMENT_SHADER,
+            0,
+            vk::ShaderStageFlags::VERTEX,
+            &[
+                image_descriptor_set_layout,
+                image_descriptor_set_layout,
+                image_descriptor_set_layout,
+            ],
+            sample_count,
+            Composite::Copy,
+        )
+    } {
+        Ok(coverage) => coverage,
+        Err(error) => {
+            unsafe {
+                for pipeline in [triangle, image, mask, present, blend]
+                    .into_iter()
+                    .chain(composites.into_values())
+                {
+                    device.destroy_pipeline(pipeline.handle, None);
+                    device.destroy_pipeline_layout(pipeline.layout, None);
+                }
+            }
+            return Err(error);
+        }
+    };
     Ok(Pipelines {
         format: color_format,
         sample_count,
@@ -234,6 +270,7 @@ pub(super) unsafe fn create_pipelines(
         mask,
         present,
         blend,
+        coverage,
     })
 }
 

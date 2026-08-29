@@ -1,5 +1,7 @@
 use crate::{
-    canvas::{ColorField, GradientPoint, GradientStop, LinearGradient, MeshGradient},
+    canvas::{
+        ColorField, GradientExtend, GradientPoint, GradientStop, LinearGradient, MeshGradient,
+    },
     geometry::Point,
     path::{Path, PathSegment},
     tessellation::{DEFAULT_TESSELLATION_TOLERANCE, flatten_subpaths},
@@ -49,15 +51,16 @@ pub(super) fn paint_triangle_prepared(
         }],
         ColorField::LinearGradient(gradient) => paint_linear_gradient(points, gradient),
         ColorField::RadialGradient(gradient) => paint_sampled_gradient(points, |point| {
-            let offset = (point - gradient.center()).length() / gradient.radius();
-            evaluate_gradient_stops(gradient.stops(), offset)
+            radial_parameter(point, gradient).map_or([0.0; 4], |parameter| {
+                let offset = extend_parameter(parameter, gradient.extend());
+                evaluate_gradient_stops(gradient.stops(), offset)
+            })
         }),
         ColorField::ConicGradient(gradient) => paint_sampled_gradient(points, |point| {
-            let delta = point - gradient.center();
-            let angle = delta.y.atan2(delta.x);
-            let offset = (angle - gradient.start_angle()).rem_euclid(std::f32::consts::TAU)
-                / std::f32::consts::TAU;
-            evaluate_gradient_stops(gradient.stops(), offset)
+            conic_parameter(point, gradient).map_or([0.0; 4], |parameter| {
+                let offset = extend_parameter(parameter, gradient.extend());
+                evaluate_gradient_stops(gradient.stops(), offset)
+            })
         }),
         ColorField::AlongPathGradient(gradient) => {
             let sampler = path_sampler.expect("along-Path sources prepare their Path once");
@@ -84,6 +87,35 @@ pub(super) fn paint_triangle_prepared(
         ColorField::Canvas(_) => {
             unreachable!("Canvas color fields are evaluated before mesh drawing")
         }
+    }
+}
+
+fn conic_parameter(point: Point, gradient: &crate::canvas::ConicGradient) -> Option<f32> {
+    let delta = point - gradient.center();
+    let angle = delta.y.atan2(delta.x).rem_euclid(std::f32::consts::TAU);
+    let sweep = gradient.end_angle() - gradient.start_angle();
+    if sweep == 0.0 {
+        return match gradient.extend() {
+            GradientExtend::Pad => Some(if angle < gradient.start_angle() {
+                0.0
+            } else {
+                1.0
+            }),
+            GradientExtend::Repeat | GradientExtend::Reflect => None,
+        };
+    }
+    if (sweep.abs() - std::f32::consts::TAU).abs() <= f32::EPSILON * 8.0 {
+        let directed = if sweep > 0.0 {
+            (angle - gradient.start_angle()).rem_euclid(std::f32::consts::TAU)
+        } else {
+            -((gradient.start_angle() - angle).rem_euclid(std::f32::consts::TAU))
+        };
+        Some(directed / sweep)
+    } else {
+        // Partial sweeps use an absolute physical turn from 0 through TAU.
+        // This preserves intentional discontinuities at the positive x-axis
+        // and allows normalized COLRv1 endpoints outside that turn.
+        Some((angle - gradient.start_angle()) / sweep)
     }
 }
 
@@ -173,6 +205,17 @@ impl PathSampler {
 }
 
 fn paint_linear_gradient(points: [Point; 3], gradient: &LinearGradient) -> Vec<PaintedTriangle> {
+    if gradient.extend() != GradientExtend::Pad {
+        let axis = gradient.end() - gradient.start();
+        let length_squared = axis.dot(axis);
+        return paint_sampled_gradient(points, |point| {
+            let offset = (point - gradient.start()).dot(axis) / length_squared;
+            evaluate_gradient_stops(
+                gradient.stops(),
+                extend_parameter(offset, gradient.extend()),
+            )
+        });
+    }
     let axis = gradient.end() - gradient.start();
     let length_squared = axis.dot(axis);
     let original: Vec<_> = points
@@ -221,6 +264,44 @@ fn paint_linear_gradient(points: [Point; 3], gradient: &LinearGradient) -> Vec<P
         last.color().to_premultiplied_array(),
     );
     output
+}
+
+fn extend_parameter(value: f32, extend: GradientExtend) -> f32 {
+    match extend {
+        GradientExtend::Pad => value.clamp(0.0, 1.0),
+        GradientExtend::Repeat => value.rem_euclid(1.0),
+        GradientExtend::Reflect => {
+            let repeated = value.rem_euclid(2.0);
+            if repeated <= 1.0 {
+                repeated
+            } else {
+                2.0 - repeated
+            }
+        }
+    }
+}
+
+fn radial_parameter(point: Point, gradient: &crate::canvas::RadialGradient) -> Option<f32> {
+    let centers = gradient.end_center() - gradient.start_center();
+    let from_start = point - gradient.start_center();
+    let radius_delta = gradient.end_radius() - gradient.start_radius();
+    let a = centers.dot(centers) - radius_delta * radius_delta;
+    let b = -2.0 * (from_start.dot(centers) + gradient.start_radius() * radius_delta);
+    let c = from_start.dot(from_start) - gradient.start_radius() * gradient.start_radius();
+    if a.abs() <= f32::EPSILON {
+        return (b.abs() > f32::EPSILON).then_some(-c / b);
+    }
+    let discriminant = b.mul_add(b, -4.0 * a * c);
+    if discriminant < 0.0 {
+        return None;
+    }
+    let root = discriminant.sqrt();
+    let first = (-b - root) / (2.0 * a);
+    let second = (-b + root) / (2.0 * a);
+    [first, second]
+        .into_iter()
+        .filter(|value| gradient.start_radius() + value * radius_delta >= 0.0)
+        .max_by(f32::total_cmp)
 }
 
 fn clip_gradient_polygon(
@@ -475,7 +556,6 @@ fn edge_side(start: Point, end: Point, point: Point) -> f32 {
     (end.x - start.x) * (point.y - start.y) - (end.y - start.y) * (point.x - start.x)
 }
 
-#[cfg(test)]
 #[cfg(test)]
 pub(super) fn point_to_clip(point: Point, view: CanvasView) -> [f32; 4] {
     transformed_point_to_clip(point, view.canvas_to_view)

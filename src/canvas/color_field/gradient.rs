@@ -2,6 +2,15 @@ use std::sync::Arc;
 
 use crate::{color::Color, geometry::Point, path::Path};
 
+/// Defines how a gradient color line is evaluated outside its `[0, 1]` span.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum GradientExtend {
+    #[default]
+    Pad,
+    Repeat,
+    Reflect,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GradientStop {
     offset: f32,
@@ -190,6 +199,7 @@ pub struct LinearGradient {
     start: Point,
     end: Point,
     stops: Arc<[GradientStop]>,
+    extend: GradientExtend,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -236,6 +246,7 @@ impl LinearGradient {
             start,
             end,
             stops: stops.into(),
+            extend: GradientExtend::Pad,
         })
     }
 
@@ -250,13 +261,25 @@ impl LinearGradient {
     pub fn stops(&self) -> &[GradientStop] {
         &self.stops
     }
+
+    pub const fn with_extend(mut self, extend: GradientExtend) -> Self {
+        self.extend = extend;
+        self
+    }
+
+    pub const fn extend(&self) -> GradientExtend {
+        self.extend
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RadialGradient {
-    center: Point,
-    radius: f32,
+    start_center: Point,
+    start_radius: f32,
+    end_center: Point,
+    end_radius: f32,
     stops: Arc<[GradientStop]>,
+    extend: GradientExtend,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -290,14 +313,29 @@ impl RadialGradient {
         radius: f32,
         stops: impl IntoIterator<Item = GradientStop>,
     ) -> Result<Self, RadialGradientError> {
-        if !center.is_finite() {
-            return Err(RadialGradientError::NonFiniteCenter);
-        }
-        if !radius.is_finite() {
-            return Err(RadialGradientError::NonFiniteRadius);
-        }
         if radius <= 0.0 {
             return Err(RadialGradientError::NonPositiveRadius);
+        }
+        Self::between_circles(center, 0.0, center, radius, stops)
+    }
+
+    /// Creates a two-point conical gradient from its signed endpoint radii.
+    ///
+    /// A negative endpoint radius is a valid parameterization: the rendered
+    /// cone uses only parameter values whose interpolated radius is
+    /// nonnegative. This is needed to preserve normalized COLRv1 color lines.
+    pub fn between_circles(
+        start_center: Point,
+        start_radius: f32,
+        end_center: Point,
+        end_radius: f32,
+        stops: impl IntoIterator<Item = GradientStop>,
+    ) -> Result<Self, RadialGradientError> {
+        if !start_center.is_finite() || !end_center.is_finite() {
+            return Err(RadialGradientError::NonFiniteCenter);
+        }
+        if !start_radius.is_finite() || !end_radius.is_finite() {
+            return Err(RadialGradientError::NonFiniteRadius);
         }
         let stops: Vec<_> = stops.into_iter().collect();
         validate_gradient_stops(&stops).map_err(|error| match error {
@@ -305,22 +343,46 @@ impl RadialGradient {
             GradientStopsError::Unordered => RadialGradientError::UnorderedStops,
         })?;
         Ok(Self {
-            center,
-            radius,
+            start_center,
+            start_radius,
+            end_center,
+            end_radius,
             stops: stops.into(),
+            extend: GradientExtend::Pad,
         })
     }
 
     pub const fn center(&self) -> Point {
-        self.center
+        self.end_center
     }
 
     pub const fn radius(&self) -> f32 {
-        self.radius
+        self.end_radius
+    }
+
+    pub const fn start_center(&self) -> Point {
+        self.start_center
+    }
+    pub const fn start_radius(&self) -> f32 {
+        self.start_radius
+    }
+    pub const fn end_center(&self) -> Point {
+        self.end_center
+    }
+    pub const fn end_radius(&self) -> f32 {
+        self.end_radius
     }
 
     pub fn stops(&self) -> &[GradientStop] {
         &self.stops
+    }
+
+    pub const fn with_extend(mut self, extend: GradientExtend) -> Self {
+        self.extend = extend;
+        self
+    }
+    pub const fn extend(&self) -> GradientExtend {
+        self.extend
     }
 }
 
@@ -328,13 +390,16 @@ impl RadialGradient {
 pub struct ConicGradient {
     center: Point,
     start_angle: f32,
+    end_angle: f32,
     stops: Arc<[GradientStop]>,
+    extend: GradientExtend,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ConicGradientError {
     NonFiniteCenter,
     NonFiniteStartAngle,
+    NonFiniteEndAngle,
     TooFewStops,
     UnorderedStops,
 }
@@ -344,6 +409,7 @@ impl std::fmt::Display for ConicGradientError {
         match self {
             Self::NonFiniteCenter => formatter.write_str("gradient center must be finite"),
             Self::NonFiniteStartAngle => formatter.write_str("gradient start angle must be finite"),
+            Self::NonFiniteEndAngle => formatter.write_str("gradient end angle must be finite"),
             Self::TooFewStops => formatter.write_str("a gradient must contain at least two stops"),
             Self::UnorderedStops => formatter.write_str("gradient stops must be ordered by offset"),
         }
@@ -353,9 +419,30 @@ impl std::fmt::Display for ConicGradientError {
 impl std::error::Error for ConicGradientError {}
 
 impl ConicGradient {
+    /// Creates a full-turn angular gradient beginning at `start_angle`.
+    ///
+    /// Angles are radians from the positive x-axis in Canvas coordinates. The
+    /// sign follows the orientation of those coordinates rather than imposing
+    /// a screen-space clockwise or counter-clockwise direction.
     pub fn new(
         center: Point,
         start_angle: f32,
+        stops: impl IntoIterator<Item = GradientStop>,
+    ) -> Result<Self, ConicGradientError> {
+        Self::sweeping(
+            center,
+            start_angle,
+            start_angle + std::f32::consts::TAU,
+            stops,
+        )
+    }
+
+    /// Creates a partial angular gradient on the absolute `[0, TAU)` turn.
+    /// Values outside the start/end interval are resolved by `GradientExtend`.
+    pub fn sweeping(
+        center: Point,
+        start_angle: f32,
+        end_angle: f32,
         stops: impl IntoIterator<Item = GradientStop>,
     ) -> Result<Self, ConicGradientError> {
         if !center.is_finite() {
@@ -363,6 +450,9 @@ impl ConicGradient {
         }
         if !start_angle.is_finite() {
             return Err(ConicGradientError::NonFiniteStartAngle);
+        }
+        if !end_angle.is_finite() {
+            return Err(ConicGradientError::NonFiniteEndAngle);
         }
         let stops: Vec<_> = stops.into_iter().collect();
         validate_gradient_stops(&stops).map_err(|error| match error {
@@ -372,7 +462,9 @@ impl ConicGradient {
         Ok(Self {
             center,
             start_angle,
+            end_angle,
             stops: stops.into(),
+            extend: GradientExtend::Pad,
         })
     }
 
@@ -384,8 +476,20 @@ impl ConicGradient {
         self.start_angle
     }
 
+    pub const fn end_angle(&self) -> f32 {
+        self.end_angle
+    }
+
     pub fn stops(&self) -> &[GradientStop] {
         &self.stops
+    }
+
+    pub const fn with_extend(mut self, extend: GradientExtend) -> Self {
+        self.extend = extend;
+        self
+    }
+    pub const fn extend(&self) -> GradientExtend {
+        self.extend
     }
 }
 

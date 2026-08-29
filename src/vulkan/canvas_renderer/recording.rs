@@ -88,6 +88,10 @@ impl CanvasRecorder<'_> {
 
     fn render_draw(&mut self, accumulator: usize, draw: &Draw, draw_to_root: Projective2) {
         if draw.blend_mode != BlendMode::Normal || draw.composite != Composite::SourceOver {
+            if !matches!(draw.coverage.node(), CoverageNode::All) {
+                self.render_covered_composite(accumulator, draw, draw_to_root);
+                return;
+            }
             self.end_rendering();
             let source_image = self.next_image;
             self.next_image += 1;
@@ -107,6 +111,59 @@ impl CanvasRecorder<'_> {
             return;
         }
         self.render_source_with_coverage(accumulator, draw, draw_to_root);
+    }
+
+    fn render_covered_composite(
+        &mut self,
+        accumulator: usize,
+        draw: &Draw,
+        draw_to_root: Projective2,
+    ) {
+        self.end_rendering();
+        let source = self.evaluate_color_field(&draw.source, draw_to_root);
+        let coverage = self
+            .evaluate_coverage(&draw.coverage, draw_to_root)
+            .expect("non-All coverage evaluates to an image");
+
+        self.transition_to_sampled(accumulator);
+        let destination = self.next_image;
+        self.next_image += 1;
+        self.begin_accumulator(destination, vk::AttachmentLoadOp::CLEAR);
+        self.draw_fullscreen(
+            self.pipelines.composite(Composite::Copy),
+            self.scratch_images[accumulator].descriptor_set(),
+        );
+        self.end_rendering();
+        self.transition_to_sampled(destination);
+
+        let candidate = self.next_image;
+        self.next_image += 1;
+        self.begin_accumulator(candidate, vk::AttachmentLoadOp::CLEAR);
+        self.draw_blend_composite(destination, source, draw.blend_mode, draw.composite);
+        self.end_rendering();
+        self.transition_to_sampled(candidate);
+
+        self.begin_accumulator(accumulator, vk::AttachmentLoadOp::CLEAR);
+        unsafe {
+            self.device.cmd_bind_pipeline(
+                self.command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.pipelines.coverage.handle,
+            );
+            self.device.cmd_bind_descriptor_sets(
+                self.command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.pipelines.coverage.layout,
+                0,
+                &[
+                    self.scratch_images[destination].descriptor_set(),
+                    self.scratch_images[candidate].descriptor_set(),
+                    self.scratch_images[coverage].descriptor_set(),
+                ],
+                &[],
+            );
+            self.device.cmd_draw(self.command_buffer, 3, 1, 0, 0);
+        }
     }
 
     fn render_source_with_coverage(
@@ -169,6 +226,16 @@ impl CanvasRecorder<'_> {
         self.transition_to_sampled(destination);
 
         self.begin_accumulator(accumulator, vk::AttachmentLoadOp::CLEAR);
+        self.draw_blend_composite(destination, source, blend_mode, composite);
+    }
+
+    fn draw_blend_composite(
+        &self,
+        destination: usize,
+        source: usize,
+        blend_mode: BlendMode,
+        composite: Composite,
+    ) {
         let constants = BlendCompositePushConstants::new(blend_mode, composite);
         unsafe {
             self.device.cmd_bind_pipeline(
@@ -195,6 +262,29 @@ impl CanvasRecorder<'_> {
                 constants.as_bytes(),
             );
             self.device.cmd_draw(self.command_buffer, 3, 1, 0, 0);
+        }
+    }
+
+    fn evaluate_coverage(
+        &mut self,
+        coverage: &Coverage,
+        coverage_to_root: Projective2,
+    ) -> Option<usize> {
+        match coverage.node() {
+            CoverageNode::All => None,
+            CoverageNode::AlphaOf(source) => {
+                Some(self.evaluate_color_field(source, coverage_to_root))
+            }
+            CoverageNode::Fill { path, rule } => {
+                let tolerance = self.path_tolerance(path, coverage_to_root);
+                let mesh = tessellate_fill_with_tolerance(path, *rule, tolerance);
+                Some(self.evaluate_geometry_mask(&mesh, coverage_to_root))
+            }
+            CoverageNode::Stroke { path, style } => {
+                let tolerance = self.path_tolerance(path, coverage_to_root);
+                let mesh = tessellate_stroke_with_tolerance(path, style, tolerance);
+                Some(self.evaluate_geometry_mask(&mesh, coverage_to_root))
+            }
         }
     }
 
