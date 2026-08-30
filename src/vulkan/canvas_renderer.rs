@@ -52,7 +52,7 @@ struct CanvasGpuResources {
 }
 
 impl CanvasRenderer {
-    pub(crate) fn new(device: RenderDevice) -> Self {
+    pub fn new(device: RenderDevice) -> Self {
         Self {
             device,
             gpu: CanvasGpuResources {
@@ -64,7 +64,7 @@ impl CanvasRenderer {
         }
     }
 
-    pub(crate) fn render(
+    pub fn render(
         &mut self,
         target: RenderTarget<'_>,
         viewport: Viewport,

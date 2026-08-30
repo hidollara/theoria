@@ -28,7 +28,7 @@ impl Drop for DeviceInner {
 }
 
 #[derive(Clone)]
-pub(crate) struct RenderDevice(Arc<DeviceInner>);
+pub struct RenderDevice(Arc<DeviceInner>);
 
 impl RenderDevice {
     pub(crate) fn raw(&self) -> &ash::Device {
@@ -92,7 +92,7 @@ struct SurfaceRenderTarget {
 }
 
 /// An acquired destination that a renderer can record commands into.
-pub(crate) struct RenderTarget<'a> {
+pub struct RenderTarget<'a> {
     pub(crate) command_buffer: vk::CommandBuffer,
     surface: SurfaceRenderTarget,
     clear_color: Color,
@@ -234,7 +234,7 @@ impl Presenter {
         }
     }
 
-    pub(crate) fn device(&self) -> RenderDevice {
+    pub fn device(&self) -> RenderDevice {
         self.device.clone()
     }
 
@@ -346,7 +346,7 @@ pub struct PresentFrame<'a> {
 }
 
 impl PresentFrame<'_> {
-    pub(crate) fn render_target(&self, clear_color: Color) -> RenderTarget<'_> {
+    pub fn render_target(&self, clear_color: Color) -> RenderTarget<'_> {
         let resources = self.presenter.swapchain.as_ref().unwrap();
         RenderTarget {
             command_buffer: self.command_buffer,

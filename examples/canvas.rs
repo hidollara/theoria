@@ -1,44 +1,26 @@
-pub mod canvas;
-pub mod color;
-pub mod font;
-pub mod geometry;
-pub mod image;
-pub mod math;
-pub mod path;
-mod target;
-mod tessellation;
-pub mod text;
-pub mod transform;
-mod vulkan;
-mod window;
-
-use canvas::{
-    AcrossPathGradient, AlongPathGradient, BlendMode, Canvas, CanvasView, ColorRamp, Composite,
-    ConicGradient, Coverage, GradientPoint, GradientStop, ImageExtend, ImagePattern,
-    LinearGradient, MeshGradient, RadialGradient,
+use theoria::{
+    Viewport,
+    canvas::{
+        AcrossPathGradient, AlongPathGradient, BlendMode, Canvas, CanvasView, ColorRamp, Composite,
+        ConicGradient, Coverage, GradientPoint, GradientStop, ImageExtend, ImagePattern,
+        LinearGradient, MeshGradient, RadialGradient,
+    },
+    color::Color,
+    geometry::Point,
+    image::{Image, ImageError},
+    math::Vector2,
+    path::{
+        ArcSize, ArcSweep, DashPattern, FillRule, LineCap, LineJoin, Path, StrokeStyle, Subpath,
+    },
+    transform::Affine2,
+    vulkan::{CanvasRenderer, Presenter},
+    window::{Window, WindowEvent},
 };
-use color::Color;
-use font::Font;
-use geometry::Point;
-use image::Image;
-use math::Vector2;
-use path::{
-    ArcSize, ArcSweep, DashPattern, FillRule, LineCap, LineJoin, Path, StrokeStyle, Subpath,
-};
-use target::Viewport;
-use text::{OpenTypeFeatureTag, Span, Text, TextStyle};
-use transform::Affine2;
-use vulkan::{CanvasRenderer, Presenter};
-use window::{Window, WindowEvent};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut window = Window::new("Theoria — Vulkan Canvas", 960, 640)?;
+    let mut window = Window::new("Theoria — Canvas Sample", 960, 640)?;
     let mut presenter = Presenter::new(window.presentation_target())?;
     let mut canvas_renderer = CanvasRenderer::new(presenter.device());
-    let demo_fonts = [
-        Font::from_bytes(std::fs::read(r"C:\Windows\Fonts\segoeui.ttf")?)?,
-        Font::from_bytes(std::fs::read(r"C:\Windows\Fonts\meiryo.ttc")?)?,
-    ];
     let source_image = make_sample_image()?;
     let image_width = source_image.width();
     let image_height = source_image.height();
@@ -225,44 +207,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             )?),
                     ),
                 );
-                let text_size = width.min(height) * 0.044;
-                let body_style = TextStyle::new(&demo_fonts, text_size);
-                let emphasized_style = body_style
-                    .clone()
-                    .with_font_size(text_size * 1.45)
-                    .with_feature(OpenTypeFeatureTag::STANDARD_LIGATURES.disabled());
-                let rtl_style = body_style.clone().with_language("he");
-                let text_layer = Text::horizontal(body_style)
-                    .push("Theoria ")
-                    .push(Span::new("ffi").with_style(emphasized_style))
-                    .push(" · 日本語 · ")
-                    .push(Span::new("עברית").with_style(rtl_style))
-                    .push(" — styled spans wrap across their boundaries.")
-                    .wrap_width(width * 0.48)
-                    .layout()?
-                    .to_canvas(Color::rgba(0.94, 0.97, 1.0, 0.96)?)?
-                    .transformed(Affine2::from_translation(Vector2::new(
-                        width * 0.19,
-                        height * 0.67,
-                    )));
-                let vertical_text_layer =
-                    Text::vertical(TextStyle::new(&demo_fonts, text_size * 0.9))
-                        .push("縦書き Theoria 2026 を同じ Canvas に描く")
-                        .wrap_height(height * 0.34)
-                        .layout()?
-                        .to_canvas(Color::rgba(1.0, 0.82, 0.34, 0.94)?)?
-                        .transformed(Affine2::from_translation(Vector2::new(
-                            width * 0.67,
-                            height * 0.28,
-                        )));
                 let content = masked_content
                     .blend_composite(mesh_layer, BlendMode::Multiply, Composite::SourceOver)
                     .composite(radial_layer, Composite::Plus)
                     .composite(conic_layer, Composite::SourceOver)
                     .composite(across_layer, Composite::DestinationOver)
-                    .composite(stroke_layer, Composite::SourceOver)
-                    .composite(text_layer, Composite::SourceOver)
-                    .composite(vertical_text_layer, Composite::SourceOver);
+                    .composite(stroke_layer, Composite::SourceOver);
                 let canvas = content;
                 // Deliberately use a non-parallelogram Canvas region here so
                 // the sample exercises the projective path all the way to the
@@ -300,7 +250,7 @@ fn ellipse_path(center: Point, radii: Vector2) -> Path {
     )
 }
 
-fn make_sample_image() -> Result<Image, image::ImageError> {
+fn make_sample_image() -> Result<Image, ImageError> {
     const SIZE: u32 = 64;
     let mut pixels = Vec::with_capacity((SIZE * SIZE * 4) as usize);
     for y in 0..SIZE {
