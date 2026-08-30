@@ -5,7 +5,16 @@ edition = "2024"
 
 [dependencies]
 ash = "0.38.0"
+flate2 = "1.1.2"
+harfrust = "0.13.2"
+icu_locale_core = "2.3.0"
+icu_properties = { version = "2.3.0", features = ["unicode_bidi"] }
+icu_segmenter = { version = "2.3.0", features = ["unstable"] }
 lyon_tessellation = "1.0.20"
+png = "0.18.0"
+resvg = { version = "0.48.1", default-features = false, features = ["text", "raster-images"] }
+skrifa = "0.46.2"
+unicode-bidi = { version = "0.3.18", default-features = false }
 windows = { version = "0.62.2", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
@@ -16,3 +25,6 @@ windows = { version = "0.62.2", features = [
 
 [build-dependencies]
 naga = { version = "30.0.0", features = ["wgsl-in", "spv-out"] }
+
+[dev-dependencies]
+font-test-data = "0.8.0"

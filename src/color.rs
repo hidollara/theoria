@@ -75,6 +75,28 @@ impl Color {
             self.alpha,
         ]
     }
+
+    pub(crate) fn to_srgba(self) -> [f32; 4] {
+        let encode = |component: f32| {
+            if component <= 0.003_130_8 {
+                component * 12.92
+            } else {
+                1.055 * component.powf(1.0 / 2.4) - 0.055
+            }
+            .clamp(0.0, 1.0)
+        };
+        [
+            encode(self.red),
+            encode(self.green),
+            encode(self.blue),
+            self.alpha.clamp(0.0, 1.0),
+        ]
+    }
+
+    pub(crate) fn with_alpha_factor(mut self, factor: f32) -> Self {
+        self.alpha *= factor.clamp(0.0, 1.0);
+        self
+    }
 }
 
 fn srgb_to_linear(component: f32) -> f32 {

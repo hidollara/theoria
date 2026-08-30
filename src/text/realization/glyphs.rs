@@ -1,0 +1,198 @@
+use std::ops::Range;
+
+use crate::{
+    canvas::{Canvas, ColorField, Composite, Coverage},
+    color::Color,
+    font::{GlyphPresentationError, GlyphRealizationRequest, RealizedGlyph},
+    math::Vector2,
+    transform::Affine2,
+};
+
+use super::super::layout::{LayoutRun, TextLine};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum GlyphRealizationError {
+    UnsupportedGlyph { glyph_index: u32 },
+    InvalidGlyphPresentation { glyph_index: u32 },
+}
+
+impl std::fmt::Display for GlyphRealizationError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnsupportedGlyph { glyph_index } => {
+                write!(
+                    formatter,
+                    "glyph {glyph_index} has no supported presentation"
+                )
+            }
+            Self::InvalidGlyphPresentation { glyph_index } => {
+                write!(
+                    formatter,
+                    "glyph {glyph_index} has an unsupported or invalid presentation"
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for GlyphRealizationError {}
+
+impl LayoutRun {
+    /// Lowers monochrome glyph outlines into a generic Canvas alpha field.
+    ///
+    /// The run begins at baseline origin `(0, 0)`. Each outline becomes an
+    /// ordinary Path draw, preserving the separation between glyph shape and
+    /// the eventual foreground color field.
+    pub(super) fn coverage_canvas(
+        &self,
+        source_range: Option<&Range<usize>>,
+    ) -> Result<Canvas, GlyphRealizationError> {
+        if self.font_size == 0.0 || self.glyphs.is_empty() {
+            return Ok(Canvas::empty());
+        }
+
+        let scale = self.font_size / f32::from(self.font.metrics().units_per_em());
+        let mut pen = Vector2::ZERO;
+        let mut mask = Canvas::empty();
+
+        for positioned in self.glyphs.iter().copied() {
+            if source_range.is_some_and(|range| !range.contains(&positioned.cluster)) {
+                pen = pen + positioned.advance;
+                continue;
+            }
+            match self.font.glyph_ref(positioned.glyph_id).outline() {
+                RealizedGlyph::Outline(path) => {
+                    let placement = glyph_placement(scale, pen + positioned.offset);
+                    let glyph_mask = Canvas::draw(Color::rgb8(255, 255, 255), Coverage::fill(path))
+                        .transformed(placement);
+                    mask = mask.composite(glyph_mask, Composite::SourceOver);
+                }
+                RealizedGlyph::Empty => {}
+                RealizedGlyph::Intrinsic(_) => {
+                    unreachable!("outline lookup never returns intrinsic color")
+                }
+                RealizedGlyph::Unsupported => {
+                    return Err(GlyphRealizationError::UnsupportedGlyph {
+                        glyph_index: positioned.glyph_id.to_u32(),
+                    });
+                }
+            }
+            pen = pen + positioned.advance;
+        }
+
+        Ok(mask)
+    }
+
+    pub(super) fn realized_canvas(
+        &self,
+        foreground: &ColorField,
+        palette_index: u16,
+        source_range: Option<&Range<usize>>,
+    ) -> Result<Canvas, GlyphRealizationError> {
+        if self.font_size == 0.0 || self.glyphs.is_empty() {
+            return Ok(Canvas::empty());
+        }
+
+        let scale = self.font_size / f32::from(self.font.metrics().units_per_em());
+        let mut pen = Vector2::ZERO;
+        let mut canvas = Canvas::empty();
+        for positioned in self.glyphs.iter().copied() {
+            if source_range.is_some_and(|range| !range.contains(&positioned.cluster)) {
+                pen = pen + positioned.advance;
+                continue;
+            }
+            let glyph = self
+                .font
+                .glyph_ref(positioned.glyph_id)
+                .realize(&GlyphRealizationRequest {
+                    font_size: self.font_size,
+                    palette_index,
+                    foreground,
+                })
+                .map_err(|_error: GlyphPresentationError| {
+                    GlyphRealizationError::InvalidGlyphPresentation {
+                        glyph_index: positioned.glyph_id.to_u32(),
+                    }
+                })?;
+            let placement = glyph_placement(scale, pen + positioned.offset);
+            let glyph_canvas = match glyph {
+                RealizedGlyph::Outline(path) => {
+                    Canvas::draw(foreground.clone(), Coverage::fill(path))
+                }
+                RealizedGlyph::Intrinsic(canvas) => canvas,
+                RealizedGlyph::Empty => {
+                    pen = pen + positioned.advance;
+                    continue;
+                }
+                RealizedGlyph::Unsupported => {
+                    return Err(GlyphRealizationError::UnsupportedGlyph {
+                        glyph_index: positioned.glyph_id.to_u32(),
+                    });
+                }
+            }
+            .transformed(placement);
+            canvas = canvas.composite(glyph_canvas, Composite::SourceOver);
+            pen = pen + positioned.advance;
+        }
+        Ok(canvas)
+    }
+}
+
+impl TextLine {
+    pub(super) fn coverage_canvas(
+        &self,
+        source_range: Option<&Range<usize>>,
+    ) -> Result<Canvas, GlyphRealizationError> {
+        let mut mask = Canvas::empty();
+        for positioned in self.runs.iter() {
+            let run_mask = positioned
+                .run
+                .coverage_canvas(source_range)?
+                .transformed(positioned.placement);
+            mask = mask.composite(run_mask, Composite::SourceOver);
+        }
+        Ok(mask)
+    }
+
+    pub(super) fn realized_canvas(
+        &self,
+        foreground: &ColorField,
+        palette_index: u16,
+        source_range: Option<&Range<usize>>,
+    ) -> Result<Canvas, GlyphRealizationError> {
+        let mut canvas = Canvas::empty();
+        for positioned in self.runs.iter() {
+            let run = positioned
+                .run
+                .realized_canvas(foreground, palette_index, source_range)?
+                .transformed(positioned.placement);
+            canvas = canvas.composite(run, Composite::SourceOver);
+        }
+        Ok(canvas)
+    }
+}
+
+pub(super) fn glyph_placement(scale: f32, origin: Vector2) -> Affine2 {
+    Affine2::from_translation(origin).then(Affine2::from_scale(Vector2::new(scale, -scale)))
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{geometry::Point, math::Vector2};
+
+    use super::*;
+
+    #[test]
+    fn glyph_placement_scales_design_units_and_flips_font_y() {
+        let transform = glyph_placement(0.02, Vector2::new(500.0, 250.0));
+
+        assert_eq!(
+            transform.transform_point(Point::new(0.0, 0.0)),
+            Point::new(10.0, -5.0)
+        );
+        assert_eq!(
+            transform.transform_point(Point::new(100.0, 200.0)),
+            Point::new(12.0, -9.0)
+        );
+    }
+}
