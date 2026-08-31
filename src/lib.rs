@@ -6,6 +6,7 @@ pub mod geometry;
 pub mod gesture;
 pub mod image;
 pub mod input;
+pub mod interaction;
 pub mod math;
 pub mod path;
 pub mod reactive;

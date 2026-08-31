@@ -3,55 +3,19 @@ use std::borrow::Borrow;
 use crate::{
     geometry::Point,
     path::{
-        ArcSize, ArcSweep, DashPattern, FillRule, LineCap, LineJoin, Path, PathSegment, StrokeStyle,
+        DashPattern, FillRule, LineCap, LineJoin, Path, PathSegment, StrokeStyle, append_path,
+        append_segment, build_lyon_path,
     },
 };
 use lyon_tessellation::{
     FillOptions, FillRule as LyonFillRule, FillTessellator, LineCap as LyonLineCap,
     LineJoin as LyonLineJoin, StrokeOptions, StrokeTessellator,
     geometry_builder::{BuffersBuilder, Positions, VertexBuffers},
-    math::{Angle, Point as LyonPoint, point, vector},
-    path::{
-        ArcFlags, Path as LyonPath, PathEvent,
-        builder::{PathBuilder, SvgPathBuilder},
-        iterator::PathIterator,
-    },
+    math::{Point as LyonPoint, point},
+    path::{Path as LyonPath, PathEvent, builder::PathBuilder, iterator::PathIterator},
 };
 
 pub(crate) const DEFAULT_TESSELLATION_TOLERANCE: f32 = StrokeOptions::DEFAULT_TOLERANCE;
-
-fn append_segment(builder: &mut impl SvgPathBuilder, segment: PathSegment) {
-    match segment {
-        PathSegment::LineTo(end) => builder.line_to(point(end.x, end.y)),
-        PathSegment::QuadraticTo { control, end } => {
-            builder.quadratic_bezier_to(point(control.x, control.y), point(end.x, end.y))
-        }
-        PathSegment::CubicTo {
-            control1,
-            control2,
-            end,
-        } => builder.cubic_bezier_to(
-            point(control1.x, control1.y),
-            point(control2.x, control2.y),
-            point(end.x, end.y),
-        ),
-        PathSegment::EllipticalArcTo {
-            radii,
-            x_rotation,
-            size,
-            sweep,
-            end,
-        } => builder.arc_to(
-            vector(radii.x.abs(), radii.y.abs()),
-            Angle::radians(x_rotation),
-            ArcFlags {
-                large_arc: size == ArcSize::Major,
-                sweep: sweep == ArcSweep::Positive,
-            },
-            point(end.x, end.y),
-        ),
-    }
-}
 
 /// Backend-independent triangles produced from semantic vector geometry.
 pub(crate) struct Mesh {
@@ -177,53 +141,6 @@ pub(crate) fn tessellate_stroke_with_tolerance(
     }
 }
 
-/// Flattens each valid Subpath independently while preserving closure.
-pub(crate) fn flatten_subpaths(path: &Path, tolerance: f32) -> Vec<Vec<Point>> {
-    let source = build_lyon_path(path);
-    let mut output = Vec::new();
-    let mut current = Vec::new();
-    for event in source.iter().flattened(tolerance) {
-        match event {
-            PathEvent::Begin { at } => {
-                current = vec![Point::new(at.x, at.y)];
-            }
-            PathEvent::Line { to, .. } => current.push(Point::new(to.x, to.y)),
-            PathEvent::End { first, close, .. } => {
-                if close && current.last().copied() != Some(Point::new(first.x, first.y)) {
-                    current.push(Point::new(first.x, first.y));
-                }
-                output.push(std::mem::take(&mut current));
-            }
-            PathEvent::Quadratic { .. } | PathEvent::Cubic { .. } => {
-                unreachable!("flattened path iteration only yields straight segments")
-            }
-        }
-    }
-    output
-}
-
-fn append_path(builder: &mut impl SvgPathBuilder, path: &Path) {
-    for subpath in path.subpaths() {
-        if !subpath.is_finite() {
-            continue;
-        }
-        let start = subpath.start();
-        builder.move_to(point(start.x, start.y));
-        for segment in subpath.segments() {
-            append_segment(builder, *segment);
-        }
-        if subpath.is_closed() {
-            builder.close();
-        }
-    }
-}
-
-fn build_lyon_path(path: &Path) -> LyonPath {
-    let mut builder = LyonPath::builder().with_svg();
-    append_path(&mut builder, path);
-    builder.build()
-}
-
 fn append_dashed_path(
     builder: &mut impl PathBuilder,
     path: &LyonPath,
@@ -345,7 +262,10 @@ impl<'a> DashCursor<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{math::Vector2, path::Subpath};
+    use crate::{
+        math::Vector2,
+        path::{ArcSize, ArcSweep, Subpath},
+    };
 
     fn square(min: f32, max: f32, reverse: bool) -> Subpath {
         let points = if reverse {

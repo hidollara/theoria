@@ -3,8 +3,9 @@ use crate::{
         ColorField, GradientExtend, GradientPoint, GradientStop, LinearGradient, MeshGradient,
     },
     geometry::Point,
+    path::flatten_subpaths,
     path::{Path, PathSegment},
-    tessellation::{DEFAULT_TESSELLATION_TOLERANCE, flatten_subpaths},
+    tessellation::DEFAULT_TESSELLATION_TOLERANCE,
     transform::Projective2,
 };
 

@@ -2,8 +2,10 @@ use std::sync::Arc;
 
 use crate::{geometry::Point, math::Vector2};
 
+mod flatten;
 mod style;
 
+pub(crate) use flatten::{append_path, append_segment, build_lyon_path, flatten_subpaths};
 pub use style::{
     DashPattern, DashPatternError, FillRule, LineCap, LineJoin, StrokeStyle, StrokeStyleError,
 };
