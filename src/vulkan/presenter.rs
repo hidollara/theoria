@@ -2,7 +2,7 @@ use std::{error::Error, sync::Arc};
 
 use ash::{khr, vk};
 
-use crate::{color::Color, target::PresentationTarget, window::WindowSize};
+use crate::{color::Color, surface::SurfaceSize, target::PresentationTarget};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -127,7 +127,7 @@ pub struct Presenter {
     image_available: vk::Semaphore,
     render_finished: vk::Semaphore,
     frame_finished: vk::Fence,
-    requested_size: WindowSize,
+    requested_size: SurfaceSize,
     swapchain: Option<SwapchainResources>,
 }
 
@@ -238,7 +238,7 @@ impl Presenter {
         self.device.clone()
     }
 
-    pub fn resize(&mut self, size: WindowSize) -> Result<()> {
+    pub fn resize(&mut self, size: SurfaceSize) -> Result<()> {
         self.requested_size = size;
         if size.width == 0 || size.height == 0 {
             return Ok(());
@@ -531,7 +531,7 @@ unsafe fn create_swapchain_resources(
     swapchain_loader: &khr::swapchain::Device,
     command_pool: vk::CommandPool,
     queue_family_index: u32,
-    requested_size: WindowSize,
+    requested_size: SurfaceSize,
 ) -> Result<SwapchainResources> {
     let capabilities = unsafe {
         surface_loader.get_physical_device_surface_capabilities(physical_device, surface)?

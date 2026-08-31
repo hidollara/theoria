@@ -1,4 +1,4 @@
-use crate::window::WindowSize;
+use crate::surface::SurfaceSize;
 
 /// A top-left-origin, right-and-down target-space rectangle receiving a View.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -32,7 +32,7 @@ impl Viewport {
 #[derive(Clone, Copy, Debug)]
 pub struct PresentationTarget {
     native: NativePresentationTarget,
-    size: WindowSize,
+    size: SurfaceSize,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -41,14 +41,14 @@ enum NativePresentationTarget {
 }
 
 impl PresentationTarget {
-    pub(crate) const fn win32(hwnd: isize, hinstance: isize, size: WindowSize) -> Self {
+    pub(crate) const fn win32(hwnd: isize, hinstance: isize, size: SurfaceSize) -> Self {
         Self {
             native: NativePresentationTarget::Win32 { hwnd, hinstance },
             size,
         }
     }
 
-    pub const fn size(self) -> WindowSize {
+    pub const fn size(self) -> SurfaceSize {
         self.size
     }
 

@@ -12,6 +12,7 @@ use theoria::{
     path::{
         ArcSize, ArcSweep, DashPattern, FillRule, LineCap, LineJoin, Path, StrokeStyle, Subpath,
     },
+    surface::SurfaceEvent,
     transform::Affine2,
     vulkan::{CanvasRenderer, Presenter},
     window::{Window, WindowEvent},
@@ -38,8 +39,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     while let Some(event) = window.next_event()? {
         match event {
-            WindowEvent::Resized(size) => presenter.resize(size)?,
-            WindowEvent::RedrawRequested => {
+            WindowEvent::Surface(SurfaceEvent::Resized(size)) => presenter.resize(size)?,
+            WindowEvent::Surface(SurfaceEvent::RedrawRequested) => {
                 let size = window.size();
                 let width = size.width as f32;
                 let height = size.height as f32;
@@ -233,6 +234,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             WindowEvent::CloseRequested => break,
+            WindowEvent::Pointer(_) => {}
+            WindowEvent::Scroll(_) => {}
         }
     }
 

@@ -4,14 +4,17 @@ pub mod component;
 pub mod font;
 pub mod geometry;
 pub mod image;
+pub mod input;
 pub mod math;
 pub mod path;
 pub mod reactive;
+pub mod surface;
 mod target;
 mod tessellation;
 pub mod text;
 pub mod transform;
 pub mod vulkan;
 pub mod window;
+mod windows;
 
 pub use target::{PresentationTarget, Viewport};
