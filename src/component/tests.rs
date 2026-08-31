@@ -5,7 +5,8 @@ use std::{
 };
 
 use super::{
-    Component, ComponentContext, ComponentHandle, ComponentRuntime, TurnBudget, TurnOutcome,
+    Component, ComponentContext, ComponentHandle, ComponentRuntime, EventEmitter, EventSource,
+    TurnBudget, TurnOutcome,
 };
 
 struct Counter {
@@ -555,4 +556,213 @@ fn handles_cannot_cross_runtime_boundaries() {
     let component = first.mount(move |_context| Recorder(events));
 
     assert!(catch_unwind(AssertUnwindSafe(|| second.enqueue(&component, 1_u32))).is_err());
+}
+
+struct MoveOnlyEvent(String);
+
+struct EventPublisher {
+    first: EventEmitter<MoveOnlyEvent>,
+    second: EventEmitter<MoveOnlyEvent>,
+    subscriber_log: Rc<RefCell<Vec<String>>>,
+}
+
+impl Component for EventPublisher {
+    type Event = (bool, MoveOnlyEvent);
+
+    fn receive(&mut self, (use_second, event): Self::Event, context: &mut ComponentContext<'_>) {
+        assert!(
+            self.subscriber_log.borrow().is_empty(),
+            "publishing must not invoke subscribers recursively"
+        );
+        let emitter = if use_second {
+            &self.second
+        } else {
+            &self.first
+        };
+        assert!(context.emit(emitter, event));
+    }
+}
+
+struct StringRecorder {
+    values: Rc<RefCell<Vec<String>>>,
+}
+
+impl Component for StringRecorder {
+    type Event = String;
+
+    fn receive(&mut self, event: String, _context: &mut ComponentContext<'_>) {
+        self.values.borrow_mut().push(event);
+    }
+}
+
+#[test]
+fn one_source_supports_repeated_subscriptions_and_cloneable_emitters() {
+    let runtime = ComponentRuntime::new();
+    let values = Rc::new(RefCell::new(Vec::new()));
+    let publisher_values = Rc::clone(&values);
+    let mounted_values = Rc::clone(&values);
+    let publisher = runtime.mount(move |context| {
+        let first_values = Rc::clone(&mounted_values);
+        let first = context.mount(move |_context| StringRecorder {
+            values: first_values,
+        });
+        let second_values = Rc::clone(&mounted_values);
+        let second = context.mount(move |_context| StringRecorder {
+            values: second_values,
+        });
+        let (source, emitter) = context.event::<MoveOnlyEvent>();
+        assert!(context.subscribe_with(&source, &first, |event| format!("first:{}", event.0)));
+        assert!(context.subscribe_with(&source, &second, |event| format!("second:{}", event.0)));
+        EventPublisher {
+            first: emitter.clone(),
+            second: emitter,
+            subscriber_log: publisher_values,
+        }
+    });
+
+    assert!(runtime.enqueue(&publisher, (false, MoveOnlyEvent("one".into()))));
+    assert_eq!(runtime.run_turn(TurnBudget::unlimited()), TurnOutcome::Idle);
+    assert_eq!(&*values.borrow(), &["first:one", "second:one"]);
+
+    values.borrow_mut().clear();
+    assert!(runtime.enqueue(&publisher, (true, MoveOnlyEvent("two".into()))));
+    assert_eq!(runtime.run_turn(TurnBudget::unlimited()), TurnOutcome::Idle);
+    assert_eq!(&*values.borrow(), &["first:two", "second:two"]);
+}
+
+enum SelectedSource {
+    Left(u32),
+    Right(u32),
+}
+
+struct SeparateSources {
+    left: EventEmitter<u32>,
+    right: EventEmitter<u32>,
+}
+
+impl Component for SeparateSources {
+    type Event = SelectedSource;
+
+    fn receive(&mut self, event: Self::Event, context: &mut ComponentContext<'_>) {
+        match event {
+            SelectedSource::Left(value) => assert!(context.emit(&self.left, value)),
+            SelectedSource::Right(value) => assert!(context.emit(&self.right, value)),
+        }
+    }
+}
+
+#[test]
+fn sources_with_the_same_event_type_keep_distinct_identities() {
+    let runtime = ComponentRuntime::new();
+    let values = Rc::new(RefCell::new(Vec::new()));
+    let mounted_values = Rc::clone(&values);
+    let publisher = runtime.mount(move |context| {
+        let target = context.mount(move |_context| StringRecorder {
+            values: mounted_values,
+        });
+        let (left_source, left) = context.event::<u32>();
+        let (right_source, right) = context.event::<u32>();
+        assert!(context.subscribe_with(&left_source, &target, |value| format!("left:{value}")));
+        assert!(context.subscribe_with(&right_source, &target, |value| format!("right:{value}")));
+        SeparateSources { left, right }
+    });
+
+    runtime.enqueue(&publisher, SelectedSource::Right(2));
+    runtime.enqueue(&publisher, SelectedSource::Left(1));
+    assert_eq!(runtime.run_turn(TurnBudget::unlimited()), TurnOutcome::Idle);
+    assert_eq!(&*values.borrow(), &["right:2", "left:1"]);
+}
+
+struct U32Publisher(EventEmitter<u32>);
+
+impl Component for U32Publisher {
+    type Event = u32;
+
+    fn receive(&mut self, event: u32, context: &mut ComponentContext<'_>) {
+        assert!(context.emit(&self.0, event));
+    }
+}
+
+struct RecordedU32(u32);
+
+impl From<&u32> for RecordedU32 {
+    fn from(value: &u32) -> Self {
+        Self(*value)
+    }
+}
+
+struct U32Recorder(Rc<RefCell<Vec<u32>>>);
+
+impl Component for U32Recorder {
+    type Event = RecordedU32;
+
+    fn receive(&mut self, event: RecordedU32, _context: &mut ComponentContext<'_>) {
+        self.0.borrow_mut().push(event.0);
+    }
+}
+
+#[test]
+fn unmounting_a_subscription_owner_disconnects_it() {
+    let runtime = ComponentRuntime::new();
+    let exported_source = Rc::new(RefCell::new(None::<EventSource<u32>>));
+    let source_output = Rc::clone(&exported_source);
+    let publisher = runtime.mount(move |context| {
+        let (source, emitter) = context.event();
+        source_output.replace(Some(source));
+        U32Publisher(emitter)
+    });
+    let values = Rc::new(RefCell::new(Vec::new()));
+    let target_values = Rc::clone(&values);
+    let target = runtime.mount(move |_context| U32Recorder(target_values));
+    let subscription_owner = runtime.mount(|context| {
+        assert!(context.subscribe(
+            exported_source.borrow().as_ref().expect("exported source"),
+            &target,
+        ));
+        Passive
+    });
+
+    assert!(runtime.unmount(&subscription_owner));
+    assert!(runtime.enqueue(&publisher, 7_u32));
+    assert_eq!(runtime.run_turn(TurnBudget::unlimited()), TurnOutcome::Idle);
+    assert!(values.borrow().is_empty());
+}
+
+struct EmitProbe {
+    emitter: EventEmitter<u32>,
+    result: Rc<Cell<Option<bool>>>,
+}
+
+impl Component for EmitProbe {
+    type Event = u32;
+
+    fn receive(&mut self, event: u32, context: &mut ComponentContext<'_>) {
+        self.result.set(Some(context.emit(&self.emitter, event)));
+    }
+}
+
+#[test]
+fn emitter_clones_do_not_keep_their_source_alive() {
+    let runtime = ComponentRuntime::new();
+    let exported_emitter = Rc::new(RefCell::new(None::<EventEmitter<u32>>));
+    let emitter_output = Rc::clone(&exported_emitter);
+    let source_owner = runtime.mount(move |context| {
+        let (_source, emitter) = context.event();
+        emitter_output.replace(Some(emitter));
+        Passive
+    });
+    let result = Rc::new(Cell::new(None));
+    let probe_result = Rc::clone(&result);
+    let probe = runtime.mount(move |_context| EmitProbe {
+        emitter: exported_emitter
+            .borrow_mut()
+            .take()
+            .expect("exported emitter"),
+        result: probe_result,
+    });
+
+    assert!(runtime.unmount(&source_owner));
+    assert!(runtime.enqueue(&probe, 1_u32));
+    assert_eq!(runtime.run_turn(TurnBudget::unlimited()), TurnOutcome::Idle);
+    assert_eq!(result.get(), Some(false));
 }

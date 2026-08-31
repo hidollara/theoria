@@ -10,7 +10,7 @@ use std::{
 use crate::reactive::{EventContext, ReactiveRuntime};
 
 use super::arena::{ComponentArena, ComponentId, ErasedComponent, TypedComponent};
-use super::{Component, ComponentContext, ComponentHandle, MountContext};
+use super::{Component, ComponentContext, ComponentHandle, ComponentResource, MountContext};
 
 /// Owns mounted components, their reactive scopes, and a direct event queue.
 ///
@@ -149,6 +149,10 @@ impl ComponentRuntimeInner {
         }
     }
 
+    pub(super) fn weak(&self) -> Weak<ComponentRuntimeInner> {
+        Weak::clone(&self.self_weak)
+    }
+
     pub(super) fn mount_component<C: Component>(
         &self,
         builder: impl FnOnce(&mut MountContext<'_>) -> C,
@@ -156,14 +160,16 @@ impl ComponentRuntimeInner {
         let _construction = ConstructionGuard::enter(&self.construction_depth);
         let scope = self.reactive.scope();
         let mut children = MountChildrenGuard::new(self);
+        let mut resources: Vec<Box<dyn ComponentResource>> = Vec::new();
         let component = {
-            let mut context = MountContext::new(&scope, self, children.ids_mut());
+            let mut context = MountContext::new(&scope, self, children.ids_mut(), &mut resources);
             builder(&mut context)
         };
-        let id = self
-            .components
-            .borrow_mut()
-            .insert(Box::new(TypedComponent(component)), scope);
+        let id = self.components.borrow_mut().insert(
+            Box::new(TypedComponent(component)),
+            scope,
+            resources,
+        );
         self.components.borrow_mut().adopt_many(id, children.ids());
         children.commit();
         ComponentHandle::new(Weak::clone(&self.self_weak), id)
@@ -203,6 +209,28 @@ impl ComponentRuntimeInner {
         true
     }
 
+    pub(super) fn enqueue_erased(&self, target: ComponentId, event: Box<dyn Any>) -> bool {
+        if !self.accepts_events(target) {
+            return false;
+        }
+        self.queue
+            .borrow_mut()
+            .push_back(QueuedEvent { target, event });
+        true
+    }
+
+    pub(super) fn accepts_events(&self, target: ComponentId) -> bool {
+        self.components.borrow().accepts_events(target)
+    }
+
+    pub(super) fn add_resource(
+        &self,
+        owner: ComponentId,
+        resource: Box<dyn ComponentResource>,
+    ) -> bool {
+        self.components.borrow_mut().add_resource(owner, resource)
+    }
+
     pub(super) fn unmount_handle<C: Component>(&self, target: &ComponentHandle<C>) -> bool {
         self.assert_handle_runtime(target);
         self.request_unmount(target.id())
@@ -235,7 +263,7 @@ impl ComponentRuntimeInner {
         }
     }
 
-    fn assert_handle_runtime<C: Component>(&self, handle: &ComponentHandle<C>) {
+    pub(super) fn assert_handle_runtime<C: Component>(&self, handle: &ComponentHandle<C>) {
         let runtime = handle
             .runtime()
             .expect("component handle used after its Runtime was dropped");

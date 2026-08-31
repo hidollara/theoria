@@ -3,7 +3,9 @@ use crate::reactive::{
 };
 
 use super::arena::ComponentId;
-use super::{Component, ComponentHandle, runtime::ComponentRuntimeInner};
+use super::{
+    Component, ComponentHandle, EventEmitter, EventSource, event, runtime::ComponentRuntimeInner,
+};
 
 /// Reactive construction capabilities scoped to one mounted component.
 ///
@@ -14,6 +16,7 @@ pub struct MountContext<'mount> {
     scope: &'mount ReactiveScope,
     runtime: &'mount ComponentRuntimeInner,
     children: &'mount mut Vec<ComponentId>,
+    resources: &'mount mut Vec<Box<dyn super::ComponentResource>>,
 }
 
 impl<'mount> MountContext<'mount> {
@@ -21,12 +24,63 @@ impl<'mount> MountContext<'mount> {
         scope: &'mount ReactiveScope,
         runtime: &'mount ComponentRuntimeInner,
         children: &'mount mut Vec<ComponentId>,
+        resources: &'mount mut Vec<Box<dyn super::ComponentResource>>,
     ) -> Self {
         Self {
             scope,
             runtime,
             children,
+            resources,
         }
+    }
+
+    /// Creates one lifecycle-bound typed event source and its publication
+    /// capability.
+    ///
+    /// The source remains valid until this component is unmounted. The source
+    /// can be subscribed to repeatedly; cloning the emitter explicitly shares
+    /// publication authority.
+    pub fn event<E: 'static>(&mut self) -> (EventSource<E>, EventEmitter<E>) {
+        let (source, emitter, owner) = event::event(self.runtime);
+        self.resources.push(owner);
+        (source, emitter)
+    }
+
+    /// Connects one source to a component through its standard borrowed event
+    /// conversion.
+    ///
+    /// The connection is owned by the component currently being constructed.
+    pub fn subscribe<C, E>(&mut self, source: &EventSource<E>, target: &ComponentHandle<C>) -> bool
+    where
+        C: Component,
+        E: 'static,
+        for<'event> C::Event: From<&'event E>,
+    {
+        self.subscribe_with(source, target, |event| C::Event::from(event))
+    }
+
+    /// Connects one source using an explicit adapter into the target's event
+    /// vocabulary.
+    ///
+    /// The adapter observes the published value by reference and creates the
+    /// owned event queued for this target. Event handling itself remains in
+    /// [`Component::receive`].
+    pub fn subscribe_with<C, E, F>(
+        &mut self,
+        source: &EventSource<E>,
+        target: &ComponentHandle<C>,
+        map: F,
+    ) -> bool
+    where
+        C: Component,
+        E: 'static,
+        F: Fn(&E) -> C::Event + 'static,
+    {
+        let Some(subscription) = self.runtime.subscribe(source, target, map) else {
+            return false;
+        };
+        self.resources.push(subscription);
+        true
     }
 
     /// Mounts a component owned for the lifetime of the component currently
@@ -96,6 +150,54 @@ impl<'turn> ComponentContext<'turn> {
         E: Into<C::Event>,
     {
         self.runtime.enqueue_for(target, event.into())
+    }
+
+    /// Publishes one event to every current subscriber in subscription order.
+    ///
+    /// Delivery is queued and never invokes a subscriber recursively. `false`
+    /// means the component scope that created the source is no longer active.
+    pub fn emit<E: 'static>(&mut self, emitter: &EventEmitter<E>, event: E) -> bool {
+        self.runtime.emit(emitter, event)
+    }
+
+    /// Creates a source owned by the component handling this event.
+    pub fn event<E: 'static>(&mut self) -> (EventSource<E>, EventEmitter<E>) {
+        let (source, emitter, owner) = event::event(self.runtime);
+        assert!(
+            self.runtime.add_resource(self.current, owner),
+            "cannot create an event source while the current component is unmounting"
+        );
+        (source, emitter)
+    }
+
+    /// Adds a subscription through the target's standard borrowed event
+    /// conversion.
+    pub fn subscribe<C, E>(&mut self, source: &EventSource<E>, target: &ComponentHandle<C>) -> bool
+    where
+        C: Component,
+        E: 'static,
+        for<'event> C::Event: From<&'event E>,
+    {
+        self.subscribe_with(source, target, |event| C::Event::from(event))
+    }
+
+    /// Adds a subscription with an explicit adapter into the target's event
+    /// vocabulary.
+    pub fn subscribe_with<C, E, F>(
+        &mut self,
+        source: &EventSource<E>,
+        target: &ComponentHandle<C>,
+        map: F,
+    ) -> bool
+    where
+        C: Component,
+        E: 'static,
+        F: Fn(&E) -> C::Event + 'static,
+    {
+        let Some(subscription) = self.runtime.subscribe(source, target, map) else {
+            return false;
+        };
+        self.runtime.add_resource(self.current, subscription)
     }
 
     /// Mounts a component owned by the component handling this event.

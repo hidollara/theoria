@@ -1,20 +1,27 @@
 //! Typed, directly delivered events for higher-level components.
 //!
 //! This module supplies the small runtime boundary above [`crate::reactive`].
-//! Delivery is direct: routing, gesture recognition, subscriptions, and visual
-//! trees can be expressed by components later instead of being built into the
-//! delivery primitive.
+//! Delivery is direct: routing, gesture recognition, and visual trees can be
+//! expressed by components instead of being built into the delivery primitive.
+//! Typed event sources provide lifecycle-bound publication without defining
+//! how an event should be routed.
 
 mod arena;
 mod context;
+mod event;
 mod runtime;
 
 use std::{fmt, marker::PhantomData, rc::Weak};
 
 use arena::ComponentId;
 pub use context::{ComponentContext, MountContext};
+pub use event::{EventEmitter, EventSource};
 use runtime::ComponentRuntimeInner;
 pub use runtime::{ComponentRuntime, TurnBudget, TurnOutcome};
+
+trait ComponentResource {
+    fn deactivate(&self);
+}
 
 /// A stateful event receiver owned by a [`ComponentRuntime`].
 ///

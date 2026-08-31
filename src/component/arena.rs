@@ -2,7 +2,7 @@ use std::any::Any;
 
 use crate::reactive::ReactiveScope;
 
-use super::{Component, ComponentContext};
+use super::{Component, ComponentContext, ComponentResource};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(super) struct ComponentId {
@@ -38,6 +38,7 @@ struct ComponentSlot {
     generation: u32,
     component: Option<Box<dyn ErasedComponent>>,
     scope: Option<ReactiveScope>,
+    resources: Vec<Box<dyn ComponentResource>>,
     owner: Option<ComponentId>,
     children: Vec<ComponentId>,
     dispatching: bool,
@@ -57,12 +58,14 @@ impl ComponentArena {
         &mut self,
         component: Box<dyn ErasedComponent>,
         scope: ReactiveScope,
+        resources: Vec<Box<dyn ComponentResource>>,
     ) -> ComponentId {
         let id = if let Some(index) = self.free.pop() {
             let slot = &mut self.slots[index as usize];
             debug_assert!(slot.component.is_none() && slot.scope.is_none());
             slot.component = Some(component);
             slot.scope = Some(scope);
+            slot.resources = resources;
             slot.owner = None;
             slot.children.clear();
             slot.dispatching = false;
@@ -78,6 +81,7 @@ impl ComponentArena {
                 generation: 0,
                 component: Some(component),
                 scope: Some(scope),
+                resources,
                 owner: None,
                 children: Vec::new(),
                 dispatching: false,
@@ -216,6 +220,9 @@ impl ComponentArena {
                 return;
             };
             slot.unmount_requested = true;
+            for resource in &slot.resources {
+                resource.deactivate();
+            }
             slot.children.clone()
         };
         for child in children {
@@ -242,7 +249,7 @@ impl ComponentArena {
     }
 
     fn remove_one(&mut self, id: ComponentId) -> Option<RemovedComponent> {
-        let (component, scope, owner) = {
+        let (component, scope, resources, owner) = {
             let slot = self.slot_mut(id)?;
             if slot.dispatching || !slot.children.is_empty() {
                 return None;
@@ -250,6 +257,7 @@ impl ComponentArena {
             (
                 slot.component.take()?,
                 slot.scope.take()?,
+                std::mem::take(&mut slot.resources),
                 slot.owner.take(),
             )
         };
@@ -267,7 +275,26 @@ impl ComponentArena {
         slot.children.clear();
         self.free.push(id.index);
         self.len -= 1;
-        Some(RemovedComponent { component, scope })
+        Some(RemovedComponent {
+            component,
+            scope,
+            resources,
+        })
+    }
+
+    pub(super) fn add_resource(
+        &mut self,
+        id: ComponentId,
+        resource: Box<dyn ComponentResource>,
+    ) -> bool {
+        let Some(slot) = self.slot_mut(id) else {
+            return false;
+        };
+        if slot.unmount_requested {
+            return false;
+        }
+        slot.resources.push(resource);
+        true
     }
 
     fn slot(&self, id: ComponentId) -> Option<&ComponentSlot> {
@@ -306,11 +333,13 @@ impl Drop for ComponentArena {
 pub(super) struct RemovedComponent {
     component: Box<dyn ErasedComponent>,
     scope: ReactiveScope,
+    resources: Vec<Box<dyn ComponentResource>>,
 }
 
 impl RemovedComponent {
     pub(super) fn dispose(self) {
         drop(self.component);
+        drop(self.resources);
         drop(self.scope);
     }
 }
