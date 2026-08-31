@@ -5,6 +5,7 @@ pub mod geometry;
 pub mod image;
 pub mod math;
 pub mod path;
+pub mod reactive;
 mod target;
 mod tessellation;
 pub mod text;
