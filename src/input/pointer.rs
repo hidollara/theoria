@@ -110,6 +110,12 @@ pub struct PointerEvent {
     pub button_change: Option<PointerButtonChange>,
 }
 
+impl From<&PointerEvent> for PointerEvent {
+    fn from(event: &PointerEvent) -> Self {
+        *event
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

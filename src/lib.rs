@@ -3,6 +3,7 @@ pub mod color;
 pub mod component;
 pub mod font;
 pub mod geometry;
+pub mod gesture;
 pub mod image;
 pub mod input;
 pub mod math;
