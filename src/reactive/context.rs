@@ -44,6 +44,10 @@ impl<'turn> EventContext<'turn> {
         Self { runtime }
     }
 
+    pub(crate) fn reborrow(&self) -> EventContext<'_> {
+        EventContext::new(self.runtime)
+    }
+
     /// Reads the current snapshot without creating a reactive dependency.
     pub fn read_current<T: 'static>(&self, value: &Value<T>) -> Snapshot<T> {
         read_untracked(

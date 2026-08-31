@@ -1,5 +1,6 @@
 pub mod canvas;
 pub mod color;
+pub mod component;
 pub mod font;
 pub mod geometry;
 pub mod image;
