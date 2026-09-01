@@ -6,7 +6,7 @@ use std::{
 
 use super::{
     Component, ComponentContext, ComponentHandle, ComponentRuntime, EventEmitter, EventSource,
-    TurnBudget, TurnOutcome,
+    EventTarget, TurnBudget, TurnOutcome,
 };
 
 struct Counter {
@@ -763,6 +763,105 @@ fn emitter_clones_do_not_keep_their_source_alive() {
 
     assert!(runtime.unmount(&source_owner));
     assert!(runtime.enqueue(&probe, 1_u32));
+    assert_eq!(runtime.run_turn(TurnBudget::unlimited()), TurnOutcome::Idle);
+    assert_eq!(result.get(), Some(false));
+}
+
+#[derive(Clone, Copy)]
+struct RoutedValue(u32);
+
+enum LeftEvent {
+    Routed(RoutedValue),
+}
+
+impl From<RoutedValue> for LeftEvent {
+    fn from(value: RoutedValue) -> Self {
+        Self::Routed(value)
+    }
+}
+
+struct LeftRecorder(Rc<RefCell<Vec<String>>>);
+
+impl Component for LeftRecorder {
+    type Event = LeftEvent;
+
+    fn receive(&mut self, event: Self::Event, _context: &mut ComponentContext<'_>) {
+        let LeftEvent::Routed(value) = event;
+        self.0.borrow_mut().push(format!("left:{}", value.0));
+    }
+}
+
+struct RightRecorder(Rc<RefCell<Vec<String>>>);
+
+impl Component for RightRecorder {
+    type Event = RoutedValue;
+
+    fn receive(&mut self, event: Self::Event, _context: &mut ComponentContext<'_>) {
+        self.0.borrow_mut().push(format!("right:{}", event.0));
+    }
+}
+
+struct ValueRouter {
+    targets: Vec<EventTarget<RoutedValue>>,
+}
+
+impl Component for ValueRouter {
+    type Event = u32;
+
+    fn receive(&mut self, event: Self::Event, context: &mut ComponentContext<'_>) {
+        for target in &self.targets {
+            assert!(context.send_to(target, RoutedValue(event)));
+        }
+    }
+}
+
+#[test]
+fn event_targets_store_heterogeneous_components_for_one_event_type() {
+    let runtime = ComponentRuntime::new();
+    let values = Rc::new(RefCell::new(Vec::new()));
+    let mounted_values = Rc::clone(&values);
+    let router = runtime.mount(move |context| {
+        let left_values = Rc::clone(&mounted_values);
+        let left = context.mount(move |_context| LeftRecorder(left_values));
+        let right = context.mount(move |_context| RightRecorder(mounted_values));
+        ValueRouter {
+            targets: vec![left.event_target(), right.event_target()],
+        }
+    });
+
+    assert!(runtime.enqueue(&router, 7_u32));
+    assert_eq!(runtime.run_turn(TurnBudget::unlimited()), TurnOutcome::Idle);
+    assert_eq!(&*values.borrow(), &["left:7", "right:7"]);
+}
+
+struct TargetProbe {
+    target: EventTarget<RoutedValue>,
+    result: Rc<Cell<Option<bool>>>,
+}
+
+impl Component for TargetProbe {
+    type Event = ();
+
+    fn receive(&mut self, (): (), context: &mut ComponentContext<'_>) {
+        self.result
+            .set(Some(context.send_to(&self.target, RoutedValue(1))));
+    }
+}
+
+#[test]
+fn event_target_does_not_keep_an_unmounted_component_alive() {
+    let runtime = ComponentRuntime::new();
+    let target = runtime.mount(|_context| RightRecorder(Rc::new(RefCell::new(Vec::new()))));
+    let erased = target.event_target();
+    assert!(runtime.unmount(&target));
+
+    let result = Rc::new(Cell::new(None));
+    let probe_result = Rc::clone(&result);
+    let probe = runtime.mount(move |_context| TargetProbe {
+        target: erased,
+        result: probe_result,
+    });
+    assert!(runtime.enqueue(&probe, ()));
     assert_eq!(runtime.run_turn(TurnBudget::unlimited()), TurnOutcome::Idle);
     assert_eq!(result.get(), Some(false));
 }

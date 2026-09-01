@@ -11,8 +11,9 @@ enum Shape {
 
 /// A local-coordinate region that can participate in interaction hit testing.
 ///
-/// A HitRegion has no component target, transform, or stacking order. Those
-/// belong to the interaction structure that places this reusable geometry.
+/// A HitRegion has no component target, transform, or stacking order. A
+/// gesture-specific propagator supplies those delivery semantics when it
+/// places this reusable geometry.
 #[derive(Clone, Debug, PartialEq)]
 pub struct HitRegion {
     shape: Shape,

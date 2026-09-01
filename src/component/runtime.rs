@@ -10,7 +10,9 @@ use std::{
 use crate::reactive::{EventContext, ReactiveRuntime};
 
 use super::arena::{ComponentArena, ComponentId, ErasedComponent, TypedComponent};
-use super::{Component, ComponentContext, ComponentHandle, ComponentResource, MountContext};
+use super::{
+    Component, ComponentContext, ComponentHandle, ComponentResource, EventTarget, MountContext,
+};
 
 /// Owns mounted components, their reactive scopes, and a direct event queue.
 ///
@@ -219,6 +221,11 @@ impl ComponentRuntimeInner {
         true
     }
 
+    pub(super) fn enqueue_target<E: 'static>(&self, target: &EventTarget<E>, event: E) -> bool {
+        self.assert_target_runtime(target);
+        self.enqueue_erased(target.id(), target.erase(event))
+    }
+
     pub(super) fn accepts_events(&self, target: ComponentId) -> bool {
         self.components.borrow().accepts_events(target)
     }
@@ -270,6 +277,16 @@ impl ComponentRuntimeInner {
         assert!(
             std::ptr::eq(runtime.as_ref(), self),
             "component handle belongs to a different ComponentRuntime"
+        );
+    }
+
+    fn assert_target_runtime<E: 'static>(&self, target: &EventTarget<E>) {
+        let runtime = target
+            .runtime()
+            .expect("event target used after its Runtime was dropped");
+        assert!(
+            std::ptr::eq(runtime.as_ref(), self),
+            "event target belongs to a different ComponentRuntime"
         );
     }
 

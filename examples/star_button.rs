@@ -6,9 +6,9 @@ use theoria::{
     component::{Component, ComponentContext},
     font::Font,
     geometry::Point,
-    gesture::{Click, ClickGesture, ClickRecognizer},
+    gesture::{Click, ClickGesture, ClickPropagator, ClickRecognizer},
     input::pointer::PointerButton,
-    interaction::{HitRegion, InteractionTree},
+    interaction::HitRegion,
     math::Vector2,
     path::{FillRule, LineCap, LineJoin, Path, StrokeStyle},
     reactive::State,
@@ -23,7 +23,6 @@ const HIT_TOLERANCE: f32 = 0.25;
 const CLICK_MOVEMENT: f32 = 8.0;
 
 struct StarButton {
-    interaction: InteractionTree<()>,
     count: State<u32>,
 }
 
@@ -35,26 +34,14 @@ impl Component for StarButton {
             return;
         }
 
-        // This is the deliberately manual routing step. The finished Click is
-        // accepted only when both ends of the gesture hit the same star.
-        let pressed_inside = self
-            .interaction
-            .hit_test(click.press_position, HIT_TOLERANCE)
-            .is_some();
-        let released_inside = self
-            .interaction
-            .hit_test(click.release_position, HIT_TOLERANCE)
-            .is_some();
-        if pressed_inside && released_inside {
-            context.update(&self.count, |count| count.saturating_add(1));
-        }
+        context.update(&self.count, |count| count.saturating_add(1));
     }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let font = Font::from_bytes(std::fs::read(r"C:\Windows\Fonts\segoeui.ttf")?)?;
     let star = star_path(Point::new(480.0, 255.0), 155.0, 68.0);
-    let interaction = InteractionTree::target((), HitRegion::fill(star.clone(), FillRule::NonZero));
+    let hit_region = HitRegion::fill(star.clone(), FillRule::NonZero);
     let window = Window::new(
         "Theoria — Star Button",
         WIDTH,
@@ -69,9 +56,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             });
             let count = context.state(0_u32);
             let count_value = count.value();
-            let button = context.mount(move |_context| StarButton { interaction, count });
+            let button = context.mount(move |_context| StarButton { count });
+            let click_target = button.event_target();
+            let propagator = context.mount(move |_context| {
+                ClickPropagator::new(HIT_TOLERANCE)
+                    .expect("valid hit-test tolerance")
+                    .with_target(click_target, hit_region)
+            });
             assert!(context.subscribe(events.pointer(), &gesture));
-            assert!(context.subscribe(&click_source, &button));
+            assert!(context.subscribe(&click_source, &propagator));
 
             let canvas_count = count_value.clone();
             let canvas = context.computed(move |context| {
@@ -199,8 +192,7 @@ mod tests {
     #[test]
     fn only_clicks_inside_the_star_increment_the_counter() {
         let star = star_path(Point::new(480.0, 255.0), 155.0, 68.0);
-        let interaction =
-            InteractionTree::target((), HitRegion::fill(star.clone(), FillRule::NonZero));
+        let hit_region = HitRegion::fill(star.clone(), FillRule::NonZero);
         let observed_count = Rc::new(Cell::new(0));
         let effect_count = Rc::clone(&observed_count);
         let runtime = ComponentRuntime::new();
@@ -215,9 +207,15 @@ mod tests {
             });
             let count = context.state(0_u32);
             let count_value = count.value();
-            let button = context.mount(move |_context| StarButton { interaction, count });
+            let button = context.mount(move |_context| StarButton { count });
+            let click_target = button.event_target();
+            let propagator = context.mount(move |_context| {
+                ClickPropagator::new(HIT_TOLERANCE)
+                    .expect("valid hit-test tolerance")
+                    .with_target(click_target, hit_region)
+            });
             assert!(context.subscribe(&pointer, &gesture));
-            assert!(context.subscribe(&click_source, &button));
+            assert!(context.subscribe(&click_source, &propagator));
             context.effect(move |context| {
                 effect_count.set(*context.read(&count_value));
             });

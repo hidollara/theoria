@@ -10,6 +10,7 @@ mod arena;
 mod context;
 mod event;
 mod runtime;
+mod target;
 
 use std::{fmt, marker::PhantomData, rc::Weak};
 
@@ -18,6 +19,7 @@ pub use context::{ComponentContext, MountContext};
 pub use event::{EventEmitter, EventSource};
 use runtime::ComponentRuntimeInner;
 pub use runtime::{ComponentRuntime, TurnBudget, TurnOutcome};
+pub use target::EventTarget;
 
 trait ComponentResource {
     fn deactivate(&self);

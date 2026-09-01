@@ -4,7 +4,8 @@ use crate::reactive::{
 
 use super::arena::ComponentId;
 use super::{
-    Component, ComponentHandle, EventEmitter, EventSource, event, runtime::ComponentRuntimeInner,
+    Component, ComponentHandle, EventEmitter, EventSource, EventTarget, event,
+    runtime::ComponentRuntimeInner,
 };
 
 /// Reactive construction capabilities scoped to one mounted component.
@@ -150,6 +151,14 @@ impl<'turn> ComponentContext<'turn> {
         E: Into<C::Event>,
     {
         self.runtime.enqueue_for(target, event.into())
+    }
+
+    /// Queues a direct event for a type-erased destination.
+    ///
+    /// This is the routing counterpart to [`Self::send`]: the event type stays
+    /// explicit while the concrete receiving component type is hidden.
+    pub fn send_to<E: 'static>(&mut self, target: &EventTarget<E>, event: E) -> bool {
+        self.runtime.enqueue_target(target, event)
     }
 
     /// Publishes one event to every current subscriber in subscription order.
