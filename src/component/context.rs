@@ -39,7 +39,7 @@ impl<'mount> MountContext<'mount> {
     /// capability.
     ///
     /// The source remains valid until this component is unmounted. The source
-    /// can be subscribed to repeatedly; cloning the emitter explicitly shares
+    /// can be connected to repeatedly; cloning the emitter explicitly shares
     /// publication authority.
     pub fn event<E: 'static>(&mut self) -> (EventSource<E>, EventEmitter<E>) {
         let (source, emitter, owner) = event::event(self.runtime);
@@ -50,14 +50,15 @@ impl<'mount> MountContext<'mount> {
     /// Connects one source to a component through its standard borrowed event
     /// conversion.
     ///
-    /// The connection is owned by the component currently being constructed.
-    pub fn subscribe<C, E>(&mut self, source: &EventSource<E>, target: &ComponentHandle<C>) -> bool
+    /// The component currently being constructed owns the connection. Source
+    /// or target removal also makes the connection inoperative.
+    pub fn connect<C, E>(&mut self, source: &EventSource<E>, target: &ComponentHandle<C>) -> bool
     where
         C: Component,
         E: 'static,
         for<'event> C::Event: From<&'event E>,
     {
-        self.subscribe_with(source, target, |event| C::Event::from(event))
+        self.connect_map(source, target, |event| C::Event::from(event))
     }
 
     /// Connects one source using an explicit adapter into the target's event
@@ -66,7 +67,7 @@ impl<'mount> MountContext<'mount> {
     /// The adapter observes the published value by reference and creates the
     /// owned event queued for this target. Event handling itself remains in
     /// [`Component::receive`].
-    pub fn subscribe_with<C, E, F>(
+    pub fn connect_map<C, E, F>(
         &mut self,
         source: &EventSource<E>,
         target: &ComponentHandle<C>,
@@ -77,11 +78,28 @@ impl<'mount> MountContext<'mount> {
         E: 'static,
         F: Fn(&E) -> C::Event + 'static,
     {
-        let Some(subscription) = self.runtime.subscribe(source, target, map) else {
+        let Some(connection) = self.runtime.connect(source, target, map) else {
             return false;
         };
-        self.resources.push(subscription);
+        self.resources.push(connection);
         true
+    }
+
+    /// Mounts an anonymous event component owned by the component currently
+    /// being constructed.
+    ///
+    /// The builder receives the anonymous component's own MountContext and
+    /// returns its event handler. The resulting opaque handle can be wired to
+    /// one or more sources with [`Self::connect`] or [`Self::connect_map`].
+    pub fn mount_handler<E, F>(
+        &mut self,
+        builder: impl FnOnce(&mut MountContext<'_>) -> F,
+    ) -> ComponentHandle<impl Component<Event = E>>
+    where
+        E: 'static,
+        F: FnMut(E, &mut ComponentContext<'_>) + 'static,
+    {
+        self.mount(move |context| ClosureComponent::new(builder(context)))
     }
 
     /// Mounts a component owned for the lifetime of the component currently
@@ -161,9 +179,9 @@ impl<'turn> ComponentContext<'turn> {
         self.runtime.enqueue_target(target, event)
     }
 
-    /// Publishes one event to every current subscriber in subscription order.
+    /// Publishes one event to every current target in connection order.
     ///
-    /// Delivery is queued and never invokes a subscriber recursively. `false`
+    /// Delivery is queued and never invokes a target recursively. `false`
     /// means the component scope that created the source is no longer active.
     pub fn emit<E: 'static>(&mut self, emitter: &EventEmitter<E>, event: E) -> bool {
         self.runtime.emit(emitter, event)
@@ -179,20 +197,20 @@ impl<'turn> ComponentContext<'turn> {
         (source, emitter)
     }
 
-    /// Adds a subscription through the target's standard borrowed event
-    /// conversion.
-    pub fn subscribe<C, E>(&mut self, source: &EventSource<E>, target: &ComponentHandle<C>) -> bool
+    /// Adds a connection owned by the component handling the current event,
+    /// through the target's standard borrowed event conversion.
+    pub fn connect<C, E>(&mut self, source: &EventSource<E>, target: &ComponentHandle<C>) -> bool
     where
         C: Component,
         E: 'static,
         for<'event> C::Event: From<&'event E>,
     {
-        self.subscribe_with(source, target, |event| C::Event::from(event))
+        self.connect_map(source, target, |event| C::Event::from(event))
     }
 
-    /// Adds a subscription with an explicit adapter into the target's event
-    /// vocabulary.
-    pub fn subscribe_with<C, E, F>(
+    /// Adds a current-component-owned connection with an explicit mapping
+    /// into the target's event vocabulary.
+    pub fn connect_map<C, E, F>(
         &mut self,
         source: &EventSource<E>,
         target: &ComponentHandle<C>,
@@ -203,10 +221,23 @@ impl<'turn> ComponentContext<'turn> {
         E: 'static,
         F: Fn(&E) -> C::Event + 'static,
     {
-        let Some(subscription) = self.runtime.subscribe(source, target, map) else {
+        let Some(connection) = self.runtime.connect(source, target, map) else {
             return false;
         };
-        self.runtime.add_resource(self.current, subscription)
+        self.runtime.add_resource(self.current, connection)
+    }
+
+    /// Dynamically mounts an anonymous event component as a child of the
+    /// component currently processing this event.
+    pub fn mount_handler<E, F>(
+        &mut self,
+        builder: impl FnOnce(&mut MountContext<'_>) -> F,
+    ) -> ComponentHandle<impl Component<Event = E>>
+    where
+        E: 'static,
+        F: FnMut(E, &mut ComponentContext<'_>) + 'static,
+    {
+        self.mount(move |context| ClosureComponent::new(builder(context)))
     }
 
     /// Mounts a component owned by the component handling this event.
@@ -250,5 +281,31 @@ impl<'turn> ComponentContext<'turn> {
     /// Updates State from its current value as part of this event turn.
     pub fn update<T: 'static>(&mut self, state: &State<T>, update: impl FnOnce(&T) -> T) {
         self.reactive.update(state, update);
+    }
+}
+
+struct ClosureComponent<E, F> {
+    handler: F,
+    marker: std::marker::PhantomData<fn(E)>,
+}
+
+impl<E, F> ClosureComponent<E, F> {
+    fn new(handler: F) -> Self {
+        Self {
+            handler,
+            marker: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<E, F> Component for ClosureComponent<E, F>
+where
+    E: 'static,
+    F: FnMut(E, &mut ComponentContext<'_>) + 'static,
+{
+    type Event = E;
+
+    fn receive(&mut self, event: Self::Event, context: &mut ComponentContext<'_>) {
+        (self.handler)(event, context);
     }
 }

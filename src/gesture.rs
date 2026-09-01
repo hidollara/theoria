@@ -6,9 +6,9 @@
 //! adding routing semantics to the component Runtime itself.
 
 mod click;
+mod click_area;
 mod click_component;
-mod click_propagator;
 
 pub use click::{Click, ClickRecognizer};
+pub use click_area::ClickArea;
 pub use click_component::ClickGesture;
-pub use click_propagator::ClickPropagator;

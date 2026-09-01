@@ -6,12 +6,12 @@ use theoria::{
     component::{Component, ComponentContext},
     font::Font,
     geometry::Point,
-    gesture::{Click, ClickGesture, ClickPropagator, ClickRecognizer},
+    gesture::{Click, ClickArea, ClickGesture, ClickRecognizer},
     input::pointer::PointerButton,
     interaction::HitRegion,
     math::Vector2,
     path::{FillRule, LineCap, LineJoin, Path, StrokeStyle},
-    reactive::State,
+    reactive::{State, Value},
     text::{Text, TextStyle},
     transform::Affine2,
     window::{Window, WindowContent},
@@ -57,14 +57,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let count = context.state(0_u32);
             let count_value = count.value();
             let button = context.mount(move |_context| StarButton { count });
-            let click_target = button.event_target();
-            let propagator = context.mount(move |_context| {
-                ClickPropagator::new(HIT_TOLERANCE)
-                    .expect("valid hit-test tolerance")
-                    .with_target(click_target, hit_region)
+            let click_handler = context.mount_handler(move |_context| {
+                let areas = Value::from(vec![ClickArea::new(button.event_target(), hit_region)]);
+                move |click: Click, context: &mut ComponentContext<'_>| {
+                    let areas = context.read_current(&areas);
+                    if let Some(area) = areas
+                        .iter()
+                        .rev()
+                        .find(|area| area.contains(click.press_position, HIT_TOLERANCE))
+                    {
+                        let _ = area.try_forward(&click, HIT_TOLERANCE, context);
+                    }
+                }
             });
-            assert!(context.subscribe(events.pointer(), &gesture));
-            assert!(context.subscribe(&click_source, &propagator));
+            assert!(context.connect(events.pointer(), &gesture));
+            assert!(context.connect(&click_source, &click_handler));
 
             let canvas_count = count_value.clone();
             let canvas = context.computed(move |context| {
@@ -208,14 +215,21 @@ mod tests {
             let count = context.state(0_u32);
             let count_value = count.value();
             let button = context.mount(move |_context| StarButton { count });
-            let click_target = button.event_target();
-            let propagator = context.mount(move |_context| {
-                ClickPropagator::new(HIT_TOLERANCE)
-                    .expect("valid hit-test tolerance")
-                    .with_target(click_target, hit_region)
+            let click_handler = context.mount_handler(move |_context| {
+                let areas = Value::from(vec![ClickArea::new(button.event_target(), hit_region)]);
+                move |click: Click, context: &mut ComponentContext<'_>| {
+                    let areas = context.read_current(&areas);
+                    if let Some(area) = areas
+                        .iter()
+                        .rev()
+                        .find(|area| area.contains(click.press_position, HIT_TOLERANCE))
+                    {
+                        let _ = area.try_forward(&click, HIT_TOLERANCE, context);
+                    }
+                }
             });
-            assert!(context.subscribe(&pointer, &gesture));
-            assert!(context.subscribe(&click_source, &propagator));
+            assert!(context.connect(&pointer, &gesture));
+            assert!(context.connect(&click_source, &click_handler));
             context.effect(move |context| {
                 effect_count.set(*context.read(&count_value));
             });

@@ -109,7 +109,7 @@ pub struct Window {
 impl Window {
     /// Creates a Window and mounts its component graph.
     ///
-    /// `build` can create State, computed Values, Effects, subscriptions, and
+    /// `build` can create State, computed Values, Effects, event connections, and
     /// child components. Its return value is the Window's sole semantic output.
     pub fn new(
         title: &str,

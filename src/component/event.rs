@@ -8,10 +8,10 @@ use std::{
 
 use super::{Component, ComponentResource, arena::ComponentId, runtime::ComponentRuntimeInner};
 
-/// A typed event output that can be subscribed to repeatedly.
+/// A typed event output that can be connected to repeatedly.
 ///
 /// A source is deliberately not cloneable: it is the single public identity of
-/// one event stream. Borrowing it to add a subscription does not consume it.
+/// one event stream. Borrowing it to add a connection does not consume it.
 /// Holding a source does not keep the component that created it alive.
 pub struct EventSource<E: 'static> {
     runtime: Weak<ComponentRuntimeInner>,
@@ -75,7 +75,7 @@ pub(super) fn event<E: 'static>(
 }
 
 impl ComponentRuntimeInner {
-    pub(super) fn subscribe<C, E, F>(
+    pub(super) fn connect<C, E, F>(
         &self,
         source: &EventSource<E>,
         target: &super::ComponentHandle<C>,
@@ -95,8 +95,8 @@ impl ComponentRuntimeInner {
         if !endpoint.active.get() {
             return None;
         }
-        let subscription = endpoint.subscribe(target.id(), move |event| Box::new(map(event)));
-        Some(Box::new(subscription))
+        let connection = endpoint.connect(target.id(), move |event| Box::new(map(event)));
+        Some(Box::new(connection))
     }
 
     pub(super) fn emit<E: 'static>(&self, emitter: &EventEmitter<E>, event: E) -> bool {
@@ -121,8 +121,8 @@ impl ComponentRuntimeInner {
 struct EventEndpoint<E: 'static> {
     runtime: Weak<ComponentRuntimeInner>,
     active: Cell<bool>,
-    next_subscription: Cell<u64>,
-    subscriptions: RefCell<Vec<EventSubscription<E>>>,
+    next_connection: Cell<u64>,
+    connections: RefCell<Vec<EventConnection<E>>>,
 }
 
 impl<E: 'static> EventEndpoint<E> {
@@ -130,27 +130,27 @@ impl<E: 'static> EventEndpoint<E> {
         Self {
             runtime,
             active: Cell::new(true),
-            next_subscription: Cell::new(0),
-            subscriptions: RefCell::new(Vec::new()),
+            next_connection: Cell::new(0),
+            connections: RefCell::new(Vec::new()),
         }
     }
 
-    fn subscribe(
+    fn connect(
         self: &Rc<Self>,
         target: ComponentId,
         convert: impl Fn(&E) -> Box<dyn Any> + 'static,
-    ) -> SubscriptionLease<E> {
-        let id = self.next_subscription.get();
-        self.next_subscription.set(
+    ) -> ConnectionLease<E> {
+        let id = self.next_connection.get();
+        self.next_connection.set(
             id.checked_add(1)
-                .expect("event source subscription identity exhausted"),
+                .expect("event source connection identity exhausted"),
         );
-        self.subscriptions.borrow_mut().push(EventSubscription {
+        self.connections.borrow_mut().push(EventConnection {
             id,
             target,
             convert: Box::new(convert),
         });
-        SubscriptionLease {
+        ConnectionLease {
             endpoint: Rc::downgrade(self),
             id,
         }
@@ -167,29 +167,29 @@ impl<E: 'static> EventEndpoint<E> {
             "event endpoint runtime changed"
         );
 
-        let mut subscriptions = self.subscriptions.borrow_mut();
-        subscriptions.retain(|subscription| runtime.accepts_events(subscription.target));
-        for subscription in subscriptions.iter() {
-            let event = (subscription.convert)(&event);
-            let queued = runtime.enqueue_erased(subscription.target, event);
-            debug_assert!(queued, "validated event subscriber became unavailable");
+        let mut connections = self.connections.borrow_mut();
+        connections.retain(|connection| runtime.accepts_events(connection.target));
+        for connection in connections.iter() {
+            let event = (connection.convert)(&event);
+            let queued = runtime.enqueue_erased(connection.target, event);
+            debug_assert!(queued, "validated event target became unavailable");
         }
         true
     }
 
-    fn remove_subscription(&self, id: u64) {
-        self.subscriptions
+    fn remove_connection(&self, id: u64) {
+        self.connections
             .borrow_mut()
-            .retain(|subscription| subscription.id != id);
+            .retain(|connection| connection.id != id);
     }
 
     fn deactivate(&self) {
         self.active.set(false);
-        self.subscriptions.borrow_mut().clear();
+        self.connections.borrow_mut().clear();
     }
 }
 
-struct EventSubscription<E: 'static> {
+struct EventConnection<E: 'static> {
     id: u64,
     target: ComponentId,
     convert: Box<EventMapper<E>>,
@@ -213,20 +213,20 @@ impl<E: 'static> Drop for EventOwner<E> {
     }
 }
 
-struct SubscriptionLease<E: 'static> {
+struct ConnectionLease<E: 'static> {
     endpoint: Weak<EventEndpoint<E>>,
     id: u64,
 }
 
-impl<E: 'static> ComponentResource for SubscriptionLease<E> {
+impl<E: 'static> ComponentResource for ConnectionLease<E> {
     fn deactivate(&self) {
         if let Some(endpoint) = self.endpoint.upgrade() {
-            endpoint.remove_subscription(self.id);
+            endpoint.remove_connection(self.id);
         }
     }
 }
 
-impl<E: 'static> Drop for SubscriptionLease<E> {
+impl<E: 'static> Drop for ConnectionLease<E> {
     fn drop(&mut self) {
         self.deactivate();
     }

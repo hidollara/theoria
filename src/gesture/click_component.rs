@@ -112,8 +112,8 @@ mod tests {
             });
             let recorder = context.mount(move |_context| ClickRecorder(output));
 
-            assert!(context.subscribe(&pointer_source, &gesture));
-            assert!(context.subscribe(&click_source, &recorder));
+            assert!(context.connect(&pointer_source, &gesture));
+            assert!(context.connect(&click_source, &recorder));
 
             let input = context.mount(move |_context| PointerInput { pointer_events });
             InputPipeline { input }
