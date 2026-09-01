@@ -24,26 +24,26 @@ use ::windows::{
             },
         },
     },
-    core::{Error, Result, w},
+    core::{Error, PCWSTR, Result, w},
 };
 
 use crate::target::PresentationTarget;
 
 use crate::{
     surface::{SurfaceEvent, SurfaceSize},
-    window::WindowEvent,
+    window::NativeWindowEvent,
 };
 
 mod pointer;
 
 struct WindowState {
     size: SurfaceSize,
-    events: VecDeque<WindowEvent>,
+    events: VecDeque<NativeWindowEvent>,
 }
 
 impl WindowState {
     fn request_redraw(&mut self) {
-        let redraw = WindowEvent::Surface(SurfaceEvent::RedrawRequested);
+        let redraw = NativeWindowEvent::Surface(SurfaceEvent::RedrawRequested);
         if !self.events.contains(&redraw) {
             self.events.push_back(redraw);
         }
@@ -56,29 +56,29 @@ impl WindowState {
         // of its redraw so stale intermediate window sizes cannot build up
         // while an expensive frame is being prepared.
         self.events
-            .retain(|event| *event != WindowEvent::Surface(SurfaceEvent::RedrawRequested));
+            .retain(|event| *event != NativeWindowEvent::Surface(SurfaceEvent::RedrawRequested));
         if let Some(event) = self
             .events
             .iter_mut()
-            .find(|event| matches!(event, WindowEvent::Surface(SurfaceEvent::Resized(_))))
+            .find(|event| matches!(event, NativeWindowEvent::Surface(SurfaceEvent::Resized(_))))
         {
-            *event = WindowEvent::Surface(SurfaceEvent::Resized(size));
+            *event = NativeWindowEvent::Surface(SurfaceEvent::Resized(size));
         } else {
             self.events
-                .push_back(WindowEvent::Surface(SurfaceEvent::Resized(size)));
+                .push_back(NativeWindowEvent::Surface(SurfaceEvent::Resized(size)));
         }
         self.request_redraw();
     }
 }
 
-pub struct Window {
+pub(crate) struct Win32Window {
     hwnd: HWND,
     hinstance: HINSTANCE,
     state: Box<WindowState>,
 }
 
-impl Window {
-    pub fn new(_title: &str, width: u32, height: u32) -> Result<Self> {
+impl Win32Window {
+    pub(crate) fn new(title: &str, width: u32, height: u32) -> Result<Self> {
         unsafe {
             let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
             pointer::enable()?;
@@ -103,13 +103,14 @@ impl Window {
                 events: VecDeque::new(),
             });
             let state_ptr = (&mut *state as *mut WindowState).cast::<c_void>();
+            let title: Vec<u16> = title.encode_utf16().chain(Some(0)).collect();
 
             let style = WS_OVERLAPPEDWINDOW;
             let extended_style = WINDOW_EX_STYLE::default();
             let hwnd = CreateWindowExW(
                 extended_style,
                 class_name,
-                w!("Theoria — Vulkan Canvas"),
+                PCWSTR(title.as_ptr()),
                 style,
                 CW_USEDEFAULT,
                 CW_USEDEFAULT,
@@ -141,16 +142,21 @@ impl Window {
         }
     }
 
-    pub fn presentation_target(&self) -> PresentationTarget {
+    pub(crate) fn presentation_target(&self) -> PresentationTarget {
         PresentationTarget::win32(self.hwnd.0 as isize, self.hinstance.0 as isize, self.size())
     }
 
-    pub fn size(&self) -> SurfaceSize {
+    pub(crate) fn size(&self) -> SurfaceSize {
         self.state.size
     }
 
+    /// Queues one semantic redraw request, coalescing repeated requests.
+    pub(crate) fn request_redraw(&mut self) {
+        self.state.request_redraw();
+    }
+
     /// Returns the next semantic window event, blocking only while the queue is empty.
-    pub fn next_event(&mut self) -> Result<Option<WindowEvent>> {
+    pub(crate) fn next_event(&mut self) -> Result<Option<NativeWindowEvent>> {
         unsafe {
             loop {
                 // Drain the native queue before returning semantic work. This
@@ -222,7 +228,7 @@ fn resize_client_area(
     })
 }
 
-impl Drop for Window {
+impl Drop for Win32Window {
     fn drop(&mut self) {
         unsafe {
             if !self.hwnd.is_invalid() {
@@ -277,7 +283,7 @@ unsafe extern "system" fn window_proc(
             if let Some(state) = state
                 && let Some(event) = pointer::pointer_event(hwnd, message, wparam)
             {
-                state.events.push_back(WindowEvent::Pointer(event));
+                state.events.push_back(NativeWindowEvent::Pointer(event));
             }
             LRESULT(0)
         }
@@ -285,14 +291,14 @@ unsafe extern "system" fn window_proc(
             if let Some(state) = state
                 && let Some(event) = pointer::scroll_event(hwnd, message, wparam)
             {
-                state.events.push_back(WindowEvent::Scroll(event));
+                state.events.push_back(NativeWindowEvent::Scroll(event));
             }
             LRESULT(0)
         }
         WM_ERASEBKGND => LRESULT(1),
         WM_CLOSE => {
             if let Some(state) = state {
-                state.events.push_back(WindowEvent::CloseRequested);
+                state.events.push_back(NativeWindowEvent::CloseRequested);
             }
             LRESULT(0)
         }
@@ -320,7 +326,7 @@ mod tests {
 
         assert_eq!(
             state.events,
-            VecDeque::from([WindowEvent::Surface(SurfaceEvent::RedrawRequested)])
+            VecDeque::from([NativeWindowEvent::Surface(SurfaceEvent::RedrawRequested)])
         );
     }
 
@@ -331,7 +337,7 @@ mod tests {
                 width: 100,
                 height: 100,
             },
-            events: VecDeque::from([WindowEvent::Surface(SurfaceEvent::RedrawRequested)]),
+            events: VecDeque::from([NativeWindowEvent::Surface(SurfaceEvent::RedrawRequested)]),
         };
 
         state.resize(SurfaceSize {
@@ -348,8 +354,8 @@ mod tests {
         assert_eq!(
             state.events,
             VecDeque::from([
-                WindowEvent::Surface(SurfaceEvent::Resized(state.size)),
-                WindowEvent::Surface(SurfaceEvent::RedrawRequested),
+                NativeWindowEvent::Surface(SurfaceEvent::Resized(state.size)),
+                NativeWindowEvent::Surface(SurfaceEvent::RedrawRequested),
             ])
         );
     }

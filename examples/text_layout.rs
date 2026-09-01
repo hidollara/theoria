@@ -1,42 +1,42 @@
 use theoria::{
-    Viewport,
     canvas::{CanvasView, Composite},
     color::Color,
     font::Font,
     geometry::Point,
     math::Vector2,
-    surface::SurfaceEvent,
     text::{OpenTypeFeatureTag, Span, Text, TextStyle},
     transform::Affine2,
-    vulkan::{CanvasRenderer, Presenter},
-    window::{Window, WindowEvent},
+    window::{Window, WindowContent},
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut window = Window::new("Theoria — Text Layout Sample", 960, 640)?;
-    let mut presenter = Presenter::new(window.presentation_target())?;
-    let mut canvas_renderer = CanvasRenderer::new(presenter.device());
     let fonts = [
         Font::from_bytes(std::fs::read(r"C:\Windows\Fonts\segoeui.ttf")?)?,
         Font::from_bytes(std::fs::read(r"C:\Windows\Fonts\meiryo.ttc")?)?,
     ];
-
-    while let Some(event) = window.next_event()? {
-        match event {
-            WindowEvent::Surface(SurfaceEvent::Resized(size)) => presenter.resize(size)?,
-            WindowEvent::Surface(SurfaceEvent::RedrawRequested) => {
-                let size = window.size();
-                let width = size.width as f32;
-                let height = size.height as f32;
+    let window = Window::new(
+        "Theoria — Text Layout Sample",
+        960,
+        640,
+        move |context, events| {
+            let size = events.size();
+            context.computed(move |context| {
+                let size = *context.read(&size);
+                let width = size.width.max(1) as f32;
+                let height = size.height.max(1) as f32;
                 let font_size = width.min(height) * 0.052;
 
-                let body_style = TextStyle::new(&fonts, font_size)
-                    .with_foreground(Color::rgba(0.90, 0.94, 1.0, 0.96)?);
+                let body_style = TextStyle::new(&fonts, font_size).with_foreground(
+                    Color::rgba(0.90, 0.94, 1.0, 0.96).expect("the fixed body color is valid"),
+                );
                 let emphasized_style = body_style
                     .clone()
                     .with_font_size(font_size * 1.45)
                     .with_feature(OpenTypeFeatureTag::STANDARD_LIGATURES.disabled())
-                    .with_foreground(Color::rgba(1.0, 0.68, 0.24, 1.0)?);
+                    .with_foreground(
+                        Color::rgba(1.0, 0.68, 0.24, 1.0)
+                            .expect("the fixed emphasis color is valid"),
+                    );
                 let rtl_style = body_style.clone().with_language("he");
 
                 let horizontal = Text::horizontal(body_style.clone())
@@ -47,8 +47,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .push(" — styled spans wrap across their boundaries.\n")
                     .push("Explicit line breaks and fallback fonts participate in layout.")
                     .wrap_width(width * 0.55)
-                    .layout()?
-                    .to_canvas(Color::rgba(0.90, 0.94, 1.0, 0.96)?)?
+                    .layout()
+                    .expect("the horizontal sample text is valid")
+                    .to_canvas(
+                        Color::rgba(0.90, 0.94, 1.0, 0.96)
+                            .expect("the fixed horizontal color is valid"),
+                    )
+                    .expect("the horizontal glyphs can be realized")
                     .transformed(Affine2::from_translation(Vector2::new(
                         width * 0.08,
                         height * 0.16,
@@ -57,8 +62,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let vertical = Text::vertical(body_style.with_font_size(font_size * 0.9))
                     .push("縦書き Theoria 2026\n日本語とABCを組む")
                     .wrap_height(height * 0.64)
-                    .layout()?
-                    .to_canvas(Color::rgba(0.54, 0.90, 1.0, 0.96)?)?
+                    .layout()
+                    .expect("the vertical sample text is valid")
+                    .to_canvas(
+                        Color::rgba(0.54, 0.90, 1.0, 0.96)
+                            .expect("the fixed vertical color is valid"),
+                    )
+                    .expect("the vertical glyphs can be realized")
                     .transformed(Affine2::from_translation(Vector2::new(
                         width * 0.76,
                         height * 0.12,
@@ -67,21 +77,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let canvas = horizontal.composite(vertical, Composite::SourceOver);
                 let view =
                     CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(width, height))
-                        .expect("the window-sized Canvas view is non-degenerate");
-                let viewport = Viewport::new(0.0, 0.0, width, height);
-                let clear_color = Color::rgba(0.025, 0.035, 0.055, 1.0)?;
-
-                if let Some(frame) = presenter.begin_frame()? {
-                    let target = frame.render_target(clear_color);
-                    canvas_renderer.render(target, viewport, &canvas, view)?;
-                    frame.present()?;
-                }
-            }
-            WindowEvent::CloseRequested => break,
-            WindowEvent::Pointer(_) => {}
-            WindowEvent::Scroll(_) => {}
-        }
-    }
-
-    Ok(())
+                        .expect("a positive surface extent has a non-degenerate view");
+                WindowContent::new(
+                    canvas,
+                    view,
+                    Color::rgba(0.025, 0.035, 0.055, 1.0).expect("the fixed clear color is valid"),
+                )
+            })
+        },
+    )?;
+    window.run()
 }
