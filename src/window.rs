@@ -14,6 +14,7 @@ use crate::{
         Component, ComponentContext, ComponentHandle, ComponentRuntime, EventEmitter, EventSource,
         MountContext, TurnBudget, TurnOutcome,
     },
+    gesture::MovementThreshold,
     input::{pointer::PointerEvent, scroll::ScrollEvent},
     reactive::{State, Value},
     surface::{SurfaceEvent, SurfaceSize},
@@ -34,6 +35,7 @@ pub struct WindowEvents<'window> {
     scroll: &'window EventSource<ScrollEvent>,
     close_requested: &'window EventSource<CloseRequested>,
     size: Value<SurfaceSize>,
+    movement_threshold: MovementThreshold,
 }
 
 impl WindowEvents<'_> {
@@ -56,6 +58,14 @@ impl WindowEvents<'_> {
     /// Current drawable client-area size as a reactive value.
     pub fn size(&self) -> Value<SurfaceSize> {
         self.size.clone()
+    }
+
+    /// Host-provided default movement boundary for click and drag recognition.
+    ///
+    /// The Win32 host resolves this from `SM_CXDRAG` and `SM_CYDRAG` at the
+    /// Window's initial DPI. Applications may choose another policy per device.
+    pub const fn movement_threshold(&self) -> MovementThreshold {
+        self.movement_threshold
     }
 }
 
@@ -124,6 +134,11 @@ impl Window {
         let output = Rc::new(RenderOutput::default());
         let effect_output = Rc::clone(&output);
         let initial_size = native.size();
+        let (horizontal, vertical) = native.movement_threshold_extents();
+        let movement_threshold = MovementThreshold::AxisAligned {
+            horizontal,
+            vertical,
+        };
 
         let component = runtime.mount(move |context| {
             let size = context.state(initial_size);
@@ -137,6 +152,7 @@ impl Window {
                 scroll: &scroll,
                 close_requested: &close_requested,
                 size: size.value(),
+                movement_threshold,
             };
             let content = build(context, &events);
 

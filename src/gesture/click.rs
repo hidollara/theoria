@@ -5,6 +5,8 @@ use crate::{
     },
 };
 
+use super::MovementThreshold;
+
 /// A completed press-and-release gesture in one input coordinate space.
 ///
 /// A click does not identify a visual or interactive target. Hit testing and
@@ -36,24 +38,19 @@ struct Candidate {
 
 /// Recognizes clicks without assigning them to an interaction target.
 ///
-/// `maximum_movement` is measured in the coordinate space of the supplied
+/// The movement threshold is measured in the coordinate space of the supplied
 /// [`PointerEvent`]s. Keeping it explicit lets a platform or application
-/// choose a DPI- and device-appropriate threshold.
+/// choose a DPI- and device-appropriate shape and extent.
 #[derive(Debug)]
 pub struct ClickRecognizer {
-    maximum_movement_squared: f32,
+    movement_threshold: MovementThreshold,
     candidates: Vec<Candidate>,
 }
 
 impl ClickRecognizer {
-    /// Creates a recognizer when `maximum_movement` is finite and nonnegative.
-    pub fn new(maximum_movement: f32) -> Option<Self> {
-        if !maximum_movement.is_finite() || maximum_movement < 0.0 {
-            return None;
-        }
-
-        Some(Self {
-            maximum_movement_squared: maximum_movement * maximum_movement,
+    pub fn new(movement_threshold: MovementThreshold) -> Option<Self> {
+        movement_threshold.is_valid().then_some(Self {
+            movement_threshold,
             candidates: Vec::new(),
         })
     }
@@ -118,15 +115,12 @@ impl ClickRecognizer {
     }
 
     fn cancel_candidates_moved_by(&mut self, event: &PointerEvent) {
-        let maximum = self.maximum_movement_squared;
+        let threshold = self.movement_threshold;
         self.candidates.retain(|candidate| {
             if candidate.pointer_id != event.id {
                 return true;
             }
-
-            let movement = event.position - candidate.press_position;
-            let squared = movement.x * movement.x + movement.y * movement.y;
-            squared.is_finite() && squared <= maximum
+            !threshold.exceeded(candidate.press_position, event.position)
         });
     }
 
@@ -168,7 +162,8 @@ mod tests {
 
     #[test]
     fn contact_down_and_up_form_a_primary_click() {
-        let mut recognizer = ClickRecognizer::new(5.0).unwrap();
+        let mut recognizer =
+            ClickRecognizer::new(MovementThreshold::Radial { radius: 5.0 }).unwrap();
         assert_eq!(
             recognizer.recognize(&pointer(
                 1,
@@ -200,7 +195,8 @@ mod tests {
 
     #[test]
     fn mouse_buttons_are_recognized_independently_from_contact_phase() {
-        let mut recognizer = ClickRecognizer::new(3.0).unwrap();
+        let mut recognizer =
+            ClickRecognizer::new(MovementThreshold::Radial { radius: 3.0 }).unwrap();
         assert!(
             recognizer
                 .recognize(&pointer(
@@ -228,7 +224,8 @@ mod tests {
 
     #[test]
     fn excessive_movement_cancels_the_candidate() {
-        let mut recognizer = ClickRecognizer::new(5.0).unwrap();
+        let mut recognizer =
+            ClickRecognizer::new(MovementThreshold::Radial { radius: 5.0 }).unwrap();
         recognizer.recognize(&pointer(
             1,
             PointerKind::Pen,
@@ -240,7 +237,7 @@ mod tests {
             1,
             PointerKind::Pen,
             PointerPhase::Move,
-            Point::new(4.0, 4.0),
+            Point::new(6.0, 4.0),
             None,
         ));
 
@@ -259,7 +256,8 @@ mod tests {
 
     #[test]
     fn cancel_discards_every_button_candidate_for_one_pointer() {
-        let mut recognizer = ClickRecognizer::new(5.0).unwrap();
+        let mut recognizer =
+            ClickRecognizer::new(MovementThreshold::Radial { radius: 5.0 }).unwrap();
         for button in [PointerButton::Primary, PointerButton::Secondary] {
             recognizer.recognize(&pointer(
                 1,
@@ -295,7 +293,8 @@ mod tests {
 
     #[test]
     fn concurrent_pointers_keep_independent_candidates() {
-        let mut recognizer = ClickRecognizer::new(5.0).unwrap();
+        let mut recognizer =
+            ClickRecognizer::new(MovementThreshold::Radial { radius: 5.0 }).unwrap();
         for id in [1, 2] {
             recognizer.recognize(&pointer(
                 id,
@@ -331,8 +330,13 @@ mod tests {
 
     #[test]
     fn invalid_movement_thresholds_are_rejected() {
-        assert!(ClickRecognizer::new(-1.0).is_none());
-        assert!(ClickRecognizer::new(f32::NAN).is_none());
-        assert!(ClickRecognizer::new(f32::INFINITY).is_none());
+        assert!(ClickRecognizer::new(MovementThreshold::Radial { radius: -1.0 }).is_none());
+        assert!(
+            ClickRecognizer::new(MovementThreshold::AxisAligned {
+                horizontal: f32::NAN,
+                vertical: 1.0,
+            })
+            .is_none()
+        );
     }
 }

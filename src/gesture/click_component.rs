@@ -41,6 +41,7 @@ mod tests {
             TurnBudget, TurnOutcome,
         },
         geometry::Point,
+        gesture::MovementThreshold,
         input::pointer::{
             PointerButton, PointerButtonChange, PointerButtons, PointerEvent, PointerId,
             PointerKind, PointerPhase,
@@ -108,7 +109,10 @@ mod tests {
             let (pointer_source, pointer_events) = context.event::<PointerEvent>();
             let (click_source, clicks) = context.event::<Click>();
             let gesture = context.mount(move |_context| {
-                ClickGesture::new(ClickRecognizer::new(4.0).unwrap(), clicks)
+                ClickGesture::new(
+                    ClickRecognizer::new(MovementThreshold::Radial { radius: 4.0 }).unwrap(),
+                    clicks,
+                )
             });
             let recorder = context.mount(move |_context| ClickRecorder(output));
 

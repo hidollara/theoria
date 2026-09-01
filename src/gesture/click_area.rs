@@ -5,7 +5,7 @@ use crate::{
     transform::Projective2,
 };
 
-use super::Click;
+use super::{Click, area::GestureArea};
 
 /// A click destination bound to local interaction geometry.
 ///
@@ -13,31 +13,23 @@ use super::Click;
 /// click can order a collection of areas, choose one, and ask that area to
 /// forward the click in its local coordinate space.
 #[derive(Clone, Debug)]
-pub struct ClickArea {
-    target: EventTarget<Click>,
-    region: HitRegion,
-    local_to_parent: Projective2,
-}
+pub struct ClickArea(GestureArea<Click>);
 
 impl ClickArea {
     pub fn new(target: EventTarget<Click>, region: HitRegion) -> Self {
-        Self {
-            target,
-            region,
-            local_to_parent: Projective2::IDENTITY,
-        }
+        Self(GestureArea::new(target, region))
     }
 
     /// Places this local area in its containing click coordinate space.
     pub fn transformed(mut self, local_to_parent: impl Into<Projective2>) -> Self {
-        self.local_to_parent = self.local_to_parent.then(local_to_parent.into());
+        self.0 = self.0.transformed(local_to_parent);
         self
     }
 
     /// Reports whether this active destination contains a point expressed in
     /// the area's parent coordinate space.
     pub fn contains(&self, point: Point, tolerance: f32) -> bool {
-        self.local_hit(point, tolerance).is_some()
+        self.0.contains(point, tolerance)
     }
 
     /// Forwards a click when both endpoints lie inside this area.
@@ -51,70 +43,21 @@ impl ClickArea {
         tolerance: f32,
         context: &mut ComponentContext<'_>,
     ) -> bool {
-        let Some(press_position) = self.local_hit(click.press_position, tolerance) else {
+        let Some(press_position) = self.0.hit(click.press_position, tolerance) else {
             return false;
         };
-        let Some(release_position) = self.local_hit(click.release_position, tolerance) else {
+        let Some(release_position) = self.0.hit(click.release_position, tolerance) else {
             return false;
         };
-        context.send_to(
-            &self.target,
+        self.0.send(
             Click {
                 press_position,
                 release_position,
                 ..*click
             },
+            context,
         )
     }
-
-    fn local_hit(&self, point: Point, tolerance: f32) -> Option<Point> {
-        if !self.target.is_active()
-            || !point.is_finite()
-            || !tolerance.is_finite()
-            || tolerance <= 0.0
-        {
-            return None;
-        }
-
-        let parent_to_local = self.local_to_parent.try_inverse()?;
-        let local_position = parent_to_local.try_transform_point(point)?;
-        let local_scale = maximum_scale_at(parent_to_local, point)?;
-        let local_tolerance = tolerance * local_scale;
-        if !local_tolerance.is_finite() || local_tolerance <= 0.0 {
-            return None;
-        }
-        self.region
-            .contains(local_position, local_tolerance)
-            .then_some(local_position)
-    }
-}
-
-fn maximum_scale_at(transform: Projective2, point: Point) -> Option<f32> {
-    let [[a, b, c], [d, e, f], [g, h, i]] = transform.rows();
-    let numerator_x = a * point.x + b * point.y + c;
-    let numerator_y = d * point.x + e * point.y + f;
-    let denominator = g * point.x + h * point.y + i;
-    if !denominator.is_finite() || denominator.abs() <= f32::EPSILON {
-        return None;
-    }
-
-    let denominator_squared = denominator * denominator;
-    let j00 = (a * denominator - g * numerator_x) / denominator_squared;
-    let j01 = (b * denominator - h * numerator_x) / denominator_squared;
-    let j10 = (d * denominator - g * numerator_y) / denominator_squared;
-    let j11 = (e * denominator - h * numerator_y) / denominator_squared;
-    if ![j00, j01, j10, j11].into_iter().all(f32::is_finite) {
-        return None;
-    }
-
-    let column0_squared = j00 * j00 + j10 * j10;
-    let column1_squared = j01 * j01 + j11 * j11;
-    let column_dot = j00 * j01 + j10 * j11;
-    let discriminant =
-        ((column0_squared - column1_squared).powi(2) + 4.0 * column_dot * column_dot).sqrt();
-    let largest_eigenvalue = 0.5 * (column0_squared + column1_squared + discriminant);
-    let scale = largest_eigenvalue.max(0.0).sqrt();
-    scale.is_finite().then_some(scale)
 }
 
 #[cfg(test)]

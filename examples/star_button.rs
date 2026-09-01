@@ -6,12 +6,15 @@ use theoria::{
     component::{Component, ComponentContext},
     font::Font,
     geometry::Point,
-    gesture::{Click, ClickArea, ClickGesture, ClickRecognizer},
-    input::pointer::PointerButton,
+    gesture::{
+        Click, ClickArea, ClickGesture, ClickRecognizer, Drag, DragArea, DragGesture, DragPhase,
+        DragRecognizer,
+    },
+    input::pointer::{PointerButton, PointerId},
     interaction::HitRegion,
     math::Vector2,
     path::{FillRule, LineCap, LineJoin, Path, StrokeStyle},
-    reactive::{State, Value},
+    reactive::State,
     text::{Text, TextStyle},
     transform::Affine2,
     window::{Window, WindowContent},
@@ -20,47 +23,94 @@ use theoria::{
 const WIDTH: u32 = 960;
 const HEIGHT: u32 = 640;
 const HIT_TOLERANCE: f32 = 0.25;
-const CLICK_MOVEMENT: f32 = 8.0;
+const INITIAL_CENTER: Point = Point::new(480.0, 255.0);
 
 struct StarButton {
     count: State<u32>,
+    center: State<Point>,
 }
 
 impl Component for StarButton {
-    type Event = Click;
+    type Event = StarButtonEvent;
 
-    fn receive(&mut self, click: Self::Event, context: &mut ComponentContext<'_>) {
-        if click.button != PointerButton::Primary {
-            return;
+    fn receive(&mut self, event: Self::Event, context: &mut ComponentContext<'_>) {
+        match event {
+            StarButtonEvent::Click(click) if click.button == PointerButton::Primary => {
+                context.update(&self.count, |count| count.saturating_add(1));
+            }
+            StarButtonEvent::Drag(drag)
+                if drag.button == PointerButton::Primary && drag.phase != DragPhase::Cancelled =>
+            {
+                let delta = drag.position - drag.previous_position;
+                context.update(&self.center, |center| *center + delta);
+            }
+            _ => {}
         }
+    }
+}
 
-        context.update(&self.count, |count| count.saturating_add(1));
+enum StarButtonEvent {
+    Click(Click),
+    Drag(Drag),
+}
+
+impl From<Click> for StarButtonEvent {
+    fn from(click: Click) -> Self {
+        Self::Click(click)
+    }
+}
+
+impl From<Drag> for StarButtonEvent {
+    fn from(drag: Drag) -> Self {
+        Self::Drag(drag)
     }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let font = Font::from_bytes(std::fs::read(r"C:\Windows\Fonts\segoeui.ttf")?)?;
-    let star = star_path(Point::new(480.0, 255.0), 155.0, 68.0);
+    let star = star_path(Point::new(0.0, 0.0), 155.0, 68.0);
     let hit_region = HitRegion::fill(star.clone(), FillRule::NonZero);
     let window = Window::new(
         "Theoria — Star Button",
         WIDTH,
         HEIGHT,
         move |context, events| {
+            let movement_threshold = events.movement_threshold();
             let (click_source, clicks) = context.event::<Click>();
-            let gesture = context.mount(move |_context| {
+            let click_gesture = context.mount(move |_context| {
                 ClickGesture::new(
-                    ClickRecognizer::new(CLICK_MOVEMENT).expect("valid click movement"),
+                    ClickRecognizer::new(movement_threshold)
+                        .expect("the Window provides a valid movement threshold"),
                     clicks,
+                )
+            });
+            let (drag_source, drags) = context.event::<Drag>();
+            let drag_gesture = context.mount(move |_context| {
+                DragGesture::new(
+                    DragRecognizer::new(movement_threshold)
+                        .expect("the Window provides a valid movement threshold"),
+                    drags,
                 )
             });
             let count = context.state(0_u32);
             let count_value = count.value();
-            let button = context.mount(move |_context| StarButton { count });
+            let center = context.state(INITIAL_CENTER);
+            let center_value = center.value();
+            let button = context.mount(move |_context| StarButton { count, center });
+
+            let click_center = center_value.clone();
+            let click_target = button.event_target::<Click>();
+            let click_region = hit_region.clone();
+            let click_areas = context.computed(move |context| {
+                let center = *context.read(&click_center);
+                vec![
+                    ClickArea::new(click_target.clone(), click_region.clone())
+                        .transformed(Affine2::from_translation(Vector2::new(center.x, center.y))),
+                ]
+            });
             let click_handler = context.mount_handler(move |_context| {
-                let areas = Value::from(vec![ClickArea::new(button.event_target(), hit_region)]);
                 move |click: Click, context: &mut ComponentContext<'_>| {
-                    let areas = context.read_current(&areas);
+                    let areas = context.read_current(&click_areas);
                     if let Some(area) = areas
                         .iter()
                         .rev()
@@ -70,12 +120,64 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             });
-            assert!(context.connect(events.pointer(), &gesture));
+
+            let drag_center = center_value.clone();
+            let drag_target = button.event_target::<Drag>();
+            let drag_areas = context.computed(move |context| {
+                let center = *context.read(&drag_center);
+                vec![
+                    DragArea::new(drag_target.clone(), hit_region.clone())
+                        .transformed(Affine2::from_translation(Vector2::new(center.x, center.y))),
+                ]
+            });
+            let drag_handler = context.mount_handler(move |_context| {
+                let mut captures: Vec<(PointerId, PointerButton, DragArea)> = Vec::new();
+                move |drag: Drag, context: &mut ComponentContext<'_>| {
+                    let key = (drag.pointer_id, drag.button);
+                    match drag.phase {
+                        DragPhase::Started => {
+                            let areas = context.read_current(&drag_areas);
+                            if let Some(area) = areas
+                                .iter()
+                                .rev()
+                                .find(|area| area.accepts_start(&drag, HIT_TOLERANCE))
+                                .cloned()
+                                && area.forward(&drag, context)
+                            {
+                                captures.push((key.0, key.1, area));
+                            }
+                        }
+                        DragPhase::Moved => {
+                            if let Some((_, _, area)) = captures
+                                .iter()
+                                .find(|(pointer, button, _)| (*pointer, *button) == key)
+                            {
+                                let _ = area.forward(&drag, context);
+                            }
+                        }
+                        DragPhase::Ended | DragPhase::Cancelled => {
+                            if let Some(index) = captures
+                                .iter()
+                                .position(|(pointer, button, _)| (*pointer, *button) == key)
+                            {
+                                let (_, _, area) = captures.swap_remove(index);
+                                let _ = area.forward(&drag, context);
+                            }
+                        }
+                    }
+                }
+            });
+
+            assert!(context.connect(events.pointer(), &click_gesture));
+            assert!(context.connect(events.pointer(), &drag_gesture));
             assert!(context.connect(&click_source, &click_handler));
+            assert!(context.connect(&drag_source, &drag_handler));
 
             let canvas_count = count_value.clone();
+            let canvas_center = center_value;
             let canvas = context.computed(move |context| {
                 let count = *context.read(&canvas_count);
+                let center = *context.read(&canvas_center);
                 let star_color = match count % 3 {
                     0 => Color::rgb8(255, 188, 54),
                     1 => Color::rgb8(83, 220, 255),
@@ -102,14 +204,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .expect("the counter glyphs can be realized")
                     .transformed(Affine2::from_translation(Vector2::new(385.0, 470.0)));
                 let hint = Text::horizontal(TextStyle::new(&fonts, 22.0))
-                    .push("Click the star")
+                    .push("Click or drag the star")
                     .layout()
                     .expect("the hint text is valid")
                     .to_canvas(Color::rgb8(150, 167, 198))
                     .expect("the hint glyphs can be realized")
-                    .transformed(Affine2::from_translation(Vector2::new(405.0, 535.0)));
+                    .transformed(Affine2::from_translation(Vector2::new(375.0, 535.0)));
 
                 fill.composite(outline, Composite::SourceOver)
+                    .transformed(Affine2::from_translation(Vector2::new(center.x, center.y)))
                     .composite(counter, Composite::SourceOver)
                     .composite(hint, Composite::SourceOver)
             });
@@ -151,9 +254,11 @@ mod tests {
     use theoria::component::{
         ComponentHandle, ComponentRuntime, EventEmitter, TurnBudget, TurnOutcome,
     };
+    use theoria::gesture::MovementThreshold;
     use theoria::input::pointer::{
         PointerButtonChange, PointerButtons, PointerEvent, PointerId, PointerKind, PointerPhase,
     };
+    use theoria::reactive::Value;
 
     use super::*;
 
@@ -208,13 +313,15 @@ mod tests {
             let (click_source, clicks) = context.event::<Click>();
             let gesture = context.mount(move |_context| {
                 ClickGesture::new(
-                    ClickRecognizer::new(CLICK_MOVEMENT).expect("valid click movement"),
+                    ClickRecognizer::new(MovementThreshold::Radial { radius: 8.0 })
+                        .expect("valid click movement"),
                     clicks,
                 )
             });
             let count = context.state(0_u32);
             let count_value = count.value();
-            let button = context.mount(move |_context| StarButton { count });
+            let center = context.state(INITIAL_CENTER);
+            let button = context.mount(move |_context| StarButton { count, center });
             let click_handler = context.mount_handler(move |_context| {
                 let areas = Value::from(vec![ClickArea::new(button.event_target(), hit_region)]);
                 move |click: Click, context: &mut ComponentContext<'_>| {

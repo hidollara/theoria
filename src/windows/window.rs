@@ -10,17 +10,18 @@ use ::windows::{
         UI::{
             HiDpi::{
                 AdjustWindowRectExForDpi, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
-                GetDpiForWindow, SetProcessDpiAwarenessContext,
+                GetDpiForWindow, GetSystemMetricsForDpi, SetProcessDpiAwarenessContext,
             },
             WindowsAndMessaging::{
                 CREATESTRUCTW, CS_HREDRAW, CS_OWNDC, CS_VREDRAW, CW_USEDEFAULT, CreateWindowExW,
                 DefWindowProcW, DestroyWindow, DispatchMessageW, GWLP_USERDATA, GetClientRect,
                 GetMessageW, GetWindowLongPtrW, MSG, PM_REMOVE, PeekMessageW, RegisterClassExW,
-                SW_SHOW, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOZORDER, SetWindowLongPtrW, SetWindowPos,
-                ShowWindow, TranslateMessage, WINDOW_EX_STYLE, WM_CLOSE, WM_DESTROY, WM_ERASEBKGND,
-                WM_NCCREATE, WM_PAINT, WM_POINTERCAPTURECHANGED, WM_POINTERDOWN, WM_POINTERENTER,
-                WM_POINTERHWHEEL, WM_POINTERLEAVE, WM_POINTERUP, WM_POINTERUPDATE, WM_POINTERWHEEL,
-                WM_QUIT, WM_SIZE, WNDCLASSEXW, WS_OVERLAPPEDWINDOW,
+                SM_CXDRAG, SM_CYDRAG, SW_SHOW, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOZORDER,
+                SetWindowLongPtrW, SetWindowPos, ShowWindow, TranslateMessage, WINDOW_EX_STYLE,
+                WM_CLOSE, WM_DESTROY, WM_ERASEBKGND, WM_NCCREATE, WM_PAINT,
+                WM_POINTERCAPTURECHANGED, WM_POINTERDOWN, WM_POINTERENTER, WM_POINTERHWHEEL,
+                WM_POINTERLEAVE, WM_POINTERUP, WM_POINTERUPDATE, WM_POINTERWHEEL, WM_QUIT, WM_SIZE,
+                WNDCLASSEXW, WS_OVERLAPPEDWINDOW,
             },
         },
     },
@@ -148,6 +149,13 @@ impl Win32Window {
 
     pub(crate) fn size(&self) -> SurfaceSize {
         self.state.size
+    }
+
+    pub(crate) fn movement_threshold_extents(&self) -> (f32, f32) {
+        let dpi = unsafe { GetDpiForWindow(self.hwnd) };
+        let horizontal = unsafe { GetSystemMetricsForDpi(SM_CXDRAG, dpi) }.unsigned_abs() as f32;
+        let vertical = unsafe { GetSystemMetricsForDpi(SM_CYDRAG, dpi) }.unsigned_abs() as f32;
+        (horizontal, vertical)
     }
 
     /// Queues one semantic redraw request, coalescing repeated requests.
