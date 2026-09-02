@@ -78,6 +78,12 @@ pub(crate) struct Win32Window {
     state: Box<WindowState>,
 }
 
+pub(crate) enum WindowPoll {
+    Event(NativeWindowEvent),
+    Empty,
+    Finished,
+}
+
 impl Win32Window {
     pub(crate) fn new(title: &str, width: u32, height: u32) -> Result<Self> {
         unsafe {
@@ -167,22 +173,13 @@ impl Win32Window {
     pub(crate) fn next_event(&mut self) -> Result<Option<NativeWindowEvent>> {
         unsafe {
             loop {
-                // Drain the native queue before returning semantic work. This
-                // lets resize/paint bursts collapse into one redraw instead of
-                // blocking message dispatch for one expensive frame each.
+                match self.poll_event()? {
+                    WindowPoll::Event(event) => return Ok(Some(event)),
+                    WindowPoll::Finished => return Ok(None),
+                    WindowPoll::Empty => {}
+                }
+
                 let mut message = MSG::default();
-                while PeekMessageW(&mut message, None, 0, 0, PM_REMOVE).as_bool() {
-                    if message.message == WM_QUIT {
-                        return Ok(None);
-                    }
-                    let _ = TranslateMessage(&message);
-                    DispatchMessageW(&message);
-                }
-
-                if let Some(event) = self.state.events.pop_front() {
-                    return Ok(Some(event));
-                }
-
                 let result = GetMessageW(&mut message, None, 0, 0).0;
                 if result == -1 {
                     return Err(Error::from_thread());
@@ -193,6 +190,28 @@ impl Win32Window {
                 let _ = TranslateMessage(&message);
                 DispatchMessageW(&message);
             }
+        }
+    }
+
+    /// Polls native messages and returns semantic work without blocking.
+    pub(crate) fn poll_event(&mut self) -> Result<WindowPoll> {
+        unsafe {
+            // Drain the native queue before returning semantic work. This lets
+            // resize/paint bursts collapse into one redraw instead of blocking
+            // message dispatch for one expensive frame each.
+            let mut message = MSG::default();
+            while PeekMessageW(&mut message, None, 0, 0, PM_REMOVE).as_bool() {
+                if message.message == WM_QUIT {
+                    return Ok(WindowPoll::Finished);
+                }
+                let _ = TranslateMessage(&message);
+                DispatchMessageW(&message);
+            }
+
+            Ok(match self.state.events.pop_front() {
+                Some(event) => WindowPoll::Event(event),
+                None => WindowPoll::Empty,
+            })
         }
     }
 }

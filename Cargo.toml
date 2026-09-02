@@ -3,6 +3,14 @@ name = "theoria"
 version = "0.1.0"
 edition = "2024"
 
+[workspace]
+members = [
+    "crates/theoria-component",
+    "crates/theoria-event",
+    "crates/theoria-reactive",
+]
+resolver = "3"
+
 [dependencies]
 ash = "0.38.0"
 flate2 = "1.1.2"
@@ -14,6 +22,9 @@ lyon_tessellation = "1.0.20"
 png = "0.18.0"
 resvg = { version = "0.48.1", default-features = false, features = ["text", "raster-images"] }
 skrifa = "0.46.2"
+theoria-component = { path = "crates/theoria-component" }
+theoria-event = { path = "crates/theoria-event" }
+theoria-reactive = { path = "crates/theoria-reactive" }
 unicode-bidi = { version = "0.3.18", default-features = false }
 windows = { version = "0.62.2", features = [
     "Win32_Foundation",

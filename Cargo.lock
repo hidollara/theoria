@@ -866,9 +866,28 @@ dependencies = [
  "png",
  "resvg",
  "skrifa 0.46.2",
+ "theoria-component",
+ "theoria-event",
+ "theoria-reactive",
  "unicode-bidi",
  "windows",
 ]
+
+[[package]]
+name = "theoria-component"
+version = "0.1.0"
+dependencies = [
+ "theoria-event",
+ "theoria-reactive",
+]
+
+[[package]]
+name = "theoria-event"
+version = "0.1.0"
+
+[[package]]
+name = "theoria-reactive"
+version = "0.1.0"
 
 [[package]]
 name = "thiserror"

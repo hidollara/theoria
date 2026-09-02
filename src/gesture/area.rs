@@ -1,21 +1,19 @@
 use crate::{
-    component::{ComponentContext, EventTarget},
-    geometry::Point,
-    interaction::HitRegion,
+    component::UpdateContext, event::EventSink, geometry::Point, interaction::HitRegion,
     transform::Projective2,
 };
 
 #[derive(Clone, Debug)]
 pub(super) struct GestureArea<E: 'static> {
-    target: EventTarget<E>,
+    sink: EventSink<E>,
     region: HitRegion,
     local_to_parent: Projective2,
 }
 
 impl<E: 'static> GestureArea<E> {
-    pub(super) fn new(target: EventTarget<E>, region: HitRegion) -> Self {
+    pub(super) fn new(sink: EventSink<E>, region: HitRegion) -> Self {
         Self {
-            target,
+            sink,
             region,
             local_to_parent: Projective2::IDENTITY,
         }
@@ -31,7 +29,7 @@ impl<E: 'static> GestureArea<E> {
     }
 
     pub(super) fn map_point(&self, point: Point) -> Option<Point> {
-        if !self.target.is_active() || !point.is_finite() {
+        if !point.is_finite() {
             return None;
         }
         self.local_to_parent
@@ -39,16 +37,12 @@ impl<E: 'static> GestureArea<E> {
             .try_transform_point(point)
     }
 
-    pub(super) fn send(&self, event: E, context: &mut ComponentContext<'_>) -> bool {
-        context.send_to(&self.target, event)
+    pub(super) fn send(&self, event: E, context: &mut UpdateContext<'_>) -> bool {
+        context.send(&self.sink, event).is_ok()
     }
 
     pub(super) fn hit(&self, point: Point, tolerance: f32) -> Option<Point> {
-        if !self.target.is_active()
-            || !point.is_finite()
-            || !tolerance.is_finite()
-            || tolerance <= 0.0
-        {
+        if !point.is_finite() || !tolerance.is_finite() || tolerance <= 0.0 {
             return None;
         }
 

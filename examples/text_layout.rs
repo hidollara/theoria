@@ -20,7 +20,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         640,
         move |context, events| {
             let size = events.size();
-            context.computed(move |context| {
+            context.create_computed(move |context| {
                 let size = *context.read(&size);
                 let width = size.width.max(1) as f32;
                 let height = size.height.max(1) as f32;

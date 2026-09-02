@@ -4,31 +4,32 @@ use std::{
     cell::{Cell, RefCell},
     error::Error,
     rc::Rc,
+    time::{Duration, Instant},
 };
 
 use crate::{
     Viewport,
     canvas::{Canvas, CanvasView},
     color::Color,
-    component::{
-        Component, ComponentContext, ComponentHandle, ComponentRuntime, EventEmitter, EventSource,
-        MountContext, TurnBudget, TurnOutcome,
-    },
+    component::{Component, ComponentInstance, MountContext},
+    event::{DispatchRoute, EventSink, EventSource, FifoDispatcher, channel},
     gesture::MovementThreshold,
     input::{pointer::PointerEvent, scroll::ScrollEvent},
-    reactive::{State, Value},
+    reactive::{Computed, State, Value},
     surface::{SurfaceEvent, SurfaceSize},
     vulkan::{CanvasRenderer, Presenter},
-    windows::window::Win32Window,
+    windows::window::{Win32Window, WindowPoll},
 };
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
+
+const COMPONENT_WORK_TIME: Duration = Duration::from_millis(4);
 
 /// Notification that the native host asked to close this Window.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct CloseRequested;
 
-/// Typed inputs published by one Window while its component graph is built.
+/// Typed inputs published by one Window while its Component tree is built.
 pub struct WindowEvents<'window> {
     surface: &'window EventSource<SurfaceEvent>,
     pointer: &'window EventSource<PointerEvent>,
@@ -105,11 +106,12 @@ impl WindowContent {
 /// Application-facing Window host and root component boundary.
 ///
 /// Its concrete platform adapter is private. A Window drives one component
-/// Runtime, publishes native input through typed event sources, and presents
+/// tree, publishes native input through typed event sources, and presents
 /// the latest reactive Canvas result.
 pub struct Window {
-    runtime: ComponentRuntime,
-    component: ComponentHandle<WindowComponent>,
+    dispatcher: FifoDispatcher,
+    components: ComponentInstance,
+    native_events: EventSink<NativeWindowEvent>,
     canvas_renderer: CanvasRenderer,
     presenter: Presenter,
     native: Win32Window,
@@ -117,20 +119,19 @@ pub struct Window {
 }
 
 impl Window {
-    /// Creates a Window and mounts its component graph.
+    /// Creates a Window and mounts its Component tree.
     ///
-    /// `build` can create State, computed Values, Effects, event connections, and
+    /// `build` can create State, Computed values, Effects, event connections, and
     /// child components. Its return value is the Window's sole semantic output.
     pub fn new(
         title: &str,
         width: u32,
         height: u32,
-        build: impl FnOnce(&mut MountContext<'_>, &WindowEvents<'_>) -> Value<WindowContent>,
+        build: impl FnOnce(&mut MountContext<'_>, &WindowEvents<'_>) -> Computed<WindowContent>,
     ) -> Result<Self> {
         let native = Win32Window::new(title, width, height)?;
         let presenter = Presenter::new(native.presentation_target())?;
         let canvas_renderer = CanvasRenderer::new(presenter.device());
-        let runtime = ComponentRuntime::new();
         let output = Rc::new(RenderOutput::default());
         let effect_output = Rc::clone(&output);
         let initial_size = native.size();
@@ -140,12 +141,15 @@ impl Window {
             vertical,
         };
 
-        let component = runtime.mount(move |context| {
-            let size = context.state(initial_size);
-            let (surface, surface_events) = context.event::<SurfaceEvent>();
-            let (pointer, pointer_events) = context.event::<PointerEvent>();
-            let (scroll, scroll_events) = context.event::<ScrollEvent>();
-            let (close_requested, close_requests) = context.event::<CloseRequested>();
+        let (native_provider, native_source) = channel::<NativeWindowEvent>();
+        let native_events = EventSink::from(&native_provider);
+        let dispatcher = FifoDispatcher::new();
+        let mut components = ComponentInstance::new(dispatcher.route(), move |context| {
+            let size = context.create_state(initial_size);
+            let (surface, surface_events) = context.event_source::<SurfaceEvent>();
+            let (pointer, pointer_events) = context.event_source::<PointerEvent>();
+            let (scroll, scroll_events) = context.event_source::<ScrollEvent>();
+            let (close_requested, close_requests) = context.event_source::<CloseRequested>();
             let events = WindowEvents {
                 surface: &surface,
                 pointer: &pointer,
@@ -156,26 +160,31 @@ impl Window {
             };
             let content = build(context, &events);
 
-            context.effect(move |context| {
+            let effect = context.create_effect(move |context| {
                 effect_output
                     .content
                     .replace(Some(context.read(&content).cloned()));
                 effect_output.redraw_needed.set(true);
             });
+            context.sync(&effect);
 
-            WindowComponent {
+            let component = WindowComponent {
+                native: native_source,
                 size,
                 surface_events,
                 pointer_events,
                 scroll_events,
                 close_requests,
-            }
+            };
+            context.mount(component);
+            context.retain(native_provider);
         });
-        runtime.flush_effects();
+        components.flush_effects()?;
 
         Ok(Self {
-            runtime,
-            component,
+            dispatcher,
+            components,
+            native_events,
             canvas_renderer,
             presenter,
             native,
@@ -186,22 +195,47 @@ impl Window {
     /// Delivers native events and presents content until the Window closes.
     pub fn run(mut self) -> Result<()> {
         self.request_redraw_if_needed();
+        let mut component_work_pending = false;
 
-        while let Some(event) = self.native.next_event()? {
-            let redraw = matches!(
-                event,
-                NativeWindowEvent::Surface(SurfaceEvent::RedrawRequested)
-            );
-            let close = matches!(event, NativeWindowEvent::CloseRequested);
+        loop {
+            let event = if component_work_pending {
+                match self.native.poll_event()? {
+                    WindowPoll::Event(event) => Some(event),
+                    WindowPoll::Empty => None,
+                    WindowPoll::Finished => return Ok(()),
+                }
+            } else {
+                match self.native.next_event()? {
+                    Some(event) => Some(event),
+                    None => return Ok(()),
+                }
+            };
+            let redraw = event.is_some_and(|event| {
+                matches!(
+                    event,
+                    NativeWindowEvent::Surface(SurfaceEvent::RedrawRequested)
+                )
+            });
+            let close = matches!(event, Some(NativeWindowEvent::CloseRequested));
 
-            if let NativeWindowEvent::Surface(SurfaceEvent::Resized(size)) = event {
-                self.presenter.resize(size)?;
+            if let Some(event) = event {
+                if let NativeWindowEvent::Surface(SurfaceEvent::Resized(size)) = event {
+                    self.presenter.resize(size)?;
+                }
+
+                if DispatchRoute::Inline
+                    .send(&self.native_events, event)
+                    .is_err()
+                {
+                    return Ok(());
+                }
             }
 
-            let queued = self.runtime.enqueue(&self.component, event);
-            debug_assert!(queued, "the Window root remains mounted while it runs");
-            let outcome = self.runtime.run_turn(TurnBudget::unlimited());
-            debug_assert_eq!(outcome, TurnOutcome::Idle);
+            component_work_pending = match self.drive_components(COMPONENT_WORK_TIME)? {
+                ComponentProgress::Idle => false,
+                ComponentProgress::Pending => true,
+                ComponentProgress::Finished => return Ok(()),
+            };
 
             if redraw {
                 self.present_latest()?;
@@ -210,11 +244,29 @@ impl Window {
             }
 
             if close {
-                break;
+                return Ok(());
             }
         }
+    }
 
-        Ok(())
+    fn drive_components(&mut self, available_time: Duration) -> Result<ComponentProgress> {
+        let started_at = Instant::now();
+        loop {
+            if self.components.is_finished() {
+                return Ok(ComponentProgress::Finished);
+            }
+            if !self.dispatcher.deliver_next() {
+                self.components.flush_effects()?;
+                return Ok(ComponentProgress::Idle);
+            }
+            if self.components.is_finished() {
+                return Ok(ComponentProgress::Finished);
+            }
+            if started_at.elapsed() >= available_time {
+                self.components.flush_effects()?;
+                return Ok(ComponentProgress::Pending);
+            }
+        }
     }
 
     fn request_redraw_if_needed(&mut self) {
@@ -248,6 +300,12 @@ impl Window {
     }
 }
 
+enum ComponentProgress {
+    Idle,
+    Pending,
+    Finished,
+}
+
 #[derive(Default)]
 struct RenderOutput {
     content: RefCell<Option<WindowContent>>,
@@ -255,34 +313,42 @@ struct RenderOutput {
 }
 
 struct WindowComponent {
+    native: EventSource<NativeWindowEvent>,
     size: State<SurfaceSize>,
-    surface_events: EventEmitter<SurfaceEvent>,
-    pointer_events: EventEmitter<PointerEvent>,
-    scroll_events: EventEmitter<ScrollEvent>,
-    close_requests: EventEmitter<CloseRequested>,
+    surface_events: EventSink<SurfaceEvent>,
+    pointer_events: EventSink<PointerEvent>,
+    scroll_events: EventSink<ScrollEvent>,
+    close_requests: EventSink<CloseRequested>,
 }
 
 impl Component for WindowComponent {
-    type Event = NativeWindowEvent;
-
-    fn receive(&mut self, event: Self::Event, context: &mut ComponentContext<'_>) {
-        match event {
+    fn mount(self, context: &mut MountContext<'_>) {
+        let Self {
+            native,
+            size: surface_size,
+            surface_events,
+            pointer_events,
+            scroll_events,
+            close_requests,
+        } = self;
+        let input = context.receive(move |event: NativeWindowEvent, context| match event {
             NativeWindowEvent::Surface(event) => {
                 if let SurfaceEvent::Resized(size) = event {
-                    context.set(&self.size, size);
+                    context.set(&surface_size, size);
                 }
-                let _ = context.emit(&self.surface_events, event);
+                let _ = context.send(&surface_events, event);
             }
             NativeWindowEvent::Pointer(event) => {
-                let _ = context.emit(&self.pointer_events, event);
+                let _ = context.send(&pointer_events, event);
             }
             NativeWindowEvent::Scroll(event) => {
-                let _ = context.emit(&self.scroll_events, event);
+                let _ = context.send(&scroll_events, event);
             }
             NativeWindowEvent::CloseRequested => {
-                let _ = context.emit(&self.close_requests, CloseRequested);
+                let _ = context.send(&close_requests, CloseRequested);
             }
-        }
+        });
+        assert!(context.connect_cloned(&native, &input));
     }
 }
 

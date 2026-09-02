@@ -1,0 +1,5 @@
+[package]
+name = "theoria-event"
+version = "0.1.0"
+edition = "2024"
+description = "Typed event sources, sinks, and dispatch primitives for Theoria"

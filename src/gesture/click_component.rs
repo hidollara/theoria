@@ -1,5 +1,6 @@
 use crate::{
-    component::{Component, ComponentContext, EventEmitter},
+    component::{Component, MountContext},
+    event::{EventSink, EventSource},
     input::pointer::PointerEvent,
 };
 
@@ -7,27 +8,42 @@ use super::{Click, ClickRecognizer};
 
 /// Component adapter that publishes clicks recognized from pointer input.
 ///
-/// The output emitter is supplied by the component that composes the input
-/// pipeline. This keeps event-source identity and lifetime separate from the
-/// replaceable recognition algorithm.
+/// The output Sink is supplied by the component that composes the input
+/// pipeline. It may publish through an Event Source or deliver directly to
+/// another Component, keeping routing separate from the recognition algorithm.
 pub struct ClickGesture {
     recognizer: ClickRecognizer,
-    clicks: EventEmitter<Click>,
+    pointers: EventSource<PointerEvent>,
+    clicks: EventSink<Click>,
 }
 
 impl ClickGesture {
-    pub fn new(recognizer: ClickRecognizer, clicks: EventEmitter<Click>) -> Self {
-        Self { recognizer, clicks }
+    pub fn new(
+        recognizer: ClickRecognizer,
+        pointers: EventSource<PointerEvent>,
+        clicks: impl Into<EventSink<Click>>,
+    ) -> Self {
+        Self {
+            recognizer,
+            pointers,
+            clicks: clicks.into(),
+        }
     }
 }
 
 impl Component for ClickGesture {
-    type Event = PointerEvent;
-
-    fn receive(&mut self, event: Self::Event, context: &mut ComponentContext<'_>) {
-        if let Some(click) = self.recognizer.recognize(&event) {
-            let _ = context.emit(&self.clicks, click);
-        }
+    fn mount(self, context: &mut MountContext<'_>) {
+        let Self {
+            mut recognizer,
+            pointers,
+            clicks,
+        } = self;
+        let input = context.receive(move |event: PointerEvent, context| {
+            if let Some(click) = recognizer.recognize(&event) {
+                let _ = context.send(&clicks, click);
+            }
+        });
+        assert!(context.connect(&pointers, &input));
     }
 }
 
@@ -36,52 +52,20 @@ mod tests {
     use std::{cell::RefCell, rc::Rc};
 
     use crate::{
-        component::{
-            Component, ComponentContext, ComponentHandle, ComponentRuntime, EventEmitter,
-            TurnBudget, TurnOutcome,
-        },
+        event::EventSink,
         geometry::Point,
         gesture::MovementThreshold,
         input::pointer::{
             PointerButton, PointerButtonChange, PointerButtons, PointerEvent, PointerId,
             PointerKind, PointerPhase,
         },
+        test_support::TestRuntime,
     };
 
     use super::*;
 
-    struct PointerInput {
-        pointer_events: EventEmitter<PointerEvent>,
-    }
-
-    impl Component for PointerInput {
-        type Event = PointerEvent;
-
-        fn receive(&mut self, event: Self::Event, context: &mut ComponentContext<'_>) {
-            let _ = context.emit(&self.pointer_events, event);
-        }
-    }
-
-    struct ClickRecorder(Rc<RefCell<Vec<Click>>>);
-
-    impl Component for ClickRecorder {
-        type Event = Click;
-
-        fn receive(&mut self, event: Self::Event, _context: &mut ComponentContext<'_>) {
-            self.0.borrow_mut().push(event);
-        }
-    }
-
     struct InputPipeline {
-        input: ComponentHandle<PointerInput>,
-    }
-
-    impl Component for InputPipeline {
-        type Event = PointerEvent;
-
-        fn receive(&mut self, event: Self::Event, context: &mut ComponentContext<'_>) {
-            let _ = context.send(&self.input, event);
-        }
+        input: EventSink<PointerEvent>,
     }
 
     fn mouse_event(change: PointerButtonChange, position: Point) -> PointerEvent {
@@ -101,44 +85,55 @@ mod tests {
 
     #[test]
     fn pointer_source_drives_click_source_through_component_delivery() {
-        let runtime = ComponentRuntime::new();
         let received = Rc::new(RefCell::new(Vec::new()));
         let output = Rc::clone(&received);
 
-        let pipeline = runtime.mount(move |context| {
-            let (pointer_source, pointer_events) = context.event::<PointerEvent>();
-            let (click_source, clicks) = context.event::<Click>();
-            let gesture = context.mount(move |_context| {
-                ClickGesture::new(
-                    ClickRecognizer::new(MovementThreshold::Radial { radius: 4.0 }).unwrap(),
-                    clicks,
-                )
+        let instance = TestRuntime::new(move |context: &mut MountContext<'_>| {
+            let (pointer_source, pointer_events) = context.event_source::<PointerEvent>();
+            let (click_source, clicks) = context.event_source::<Click>();
+            context.mount(ClickGesture::new(
+                ClickRecognizer::new(MovementThreshold::Radial { radius: 4.0 }).unwrap(),
+                pointer_source,
+                clicks,
+            ));
+            let recorder = context.receive(move |event: Click, _context| {
+                output.borrow_mut().push(event);
             });
-            let recorder = context.mount(move |_context| ClickRecorder(output));
 
-            assert!(context.connect(&pointer_source, &gesture));
-            assert!(context.connect(&click_source, &recorder));
+            context.connect(&click_source, &recorder);
 
-            let input = context.mount(move |_context| PointerInput { pointer_events });
+            let input = context.receive(move |event: PointerEvent, context| {
+                let _ = context.send(&pointer_events, event);
+            });
             InputPipeline { input }
         });
+        let input = instance.interface().input.clone();
+        let mut runtime = instance.into_driver();
 
-        assert!(runtime.enqueue(
-            &pipeline,
-            mouse_event(
-                PointerButtonChange::Pressed(PointerButton::Primary),
-                Point::new(10.0, 20.0),
-            ),
-        ));
-        assert!(runtime.enqueue(
-            &pipeline,
-            mouse_event(
-                PointerButtonChange::Released(PointerButton::Primary),
-                Point::new(12.0, 20.0),
-            ),
-        ));
+        assert!(
+            runtime
+                .send(
+                    &input,
+                    mouse_event(
+                        PointerButtonChange::Pressed(PointerButton::Primary),
+                        Point::new(10.0, 20.0),
+                    ),
+                )
+                .is_ok()
+        );
+        assert!(
+            runtime
+                .send(
+                    &input,
+                    mouse_event(
+                        PointerButtonChange::Released(PointerButton::Primary),
+                        Point::new(12.0, 20.0),
+                    ),
+                )
+                .is_ok()
+        );
 
-        assert_eq!(runtime.run_turn(TurnBudget::unlimited()), TurnOutcome::Idle);
+        runtime.run_until_idle().expect("valid Effects");
         assert_eq!(received.borrow().len(), 1);
         assert_eq!(
             received.borrow()[0].release_position,

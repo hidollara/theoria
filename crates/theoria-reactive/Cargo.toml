@@ -1,0 +1,5 @@
+[package]
+name = "theoria-reactive"
+version = "0.1.0"
+edition = "2024"
+description = "Reactive value primitives for Theoria"

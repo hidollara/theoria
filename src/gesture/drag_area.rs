@@ -1,7 +1,5 @@
 use crate::{
-    component::{ComponentContext, EventTarget},
-    interaction::HitRegion,
-    transform::Projective2,
+    component::UpdateContext, event::EventSink, interaction::HitRegion, transform::Projective2,
 };
 
 use super::{Drag, DragPhase, area::GestureArea};
@@ -15,8 +13,8 @@ use super::{Drag, DragPhase, area::GestureArea};
 pub struct DragArea(GestureArea<Drag>);
 
 impl DragArea {
-    pub fn new(target: EventTarget<Drag>, region: HitRegion) -> Self {
-        Self(GestureArea::new(target, region))
+    pub fn new(sink: impl Into<EventSink<Drag>>, region: HitRegion) -> Self {
+        Self(GestureArea::new(sink.into(), region))
     }
 
     pub fn transformed(mut self, local_to_parent: impl Into<Projective2>) -> Self {
@@ -30,7 +28,7 @@ impl DragArea {
     }
 
     /// Forwards one captured drag in this area's local coordinate space.
-    pub fn forward(&self, drag: &Drag, context: &mut ComponentContext<'_>) -> bool {
+    pub fn forward(&self, drag: &Drag, context: &mut UpdateContext<'_>) -> bool {
         let Some(origin) = self.0.map_point(drag.origin) else {
             return false;
         };
@@ -57,35 +55,24 @@ mod tests {
     use std::{cell::RefCell, rc::Rc};
 
     use crate::{
-        component::{Component, ComponentRuntime, TurnBudget, TurnOutcome},
+        component::UpdateContext,
         geometry::Point,
         input::pointer::{PointerButton, PointerId, PointerKind},
         path::{FillRule, Path},
+        test_support::TestRuntime,
         transform::Affine2,
     };
 
     use super::*;
     use crate::math::Vector2;
 
-    struct Recorder(Rc<RefCell<Vec<Drag>>>);
-
-    impl Component for Recorder {
-        type Event = Drag;
-
-        fn receive(&mut self, event: Self::Event, _context: &mut ComponentContext<'_>) {
-            self.0.borrow_mut().push(event);
-        }
-    }
-
     struct Capture {
         areas: Vec<DragArea>,
         captured: Option<DragArea>,
     }
 
-    impl Component for Capture {
-        type Event = Drag;
-
-        fn receive(&mut self, drag: Self::Event, context: &mut ComponentContext<'_>) {
+    impl Capture {
+        fn handle(&mut self, drag: Drag, context: &mut UpdateContext<'_>) {
             match drag.phase {
                 DragPhase::Started => {
                     self.captured = self
@@ -139,16 +126,22 @@ mod tests {
 
     #[test]
     fn a_started_drag_remains_captured_outside_the_area() {
-        let runtime = ComponentRuntime::new();
         let received = Rc::new(RefCell::new(Vec::new()));
         let output = Rc::clone(&received);
-        let recorder = runtime.mount(move |_context| Recorder(output));
-        let area = DragArea::new(recorder.event_target(), square())
-            .transformed(Affine2::from_translation(Vector2::new(100.0, 100.0)));
-        let capture = runtime.mount(move |_context| Capture {
-            areas: vec![area],
-            captured: None,
+        let instance = TestRuntime::new(move |context| {
+            let recorder = context.receive(move |event: Drag, _context| {
+                output.borrow_mut().push(event);
+            });
+            let area = DragArea::new(recorder, square())
+                .transformed(Affine2::from_translation(Vector2::new(100.0, 100.0)));
+            let mut capture = Capture {
+                areas: vec![area],
+                captured: None,
+            };
+            context.receive(move |drag, context| capture.handle(drag, context))
         });
+        let input = instance.interface().clone();
+        let mut runtime = instance.into_driver();
 
         for drag in [
             drag(
@@ -167,10 +160,10 @@ mod tests {
                 Point::new(160.0, 170.0),
             ),
         ] {
-            assert!(runtime.enqueue(&capture, drag));
+            assert!(runtime.send(&input, drag).is_ok());
         }
 
-        assert_eq!(runtime.run_turn(TurnBudget::unlimited()), TurnOutcome::Idle);
+        runtime.run_until_idle().expect("valid Effects");
         let received = received.borrow();
         assert_eq!(received.len(), 3);
         assert_eq!(received[0].origin, Point::new(5.0, 5.0));

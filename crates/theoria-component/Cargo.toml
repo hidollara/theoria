@@ -1,0 +1,9 @@
+[package]
+name = "theoria-component"
+version = "0.1.0"
+edition = "2024"
+description = "Component lifetime coordination for Theoria events and reactive values"
+
+[dependencies]
+theoria-event = { path = "../theoria-event" }
+theoria-reactive = { path = "../theoria-reactive" }

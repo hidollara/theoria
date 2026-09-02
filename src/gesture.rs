@@ -2,8 +2,8 @@
 //!
 //! Recognizers in this module do not perform hit testing or event routing.
 //! They only describe what happened in the coordinate space of their input.
-//! Gesture-specific components may then route those completed values without
-//! adding routing semantics to the component Runtime itself.
+//! Gesture-specific Components may then route those completed values without
+//! coupling recognition to an application's dispatch policy.
 
 mod area;
 mod click;

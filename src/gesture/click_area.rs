@@ -1,7 +1,5 @@
 use crate::{
-    component::{ComponentContext, EventTarget},
-    geometry::Point,
-    interaction::HitRegion,
+    component::UpdateContext, event::EventSink, geometry::Point, interaction::HitRegion,
     transform::Projective2,
 };
 
@@ -16,8 +14,8 @@ use super::{Click, area::GestureArea};
 pub struct ClickArea(GestureArea<Click>);
 
 impl ClickArea {
-    pub fn new(target: EventTarget<Click>, region: HitRegion) -> Self {
-        Self(GestureArea::new(target, region))
+    pub fn new(sink: impl Into<EventSink<Click>>, region: HitRegion) -> Self {
+        Self(GestureArea::new(sink.into(), region))
     }
 
     /// Places this local area in its containing click coordinate space.
@@ -26,8 +24,8 @@ impl ClickArea {
         self
     }
 
-    /// Reports whether this active destination contains a point expressed in
-    /// the area's parent coordinate space.
+    /// Reports whether this geometry contains a point expressed in the area's
+    /// parent coordinate space.
     pub fn contains(&self, point: Point, tolerance: f32) -> bool {
         self.0.contains(point, tolerance)
     }
@@ -36,12 +34,12 @@ impl ClickArea {
     ///
     /// The queued click contains positions expressed in the region's local
     /// coordinate space. `false` means the area could not accept the complete
-    /// click or its destination is no longer active.
+    /// click or its destination rejects delivery.
     pub fn try_forward(
         &self,
         click: &Click,
         tolerance: f32,
-        context: &mut ComponentContext<'_>,
+        context: &mut UpdateContext<'_>,
     ) -> bool {
         let Some(press_position) = self.0.hit(click.press_position, tolerance) else {
             return false;
@@ -65,37 +63,14 @@ mod tests {
     use std::{cell::RefCell, rc::Rc};
 
     use crate::{
-        component::{
-            Component, ComponentContext, ComponentRuntime, EventEmitter, TurnBudget, TurnOutcome,
-        },
         input::pointer::{PointerButton, PointerId, PointerKind},
         math::Vector2,
         path::{FillRule, Path},
-        reactive::Value,
+        test_support::TestRuntime,
         transform::Affine2,
     };
 
     use super::*;
-
-    struct Input(EventEmitter<Click>);
-
-    impl Component for Input {
-        type Event = Click;
-
-        fn receive(&mut self, event: Click, context: &mut ComponentContext<'_>) {
-            assert!(context.emit(&self.0, event));
-        }
-    }
-
-    struct Recorder(Rc<RefCell<Vec<Click>>>);
-
-    impl Component for Recorder {
-        type Event = Click;
-
-        fn receive(&mut self, event: Click, _context: &mut ComponentContext<'_>) {
-            self.0.borrow_mut().push(event);
-        }
-    }
 
     fn square(size: f32) -> HitRegion {
         HitRegion::fill(
@@ -121,39 +96,42 @@ mod tests {
     }
 
     #[test]
-    fn anonymous_handler_selects_frontmost_area_and_forwards_local_coordinates() {
-        let runtime = ComponentRuntime::new();
+    fn frontmost_matching_area_receives_local_click_coordinates() {
         let back_events = Rc::new(RefCell::new(Vec::new()));
         let front_events = Rc::new(RefCell::new(Vec::new()));
         let back_output = Rc::clone(&back_events);
         let front_output = Rc::clone(&front_events);
-        let input = runtime.mount(move |context| {
-            let (clicks, emitter) = context.event::<Click>();
-            let back = context.mount(move |_context| Recorder(back_output));
-            let front = context.mount(move |_context| Recorder(front_output));
-            let areas = Value::from(vec![
-                ClickArea::new(back.event_target(), square(10.0)),
-                ClickArea::new(front.event_target(), square(10.0))
-                    .transformed(Affine2::from_translation(Vector2::new(2.0, 3.0))),
-            ]);
-            let handler = context.mount_handler(move |_context| {
-                move |click: Click, context: &mut ComponentContext<'_>| {
-                    let areas = context.read_current(&areas);
-                    if let Some(area) = areas
-                        .iter()
-                        .rev()
-                        .find(|area| area.contains(click.press_position, 0.01))
-                    {
-                        let _ = area.try_forward(&click, 0.01, context);
-                    }
-                }
+        let instance = TestRuntime::new(move |context| {
+            let back = context.receive(move |event: Click, _context| {
+                back_output.borrow_mut().push(event);
             });
-            assert!(context.connect(&clicks, &handler));
-            Input(emitter)
+            let front = context.receive(move |event: Click, _context| {
+                front_output.borrow_mut().push(event);
+            });
+            let areas = [
+                ClickArea::new(back, square(10.0)),
+                ClickArea::new(front, square(10.0))
+                    .transformed(Affine2::from_translation(Vector2::new(2.0, 3.0))),
+            ];
+            context.receive(move |click: Click, context| {
+                if let Some(area) = areas
+                    .iter()
+                    .rev()
+                    .find(|area| area.contains(click.press_position, 0.01))
+                {
+                    let _ = area.try_forward(&click, 0.01, context);
+                }
+            })
         });
+        let input = instance.interface().clone();
+        let mut runtime = instance.into_driver();
 
-        assert!(runtime.enqueue(&input, click(Point::new(5.0, 7.0), Point::new(6.0, 8.0)),));
-        assert_eq!(runtime.run_turn(TurnBudget::unlimited()), TurnOutcome::Idle);
+        assert!(
+            runtime
+                .send(&input, click(Point::new(5.0, 7.0), Point::new(6.0, 8.0)))
+                .is_ok()
+        );
+        runtime.run_until_idle().expect("valid Effects");
 
         assert!(back_events.borrow().is_empty());
         assert_eq!(front_events.borrow().len(), 1);
@@ -169,62 +147,67 @@ mod tests {
 
     #[test]
     fn selected_press_area_absorbs_a_click_released_outside_it() {
-        let runtime = ComponentRuntime::new();
         let back_events = Rc::new(RefCell::new(Vec::new()));
         let front_events = Rc::new(RefCell::new(Vec::new()));
         let back_output = Rc::clone(&back_events);
         let front_output = Rc::clone(&front_events);
-        let input = runtime.mount(move |context| {
-            let (clicks, emitter) = context.event::<Click>();
-            let back = context.mount(move |_context| Recorder(back_output));
-            let front = context.mount(move |_context| Recorder(front_output));
-            let areas = Value::from(vec![
-                ClickArea::new(back.event_target(), square(30.0)),
-                ClickArea::new(front.event_target(), square(10.0)),
-            ]);
-            let handler = context.mount_handler(move |_context| {
-                move |click: Click, context: &mut ComponentContext<'_>| {
-                    let areas = context.read_current(&areas);
-                    if let Some(area) = areas
-                        .iter()
-                        .rev()
-                        .find(|area| area.contains(click.press_position, 0.01))
-                    {
-                        let _ = area.try_forward(&click, 0.01, context);
-                    }
-                }
+        let instance = TestRuntime::new(move |context| {
+            let back = context.receive(move |event: Click, _context| {
+                back_output.borrow_mut().push(event);
             });
-            assert!(context.connect(&clicks, &handler));
-            Input(emitter)
+            let front = context.receive(move |event: Click, _context| {
+                front_output.borrow_mut().push(event);
+            });
+            let areas = [
+                ClickArea::new(back, square(30.0)),
+                ClickArea::new(front, square(10.0)),
+            ];
+            context.receive(move |click: Click, context| {
+                if let Some(area) = areas
+                    .iter()
+                    .rev()
+                    .find(|area| area.contains(click.press_position, 0.01))
+                {
+                    let _ = area.try_forward(&click, 0.01, context);
+                }
+            })
         });
+        let input = instance.interface().clone();
+        let mut runtime = instance.into_driver();
 
-        assert!(runtime.enqueue(&input, click(Point::new(5.0, 5.0), Point::new(20.0, 5.0)),));
-        assert_eq!(runtime.run_turn(TurnBudget::unlimited()), TurnOutcome::Idle);
+        assert!(
+            runtime
+                .send(&input, click(Point::new(5.0, 5.0), Point::new(20.0, 5.0)))
+                .is_ok()
+        );
+        runtime.run_until_idle().expect("valid Effects");
         assert!(front_events.borrow().is_empty());
         assert!(back_events.borrow().is_empty());
     }
 
     #[test]
     fn singular_transforms_cannot_produce_a_hit() {
-        let runtime = ComponentRuntime::new();
         let events = Rc::new(RefCell::new(Vec::new()));
         let output = Rc::clone(&events);
-        let input = runtime.mount(move |context| {
-            let (clicks, emitter) = context.event::<Click>();
-            let receiver = context.mount(move |_context| Recorder(output));
-            let area = ClickArea::new(receiver.event_target(), square(10.0))
-                .transformed(Affine2::from_scale(Vector2::new(0.0, 1.0)));
-            let handler = context.mount_handler(move |_context| {
-                move |click: Click, context: &mut ComponentContext<'_>| {
-                    let _ = area.try_forward(&click, 0.01, context);
-                }
+        let instance = TestRuntime::new(move |context| {
+            let target = context.receive(move |event: Click, _context| {
+                output.borrow_mut().push(event);
             });
-            assert!(context.connect(&clicks, &handler));
-            Input(emitter)
+            let area = ClickArea::new(target, square(10.0))
+                .transformed(Affine2::from_scale(Vector2::new(0.0, 1.0)));
+            context.receive(move |click: Click, context| {
+                let _ = area.try_forward(&click, 0.01, context);
+            })
         });
+        let input = instance.interface().clone();
+        let mut runtime = instance.into_driver();
 
-        assert!(runtime.enqueue(&input, click(Point::new(0.0, 5.0), Point::new(0.0, 5.0)),));
-        assert_eq!(runtime.run_turn(TurnBudget::unlimited()), TurnOutcome::Idle);
+        assert!(
+            runtime
+                .send(&input, click(Point::new(0.0, 5.0), Point::new(0.0, 5.0)))
+                .is_ok()
+        );
+        runtime.run_until_idle().expect("valid Effects");
         assert!(events.borrow().is_empty());
     }
 }

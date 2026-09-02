@@ -1,29 +1,45 @@
 use crate::{
-    component::{Component, ComponentContext, EventEmitter},
+    component::{Component, MountContext},
+    event::{EventSink, EventSource},
     input::pointer::PointerEvent,
 };
 
 use super::{Drag, DragRecognizer};
 
-/// Component adapter that publishes drags recognized from pointer input.
+/// Component adapter that sends recognized drags to a composed output Sink.
 pub struct DragGesture {
     recognizer: DragRecognizer,
-    drags: EventEmitter<Drag>,
+    pointers: EventSource<PointerEvent>,
+    drags: EventSink<Drag>,
 }
 
 impl DragGesture {
-    pub fn new(recognizer: DragRecognizer, drags: EventEmitter<Drag>) -> Self {
-        Self { recognizer, drags }
+    pub fn new(
+        recognizer: DragRecognizer,
+        pointers: EventSource<PointerEvent>,
+        drags: impl Into<EventSink<Drag>>,
+    ) -> Self {
+        Self {
+            recognizer,
+            pointers,
+            drags: drags.into(),
+        }
     }
 }
 
 impl Component for DragGesture {
-    type Event = PointerEvent;
-
-    fn receive(&mut self, event: Self::Event, context: &mut ComponentContext<'_>) {
-        if let Some(drag) = self.recognizer.recognize(&event) {
-            let _ = context.emit(&self.drags, drag);
-        }
+    fn mount(self, context: &mut MountContext<'_>) {
+        let Self {
+            mut recognizer,
+            pointers,
+            drags,
+        } = self;
+        let input = context.receive(move |event: PointerEvent, context| {
+            if let Some(drag) = recognizer.recognize(&event) {
+                let _ = context.send(&drags, drag);
+            }
+        });
+        assert!(context.connect(&pointers, &input));
     }
 }
 
@@ -32,39 +48,18 @@ mod tests {
     use std::{cell::RefCell, rc::Rc};
 
     use crate::{
-        component::{
-            Component, ComponentContext, ComponentRuntime, EventEmitter, TurnBudget, TurnOutcome,
-        },
+        component::MountContext,
         geometry::Point,
         gesture::MovementThreshold,
         input::pointer::{
             PointerButton, PointerButtonChange, PointerButtons, PointerEvent, PointerId,
             PointerKind, PointerPhase,
         },
+        test_support::TestRuntime,
     };
 
     use super::*;
     use crate::gesture::DragPhase;
-
-    struct PointerInput(EventEmitter<PointerEvent>);
-
-    impl Component for PointerInput {
-        type Event = PointerEvent;
-
-        fn receive(&mut self, event: Self::Event, context: &mut ComponentContext<'_>) {
-            let _ = context.emit(&self.0, event);
-        }
-    }
-
-    struct DragRecorder(Rc<RefCell<Vec<Drag>>>);
-
-    impl Component for DragRecorder {
-        type Event = Drag;
-
-        fn receive(&mut self, event: Self::Event, _context: &mut ComponentContext<'_>) {
-            self.0.borrow_mut().push(event);
-        }
-    }
 
     fn mouse(position: Point, button_change: Option<PointerButtonChange>) -> PointerEvent {
         PointerEvent {
@@ -83,27 +78,30 @@ mod tests {
 
     #[test]
     fn pointer_source_drives_a_complete_drag_through_component_delivery() {
-        let runtime = ComponentRuntime::new();
         let received = Rc::new(RefCell::new(Vec::new()));
         let output = Rc::clone(&received);
-        let input = runtime.mount(move |context| {
-            let (pointer_source, pointer_events) = context.event::<PointerEvent>();
-            let (drag_source, drags) = context.event::<Drag>();
-            let gesture = context.mount(move |_context| {
-                DragGesture::new(
-                    DragRecognizer::new(MovementThreshold::AxisAligned {
-                        horizontal: 3.0,
-                        vertical: 4.0,
-                    })
-                    .unwrap(),
-                    drags,
-                )
+        let instance = TestRuntime::new(move |context: &mut MountContext<'_>| {
+            let (pointer_source, pointer_events) = context.event_source::<PointerEvent>();
+            let (drag_source, drags) = context.event_source::<Drag>();
+            context.mount(DragGesture::new(
+                DragRecognizer::new(MovementThreshold::AxisAligned {
+                    horizontal: 3.0,
+                    vertical: 4.0,
+                })
+                .unwrap(),
+                pointer_source,
+                drags,
+            ));
+            let recorder = context.receive(move |event: Drag, _context| {
+                output.borrow_mut().push(event);
             });
-            let recorder = context.mount(move |_context| DragRecorder(output));
-            assert!(context.connect(&pointer_source, &gesture));
-            assert!(context.connect(&drag_source, &recorder));
-            PointerInput(pointer_events)
+            context.connect(&drag_source, &recorder);
+            context.receive(move |event: PointerEvent, context| {
+                let _ = context.send(&pointer_events, event);
+            })
         });
+        let input = instance.interface().clone();
+        let mut runtime = instance.into_driver();
 
         for event in [
             mouse(
@@ -118,10 +116,10 @@ mod tests {
                 Some(PointerButtonChange::Released(PointerButton::Primary)),
             ),
         ] {
-            assert!(runtime.enqueue(&input, event));
+            assert!(runtime.send(&input, event).is_ok());
         }
 
-        assert_eq!(runtime.run_turn(TurnBudget::unlimited()), TurnOutcome::Idle);
+        runtime.run_until_idle().expect("valid Effects");
         let received = received.borrow();
         assert_eq!(received.len(), 3);
         assert_eq!(received[0].phase, DragPhase::Started);

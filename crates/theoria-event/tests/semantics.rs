@@ -1,0 +1,14 @@
+mod semantics {
+    use theoria_event::FifoDispatcher;
+
+    mod bridge;
+    mod channel;
+    mod dispatch;
+    mod dispatcher;
+    mod handler;
+    mod sink;
+
+    fn drain(dispatcher: &mut FifoDispatcher) {
+        while dispatcher.deliver_next() {}
+    }
+}
