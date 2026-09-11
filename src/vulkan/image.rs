@@ -18,10 +18,11 @@ use upload::upload_rgba8;
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 pub(super) struct GpuImage {
-    _backing: Arc<VulkanImage>,
-    descriptor_pool: vk::DescriptorPool,
+    _descriptor_pool: DescriptorPool,
     descriptor_sets: HashMap<SamplerKey, vk::DescriptorSet>,
     alpha_mode: GpuAlphaMode,
+    // Fields drop in declaration order, so the sampled view outlives its pool.
+    _backing: Arc<VulkanImage>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -35,6 +36,27 @@ pub(super) struct ImageCache {
     samplers: HashMap<SamplerKey, vk::Sampler>,
     descriptor_set_layout: vk::DescriptorSetLayout,
     images: HashMap<ImageInstanceKey, GpuImage>,
+}
+
+struct DescriptorPool {
+    device: RenderDevice,
+    handle: vk::DescriptorPool,
+}
+
+impl DescriptorPool {
+    fn new(device: RenderDevice, handle: vk::DescriptorPool) -> Self {
+        Self { device, handle }
+    }
+
+    fn handle(&self) -> vk::DescriptorPool {
+        self.handle
+    }
+}
+
+impl Drop for DescriptorPool {
+    fn drop(&mut self) {
+        unsafe { self.device.raw().destroy_descriptor_pool(self.handle, None) };
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -106,19 +128,8 @@ const fn address_mode(extend: ImageExtend) -> vk::SamplerAddressMode {
 }
 
 pub(super) struct SampledImageBinding {
-    device: RenderDevice,
-    descriptor_pool: vk::DescriptorPool,
+    _descriptor_pool: DescriptorPool,
     pub(super) descriptor_set: vk::DescriptorSet,
-}
-
-impl Drop for SampledImageBinding {
-    fn drop(&mut self) {
-        unsafe {
-            self.device
-                .raw()
-                .destroy_descriptor_pool(self.descriptor_pool, None);
-        }
-    }
 }
 
 impl ImageCache {
@@ -243,26 +254,21 @@ impl ImageCache {
                     .ty(vk::DescriptorType::SAMPLED_IMAGE)
                     .descriptor_count(1),
             ];
-            let descriptor_pool = self.device.raw().create_descriptor_pool(
-                &vk::DescriptorPoolCreateInfo::default()
-                    .max_sets(1)
-                    .pool_sizes(&pool_sizes),
-                None,
-            )?;
+            let descriptor_pool = DescriptorPool::new(
+                self.device.clone(),
+                self.device.raw().create_descriptor_pool(
+                    &vk::DescriptorPoolCreateInfo::default()
+                        .max_sets(1)
+                        .pool_sizes(&pool_sizes),
+                    None,
+                )?,
+            );
             let layouts = [self.descriptor_set_layout];
-            let descriptor_set = match self.device.raw().allocate_descriptor_sets(
+            let descriptor_set = self.device.raw().allocate_descriptor_sets(
                 &vk::DescriptorSetAllocateInfo::default()
-                    .descriptor_pool(descriptor_pool)
+                    .descriptor_pool(descriptor_pool.handle())
                     .set_layouts(&layouts),
-            ) {
-                Ok(sets) => sets[0],
-                Err(error) => {
-                    self.device
-                        .raw()
-                        .destroy_descriptor_pool(descriptor_pool, None);
-                    return Err(error.into());
-                }
-            };
+            )?[0];
             let sampler_info = [vk::DescriptorImageInfo::default()
                 .sampler(self.samplers[&SamplerKey::RENDER_IMAGE])];
             let image_info = [vk::DescriptorImageInfo::default()
@@ -282,8 +288,7 @@ impl ImageCache {
             ];
             self.device.raw().update_descriptor_sets(&writes, &[]);
             Ok(SampledImageBinding {
-                device: self.device.clone(),
-                descriptor_pool,
+                _descriptor_pool: descriptor_pool,
                 descriptor_set,
             })
         }
@@ -309,19 +314,19 @@ impl ImageCache {
                 .ty(vk::DescriptorType::SAMPLED_IMAGE)
                 .descriptor_count(descriptor_count),
         ];
-        let descriptor_pool = unsafe {
+        let descriptor_pool = DescriptorPool::new(self.device.clone(), unsafe {
             device.create_descriptor_pool(
                 &vk::DescriptorPoolCreateInfo::default()
                     .max_sets(descriptor_count)
                     .pool_sizes(&pool_sizes),
                 None,
             )?
-        };
+        });
         let layouts = vec![self.descriptor_set_layout; self.samplers.len()];
         let descriptor_sets = unsafe {
             device.allocate_descriptor_sets(
                 &vk::DescriptorSetAllocateInfo::default()
-                    .descriptor_pool(descriptor_pool)
+                    .descriptor_pool(descriptor_pool.handle())
                     .set_layouts(&layouts),
             )?
         };
@@ -348,10 +353,10 @@ impl ImageCache {
         }
 
         Ok(GpuImage {
-            _backing: backing,
-            descriptor_pool,
+            _descriptor_pool: descriptor_pool,
             descriptor_sets: sets_by_sampler,
             alpha_mode,
+            _backing: backing,
         })
     }
 }
@@ -359,11 +364,7 @@ impl ImageCache {
 impl Drop for ImageCache {
     fn drop(&mut self) {
         unsafe {
-            for gpu_image in self.images.drain().map(|(_, image)| image) {
-                self.device
-                    .raw()
-                    .destroy_descriptor_pool(gpu_image.descriptor_pool, None);
-            }
+            self.images.clear();
             for sampler in self.samplers.drain().map(|(_, sampler)| sampler) {
                 self.device.raw().destroy_sampler(sampler, None);
             }
