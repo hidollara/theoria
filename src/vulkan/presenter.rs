@@ -1,87 +1,18 @@
 use std::{
     error::Error,
-    ffi::CStr,
-    sync::Arc,
     time::{Duration, Instant},
 };
 
-use ash::{ext, khr, vk};
+use ash::{khr, vk};
 
 use crate::{color::Color, surface::SurfaceSize, target::PresentationTarget};
 
+mod device;
+
+use device::PresentationDevice;
+pub use device::RenderDevice;
+
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
-
-const REQUIRED_API_VERSION: u32 = vk::make_api_version(0, 1, 4, 0);
-const KHR_SURFACE_MAINTENANCE1_NAME: &CStr = c"VK_KHR_surface_maintenance1";
-const KHR_SWAPCHAIN_MAINTENANCE1_NAME: &CStr = c"VK_KHR_swapchain_maintenance1";
-
-struct DeviceInner {
-    _entry: ash::Entry,
-    instance: ash::Instance,
-    physical_device: vk::PhysicalDevice,
-    device: ash::Device,
-    memory_properties: vk::PhysicalDeviceMemoryProperties,
-    graphics_queue: vk::Queue,
-    queue_family_index: u32,
-}
-
-impl Drop for DeviceInner {
-    fn drop(&mut self) {
-        unsafe {
-            self.device.destroy_device(None);
-            self.instance.destroy_instance(None);
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct RenderDevice(Arc<DeviceInner>);
-
-impl RenderDevice {
-    pub(crate) fn raw(&self) -> &ash::Device {
-        &self.0.device
-    }
-
-    pub(crate) fn graphics_queue(&self) -> vk::Queue {
-        self.0.graphics_queue
-    }
-
-    pub(crate) fn queue_family_index(&self) -> u32 {
-        self.0.queue_family_index
-    }
-
-    pub(crate) fn supported_color_sample_counts(&self, format: vk::Format) -> vk::SampleCountFlags {
-        unsafe {
-            self.0
-                .instance
-                .get_physical_device_image_format_properties(
-                    self.0.physical_device,
-                    format,
-                    vk::ImageType::TYPE_2D,
-                    vk::ImageTiling::OPTIMAL,
-                    vk::ImageUsageFlags::COLOR_ATTACHMENT,
-                    vk::ImageCreateFlags::empty(),
-                )
-                .map_or(vk::SampleCountFlags::TYPE_1, |properties| {
-                    properties.sample_counts
-                })
-        }
-    }
-
-    pub(crate) fn find_memory_type(
-        &self,
-        allowed_types: u32,
-        required: vk::MemoryPropertyFlags,
-    ) -> Option<u32> {
-        self.0.memory_properties.memory_types[..self.0.memory_properties.memory_type_count as usize]
-            .iter()
-            .enumerate()
-            .find(|(index, memory_type)| {
-                allowed_types & (1 << index) != 0 && memory_type.property_flags.contains(required)
-            })
-            .map(|(index, _)| index as u32)
-    }
-}
 
 struct SwapchainResources {
     handle: vk::SwapchainKHR,
@@ -125,15 +56,7 @@ impl RenderTarget<'_> {
 
 /// Owns swapchain acquisition, synchronization, and final presentation.
 pub struct Presenter {
-    device: RenderDevice,
-    surface_loader: khr::surface::Instance,
-    surface: vk::SurfaceKHR,
-    physical_device: vk::PhysicalDevice,
-    graphics_queue: vk::Queue,
-    present_queue: vk::Queue,
-    queue_family_index: u32,
-    swapchain_loader: khr::swapchain::Device,
-    swapchain_maintenance1: bool,
+    device: PresentationDevice,
     command_pool: vk::CommandPool,
     image_available: vk::Semaphore,
     frame_finished: vk::Fence,
@@ -150,132 +73,25 @@ impl Presenter {
     pub fn new(target: PresentationTarget) -> Result<Self> {
         unsafe {
             let size = target.size();
-            let (hwnd, hinstance) = target.win32_handles();
-            let entry = ash::Entry::load()?;
-            let loader_version = entry
-                .try_enumerate_instance_version()?
-                .unwrap_or(vk::API_VERSION_1_0);
-            if loader_version < REQUIRED_API_VERSION {
-                return Err(format!(
-                    "Vulkan 1.4 is required, but the loader only supports {}.{}.{}",
-                    vk::api_version_major(loader_version),
-                    vk::api_version_minor(loader_version),
-                    vk::api_version_patch(loader_version),
-                )
-                .into());
-            }
-            let application_name = c"theoria";
-            let app_info = vk::ApplicationInfo::default()
-                .application_name(application_name)
-                .application_version(vk::make_api_version(0, 0, 1, 0))
-                .engine_name(application_name)
-                .engine_version(vk::make_api_version(0, 0, 1, 0))
-                .api_version(REQUIRED_API_VERSION);
-            let khr_surface_maintenance1 =
-                supports_instance_extension(&entry, KHR_SURFACE_MAINTENANCE1_NAME)?;
-            let ext_surface_maintenance1 =
-                supports_instance_extension(&entry, ext::surface_maintenance1::NAME)?;
-            let mut instance_extensions = vec![
-                khr::surface::NAME.as_ptr(),
-                khr::win32_surface::NAME.as_ptr(),
-            ];
-            if khr_surface_maintenance1 {
-                instance_extensions.push(KHR_SURFACE_MAINTENANCE1_NAME.as_ptr());
-            }
-            if ext_surface_maintenance1 {
-                instance_extensions.push(ext::surface_maintenance1::NAME.as_ptr());
-            }
-            let instance_info = vk::InstanceCreateInfo::default()
-                .application_info(&app_info)
-                .enabled_extension_names(&instance_extensions);
-            let instance = entry.create_instance(&instance_info, None)?;
-
-            let win32_surface_loader = khr::win32_surface::Instance::new(&entry, &instance);
-            let surface_info = vk::Win32SurfaceCreateInfoKHR::default()
-                .hinstance(hinstance)
-                .hwnd(hwnd);
-            let surface = win32_surface_loader.create_win32_surface(&surface_info, None)?;
-            let surface_loader = khr::surface::Instance::new(&entry, &instance);
-
-            let (physical_device, queue_family_index) =
-                pick_physical_device(&instance, &surface_loader, surface)?;
-            let swapchain_maintenance1_extension = if khr_surface_maintenance1
-                && supports_device_extension(
-                    &instance,
-                    physical_device,
-                    KHR_SWAPCHAIN_MAINTENANCE1_NAME,
-                )? {
-                Some(KHR_SWAPCHAIN_MAINTENANCE1_NAME)
-            } else if ext_surface_maintenance1
-                && supports_device_extension(
-                    &instance,
-                    physical_device,
-                    ext::swapchain_maintenance1::NAME,
-                )?
-            {
-                Some(ext::swapchain_maintenance1::NAME)
-            } else {
-                None
-            }
-            .filter(|_| supports_swapchain_maintenance1(&instance, physical_device));
-            let swapchain_maintenance1 = swapchain_maintenance1_extension.is_some();
-
-            let queue_priorities = [1.0];
-            let queue_info = vk::DeviceQueueCreateInfo::default()
-                .queue_family_index(queue_family_index)
-                .queue_priorities(&queue_priorities);
-            let mut device_extensions = vec![khr::swapchain::NAME.as_ptr()];
-            if let Some(extension) = swapchain_maintenance1_extension {
-                device_extensions.push(extension.as_ptr());
-            }
-            let mut vulkan_13_features = vk::PhysicalDeviceVulkan13Features::default()
-                .dynamic_rendering(true)
-                .synchronization2(true);
-            let mut swapchain_maintenance1_features =
-                vk::PhysicalDeviceSwapchainMaintenance1FeaturesEXT::default()
-                    .swapchain_maintenance1(true);
-            let mut device_info = vk::DeviceCreateInfo::default()
-                .queue_create_infos(std::slice::from_ref(&queue_info))
-                .enabled_extension_names(&device_extensions)
-                .push_next(&mut vulkan_13_features);
-            if swapchain_maintenance1 {
-                device_info = device_info.push_next(&mut swapchain_maintenance1_features);
-            }
-            let device = instance.create_device(physical_device, &device_info, None)?;
-            let graphics_queue = device.get_device_queue(queue_family_index, 0);
-            let present_queue = graphics_queue;
-            let memory_properties = instance.get_physical_device_memory_properties(physical_device);
-            let swapchain_loader = khr::swapchain::Device::new(&instance, &device);
-
-            let device = RenderDevice(Arc::new(DeviceInner {
-                _entry: entry,
-                instance,
-                physical_device,
-                device,
-                memory_properties,
-                graphics_queue,
-                queue_family_index,
-            }));
+            let device = PresentationDevice::new(target)?;
 
             let command_pool_info = vk::CommandPoolCreateInfo::default()
                 .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER)
-                .queue_family_index(queue_family_index);
-            let command_pool = device.raw().create_command_pool(&command_pool_info, None)?;
+                .queue_family_index(device.render.queue_family_index());
+            let command_pool = device
+                .render
+                .raw()
+                .create_command_pool(&command_pool_info, None)?;
             let semaphore_info = vk::SemaphoreCreateInfo::default();
-            let image_available = device.raw().create_semaphore(&semaphore_info, None)?;
+            let image_available = device
+                .render
+                .raw()
+                .create_semaphore(&semaphore_info, None)?;
             let fence_info = vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED);
-            let frame_finished = device.raw().create_fence(&fence_info, None)?;
+            let frame_finished = device.render.raw().create_fence(&fence_info, None)?;
 
             let mut renderer = Self {
                 device,
-                surface_loader,
-                surface,
-                physical_device,
-                graphics_queue,
-                present_queue,
-                queue_family_index,
-                swapchain_loader,
-                swapchain_maintenance1,
                 command_pool,
                 image_available,
                 frame_finished,
@@ -290,7 +106,7 @@ impl Presenter {
     }
 
     pub fn device(&self) -> RenderDevice {
-        self.device.clone()
+        self.device.render.clone()
     }
 
     pub fn resize(&mut self, size: SurfaceSize) -> Result<()> {
@@ -317,7 +133,7 @@ impl Presenter {
 
         unsafe {
             let started_at = Instant::now();
-            match self.device.raw().wait_for_fences(
+            match self.device.render.raw().wait_for_fences(
                 &[self.frame_finished],
                 true,
                 timeout_nanoseconds(timeout),
@@ -338,30 +154,33 @@ impl Presenter {
 
             let resources = self.swapchain.as_ref().expect("swapchain is available");
             let remaining = timeout.saturating_sub(started_at.elapsed());
-            let (image_index, acquire_suboptimal) = match self.swapchain_loader.acquire_next_image(
-                resources.handle,
-                timeout_nanoseconds(remaining),
-                self.image_available,
-                vk::Fence::null(),
-            ) {
-                Ok(result) => result,
-                Err(vk::Result::NOT_READY | vk::Result::TIMEOUT) => return Ok(None),
-                Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
-                    self.swapchain_needs_recreation = true;
-                    return Ok(None);
-                }
-                Err(error) => return Err(error.into()),
-            };
+            let (image_index, acquire_suboptimal) =
+                match self.device.swapchain_loader.acquire_next_image(
+                    resources.handle,
+                    timeout_nanoseconds(remaining),
+                    self.image_available,
+                    vk::Fence::null(),
+                ) {
+                    Ok(result) => result,
+                    Err(vk::Result::NOT_READY | vk::Result::TIMEOUT) => return Ok(None),
+                    Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
+                        self.swapchain_needs_recreation = true;
+                        return Ok(None);
+                    }
+                    Err(error) => return Err(error.into()),
+                };
 
             let command_buffer = resources.command_buffers[image_index as usize];
             self.device
+                .render
                 .raw()
                 .reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())?;
             self.device
+                .render
                 .raw()
                 .begin_command_buffer(command_buffer, &vk::CommandBufferBeginInfo::default())?;
             transition_image(
-                self.device.raw(),
+                self.device.render.raw(),
                 command_buffer,
                 resources.render_targets[image_index as usize].image,
                 vk::ImageLayout::UNDEFINED,
@@ -385,10 +204,10 @@ impl Presenter {
             return Ok(());
         }
         unsafe {
-            if self.swapchain.is_some() && !self.swapchain_maintenance1 {
+            if self.swapchain.is_some() && !self.device.swapchain_maintenance1 {
                 // Without presentation fences, Vulkan provides no portable way
                 // to prove that a retired Swapchain is no longer in use.
-                self.device.raw().device_wait_idle()?;
+                self.device.render.raw().device_wait_idle()?;
             }
 
             let old_swapchain = self
@@ -396,26 +215,26 @@ impl Presenter {
                 .as_ref()
                 .map_or(vk::SwapchainKHR::null(), |resources| resources.handle);
             let new_swapchain = create_swapchain_resources(
-                &self.surface_loader,
-                self.surface,
-                self.physical_device,
-                self.device.raw(),
-                &self.swapchain_loader,
+                &self.device.surface_loader,
+                self.device.surface,
+                self.device.physical_device,
+                self.device.render.raw(),
+                &self.device.swapchain_loader,
                 self.command_pool,
-                self.queue_family_index,
+                self.device.render.queue_family_index(),
                 self.requested_size,
                 old_swapchain,
-                self.swapchain_maintenance1,
+                self.device.swapchain_maintenance1,
             )?;
 
             if let Some(old) = self.swapchain.replace(new_swapchain) {
-                if self.swapchain_maintenance1 {
+                if self.device.swapchain_maintenance1 {
                     debug_assert!(self.retired_swapchain.is_none());
                     self.retired_swapchain = Some(old);
                 } else {
                     destroy_swapchain_resources(
-                        self.device.raw(),
-                        &self.swapchain_loader,
+                        self.device.render.raw(),
+                        &self.device.swapchain_loader,
                         self.command_pool,
                         old,
                     );
@@ -441,9 +260,9 @@ impl Presenter {
                 .iter()
                 .zip(&resources.presentation_release_fences)
             {
-                if submitted && !unsafe { self.device.raw().get_fence_status(fence)? } {
+                if submitted && !unsafe { self.device.render.raw().get_fence_status(fence)? } {
                     unsafe {
-                        match self.device.raw().wait_for_fences(
+                        match self.device.render.raw().wait_for_fences(
                             &[fence],
                             true,
                             timeout_nanoseconds(timeout),
@@ -458,7 +277,7 @@ impl Presenter {
         }
 
         let ready = if let Some(resources) = self.retired_swapchain.as_ref() {
-            unsafe { presentation_resources_released(self.device.raw(), resources)? }
+            unsafe { presentation_resources_released(self.device.render.raw(), resources)? }
         } else {
             false
         };
@@ -469,8 +288,8 @@ impl Presenter {
                 .expect("a ready retired Swapchain is present");
             unsafe {
                 destroy_swapchain_resources(
-                    self.device.raw(),
-                    &self.swapchain_loader,
+                    self.device.render.raw(),
+                    &self.device.swapchain_loader,
                     self.command_pool,
                     resources,
                 );
@@ -520,7 +339,7 @@ impl PresentFrame<'_> {
             let image = resources.render_targets[image_index].image;
             let render_finished = resources.render_finished[image_index];
             transition_image(
-                presenter.device.raw(),
+                presenter.device.render.raw(),
                 self.command_buffer,
                 image,
                 vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
@@ -532,10 +351,12 @@ impl PresentFrame<'_> {
             );
             presenter
                 .device
+                .render
                 .raw()
                 .end_command_buffer(self.command_buffer)?;
             presenter
                 .device
+                .render
                 .raw()
                 .reset_fences(&[presenter.frame_finished])?;
             let wait_semaphores = [presenter.image_available];
@@ -547,8 +368,8 @@ impl PresentFrame<'_> {
                 .wait_dst_stage_mask(&wait_stages)
                 .command_buffers(&command_buffers)
                 .signal_semaphores(&signal_semaphores);
-            presenter.device.raw().queue_submit(
-                presenter.graphics_queue,
+            presenter.device.render.raw().queue_submit(
+                presenter.device.render.graphics_queue(),
                 &[submit_info],
                 presenter.frame_finished,
             )?;
@@ -558,25 +379,30 @@ impl PresentFrame<'_> {
                 .wait_semaphores(&signal_semaphores)
                 .swapchains(&swapchains)
                 .image_indices(&image_indices);
-            let present_fences = if presenter.swapchain_maintenance1 {
+            let present_fences = if presenter.device.swapchain_maintenance1 {
                 let release_fence = presenter
                     .swapchain
                     .as_ref()
                     .unwrap()
                     .presentation_release_fences[image_index];
-                presenter.device.raw().reset_fences(&[release_fence])?;
+                presenter
+                    .device
+                    .render
+                    .raw()
+                    .reset_fences(&[release_fence])?;
                 [release_fence]
             } else {
                 [vk::Fence::null()]
             };
             let mut present_fence_info =
                 vk::SwapchainPresentFenceInfoEXT::default().fences(&present_fences);
-            if presenter.swapchain_maintenance1 {
+            if presenter.device.swapchain_maintenance1 {
                 present_info = present_info.push_next(&mut present_fence_info);
             }
             let present_result = presenter
+                .device
                 .swapchain_loader
-                .queue_present(presenter.present_queue, &present_info);
+                .queue_present(presenter.device.present_queue, &present_info);
             if matches!(
                 present_result,
                 Ok(_) | Err(vk::Result::ERROR_OUT_OF_DATE_KHR | vk::Result::ERROR_SURFACE_LOST_KHR)
@@ -611,8 +437,8 @@ fn timeout_nanoseconds(timeout: Duration) -> u64 {
 impl Drop for Presenter {
     fn drop(&mut self) {
         unsafe {
-            let _ = self.device.raw().device_wait_idle();
-            if self.swapchain_maintenance1 {
+            let _ = self.device.render.raw().device_wait_idle();
+            if self.device.swapchain_maintenance1 {
                 let fences = self
                     .swapchain
                     .iter()
@@ -626,115 +452,43 @@ impl Drop for Presenter {
                     })
                     .collect::<Vec<_>>();
                 if !fences.is_empty() {
-                    let _ = self.device.raw().wait_for_fences(&fences, true, u64::MAX);
+                    let _ = self
+                        .device
+                        .render
+                        .raw()
+                        .wait_for_fences(&fences, true, u64::MAX);
                 }
             }
             if let Some(resources) = self.swapchain.take() {
                 destroy_swapchain_resources(
-                    self.device.raw(),
-                    &self.swapchain_loader,
+                    self.device.render.raw(),
+                    &self.device.swapchain_loader,
                     self.command_pool,
                     resources,
                 );
             }
             if let Some(resources) = self.retired_swapchain.take() {
                 destroy_swapchain_resources(
-                    self.device.raw(),
-                    &self.swapchain_loader,
+                    self.device.render.raw(),
+                    &self.device.swapchain_loader,
                     self.command_pool,
                     resources,
                 );
             }
-            self.device.raw().destroy_fence(self.frame_finished, None);
             self.device
+                .render
+                .raw()
+                .destroy_fence(self.frame_finished, None);
+            self.device
+                .render
                 .raw()
                 .destroy_semaphore(self.image_available, None);
             self.device
+                .render
                 .raw()
                 .destroy_command_pool(self.command_pool, None);
-            self.surface_loader.destroy_surface(self.surface, None);
         }
     }
-}
-
-unsafe fn pick_physical_device(
-    instance: &ash::Instance,
-    surface_loader: &khr::surface::Instance,
-    surface: vk::SurfaceKHR,
-) -> Result<(vk::PhysicalDevice, u32)> {
-    let mut candidates = Vec::new();
-    for physical_device in unsafe { instance.enumerate_physical_devices()? } {
-        let properties = unsafe { instance.get_physical_device_properties(physical_device) };
-        if properties.api_version < REQUIRED_API_VERSION {
-            continue;
-        }
-        let mut vulkan_13_features = vk::PhysicalDeviceVulkan13Features::default();
-        let mut features =
-            vk::PhysicalDeviceFeatures2::default().push_next(&mut vulkan_13_features);
-        unsafe { instance.get_physical_device_features2(physical_device, &mut features) };
-        if vulkan_13_features.dynamic_rendering == vk::FALSE
-            || vulkan_13_features.synchronization2 == vk::FALSE
-        {
-            continue;
-        }
-        let score = match properties.device_type {
-            vk::PhysicalDeviceType::DISCRETE_GPU => 2,
-            vk::PhysicalDeviceType::INTEGRATED_GPU => 1,
-            _ => 0,
-        };
-        let queue_families =
-            unsafe { instance.get_physical_device_queue_family_properties(physical_device) };
-        for (index, family) in queue_families.iter().enumerate() {
-            let supports_graphics = family.queue_flags.contains(vk::QueueFlags::GRAPHICS);
-            let supports_present = unsafe {
-                surface_loader.get_physical_device_surface_support(
-                    physical_device,
-                    index as u32,
-                    surface,
-                )?
-            };
-            if supports_graphics && supports_present {
-                candidates.push((score, physical_device, index as u32));
-                break;
-            }
-        }
-    }
-    candidates
-        .into_iter()
-        .max_by_key(|candidate| candidate.0)
-        .map(|(_, device, queue)| (device, queue))
-        .ok_or_else(|| {
-            "no Vulkan 1.4 device with dynamic rendering and synchronization2 can present to this window"
-                .into()
-        })
-}
-
-unsafe fn supports_instance_extension(entry: &ash::Entry, extension: &CStr) -> Result<bool> {
-    let properties = unsafe { entry.enumerate_instance_extension_properties(None)? };
-    Ok(properties
-        .iter()
-        .any(|property| unsafe { CStr::from_ptr(property.extension_name.as_ptr()) == extension }))
-}
-
-unsafe fn supports_device_extension(
-    instance: &ash::Instance,
-    physical_device: vk::PhysicalDevice,
-    extension: &CStr,
-) -> Result<bool> {
-    let properties = unsafe { instance.enumerate_device_extension_properties(physical_device)? };
-    Ok(properties
-        .iter()
-        .any(|property| unsafe { CStr::from_ptr(property.extension_name.as_ptr()) == extension }))
-}
-
-unsafe fn supports_swapchain_maintenance1(
-    instance: &ash::Instance,
-    physical_device: vk::PhysicalDevice,
-) -> bool {
-    let mut maintenance = vk::PhysicalDeviceSwapchainMaintenance1FeaturesEXT::default();
-    let mut features = vk::PhysicalDeviceFeatures2::default().push_next(&mut maintenance);
-    unsafe { instance.get_physical_device_features2(physical_device, &mut features) };
-    maintenance.swapchain_maintenance1 == vk::TRUE
 }
 
 #[allow(clippy::too_many_arguments)]
