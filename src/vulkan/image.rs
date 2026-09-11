@@ -236,6 +236,7 @@ impl ImageCache {
             self.device.clone(),
             format,
             extent,
+            vk::SampleCountFlags::TYPE_1,
             vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
         )?))
     }

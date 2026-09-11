@@ -108,6 +108,7 @@ pub(super) fn upload_rgba8(device: RenderDevice, source: &Image) -> Result<Arc<V
         device.clone(),
         vk::Format::R8G8B8A8_SRGB,
         extent,
+        vk::SampleCountFlags::TYPE_1,
         vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
     )?);
 

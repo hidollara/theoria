@@ -18,10 +18,11 @@ pub(in crate::vulkan) struct VulkanImage {
 }
 
 impl VulkanImage {
-    pub(super) fn new(
+    pub(in crate::vulkan) fn new(
         device: RenderDevice,
         format: vk::Format,
         extent: vk::Extent2D,
+        sample_count: vk::SampleCountFlags,
         usage: vk::ImageUsageFlags,
     ) -> Result<Self> {
         let raw = device.raw();
@@ -37,7 +38,7 @@ impl VulkanImage {
                     })
                     .mip_levels(1)
                     .array_layers(1)
-                    .samples(vk::SampleCountFlags::TYPE_1)
+                    .samples(sample_count)
                     .tiling(vk::ImageTiling::OPTIMAL)
                     .usage(usage)
                     .sharing_mode(vk::SharingMode::EXCLUSIVE)
