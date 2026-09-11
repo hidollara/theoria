@@ -5,45 +5,25 @@ use std::{
 
 use ash::vk;
 
-use crate::{color::Color, surface::SurfaceSize, target::PresentationTarget};
+use crate::{surface::SurfaceSize, target::PresentationTarget};
 
 mod device;
+mod frame;
 mod swapchain;
 
 use device::PresentationDevice;
 pub use device::RenderDevice;
-use swapchain::{SurfaceRenderTarget, SwapchainResources, transition_image};
+use frame::FrameSynchronization;
+pub use frame::{PresentFrame, PresentOutcome, RenderTarget};
+use swapchain::{SwapchainResources, transition_image};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
-
-/// An acquired destination that a renderer can record commands into.
-pub struct RenderTarget<'a> {
-    pub(crate) command_buffer: vk::CommandBuffer,
-    surface: SurfaceRenderTarget,
-    clear_color: Color,
-    _frame: std::marker::PhantomData<&'a ()>,
-}
-
-impl RenderTarget<'_> {
-    pub(crate) fn surface(&self) -> (vk::ImageView, vk::Format, vk::Extent2D) {
-        (
-            self.surface.image_view,
-            self.surface.format,
-            self.surface.extent,
-        )
-    }
-
-    pub(crate) fn clear_color(&self) -> Color {
-        self.clear_color
-    }
-}
 
 /// Owns swapchain acquisition, synchronization, and final presentation.
 pub struct Presenter {
     device: PresentationDevice,
     command_pool: vk::CommandPool,
-    image_available: vk::Semaphore,
-    frame_finished: vk::Fence,
+    frame_synchronization: FrameSynchronization,
     requested_size: SurfaceSize,
     swapchain_needs_recreation: bool,
     swapchain: Option<SwapchainResources>,
@@ -66,19 +46,12 @@ impl Presenter {
                 .render
                 .raw()
                 .create_command_pool(&command_pool_info, None)?;
-            let semaphore_info = vk::SemaphoreCreateInfo::default();
-            let image_available = device
-                .render
-                .raw()
-                .create_semaphore(&semaphore_info, None)?;
-            let fence_info = vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED);
-            let frame_finished = device.render.raw().create_fence(&fence_info, None)?;
+            let frame_synchronization = FrameSynchronization::new(device.render.raw())?;
 
             let mut renderer = Self {
                 device,
                 command_pool,
-                image_available,
-                frame_finished,
+                frame_synchronization,
                 requested_size: size,
                 swapchain_needs_recreation: true,
                 swapchain: None,
@@ -118,7 +91,7 @@ impl Presenter {
         unsafe {
             let started_at = Instant::now();
             match self.device.render.raw().wait_for_fences(
-                &[self.frame_finished],
+                &[self.frame_synchronization.finished],
                 true,
                 timeout_nanoseconds(timeout),
             ) {
@@ -136,13 +109,13 @@ impl Presenter {
                 self.recreate_swapchain()?;
             }
 
-            let resources = self.swapchain.as_ref().expect("swapchain is available");
+            let resources = self.swapchain.as_mut().expect("swapchain is available");
             let remaining = timeout.saturating_sub(started_at.elapsed());
             let (image_index, acquire_suboptimal) =
                 match self.device.swapchain_loader.acquire_next_image(
                     resources.handle,
                     timeout_nanoseconds(remaining),
-                    self.image_available,
+                    self.frame_synchronization.image_available,
                     vk::Fence::null(),
                 ) {
                     Ok(result) => result,
@@ -174,12 +147,15 @@ impl Presenter {
                 vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
                 vk::AccessFlags2::COLOR_ATTACHMENT_WRITE,
             );
-            Ok(Some(PresentFrame {
-                presenter: self,
+            Ok(Some(PresentFrame::new(
+                &self.device,
+                resources,
+                &self.frame_synchronization,
+                &mut self.swapchain_needs_recreation,
                 image_index,
                 command_buffer,
                 acquire_suboptimal,
-            }))
+            )))
         }
     }
 
@@ -267,137 +243,6 @@ impl Presenter {
     }
 }
 
-pub struct PresentFrame<'a> {
-    presenter: &'a mut Presenter,
-    image_index: u32,
-    command_buffer: vk::CommandBuffer,
-    acquire_suboptimal: bool,
-}
-
-/// Result of handing a rendered frame to the presentation engine.
-#[must_use = "an invalidated Swapchain still needs a replacement frame"]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PresentOutcome {
-    /// The frame was accepted by the current Swapchain.
-    Presented,
-    /// The current Swapchain became obsolete and must be replaced next frame.
-    SwapchainInvalidated,
-}
-
-impl PresentFrame<'_> {
-    pub fn render_target(&self, clear_color: Color) -> RenderTarget<'_> {
-        let resources = self.presenter.swapchain.as_ref().unwrap();
-        RenderTarget {
-            command_buffer: self.command_buffer,
-            surface: resources.render_targets[self.image_index as usize],
-            clear_color,
-            _frame: std::marker::PhantomData,
-        }
-    }
-
-    /// Submits the recorded frame and presents it.
-    ///
-    /// [`PresentOutcome::SwapchainInvalidated`] means that the submitted image
-    /// belonged to a Swapchain which must be replaced before the next frame.
-    pub fn present(self) -> Result<PresentOutcome> {
-        unsafe {
-            let presenter = self.presenter;
-            let image_index = self.image_index as usize;
-            let resources = presenter.swapchain.as_ref().unwrap();
-            let image = resources.render_targets[image_index].image;
-            let render_finished = resources.render_finished[image_index];
-            transition_image(
-                presenter.device.render.raw(),
-                self.command_buffer,
-                image,
-                vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-                vk::ImageLayout::PRESENT_SRC_KHR,
-                vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
-                vk::AccessFlags2::COLOR_ATTACHMENT_WRITE,
-                vk::PipelineStageFlags2::NONE,
-                vk::AccessFlags2::NONE,
-            );
-            presenter
-                .device
-                .render
-                .raw()
-                .end_command_buffer(self.command_buffer)?;
-            presenter
-                .device
-                .render
-                .raw()
-                .reset_fences(&[presenter.frame_finished])?;
-            let wait_semaphores = [presenter.image_available];
-            let signal_semaphores = [render_finished];
-            let wait_stages = [vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
-            let command_buffers = [self.command_buffer];
-            let submit_info = vk::SubmitInfo::default()
-                .wait_semaphores(&wait_semaphores)
-                .wait_dst_stage_mask(&wait_stages)
-                .command_buffers(&command_buffers)
-                .signal_semaphores(&signal_semaphores);
-            presenter.device.render.raw().queue_submit(
-                presenter.device.render.graphics_queue(),
-                &[submit_info],
-                presenter.frame_finished,
-            )?;
-            let swapchains = [presenter.swapchain.as_ref().unwrap().handle];
-            let image_indices = [self.image_index];
-            let mut present_info = vk::PresentInfoKHR::default()
-                .wait_semaphores(&signal_semaphores)
-                .swapchains(&swapchains)
-                .image_indices(&image_indices);
-            let present_fences = if presenter.device.swapchain_maintenance1 {
-                let release_fence = presenter
-                    .swapchain
-                    .as_ref()
-                    .unwrap()
-                    .presentation_release_fences[image_index];
-                presenter
-                    .device
-                    .render
-                    .raw()
-                    .reset_fences(&[release_fence])?;
-                [release_fence]
-            } else {
-                [vk::Fence::null()]
-            };
-            let mut present_fence_info =
-                vk::SwapchainPresentFenceInfoEXT::default().fences(&present_fences);
-            if presenter.device.swapchain_maintenance1 {
-                present_info = present_info.push_next(&mut present_fence_info);
-            }
-            let present_result = presenter
-                .device
-                .swapchain_loader
-                .queue_present(presenter.device.present_queue, &present_info);
-            if matches!(
-                present_result,
-                Ok(_) | Err(vk::Result::ERROR_OUT_OF_DATE_KHR | vk::Result::ERROR_SURFACE_LOST_KHR)
-            ) {
-                // Even a presentation rejected as out of date or surface lost
-                // has enqueued its queue operations, so its release fence must
-                // participate in the Swapchain's lifetime.
-                presenter
-                    .swapchain
-                    .as_mut()
-                    .unwrap()
-                    .submitted_for_presentation[image_index] = true;
-            }
-            let present_suboptimal = match present_result {
-                Ok(suboptimal) => suboptimal,
-                Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => true,
-                Err(error) => return Err(error.into()),
-            };
-            if self.acquire_suboptimal || present_suboptimal {
-                presenter.swapchain_needs_recreation = true;
-                return Ok(PresentOutcome::SwapchainInvalidated);
-            }
-        }
-        Ok(PresentOutcome::Presented)
-    }
-}
-
 fn timeout_nanoseconds(timeout: Duration) -> u64 {
     timeout.as_nanos().min(u128::from(u64::MAX - 1)) as u64
 }
@@ -433,14 +278,7 @@ impl Drop for Presenter {
             if let Some(resources) = self.retired_swapchain.take() {
                 resources.destroy(&self.device, self.command_pool);
             }
-            self.device
-                .render
-                .raw()
-                .destroy_fence(self.frame_finished, None);
-            self.device
-                .render
-                .raw()
-                .destroy_semaphore(self.image_available, None);
+            self.frame_synchronization.destroy(self.device.render.raw());
             self.device
                 .render
                 .raw()

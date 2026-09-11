@@ -80,8 +80,9 @@ impl RenderDevice {
     }
 }
 
-/// Presentation-specific Vulkan capabilities whose lifetime precedes a
-/// Presenter and follows all of its Surface resources.
+/// Owns the Vulkan device capabilities and Surface used by one Presenter.
+///
+/// The Surface is destroyed before the shared instance held by [`RenderDevice`].
 pub(super) struct PresentationDevice {
     pub(super) render: RenderDevice,
     pub(super) surface_loader: khr::surface::Instance,
