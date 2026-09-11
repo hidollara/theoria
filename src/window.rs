@@ -15,9 +15,10 @@ use crate::{
 };
 
 mod drive;
+mod event_component;
 pub(crate) mod event_loop;
 pub(crate) mod group;
-pub(crate) mod host;
+mod host;
 pub(crate) mod native_event;
 mod presentation;
 

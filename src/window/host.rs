@@ -4,22 +4,22 @@ use std::time::{Duration, Instant};
 
 use crate::{
     animation::FrameScheduler,
-    component::{Component, MountContext},
-    event::{DispatchRoute, EventSink, EventSource, channel},
+    component::MountContext,
+    event::{DispatchRoute, EventSink, channel},
     gesture::MovementThreshold,
     input::{pointer::PointerEvent, scroll::ScrollEvent},
-    reactive::{Computed, State},
-    surface::{SurfaceEvent, SurfaceSize},
+    reactive::Computed,
+    surface::SurfaceEvent,
     windows::window::Win32Window,
 };
 
 use super::{
-    CloseRequested, Result, WindowContent, WindowEvents, native_event::NativeWindowEvent,
-    presentation::WindowPresentation,
+    CloseRequested, Result, WindowContent, WindowEvents, event_component::WindowEventComponent,
+    native_event::NativeWindowEvent, presentation::WindowPresentation,
 };
 
 /// Native and presentation state for one Window attached to a Component tree.
-pub(crate) struct WindowHost {
+pub(super) struct WindowHost {
     native_events: EventSink<NativeWindowEvent>,
     unmount: EventSink<()>,
     native: Win32Window,
@@ -68,14 +68,14 @@ impl WindowHost {
             let content = build(context, &events);
             presentation.bind(context, content);
 
-            context.mount(WindowComponent {
-                native: native_source,
+            context.mount(WindowEventComponent::new(
+                native_source,
                 size,
                 surface_events,
                 pointer_events,
                 scroll_events,
                 close_requests,
-            });
+            ));
             context.retain(native_provider);
             unmount = Some(context.receive(|(), context| context.unmount()));
         });
@@ -118,22 +118,14 @@ impl WindowHost {
         Ok(())
     }
 
-    fn schedule_requested_frame(&mut self, now: Instant) {
+    pub(super) fn prepare_scheduled_work(&mut self, now: Instant) {
         let size = self.native.size();
         self.frames
             .prepare(now, size.width != 0 && size.height != 0);
     }
 
-    pub(super) fn prepare_scheduled_work(&mut self, now: Instant) {
-        self.schedule_requested_frame(now);
-    }
-
     pub(super) fn next_deadline(&self) -> Option<Instant> {
         self.frames.deadline()
-    }
-
-    fn publish_due_frame(&mut self, now: Instant) {
-        self.frames.publish_due(now);
     }
 
     pub(super) fn has_ready_work(&self) -> bool {
@@ -141,7 +133,7 @@ impl WindowHost {
     }
 
     pub(super) fn process_scheduled_work(&mut self, now: Instant) {
-        self.publish_due_frame(now);
+        self.frames.publish_due(now);
     }
 
     pub(super) const fn is_closing(&self) -> bool {
@@ -168,45 +160,5 @@ impl WindowHost {
             self.presentation.advance(self.native.size(), wait)?;
         }
         Ok(())
-    }
-}
-
-struct WindowComponent {
-    native: EventSource<NativeWindowEvent>,
-    size: State<SurfaceSize>,
-    surface_events: EventSink<SurfaceEvent>,
-    pointer_events: EventSink<PointerEvent>,
-    scroll_events: EventSink<ScrollEvent>,
-    close_requests: EventSink<CloseRequested>,
-}
-
-impl Component for WindowComponent {
-    fn mount(self, context: &mut MountContext<'_>) {
-        let Self {
-            native,
-            size: surface_size,
-            surface_events,
-            pointer_events,
-            scroll_events,
-            close_requests,
-        } = self;
-        let input = context.receive(move |event: NativeWindowEvent, context| match event {
-            NativeWindowEvent::Surface(event) => {
-                if let SurfaceEvent::Resized(size) = event {
-                    context.set(&surface_size, size);
-                }
-                let _ = context.send(&surface_events, event);
-            }
-            NativeWindowEvent::Pointer(event) => {
-                let _ = context.send(&pointer_events, event);
-            }
-            NativeWindowEvent::Scroll(event) => {
-                let _ = context.send(&scroll_events, event);
-            }
-            NativeWindowEvent::CloseRequested => {
-                let _ = context.send(&close_requests, CloseRequested);
-            }
-        });
-        assert!(context.connect_cloned(&native, &input));
     }
 }
