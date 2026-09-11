@@ -1,4 +1,4 @@
-//! Default scheduling of Component events and Effects.
+//! Window-loop scheduling of Component events and Effects.
 
 use std::time::{Duration, Instant};
 

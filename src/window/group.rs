@@ -4,11 +4,14 @@ use std::time::Instant;
 
 use crate::{
     component::{ComponentInstance, MountContext},
-    drive::{COMPONENT_WORK_SLICE, ComponentProgress, drive_components},
     event::FifoDispatcher,
 };
 
-use super::{Result, host::WindowHost};
+use super::{
+    Result,
+    drive::{COMPONENT_WORK_SLICE, ComponentProgress, drive_components},
+    host::WindowHost,
+};
 
 pub(crate) struct WindowGroup {
     dispatcher: FifoDispatcher,

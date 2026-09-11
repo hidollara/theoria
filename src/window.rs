@@ -14,6 +14,7 @@ use crate::{
     surface::{SurfaceEvent, SurfaceSize},
 };
 
+mod drive;
 pub(crate) mod event_loop;
 pub(crate) mod group;
 pub(crate) mod host;
