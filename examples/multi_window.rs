@@ -28,9 +28,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Application::new(move |application| {
         let count = application.create_state(0_u32);
+        let controller_open = application.create_state(true);
 
         let controller_count = count.clone();
         let controller_value = count.value();
+        let controller_lifecycle = controller_open.clone();
         let controller_font = font.clone();
         let controller_star = star.clone();
         application.mount_window(
@@ -38,6 +40,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             WIDTH,
             HEIGHT,
             move |context, events| {
+                let close = context.receive(move |_: theoria::window::CloseRequested, context| {
+                    context.set(&controller_lifecycle, false);
+                });
+                assert!(context.connect_cloned(events.close_requested(), close));
+
                 let increment = context.receive(move |click: Click, context| {
                     if click.button == PointerButton::Primary {
                         context.modify(&controller_count, |count| {
@@ -97,6 +104,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )?;
 
         let preview_value = count.value();
+        let preview_controller_open = controller_open.value();
         application.mount_window(
             "Theoria — Shared Preview",
             WIDTH,
@@ -104,6 +112,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             move |context, events| {
                 let canvas = context.create_computed(move |context| {
                     let count = *context.read(&preview_value);
+                    let controller_open = *context.read(&preview_controller_open);
                     let fonts = [font.clone()];
                     let heading = Text::horizontal(TextStyle::new(&fonts, 26.0))
                         .push("The other Window changed this value")
@@ -119,7 +128,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .to_canvas(Color::rgb8(90, 220, 255))
                         .expect("the shared value glyphs can be realized")
                         .transformed(Affine2::from_translation(Vector2::new(285.0, 300.0)));
-                    heading.composite(value, Composite::SourceOver)
+                    let status = if controller_open {
+                        "Controller Window is open"
+                    } else {
+                        "Controller Window closed; this Window remains"
+                    };
+                    let status = Text::horizontal(TextStyle::new(&fonts, 22.0))
+                        .push(status)
+                        .layout()
+                        .expect("the lifecycle status text is valid")
+                        .to_canvas(if controller_open {
+                            Color::rgb8(116, 221, 147)
+                        } else {
+                            Color::rgb8(255, 188, 96)
+                        })
+                        .expect("the lifecycle status glyphs can be realized")
+                        .transformed(Affine2::from_translation(Vector2::new(110.0, 380.0)));
+                    heading
+                        .composite(value, Composite::SourceOver)
+                        .composite(status, Composite::SourceOver)
                 });
                 window_content(context, events.size(), canvas)
             },
