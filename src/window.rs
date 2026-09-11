@@ -18,7 +18,10 @@ use crate::{
     reactive::{Computed, State, Value},
     surface::{SurfaceEvent, SurfaceSize},
     vulkan::{CanvasRenderer, Presenter},
-    windows::window::{Win32Window, WindowPoll},
+    windows::{
+        message_pump::{MessagePumpProgress, WindowsMessagePump},
+        window::Win32Window,
+    },
 };
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
@@ -109,6 +112,7 @@ impl WindowContent {
 /// tree, publishes native input through typed event sources, and presents
 /// the latest reactive Canvas result.
 pub struct Window {
+    message_pump: WindowsMessagePump,
     dispatcher: FifoDispatcher,
     components: ComponentInstance,
     native_events: EventSink<NativeWindowEvent>,
@@ -129,6 +133,7 @@ impl Window {
         height: u32,
         build: impl FnOnce(&mut MountContext<'_>, &WindowEvents<'_>) -> Computed<WindowContent>,
     ) -> Result<Self> {
+        let message_pump = WindowsMessagePump::new();
         let native = Win32Window::new(title, width, height)?;
         let presenter = Presenter::new(native.presentation_target())?;
         let canvas_renderer = CanvasRenderer::new(presenter.device());
@@ -182,6 +187,7 @@ impl Window {
         components.flush_effects()?;
 
         Ok(Self {
+            message_pump,
             dispatcher,
             components,
             native_events,
@@ -198,18 +204,17 @@ impl Window {
         let mut component_work_pending = false;
 
         loop {
-            let event = if component_work_pending {
-                match self.native.poll_event()? {
-                    WindowPoll::Event(event) => Some(event),
-                    WindowPoll::Empty => None,
-                    WindowPoll::Finished => return Ok(()),
-                }
+            let native_work_pending = self.native.has_pending_event();
+            let progress = if component_work_pending || native_work_pending {
+                self.message_pump.poll()
             } else {
-                match self.native.next_event()? {
-                    Some(event) => Some(event),
-                    None => return Ok(()),
-                }
+                self.message_pump.wait()?
             };
+            if matches!(progress, MessagePumpProgress::Finished) {
+                return Ok(());
+            }
+
+            let event = self.native.pop_event();
             let redraw = event.is_some_and(|event| {
                 matches!(
                     event,

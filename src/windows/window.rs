@@ -1,6 +1,6 @@
 //! Native Windows implementation of Theoria's window adapter.
 
-use std::{collections::VecDeque, ffi::c_void, mem::size_of};
+use std::{collections::VecDeque, ffi::c_void, marker::PhantomData, mem::size_of, rc::Rc};
 
 use ::windows::{
     Win32::{
@@ -14,13 +14,12 @@ use ::windows::{
             },
             WindowsAndMessaging::{
                 CREATESTRUCTW, CS_HREDRAW, CS_OWNDC, CS_VREDRAW, CW_USEDEFAULT, CreateWindowExW,
-                DefWindowProcW, DestroyWindow, DispatchMessageW, GWLP_USERDATA, GetClientRect,
-                GetMessageW, GetWindowLongPtrW, MSG, PM_REMOVE, PeekMessageW, RegisterClassExW,
-                SM_CXDRAG, SM_CYDRAG, SW_SHOW, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOZORDER,
-                SetWindowLongPtrW, SetWindowPos, ShowWindow, TranslateMessage, WINDOW_EX_STYLE,
+                DefWindowProcW, DestroyWindow, GWLP_USERDATA, GetClientRect, GetWindowLongPtrW,
+                RegisterClassExW, SM_CXDRAG, SM_CYDRAG, SW_SHOW, SWP_NOACTIVATE, SWP_NOMOVE,
+                SWP_NOZORDER, SetWindowLongPtrW, SetWindowPos, ShowWindow, WINDOW_EX_STYLE,
                 WM_CLOSE, WM_DESTROY, WM_ERASEBKGND, WM_NCCREATE, WM_PAINT,
                 WM_POINTERCAPTURECHANGED, WM_POINTERDOWN, WM_POINTERENTER, WM_POINTERHWHEEL,
-                WM_POINTERLEAVE, WM_POINTERUP, WM_POINTERUPDATE, WM_POINTERWHEEL, WM_QUIT, WM_SIZE,
+                WM_POINTERLEAVE, WM_POINTERUP, WM_POINTERUPDATE, WM_POINTERWHEEL, WM_SIZE,
                 WNDCLASSEXW, WS_OVERLAPPEDWINDOW,
             },
         },
@@ -76,12 +75,7 @@ pub(crate) struct Win32Window {
     hwnd: HWND,
     hinstance: HINSTANCE,
     state: Box<WindowState>,
-}
-
-pub(crate) enum WindowPoll {
-    Event(NativeWindowEvent),
-    Empty,
-    Finished,
+    _thread_affinity: PhantomData<Rc<()>>,
 }
 
 impl Win32Window {
@@ -145,6 +139,7 @@ impl Win32Window {
                 hwnd,
                 hinstance,
                 state,
+                _thread_affinity: PhantomData,
             })
         }
     }
@@ -169,50 +164,13 @@ impl Win32Window {
         self.state.request_redraw();
     }
 
-    /// Returns the next semantic window event, blocking only while the queue is empty.
-    pub(crate) fn next_event(&mut self) -> Result<Option<NativeWindowEvent>> {
-        unsafe {
-            loop {
-                match self.poll_event()? {
-                    WindowPoll::Event(event) => return Ok(Some(event)),
-                    WindowPoll::Finished => return Ok(None),
-                    WindowPoll::Empty => {}
-                }
-
-                let mut message = MSG::default();
-                let result = GetMessageW(&mut message, None, 0, 0).0;
-                if result == -1 {
-                    return Err(Error::from_thread());
-                }
-                if result == 0 {
-                    return Ok(None);
-                }
-                let _ = TranslateMessage(&message);
-                DispatchMessageW(&message);
-            }
-        }
+    pub(crate) fn has_pending_event(&self) -> bool {
+        !self.state.events.is_empty()
     }
 
-    /// Polls native messages and returns semantic work without blocking.
-    pub(crate) fn poll_event(&mut self) -> Result<WindowPoll> {
-        unsafe {
-            // Drain the native queue before returning semantic work. This lets
-            // resize/paint bursts collapse into one redraw instead of blocking
-            // message dispatch for one expensive frame each.
-            let mut message = MSG::default();
-            while PeekMessageW(&mut message, None, 0, 0, PM_REMOVE).as_bool() {
-                if message.message == WM_QUIT {
-                    return Ok(WindowPoll::Finished);
-                }
-                let _ = TranslateMessage(&message);
-                DispatchMessageW(&message);
-            }
-
-            Ok(match self.state.events.pop_front() {
-                Some(event) => WindowPoll::Event(event),
-                None => WindowPoll::Empty,
-            })
-        }
+    /// Takes one semantic event previously produced by this Window procedure.
+    pub(crate) fn pop_event(&mut self) -> Option<NativeWindowEvent> {
+        self.state.events.pop_front()
     }
 }
 
