@@ -122,8 +122,8 @@ pub struct Window {
 pub(crate) struct WindowHost {
     native_events: EventSink<NativeWindowEvent>,
     unmount: EventSink<()>,
-    canvas_renderer: CanvasRenderer,
     presenter: Presenter,
+    canvas_renderer: CanvasRenderer,
     native: Win32Window,
     output: Rc<RenderOutput>,
     presentation_pending: bool,
@@ -200,7 +200,7 @@ impl Window {
 
         if component_work_pending || self.host.has_ready_work() {
             Ok(WindowProgress::Pending)
-        } else if self.host.presentation_pending {
+        } else if self.host.has_pending_presentation() {
             Ok(WindowProgress::PresentationPending)
         } else {
             Ok(WindowProgress::Idle)
@@ -281,8 +281,8 @@ impl WindowHost {
         Ok(Self {
             native_events,
             unmount: unmount.expect("the Window Component produces its unmount input"),
-            canvas_renderer,
             presenter,
+            canvas_renderer,
             native,
             output,
             presentation_pending: false,
@@ -327,7 +327,7 @@ impl WindowHost {
     }
 
     pub(crate) fn has_pending_presentation(&self) -> bool {
-        self.presentation_pending
+        self.presentation_pending || self.presenter.has_retired_swapchain()
     }
 
     pub(crate) fn unmount(&self) {
@@ -349,8 +349,10 @@ impl WindowHost {
                 PresentationProgress::Complete => false,
                 PresentationProgress::Pending => true,
             };
+            self.presenter.reap_retired_swapchain(Duration::ZERO)?;
         } else {
             self.request_redraw_if_needed();
+            self.presenter.reap_retired_swapchain(wait)?;
         }
         Ok(())
     }
@@ -377,7 +379,7 @@ impl WindowHost {
         self.canvas_renderer
             .render(target, viewport, content.canvas(), content.view())?;
         let outcome = frame.present()?;
-        if matches!(outcome, PresentOutcome::SwapchainRecreated) {
+        if matches!(outcome, PresentOutcome::SwapchainInvalidated) {
             return Ok(PresentationProgress::Pending);
         }
 
