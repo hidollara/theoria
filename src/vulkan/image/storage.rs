@@ -18,7 +18,7 @@ pub(in crate::vulkan) struct VulkanImage {
 }
 
 impl VulkanImage {
-    pub(super) unsafe fn new(
+    pub(super) fn new(
         device: RenderDevice,
         format: vk::Format,
         extent: vk::Extent2D,

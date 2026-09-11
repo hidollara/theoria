@@ -18,13 +18,12 @@ use super::{
 mod canvas_plan;
 mod encoding;
 mod mesh_paint;
-mod one_shot;
 mod pipeline;
 mod recording;
 mod resources;
 
+use crate::vulkan::one_shot::OneShotCommands;
 use canvas_plan::{collect_images, required_scratch_images};
-use one_shot::OneShotCommands;
 use recording::CanvasRecorder;
 use resources::CanvasGpuResources;
 

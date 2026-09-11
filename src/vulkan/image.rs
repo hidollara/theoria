@@ -1,8 +1,7 @@
-use std::{collections::HashMap, error::Error, ptr, sync::Arc};
+use std::{collections::HashMap, error::Error, sync::Arc};
 
 use ash::vk;
 
-use crate::vulkan::image_layout::transition_image;
 use crate::{
     canvas::{ImageExtend, ImagePattern, ImageSampling},
     image::{Image, ImageContent, ImageInstanceKey},
@@ -11,8 +10,10 @@ use crate::{
 use super::presenter::RenderDevice;
 
 mod storage;
+mod upload;
 
 pub(super) use storage::VulkanImage;
+use upload::upload_rgba8;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -185,7 +186,7 @@ impl ImageCache {
             if !matches!(image.content(), ImageContent::Rgba8(_)) {
                 return Err("only CPU raster Images can be uploaded directly".into());
             }
-            let gpu_image = unsafe { self.upload(image)? };
+            let gpu_image = self.upload(image)?;
             self.images.insert(key.clone(), gpu_image);
         }
         Ok(())
@@ -197,7 +198,7 @@ impl ImageCache {
         backing: Arc<VulkanImage>,
     ) -> Result<()> {
         self.prune_unused();
-        let gpu_image = unsafe { self.bind_backing(backing, GpuAlphaMode::Premultiplied)? };
+        let gpu_image = self.bind_backing(backing, GpuAlphaMode::Premultiplied)?;
         self.images.insert(image.instance_key(), gpu_image);
         Ok(())
     }
@@ -220,14 +221,12 @@ impl ImageCache {
         format: vk::Format,
         extent: vk::Extent2D,
     ) -> Result<Arc<VulkanImage>> {
-        Ok(Arc::new(unsafe {
-            VulkanImage::new(
-                self.device.clone(),
-                format,
-                extent,
-                vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
-            )?
-        }))
+        Ok(Arc::new(VulkanImage::new(
+            self.device.clone(),
+            format,
+            extent,
+            vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
+        )?))
     }
 
     pub(super) fn bind_sampled_view(
@@ -290,77 +289,12 @@ impl ImageCache {
         }
     }
 
-    unsafe fn upload(&self, source: &Image) -> Result<GpuImage> {
-        let device = self.device.raw();
-        let pixels = source
-            .rgba8()
-            .ok_or("the Image has neither RGBA8 pixels nor a compatible Vulkan materialization")?;
-        let byte_size = pixels.len() as vk::DeviceSize;
-
-        let staging_buffer = unsafe {
-            device.create_buffer(
-                &vk::BufferCreateInfo::default()
-                    .size(byte_size)
-                    .usage(vk::BufferUsageFlags::TRANSFER_SRC)
-                    .sharing_mode(vk::SharingMode::EXCLUSIVE),
-                None,
-            )?
-        };
-        let staging_requirements = unsafe { device.get_buffer_memory_requirements(staging_buffer) };
-        let staging_memory_type = self
-            .device
-            .find_memory_type(
-                staging_requirements.memory_type_bits,
-                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-            )
-            .ok_or("no host-visible coherent Vulkan memory type for image upload")?;
-        let staging_memory = unsafe {
-            device.allocate_memory(
-                &vk::MemoryAllocateInfo::default()
-                    .allocation_size(staging_requirements.size)
-                    .memory_type_index(staging_memory_type),
-                None,
-            )?
-        };
-        unsafe { device.bind_buffer_memory(staging_buffer, staging_memory, 0)? };
-        let mapped = unsafe {
-            device.map_memory(staging_memory, 0, byte_size, vk::MemoryMapFlags::empty())?
-        };
-        unsafe {
-            ptr::copy_nonoverlapping(pixels.as_ptr(), mapped.cast(), pixels.len());
-            device.unmap_memory(staging_memory);
-        }
-
-        let extent = vk::Extent2D {
-            width: source.width(),
-            height: source.height(),
-        };
-        let backing = Arc::new(unsafe {
-            VulkanImage::new(
-                self.device.clone(),
-                vk::Format::R8G8B8A8_SRGB,
-                extent,
-                vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
-            )?
-        });
-
-        unsafe {
-            self.copy_to_image(
-                staging_buffer,
-                backing.image,
-                vk::Extent3D {
-                    width: extent.width,
-                    height: extent.height,
-                    depth: 1,
-                },
-            )?;
-            device.destroy_buffer(staging_buffer, None);
-            device.free_memory(staging_memory, None);
-        }
-        unsafe { self.bind_backing(backing, GpuAlphaMode::Straight) }
+    fn upload(&self, source: &Image) -> Result<GpuImage> {
+        let backing = upload_rgba8(self.device.clone(), source)?;
+        self.bind_backing(backing, GpuAlphaMode::Straight)
     }
 
-    unsafe fn bind_backing(
+    fn bind_backing(
         &self,
         backing: Arc<VulkanImage>,
         alpha_mode: GpuAlphaMode,
@@ -419,90 +353,6 @@ impl ImageCache {
             descriptor_sets: sets_by_sampler,
             alpha_mode,
         })
-    }
-
-    unsafe fn copy_to_image(
-        &self,
-        staging_buffer: vk::Buffer,
-        image: vk::Image,
-        extent: vk::Extent3D,
-    ) -> Result<()> {
-        let device = self.device.raw();
-        let command_pool = unsafe {
-            device.create_command_pool(
-                &vk::CommandPoolCreateInfo::default()
-                    .flags(vk::CommandPoolCreateFlags::TRANSIENT)
-                    .queue_family_index(self.device.queue_family_index()),
-                None,
-            )?
-        };
-        let command_buffer = unsafe {
-            device.allocate_command_buffers(
-                &vk::CommandBufferAllocateInfo::default()
-                    .command_pool(command_pool)
-                    .level(vk::CommandBufferLevel::PRIMARY)
-                    .command_buffer_count(1),
-            )?[0]
-        };
-        unsafe {
-            device.begin_command_buffer(
-                command_buffer,
-                &vk::CommandBufferBeginInfo::default()
-                    .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT),
-            )?;
-            transition_image(
-                device,
-                command_buffer,
-                image,
-                vk::ImageLayout::UNDEFINED,
-                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                vk::PipelineStageFlags2::NONE,
-                vk::AccessFlags2::NONE,
-                vk::PipelineStageFlags2::COPY,
-                vk::AccessFlags2::TRANSFER_WRITE,
-            );
-            let region = vk::BufferImageCopy::default()
-                .image_subresource(
-                    vk::ImageSubresourceLayers::default()
-                        .aspect_mask(vk::ImageAspectFlags::COLOR)
-                        .layer_count(1),
-                )
-                .image_extent(extent);
-            device.cmd_copy_buffer_to_image(
-                command_buffer,
-                staging_buffer,
-                image,
-                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                &[region],
-            );
-            transition_image(
-                device,
-                command_buffer,
-                image,
-                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                vk::PipelineStageFlags2::COPY,
-                vk::AccessFlags2::TRANSFER_WRITE,
-                vk::PipelineStageFlags2::FRAGMENT_SHADER,
-                vk::AccessFlags2::SHADER_SAMPLED_READ,
-            );
-            device.end_command_buffer(command_buffer)?;
-        }
-
-        let fence = unsafe { device.create_fence(&vk::FenceCreateInfo::default(), None)? };
-        let command_buffers = [command_buffer];
-        let submit = vk::SubmitInfo::default().command_buffers(&command_buffers);
-        let result = unsafe {
-            device
-                .queue_submit(self.device.graphics_queue(), &[submit], fence)
-                .and_then(|()| device.wait_for_fences(&[fence], true, u64::MAX))
-        };
-        unsafe {
-            device.destroy_fence(fence, None);
-            device.destroy_command_pool(command_pool, None);
-        }
-        result?;
-        Ok(())
     }
 }
 

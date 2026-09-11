@@ -1,16 +1,14 @@
+//! One-shot Vulkan command recording and synchronous submission.
+
 use std::error::Error;
 
 use ash::vk;
 
-use super::super::presenter::RenderDevice;
+use crate::vulkan::presenter::RenderDevice;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 /// Owns one transient primary command buffer and its pool.
-///
-/// Canvas image materialization is deliberately synchronous for now. Keeping
-/// that policy here prevents allocation and submission details from obscuring
-/// the semantic dependency traversal in `CanvasRenderer`.
 pub(super) struct OneShotCommands {
     device: RenderDevice,
     pool: vk::CommandPool,
@@ -65,13 +63,16 @@ impl OneShotCommands {
 
     pub(super) fn submit_and_wait(self) -> Result<()> {
         let raw = self.device.raw();
-        unsafe {
-            raw.end_command_buffer(self.buffer)?;
-            let buffers = [self.buffer];
-            let submit = vk::SubmitInfo::default().command_buffers(&buffers);
-            raw.queue_submit(self.device.graphics_queue(), &[submit], vk::Fence::null())?;
-            raw.queue_wait_idle(self.device.graphics_queue())?;
-        }
+        unsafe { raw.end_command_buffer(self.buffer)? };
+        let fence = unsafe { raw.create_fence(&vk::FenceCreateInfo::default(), None)? };
+        let buffers = [self.buffer];
+        let submit = vk::SubmitInfo::default().command_buffers(&buffers);
+        let result = unsafe {
+            raw.queue_submit(self.device.graphics_queue(), &[submit], fence)
+                .and_then(|()| raw.wait_for_fences(&[fence], true, u64::MAX))
+        };
+        unsafe { raw.destroy_fence(fence, None) };
+        result?;
         Ok(())
     }
 }

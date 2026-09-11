@@ -1,6 +1,7 @@
 mod canvas_renderer;
 mod image;
 mod image_layout;
+mod one_shot;
 mod presenter;
 mod scratch_image;
 
