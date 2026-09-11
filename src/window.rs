@@ -6,8 +6,8 @@ use crate::{
     animation::FrameClock,
     canvas::{Canvas, CanvasView},
     color::Color,
-    component::{ComponentInstance, MountContext},
-    event::{EventSource, FifoDispatcher},
+    component::MountContext,
+    event::EventSource,
     gesture::MovementThreshold,
     input::{pointer::PointerEvent, scroll::ScrollEvent},
     reactive::{Computed, Value},
@@ -127,32 +127,18 @@ impl Window {
         height: u32,
         build: impl FnOnce(&mut MountContext<'_>, &WindowEvents<'_>) -> Computed<WindowContent>,
     ) -> Result<Self> {
-        let dispatcher = FifoDispatcher::new();
-        let mut host = None;
-        let mut result = Ok(());
         let mut build = Some(build);
-        let mut components = ComponentInstance::new(dispatcher.route(), |context| {
-            match WindowHost::mount(
+        let group = WindowGroup::mount(|context, windows| {
+            windows.push(WindowHost::mount(
                 context,
                 title,
                 width,
                 height,
                 build.take().expect("Window build runs once"),
-            ) {
-                Ok(window) => host = Some(window),
-                Err(error) => result = Err(error),
-            }
-        });
-        result?;
-        components.flush_effects()?;
-
-        Ok(Self {
-            group: WindowGroup::new(
-                dispatcher,
-                components,
-                [host.expect("successful Window construction produces a host")],
-            ),
-        })
+            )?);
+            Ok(())
+        })?;
+        Ok(Self { group })
     }
 
     /// Delivers native events and presents content until the Window closes.

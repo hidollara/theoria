@@ -3,7 +3,7 @@
 use std::time::{Duration, Instant};
 
 use crate::{
-    component::ComponentInstance,
+    component::{ComponentInstance, MountContext},
     drive::{COMPONENT_WORK_SLICE, ComponentProgress, drive_components},
     event::FifoDispatcher,
 };
@@ -17,16 +17,27 @@ pub(crate) struct WindowGroup {
 }
 
 impl WindowGroup {
-    pub(crate) fn new(
-        dispatcher: FifoDispatcher,
-        components: ComponentInstance,
-        windows: impl IntoIterator<Item = WindowHost>,
-    ) -> Self {
-        Self {
+    pub(crate) fn mount(
+        build: impl FnOnce(&mut MountContext<'_>, &mut Vec<WindowHost>) -> Result<()>,
+    ) -> Result<Self> {
+        let dispatcher = FifoDispatcher::new();
+        let mut windows = Vec::new();
+        let mut result = None;
+        let mut build = Some(build);
+        let mut components = ComponentInstance::new(dispatcher.route(), |context| {
+            result = Some(build.take().expect("WindowGroup build runs once")(
+                context,
+                &mut windows,
+            ));
+        });
+        result.expect("the WindowGroup build runs once")?;
+        components.flush_effects()?;
+
+        Ok(Self {
             dispatcher,
             components,
-            windows: windows.into_iter().collect(),
-        }
+            windows,
+        })
     }
 
     pub(super) fn request_initial_redraws(&mut self) {

@@ -6,8 +6,7 @@ use std::{
 };
 
 use crate::{
-    component::{ComponentInstance, MountContext},
-    event::FifoDispatcher,
+    component::MountContext,
     reactive::Computed,
     window::{
         WindowContent, WindowEvents, event_loop::WindowEventLoop, group::WindowGroup,
@@ -29,22 +28,15 @@ pub struct Application {
 impl Application {
     /// Builds one shared Component root and all of its initial Windows.
     pub fn new(build: impl FnOnce(&mut ApplicationContext<'_, '_>) -> Result<()>) -> Result<Self> {
-        let dispatcher = FifoDispatcher::new();
-        let mut windows = Vec::new();
-        let mut result = None;
-        let mut components = ComponentInstance::new(dispatcher.route(), |context| {
+        let mut build = Some(build);
+        let group = WindowGroup::mount(|context, windows| {
             let mut context = ApplicationContext {
                 mount: context,
-                windows: &mut windows,
+                windows,
             };
-            result = Some(build(&mut context));
-        });
-        result.expect("the Application build runs once")?;
-        components.flush_effects()?;
-
-        Ok(Self {
-            group: WindowGroup::new(dispatcher, components, windows),
-        })
+            build.take().expect("Application build runs once")(&mut context)
+        })?;
+        Ok(Self { group })
     }
 
     /// Drives native messages, Component work, and presentation until the last
