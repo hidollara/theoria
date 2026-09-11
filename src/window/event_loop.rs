@@ -9,59 +9,92 @@ use super::{Result, Window, WindowProgress};
 /// Time an otherwise idle iteration may lend to GPU presentation progress.
 const PRESENTATION_WAIT_SLICE: Duration = Duration::from_millis(1);
 
-/// Drives one Window through the Win32 message queue of its GUI thread.
+/// Drives Windows through the Win32 message queue of their GUI thread.
 ///
-/// `Window::run` is currently a single-Window convenience API. Keeping the
-/// thread message-pump capability here avoids assigning ownership of that
-/// queue to the native Window itself.
+/// Keeping the thread message-pump capability here avoids assigning ownership
+/// of that shared queue to any individual native Window.
 pub(super) struct WindowEventLoop {
     message_pump: WindowsMessagePump,
+    windows: Vec<DrivenWindow>,
+    next_presentation_wait: usize,
+}
+
+struct DrivenWindow {
     window: Window,
     progress: WindowProgress,
 }
 
 impl WindowEventLoop {
-    pub(super) fn new(mut window: Window) -> Self {
-        window.request_redraw_if_needed();
-        let progress = if window.has_ready_work() {
-            WindowProgress::Pending
-        } else {
-            WindowProgress::Idle
-        };
+    pub(super) fn new(windows: impl IntoIterator<Item = Window>) -> Self {
+        let windows = windows
+            .into_iter()
+            .map(|mut window| {
+                window.request_redraw_if_needed();
+                let progress = if window.has_ready_work() {
+                    WindowProgress::Pending
+                } else {
+                    WindowProgress::Idle
+                };
+                DrivenWindow { window, progress }
+            })
+            .collect();
         Self {
             message_pump: WindowsMessagePump::new(),
-            window,
-            progress,
+            windows,
+            next_presentation_wait: 0,
         }
     }
 
     pub(super) fn run(mut self) -> Result<()> {
-        loop {
-            let message_progress = match self.progress {
-                WindowProgress::Idle => self.message_pump.wait()?,
-                WindowProgress::Pending | WindowProgress::PresentationPending => {
-                    self.message_pump.poll()
-                }
-                WindowProgress::Finished => break,
+        while !self.windows.is_empty() {
+            let all_idle = self
+                .windows
+                .iter()
+                .all(|window| matches!(window.progress, WindowProgress::Idle));
+            let message_progress = if all_idle {
+                self.message_pump.wait()?
+            } else {
+                self.message_pump.poll()
             };
             if matches!(message_progress, MessagePumpProgress::Finished) {
                 break;
             }
 
-            let presentation_wait = if matches!(
-                (self.progress, message_progress),
-                (
-                    WindowProgress::PresentationPending,
-                    MessagePumpProgress::Idle
-                )
-            ) {
-                PRESENTATION_WAIT_SLICE
+            let waiting_window = if matches!(message_progress, MessagePumpProgress::Idle) {
+                self.next_window_waiting_for_presentation()
             } else {
-                Duration::ZERO
+                None
             };
+            if let Some(index) = waiting_window {
+                self.next_presentation_wait = index + 1;
+            }
 
-            self.progress = self.window.process_ready_work(presentation_wait)?;
+            for (index, window) in self.windows.iter_mut().enumerate() {
+                let presentation_wait = if Some(index) == waiting_window {
+                    PRESENTATION_WAIT_SLICE
+                } else {
+                    Duration::ZERO
+                };
+                window.progress = window.window.process_ready_work(presentation_wait)?;
+            }
+            self.windows
+                .retain(|window| !matches!(window.progress, WindowProgress::Finished));
+            if !self.windows.is_empty() {
+                self.next_presentation_wait %= self.windows.len();
+            }
         }
         Ok(())
+    }
+
+    fn next_window_waiting_for_presentation(&self) -> Option<usize> {
+        let count = self.windows.len();
+        (0..count)
+            .map(|offset| (self.next_presentation_wait + offset) % count)
+            .find(|&index| {
+                matches!(
+                    self.windows[index].progress,
+                    WindowProgress::PresentationPending
+                )
+            })
     }
 }

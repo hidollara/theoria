@@ -1,6 +1,8 @@
 //! Native Windows implementation of Theoria's window adapter.
 
-use std::{collections::VecDeque, ffi::c_void, marker::PhantomData, mem::size_of, rc::Rc};
+use std::{
+    collections::VecDeque, ffi::c_void, marker::PhantomData, mem::size_of, rc::Rc, sync::OnceLock,
+};
 
 use ::windows::{
     Win32::{
@@ -81,23 +83,9 @@ pub(crate) struct Win32Window {
 impl Win32Window {
     pub(crate) fn new(title: &str, width: u32, height: u32) -> Result<Self> {
         unsafe {
-            let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-            pointer::enable()?;
-
             let module = GetModuleHandleW(None)?;
             let hinstance = HINSTANCE(module.0);
-            let class_name = w!("TheoriaWindow");
-            let class = WNDCLASSEXW {
-                cbSize: size_of::<WNDCLASSEXW>() as u32,
-                style: CS_HREDRAW | CS_VREDRAW | CS_OWNDC,
-                lpfnWndProc: Some(window_proc),
-                hInstance: hinstance,
-                lpszClassName: class_name,
-                ..Default::default()
-            };
-            if RegisterClassExW(&class) == 0 {
-                return Err(Error::from_thread());
-            }
+            initialize_windowing(hinstance)?;
 
             let mut state = Box::new(WindowState {
                 size: SurfaceSize { width, height },
@@ -110,7 +98,7 @@ impl Win32Window {
             let extended_style = WINDOW_EX_STYLE::default();
             let hwnd = CreateWindowExW(
                 extended_style,
-                class_name,
+                w!("TheoriaWindow"),
                 PCWSTR(title.as_ptr()),
                 style,
                 CW_USEDEFAULT,
@@ -172,6 +160,31 @@ impl Win32Window {
     pub(crate) fn pop_event(&mut self) -> Option<NativeWindowEvent> {
         self.state.events.pop_front()
     }
+}
+
+/// Initializes process-wide pointer input and the shared Window class once.
+fn initialize_windowing(hinstance: HINSTANCE) -> Result<()> {
+    static INITIALIZATION: OnceLock<Result<()>> = OnceLock::new();
+
+    INITIALIZATION
+        .get_or_init(|| unsafe {
+            let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+            pointer::enable()?;
+            let class = WNDCLASSEXW {
+                cbSize: size_of::<WNDCLASSEXW>() as u32,
+                style: CS_HREDRAW | CS_VREDRAW | CS_OWNDC,
+                lpfnWndProc: Some(window_proc),
+                hInstance: hinstance,
+                lpszClassName: w!("TheoriaWindow"),
+                ..Default::default()
+            };
+            if RegisterClassExW(&class) == 0 {
+                Err(Error::from_thread())
+            } else {
+                Ok(())
+            }
+        })
+        .clone()
 }
 
 fn resize_client_area(

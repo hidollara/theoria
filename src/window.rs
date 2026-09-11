@@ -200,7 +200,16 @@ impl Window {
 
     /// Delivers native events and presents content until the Window closes.
     pub fn run(self) -> Result<()> {
-        WindowEventLoop::new(self).run()
+        Self::run_all([self])
+    }
+
+    /// Drives several Windows on their shared current-thread message queue.
+    ///
+    /// Each Window keeps an independent Component tree and presentation state.
+    /// Closing one Window removes only that Window; processing ends after the
+    /// final Window closes or the thread receives its quit message.
+    pub fn run_all(windows: impl IntoIterator<Item = Self>) -> Result<()> {
+        WindowEventLoop::new(windows).run()
     }
 
     /// Advances semantic Window work after the thread message pump has run.
