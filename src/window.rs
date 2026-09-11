@@ -18,11 +18,12 @@ use crate::{
     reactive::{Computed, State, Value},
     surface::{SurfaceEvent, SurfaceSize},
     vulkan::{CanvasRenderer, Presenter},
-    windows::{
-        message_pump::{MessagePumpProgress, WindowsMessagePump},
-        window::Win32Window,
-    },
+    windows::window::Win32Window,
 };
+
+mod event_loop;
+
+use self::event_loop::WindowEventLoop;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -112,7 +113,6 @@ impl WindowContent {
 /// tree, publishes native input through typed event sources, and presents
 /// the latest reactive Canvas result.
 pub struct Window {
-    message_pump: WindowsMessagePump,
     dispatcher: FifoDispatcher,
     components: ComponentInstance,
     native_events: EventSink<NativeWindowEvent>,
@@ -133,7 +133,6 @@ impl Window {
         height: u32,
         build: impl FnOnce(&mut MountContext<'_>, &WindowEvents<'_>) -> Computed<WindowContent>,
     ) -> Result<Self> {
-        let message_pump = WindowsMessagePump::new();
         let native = Win32Window::new(title, width, height)?;
         let presenter = Presenter::new(native.presentation_target())?;
         let canvas_renderer = CanvasRenderer::new(presenter.device());
@@ -187,7 +186,6 @@ impl Window {
         components.flush_effects()?;
 
         Ok(Self {
-            message_pump,
             dispatcher,
             components,
             native_events,
@@ -199,59 +197,59 @@ impl Window {
     }
 
     /// Delivers native events and presents content until the Window closes.
-    pub fn run(mut self) -> Result<()> {
-        self.request_redraw_if_needed();
-        let mut component_work_pending = false;
+    pub fn run(self) -> Result<()> {
+        WindowEventLoop::new(self).run()
+    }
 
-        loop {
-            let native_work_pending = self.native.has_pending_event();
-            let progress = if component_work_pending || native_work_pending {
-                self.message_pump.poll()
-            } else {
-                self.message_pump.wait()?
-            };
-            if matches!(progress, MessagePumpProgress::Finished) {
-                return Ok(());
+    /// Advances semantic Window work after the thread message pump has run.
+    fn process_ready_work(&mut self) -> Result<WindowProgress> {
+        let event = self.native.pop_event();
+        let redraw = event.is_some_and(|event| {
+            matches!(
+                event,
+                NativeWindowEvent::Surface(SurfaceEvent::RedrawRequested)
+            )
+        });
+        let close = matches!(event, Some(NativeWindowEvent::CloseRequested));
+
+        if let Some(event) = event {
+            if let NativeWindowEvent::Surface(SurfaceEvent::Resized(size)) = event {
+                self.presenter.resize(size)?;
             }
 
-            let event = self.native.pop_event();
-            let redraw = event.is_some_and(|event| {
-                matches!(
-                    event,
-                    NativeWindowEvent::Surface(SurfaceEvent::RedrawRequested)
-                )
-            });
-            let close = matches!(event, Some(NativeWindowEvent::CloseRequested));
-
-            if let Some(event) = event {
-                if let NativeWindowEvent::Surface(SurfaceEvent::Resized(size)) = event {
-                    self.presenter.resize(size)?;
-                }
-
-                if DispatchRoute::Inline
-                    .send(&self.native_events, event)
-                    .is_err()
-                {
-                    return Ok(());
-                }
-            }
-
-            component_work_pending = match self.drive_components(COMPONENT_WORK_TIME)? {
-                ComponentProgress::Idle => false,
-                ComponentProgress::Pending => true,
-                ComponentProgress::Finished => return Ok(()),
-            };
-
-            if redraw {
-                self.present_latest()?;
-            } else {
-                self.request_redraw_if_needed();
-            }
-
-            if close {
-                return Ok(());
+            if DispatchRoute::Inline
+                .send(&self.native_events, event)
+                .is_err()
+            {
+                return Ok(WindowProgress::Finished);
             }
         }
+
+        let component_work_pending = match self.drive_components(COMPONENT_WORK_TIME)? {
+            ComponentProgress::Idle => false,
+            ComponentProgress::Pending => true,
+            ComponentProgress::Finished => return Ok(WindowProgress::Finished),
+        };
+
+        if redraw {
+            self.present_latest()?;
+        } else {
+            self.request_redraw_if_needed();
+        }
+
+        if close {
+            return Ok(WindowProgress::Finished);
+        }
+
+        if component_work_pending || self.native.has_pending_event() {
+            Ok(WindowProgress::Pending)
+        } else {
+            Ok(WindowProgress::Idle)
+        }
+    }
+
+    fn has_ready_work(&self) -> bool {
+        self.native.has_pending_event()
     }
 
     fn drive_components(&mut self, available_time: Duration) -> Result<ComponentProgress> {
@@ -306,6 +304,12 @@ impl Window {
 }
 
 enum ComponentProgress {
+    Idle,
+    Pending,
+    Finished,
+}
+
+enum WindowProgress {
     Idle,
     Pending,
     Finished,
