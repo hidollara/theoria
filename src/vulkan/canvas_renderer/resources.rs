@@ -1,0 +1,105 @@
+//! Lazily-created GPU resources shared across Canvas recordings.
+
+use std::error::Error;
+
+use ash::vk;
+
+use crate::vulkan::{image::ImageCache, presenter::RenderDevice, scratch_image::ScratchImage};
+
+use super::pipeline::{Pipelines, create_pipelines};
+
+type Result<T> = std::result::Result<T, Box<dyn Error>>;
+
+pub(super) struct CanvasGpuResources {
+    pub(super) pipelines: Option<Pipelines>,
+    pub(super) image_cache: Option<ImageCache>,
+    pub(super) scratch_images: Vec<ScratchImage>,
+}
+
+impl CanvasGpuResources {
+    pub(super) fn new() -> Self {
+        Self {
+            pipelines: None,
+            image_cache: None,
+            scratch_images: Vec::new(),
+        }
+    }
+
+    pub(super) fn ensure_image_cache(&mut self, device: &RenderDevice) -> Result<()> {
+        if self.image_cache.is_none() {
+            self.image_cache = Some(ImageCache::new(device.clone())?);
+        }
+        Ok(())
+    }
+
+    pub(super) fn ensure_pipelines(
+        &mut self,
+        device: &RenderDevice,
+        format: vk::Format,
+        sample_count: vk::SampleCountFlags,
+    ) -> Result<()> {
+        if self.pipelines.as_ref().is_some_and(|pipelines| {
+            pipelines.format == format && pipelines.sample_count == sample_count
+        }) {
+            return Ok(());
+        }
+        self.destroy_pipelines(device);
+        let descriptor_layout = self.image_cache.as_ref().unwrap().descriptor_set_layout();
+        self.pipelines = Some(unsafe {
+            create_pipelines(device.raw(), format, sample_count, descriptor_layout)?
+        });
+        Ok(())
+    }
+
+    pub(super) fn ensure_scratch_images(
+        &mut self,
+        device: &RenderDevice,
+        format: vk::Format,
+        extent: vk::Extent2D,
+        sample_count: vk::SampleCountFlags,
+        required: usize,
+    ) -> Result<()> {
+        if self.scratch_images.first().is_some_and(|image| {
+            image.format != format || image.extent != extent || image.sample_count != sample_count
+        }) {
+            self.scratch_images.clear();
+        }
+        while self.scratch_images.len() < required {
+            self.scratch_images.push(ScratchImage::new(
+                device.clone(),
+                self.image_cache.as_ref().unwrap(),
+                format,
+                extent,
+                sample_count,
+            )?);
+        }
+        Ok(())
+    }
+
+    pub(super) fn destroy(&mut self, device: &RenderDevice) {
+        self.scratch_images.clear();
+        self.destroy_pipelines(device);
+        self.image_cache = None;
+    }
+
+    fn destroy_pipelines(&mut self, device: &RenderDevice) {
+        if let Some(pipelines) = self.pipelines.take() {
+            unsafe {
+                for pipeline in [
+                    pipelines.triangle,
+                    pipelines.image,
+                    pipelines.mask,
+                    pipelines.present,
+                    pipelines.blend,
+                    pipelines.coverage,
+                ]
+                .into_iter()
+                .chain(pipelines.composites.into_values())
+                {
+                    device.raw().destroy_pipeline(pipeline.handle, None);
+                    device.raw().destroy_pipeline_layout(pipeline.layout, None);
+                }
+            }
+        }
+    }
+}

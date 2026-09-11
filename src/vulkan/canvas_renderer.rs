@@ -10,10 +10,9 @@ use crate::{
 };
 
 use super::{
-    image::{ImageCache, VulkanImage},
+    image::VulkanImage,
     image_layout::transition_image,
     presenter::{RenderDevice, RenderTarget},
-    scratch_image::ScratchImage,
 };
 
 mod canvas_plan;
@@ -22,11 +21,12 @@ mod mesh_paint;
 mod one_shot;
 mod pipeline;
 mod recording;
+mod resources;
 
 use canvas_plan::{collect_images, required_scratch_images};
 use one_shot::OneShotCommands;
-use pipeline::{Pipelines, create_pipelines};
 use recording::CanvasRecorder;
+use resources::CanvasGpuResources;
 
 #[cfg(test)]
 use canvas_plan::can_record_directly;
@@ -46,21 +46,11 @@ pub struct CanvasRenderer {
     resolving_images: HashSet<ImageInstanceKey>,
 }
 
-struct CanvasGpuResources {
-    pipelines: Option<Pipelines>,
-    image_cache: Option<ImageCache>,
-    scratch_images: Vec<ScratchImage>,
-}
-
 impl CanvasRenderer {
     pub fn new(device: RenderDevice) -> Self {
         Self {
             device,
-            gpu: CanvasGpuResources {
-                pipelines: None,
-                image_cache: None,
-                scratch_images: Vec::new(),
-            },
+            gpu: CanvasGpuResources::new(),
             resolving_images: HashSet::new(),
         }
     }
@@ -274,88 +264,12 @@ impl CanvasRenderer {
     }
 }
 
-impl CanvasGpuResources {
-    fn ensure_image_cache(&mut self, device: &RenderDevice) -> Result<()> {
-        if self.image_cache.is_none() {
-            self.image_cache = Some(ImageCache::new(device.clone())?);
-        }
-        Ok(())
-    }
-
-    fn ensure_pipelines(
-        &mut self,
-        device: &RenderDevice,
-        format: vk::Format,
-        sample_count: vk::SampleCountFlags,
-    ) -> Result<()> {
-        if self.pipelines.as_ref().is_some_and(|pipelines| {
-            pipelines.format == format && pipelines.sample_count == sample_count
-        }) {
-            return Ok(());
-        }
-        self.destroy_pipelines(device);
-        let descriptor_layout = self.image_cache.as_ref().unwrap().descriptor_set_layout();
-        self.pipelines = Some(unsafe {
-            create_pipelines(device.raw(), format, sample_count, descriptor_layout)?
-        });
-        Ok(())
-    }
-
-    fn ensure_scratch_images(
-        &mut self,
-        device: &RenderDevice,
-        format: vk::Format,
-        extent: vk::Extent2D,
-        sample_count: vk::SampleCountFlags,
-        required: usize,
-    ) -> Result<()> {
-        if self.scratch_images.first().is_some_and(|image| {
-            image.format != format || image.extent != extent || image.sample_count != sample_count
-        }) {
-            self.scratch_images.clear();
-        }
-        while self.scratch_images.len() < required {
-            self.scratch_images.push(ScratchImage::new(
-                device.clone(),
-                self.image_cache.as_ref().unwrap(),
-                format,
-                extent,
-                sample_count,
-            )?);
-        }
-        Ok(())
-    }
-
-    fn destroy_pipelines(&mut self, device: &RenderDevice) {
-        if let Some(pipelines) = self.pipelines.take() {
-            unsafe {
-                for pipeline in [
-                    pipelines.triangle,
-                    pipelines.image,
-                    pipelines.mask,
-                    pipelines.present,
-                    pipelines.blend,
-                    pipelines.coverage,
-                ]
-                .into_iter()
-                .chain(pipelines.composites.into_values())
-                {
-                    device.raw().destroy_pipeline(pipeline.handle, None);
-                    device.raw().destroy_pipeline_layout(pipeline.layout, None);
-                }
-            }
-        }
-    }
-}
-
 impl Drop for CanvasRenderer {
     fn drop(&mut self) {
         unsafe {
             let _ = self.device.raw().device_wait_idle();
         }
-        self.gpu.scratch_images.clear();
-        self.gpu.destroy_pipelines(&self.device);
-        self.gpu.image_cache = None;
+        self.gpu.destroy(&self.device);
     }
 }
 
