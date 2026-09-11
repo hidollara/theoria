@@ -1,11 +1,10 @@
-//! Shared scheduling policy for advancing UI work.
+//! Default scheduling of Component events and Effects.
 
 use std::time::{Duration, Instant};
 
 use crate::{component::ComponentInstance, event::FifoDispatcher, reactive::ReactiveError};
 
 pub(crate) const COMPONENT_WORK_SLICE: Duration = Duration::from_millis(4);
-pub(crate) const PRESENTATION_WAIT_SLICE: Duration = Duration::from_millis(1);
 
 pub(crate) enum ComponentProgress {
     Idle,

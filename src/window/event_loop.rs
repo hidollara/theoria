@@ -2,12 +2,12 @@
 
 use std::time::{Duration, Instant};
 
-use crate::{
-    drive::PRESENTATION_WAIT_SLICE,
-    windows::message_pump::{MessagePumpProgress, WindowsMessagePump},
-};
+use crate::windows::message_pump::{MessagePumpProgress, WindowsMessagePump};
 
 use super::{Result, group::WindowGroup};
+
+/// Time an otherwise idle iteration may lend to GPU presentation progress.
+const PRESENTATION_WAIT_SLICE: Duration = Duration::from_millis(1);
 
 /// Drives all Window groups using their shared current-thread Win32 queue.
 pub(crate) struct WindowEventLoop {

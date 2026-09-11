@@ -108,7 +108,7 @@ impl WindowHost {
         })
     }
 
-    pub(crate) fn process_native_event(&mut self) -> Result<()> {
+    pub(super) fn process_native_event(&mut self) -> Result<()> {
         if self.close_requested {
             return Ok(());
         }
@@ -136,43 +136,43 @@ impl WindowHost {
         Ok(())
     }
 
-    pub(crate) fn prepare_animation_frame(&mut self, now: Instant) {
+    pub(super) fn prepare_animation_frame(&mut self, now: Instant) {
         let size = self.native.size();
         self.frames
             .prepare(now, size.width != 0 && size.height != 0);
     }
 
-    pub(crate) fn time_until_animation_frame(&self, now: Instant) -> Option<Duration> {
+    pub(super) fn time_until_animation_frame(&self, now: Instant) -> Option<Duration> {
         self.frames.time_until_frame(now)
     }
 
-    pub(crate) fn publish_due_animation_frame(&mut self, now: Instant) {
+    pub(super) fn publish_due_animation_frame(&mut self, now: Instant) {
         self.frames.publish_due(now);
     }
 
-    pub(crate) fn has_ready_work(&self) -> bool {
+    pub(super) fn has_ready_work(&self) -> bool {
         !self.close_requested && self.native.has_pending_event()
     }
 
-    pub(crate) const fn is_closing(&self) -> bool {
+    pub(super) const fn is_closing(&self) -> bool {
         self.close_requested
     }
 
-    pub(crate) fn has_pending_presentation(&self) -> bool {
+    pub(super) fn has_pending_presentation(&self) -> bool {
         self.presentation_pending || self.presenter.has_retired_swapchain()
     }
 
-    pub(crate) fn unmount(&self) {
+    pub(super) fn unmount(&self) {
         let _ = DispatchRoute::Inline.send(&self.unmount, ());
     }
 
-    pub(crate) fn request_redraw_if_needed(&mut self) {
+    pub(super) fn request_redraw_if_needed(&mut self) {
         if self.output.redraw_needed.replace(false) {
             self.native.request_redraw();
         }
     }
 
-    pub(crate) fn advance_presentation(&mut self, wait: Duration) -> Result<()> {
+    pub(super) fn advance_presentation(&mut self, wait: Duration) -> Result<()> {
         if self.close_requested {
             return Ok(());
         }

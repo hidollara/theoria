@@ -1,4 +1,4 @@
-//! Application-level ownership for Component state shared by multiple Windows.
+//! Construction of multiple Windows sharing one Component update boundary.
 
 use std::{
     error::Error,
@@ -16,11 +16,14 @@ use crate::{
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-/// One Component tree and the native Windows mounted beneath its root.
+/// Convenience ownership for Windows mounted beneath one Component root.
 ///
 /// All Windows created during `build` share this Application's Reactive graph,
 /// event dispatcher, and Effect synchronization boundary. Native presentation
-/// remains independent per Window.
+/// remains independent per Window. `Application` is not a global service
+/// container; independent [`Window`](crate::window::Window) values may instead
+/// keep separate Component boundaries while sharing the same native message
+/// loop through [`Window::run_all`](crate::window::Window::run_all).
 pub struct Application {
     group: WindowGroup,
 }

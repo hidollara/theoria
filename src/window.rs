@@ -107,11 +107,13 @@ impl WindowContent {
     }
 }
 
-/// Application-facing Window host and root component boundary.
+/// One native Window with an independent Component update boundary.
 ///
-/// Its concrete platform adapter is private. A Window drives one component
-/// tree, publishes native input through typed event sources, and presents
-/// the latest reactive Canvas result.
+/// Its concrete platform adapter is private. A Window publishes native input
+/// through typed event sources and presents the latest reactive Canvas result.
+/// Several Windows passed to [`run_all`](Self::run_all) share a native message
+/// loop while retaining separate Reactive graphs and Effect synchronization
+/// boundaries.
 pub struct Window {
     group: WindowGroup,
 }
