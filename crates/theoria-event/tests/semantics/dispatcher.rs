@@ -33,10 +33,13 @@ fn an_idle_dispatcher_reports_idle_without_delivering() {
     let handler = EventHandler::new(move |event: u32| output.borrow_mut().push(event));
     let sink = EventSink::from(&handler);
 
+    assert!(!dispatcher.has_pending());
     assert!(!dispatcher.deliver_next());
     assert!(route.send(&sink, 1_u32).is_ok());
+    assert!(dispatcher.has_pending());
     assert!(values.borrow().is_empty());
     assert!(dispatcher.deliver_next());
+    assert!(!dispatcher.has_pending());
     assert_eq!(&*values.borrow(), &[1]);
 }
 

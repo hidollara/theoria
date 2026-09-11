@@ -14,7 +14,6 @@ pub(crate) struct WindowGroup {
     dispatcher: FifoDispatcher,
     components: ComponentInstance,
     windows: Vec<WindowHost>,
-    component_work_pending: bool,
 }
 
 impl WindowGroup {
@@ -27,9 +26,6 @@ impl WindowGroup {
             dispatcher,
             components,
             windows: windows.into_iter().collect(),
-            // Construction may have submitted deferred events. Start by
-            // polling rather than sleeping without inspecting the queue.
-            component_work_pending: true,
         }
     }
 
@@ -53,7 +49,7 @@ impl WindowGroup {
     }
 
     pub(super) fn is_idle(&self) -> bool {
-        !self.component_work_pending
+        !self.dispatcher.has_pending()
             && self
                 .windows
                 .iter()
@@ -66,22 +62,21 @@ impl WindowGroup {
             window.publish_due_animation_frame(now);
         }
 
-        self.component_work_pending = match drive_components(
+        let progress = drive_components(
             &mut self.dispatcher,
             &mut self.components,
             COMPONENT_WORK_SLICE,
-        )? {
-            ComponentProgress::Idle => false,
-            ComponentProgress::Pending => true,
+        )?;
+        match progress {
+            ComponentProgress::Idle => {}
+            ComponentProgress::Pending => return Ok(true),
             ComponentProgress::Finished => return Ok(false),
-        };
-
-        if !self.component_work_pending {
-            for window in self.windows.iter().filter(|window| window.is_closing()) {
-                window.unmount();
-            }
-            self.windows.retain(|window| !window.is_closing());
         }
+
+        for window in self.windows.iter().filter(|window| window.is_closing()) {
+            window.unmount();
+        }
+        self.windows.retain(|window| !window.is_closing());
         Ok(!self.windows.is_empty())
     }
 

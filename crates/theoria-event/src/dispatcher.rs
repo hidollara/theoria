@@ -29,6 +29,10 @@ impl EventQueue {
         let _ = dispatch.execute();
         true
     }
+
+    fn has_pending(&self) -> bool {
+        !self.pending.borrow().is_empty()
+    }
 }
 
 /// Uniquely owns a serialized FIFO Dispatch queue.
@@ -52,6 +56,12 @@ impl FifoDispatcher {
     /// Returns a route through this Dispatcher.
     pub fn route(&self) -> DispatchRoute {
         self.route.clone()
+    }
+
+    /// Returns whether at least one Dispatch is waiting to execute.
+    #[must_use]
+    pub fn has_pending(&self) -> bool {
+        self.queue.has_pending()
     }
 
     /// Executes the next queued Dispatch.
