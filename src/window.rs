@@ -17,7 +17,7 @@ use crate::{
     input::{pointer::PointerEvent, scroll::ScrollEvent},
     reactive::{Computed, State, Value},
     surface::{SurfaceEvent, SurfaceSize},
-    vulkan::{CanvasRenderer, Presenter},
+    vulkan::{CanvasRenderer, PresentOutcome, Presenter},
     windows::window::Win32Window,
 };
 
@@ -120,6 +120,7 @@ pub struct Window {
     presenter: Presenter,
     native: Win32Window,
     output: Rc<RenderOutput>,
+    presentation_pending: bool,
 }
 
 impl Window {
@@ -193,6 +194,7 @@ impl Window {
             presenter,
             native,
             output,
+            presentation_pending: false,
         })
     }
 
@@ -202,7 +204,7 @@ impl Window {
     }
 
     /// Advances semantic Window work after the thread message pump has run.
-    fn process_ready_work(&mut self) -> Result<WindowProgress> {
+    fn process_ready_work(&mut self, presentation_wait: Duration) -> Result<WindowProgress> {
         let event = self.native.pop_event();
         let redraw = event.is_some_and(|event| {
             matches!(
@@ -211,6 +213,9 @@ impl Window {
             )
         });
         let close = matches!(event, Some(NativeWindowEvent::CloseRequested));
+        if redraw {
+            self.presentation_pending = true;
+        }
 
         if let Some(event) = event {
             if let NativeWindowEvent::Surface(SurfaceEvent::Resized(size)) = event {
@@ -231,8 +236,11 @@ impl Window {
             ComponentProgress::Finished => return Ok(WindowProgress::Finished),
         };
 
-        if redraw {
-            self.present_latest()?;
+        if self.presentation_pending {
+            self.presentation_pending = match self.present_latest(presentation_wait)? {
+                PresentationProgress::Complete => false,
+                PresentationProgress::Pending => true,
+            };
         } else {
             self.request_redraw_if_needed();
         }
@@ -243,6 +251,8 @@ impl Window {
 
         if component_work_pending || self.native.has_pending_event() {
             Ok(WindowProgress::Pending)
+        } else if self.presentation_pending {
+            Ok(WindowProgress::PresentationPending)
         } else {
             Ok(WindowProgress::Idle)
         }
@@ -278,11 +288,11 @@ impl Window {
         }
     }
 
-    fn present_latest(&mut self) -> Result<()> {
-        self.output.redraw_needed.set(false);
+    fn present_latest(&mut self, wait: Duration) -> Result<PresentationProgress> {
         let size = self.native.size();
         if size.width == 0 || size.height == 0 {
-            return Ok(());
+            self.output.redraw_needed.set(false);
+            return Ok(PresentationProgress::Complete);
         }
         let content = self
             .output
@@ -293,13 +303,19 @@ impl Window {
             .clone();
         let viewport = Viewport::new(0.0, 0.0, size.width as f32, size.height as f32);
 
-        if let Some(frame) = self.presenter.begin_frame()? {
-            let target = frame.render_target(content.clear_color());
-            self.canvas_renderer
-                .render(target, viewport, content.canvas(), content.view())?;
-            frame.present()?;
+        let Some(frame) = self.presenter.begin_frame(wait)? else {
+            return Ok(PresentationProgress::Pending);
+        };
+        let target = frame.render_target(content.clear_color());
+        self.canvas_renderer
+            .render(target, viewport, content.canvas(), content.view())?;
+        let outcome = frame.present()?;
+        if matches!(outcome, PresentOutcome::SwapchainRecreated) {
+            return Ok(PresentationProgress::Pending);
         }
-        Ok(())
+
+        self.output.redraw_needed.set(false);
+        Ok(PresentationProgress::Complete)
     }
 }
 
@@ -309,10 +325,17 @@ enum ComponentProgress {
     Finished,
 }
 
+#[derive(Clone, Copy)]
 enum WindowProgress {
     Idle,
     Pending,
+    PresentationPending,
     Finished,
+}
+
+enum PresentationProgress {
+    Complete,
+    Pending,
 }
 
 #[derive(Default)]

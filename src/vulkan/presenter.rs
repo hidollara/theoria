@@ -1,4 +1,8 @@
-use std::{error::Error, sync::Arc};
+use std::{
+    error::Error,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use ash::{khr, vk};
 
@@ -246,7 +250,15 @@ impl Presenter {
         self.recreate_swapchain()
     }
 
-    pub fn begin_frame(&mut self) -> Result<Option<PresentFrame<'_>>> {
+    /// Attempts to acquire a renderable Swapchain image within `timeout`.
+    ///
+    /// `None` means that no image is ready yet, the surface has no drawable
+    /// extent, or an obsolete Swapchain was recreated. The caller chooses
+    /// whether and how long to wait, allowing native event processing to remain
+    /// responsive. The timeout is shared between waiting for the previous GPU
+    /// frame and acquiring a presentation image. Swapchain recreation itself
+    /// may synchronize with the device.
+    pub fn begin_frame(&mut self, timeout: Duration) -> Result<Option<PresentFrame<'_>>> {
         if self.requested_size.width == 0 || self.requested_size.height == 0 {
             return Ok(None);
         }
@@ -255,18 +267,27 @@ impl Presenter {
         }
 
         unsafe {
-            self.device
-                .raw()
-                .wait_for_fences(&[self.frame_finished], true, u64::MAX)?;
+            let started_at = Instant::now();
+            match self.device.raw().wait_for_fences(
+                &[self.frame_finished],
+                true,
+                timeout_nanoseconds(timeout),
+            ) {
+                Ok(()) => {}
+                Err(vk::Result::TIMEOUT) => return Ok(None),
+                Err(error) => return Err(error.into()),
+            }
 
             let resources = self.swapchain.as_ref().expect("swapchain is available");
+            let remaining = timeout.saturating_sub(started_at.elapsed());
             let (image_index, acquire_suboptimal) = match self.swapchain_loader.acquire_next_image(
                 resources.handle,
-                u64::MAX,
+                timeout_nanoseconds(remaining),
                 self.image_available,
                 vk::Fence::null(),
             ) {
                 Ok(result) => result,
+                Err(vk::Result::NOT_READY | vk::Result::TIMEOUT) => return Ok(None),
                 Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
                     self.recreate_swapchain()?;
                     return Ok(None);
@@ -345,6 +366,16 @@ pub struct PresentFrame<'a> {
     acquire_suboptimal: bool,
 }
 
+/// Result of handing a rendered frame to the presentation engine.
+#[must_use = "a recreated Swapchain still needs its first frame"]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PresentOutcome {
+    /// The frame was accepted by the current Swapchain.
+    Presented,
+    /// Presentation required a new Swapchain, so its first frame is still due.
+    SwapchainRecreated,
+}
+
 impl PresentFrame<'_> {
     pub fn render_target(&self, clear_color: Color) -> RenderTarget<'_> {
         let resources = self.presenter.swapchain.as_ref().unwrap();
@@ -356,7 +387,12 @@ impl PresentFrame<'_> {
         }
     }
 
-    pub fn present(self) -> Result<()> {
+    /// Submits the recorded frame and presents it.
+    ///
+    /// [`PresentOutcome::SwapchainRecreated`] means that the submitted image
+    /// belonged to an obsolete Swapchain and the newly created one still needs
+    /// its first frame.
+    pub fn present(self) -> Result<PresentOutcome> {
         unsafe {
             let presenter = self.presenter;
             let image = presenter.swapchain.as_ref().unwrap().render_targets
@@ -411,10 +447,15 @@ impl PresentFrame<'_> {
             };
             if self.acquire_suboptimal || present_suboptimal {
                 presenter.recreate_swapchain()?;
+                return Ok(PresentOutcome::SwapchainRecreated);
             }
         }
-        Ok(())
+        Ok(PresentOutcome::Presented)
     }
+}
+
+fn timeout_nanoseconds(timeout: Duration) -> u64 {
+    timeout.as_nanos().min(u128::from(u64::MAX - 1)) as u64
 }
 
 impl Drop for Presenter {
