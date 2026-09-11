@@ -9,7 +9,7 @@ use std::{
 
 use crate::{
     Viewport,
-    animation::{AnimationFrame, FrameClock, FrameOpportunity, FrameScheduler},
+    animation::{FrameClock, FrameScheduler},
     canvas::{Canvas, CanvasView},
     color::Color,
     component::{Component, ComponentInstance, MountContext},
@@ -262,13 +262,7 @@ impl WindowHost {
 
         context.mount_with(|context| {
             let size = context.create_state(initial_size);
-            let animation_frame = context.create_state(AnimationFrame::default());
-            let frame_clock = frames.clock(animation_frame.value());
-            let sample_frame = frames.sampler();
-            let animation_frames = context.receive(move |_: FrameOpportunity, context| {
-                context.set(&animation_frame, sample_frame());
-            });
-            assert!(context.connect_cloned(frames.opportunities(), &animation_frames));
+            let frame_clock = frames.mount(context);
             let (surface, surface_events) = context.event_source::<SurfaceEvent>();
             let (pointer, pointer_events) = context.event_source::<PointerEvent>();
             let (scroll, scroll_events) = context.event_source::<ScrollEvent>();

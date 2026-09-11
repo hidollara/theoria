@@ -8,6 +8,7 @@ use std::{
 };
 
 use crate::{
+    component::MountContext,
     event::{DispatchRoute, EventProvider, EventSource, channel},
     reactive::Value,
 };
@@ -59,6 +60,10 @@ pub struct FrameClock {
 
 impl FrameClock {
     /// Returns this Window's shared current animation frame.
+    ///
+    /// Before the first requested frame is produced, both timing values are
+    /// zero. A produced frame updates this one reactive value, so all dependent
+    /// computations flushed for that update observe the same timestamp.
     pub fn frame(&self) -> Value<AnimationFrame> {
         self.frame.clone()
     }
@@ -89,7 +94,7 @@ struct FrameRequests {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct FrameOpportunity;
+struct FrameOpportunity;
 
 struct FrameTiming {
     origin: Instant,
@@ -145,18 +150,20 @@ impl FrameScheduler {
         }
     }
 
-    pub(crate) fn opportunities(&self) -> &EventSource<FrameOpportunity> {
-        &self.opportunities
-    }
-
     #[cfg(test)]
     fn sample(&self, now: Instant) -> AnimationFrame {
         self.timing.sample(now)
     }
 
-    pub(crate) fn sampler(&self) -> impl Fn() -> AnimationFrame + 'static {
+    pub(crate) fn mount(&self, context: &mut MountContext<'_>) -> FrameClock {
+        let frame = context.create_state(AnimationFrame::default());
+        let clock = self.clock(frame.value());
         let timing = Rc::clone(&self.timing);
-        move || timing.sample(Instant::now())
+        let frames = context.receive(move |_: FrameOpportunity, context| {
+            context.set(&frame, timing.sample(Instant::now()));
+        });
+        assert!(context.connect_cloned(&self.opportunities, &frames));
+        clock
     }
 
     /// Incorporates requests made since the previous event-loop iteration.
@@ -204,7 +211,7 @@ impl FrameScheduler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::reactive::Reactive;
+    use crate::{component::ComponentInstance, event::FifoDispatcher, reactive::Reactive};
 
     const INTERVAL: Duration = Duration::from_millis(10);
 
@@ -340,5 +347,47 @@ mod tests {
                 delta: Duration::ZERO,
             }
         );
+    }
+
+    #[test]
+    fn a_mounted_scheduler_publishes_one_shared_reactive_frame() {
+        let origin = Instant::now();
+        let mut scheduler = FrameScheduler::with_timing(origin, INTERVAL);
+        let mut dispatcher = FifoDispatcher::new();
+        let first_observer = Rc::new(Cell::new(None));
+        let second_observer = Rc::new(Cell::new(None));
+        let first_output = Rc::clone(&first_observer);
+        let second_output = Rc::clone(&second_observer);
+        let mut clock = None;
+        let mut components = ComponentInstance::new(dispatcher.route(), |context| {
+            let mounted_clock = scheduler.mount(context);
+            let frame = mounted_clock.frame();
+            let first_frame = frame.clone();
+            let first = context.create_effect(move |context| {
+                first_output.set(Some(*context.read(&first_frame)));
+            });
+            let second = context.create_effect(move |context| {
+                second_output.set(Some(*context.read(&frame)));
+            });
+            context.sync(&first);
+            context.sync(&second);
+            clock = Some(mounted_clock);
+        });
+        let clock = clock.expect("mounting exposes the frame clock");
+
+        assert!(clock.request_frame());
+        scheduler.prepare(origin, true);
+        assert!(scheduler.publish_due(origin));
+        assert!(scheduler.timing.previous.get().is_none());
+
+        assert!(dispatcher.deliver_next());
+        assert!(scheduler.timing.previous.get().is_some());
+        assert!(!dispatcher.deliver_next());
+        components
+            .flush_effects()
+            .expect("the frame observers are valid Effects");
+
+        assert!(first_observer.get().is_some());
+        assert_eq!(first_observer.get(), second_observer.get());
     }
 }

@@ -4,6 +4,7 @@ use theoria::{
     canvas::{Canvas, CanvasView, Composite, Coverage},
     color::Color,
     geometry::Point,
+    input::pointer::{PointerButton, PointerEvent, PointerPhase},
     math::{Matrix2, Vector2},
     path::{LineJoin, Path, StrokeStyle},
     transform::Affine2,
@@ -17,6 +18,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         960,
         640,
         move |context, events| {
+            let pointer = context.create_state(None::<PointerVisual>);
+            let pointer_value = pointer.value();
+            let pointer_events = context.receive(move |event: PointerEvent, context| {
+                let visual = if matches!(event.phase, PointerPhase::Leave | PointerPhase::Cancel) {
+                    None
+                } else {
+                    Some(PointerVisual {
+                        position: event.position,
+                        pressed: event.buttons.contains(PointerButton::Primary),
+                    })
+                };
+                context.set(&pointer, visual);
+            });
+            assert!(context.connect_cloned(events.pointer(), &pointer_events));
+
             let clock = events.frame_clock();
             let frame = clock.frame();
             let next_frame = clock.clone();
@@ -33,8 +49,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let size = *context.read(&size);
                 let width = size.width.max(1) as f32;
                 let height = size.height.max(1) as f32;
-                let center = Vector2::new(width * 0.5, height * 0.5);
-                let pulse = 0.88 + 0.12 * (elapsed * TAU * 0.6).sin();
+                let pointer = *context.read(&pointer_value);
+                let center = pointer.map_or(Vector2::new(width * 0.5, height * 0.5), |pointer| {
+                    Vector2::new(pointer.position.x, pointer.position.y)
+                });
+                let pressed_scale = if pointer.is_some_and(|pointer| pointer.pressed) {
+                    0.82
+                } else {
+                    1.0
+                };
+                let pulse = pressed_scale * (0.88 + 0.12 * (elapsed * TAU * 0.6).sin());
                 let transform = Affine2::from_scale(Vector2::new(pulse, pulse))
                     .then(Affine2::from_matrix(Matrix2::from_angle(elapsed * 0.8)))
                     .then(Affine2::from_translation(center));
@@ -70,6 +94,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
     )?;
     window.run()
+}
+
+#[derive(Clone, Copy)]
+struct PointerVisual {
+    position: Point,
+    pressed: bool,
 }
 
 fn star_path(outer_radius: f32, inner_radius: f32) -> Path {
