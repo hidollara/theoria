@@ -20,7 +20,7 @@ pub(crate) mod group;
 pub(crate) mod host;
 pub(crate) mod native_event;
 
-use self::{event_loop::WindowEventLoop, group::WindowGroup, host::WindowHost};
+use self::{event_loop::WindowEventLoop, group::WindowGroup};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -132,14 +132,13 @@ impl Window {
     ) -> Result<Self> {
         let mut build = Some(build);
         let group = WindowGroup::mount(|context, windows| {
-            windows.push(WindowHost::mount(
+            windows.mount_window(
                 context,
                 title,
                 width,
                 height,
                 build.take().expect("Window build runs once"),
-            )?);
-            Ok(())
+            )
         })?;
         Ok(Self { group })
     }

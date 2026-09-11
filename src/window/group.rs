@@ -5,10 +5,11 @@ use std::time::Instant;
 use crate::{
     component::{ComponentInstance, MountContext},
     event::FifoDispatcher,
+    reactive::Computed,
 };
 
 use super::{
-    Result,
+    Result, WindowContent, WindowEvents,
     drive::{COMPONENT_WORK_SLICE, ComponentProgress, drive_components},
     host::WindowHost,
 };
@@ -21,16 +22,16 @@ pub(crate) struct WindowGroup {
 
 impl WindowGroup {
     pub(crate) fn mount(
-        build: impl FnOnce(&mut MountContext<'_>, &mut Vec<WindowHost>) -> Result<()>,
+        build: impl FnOnce(&mut MountContext<'_>, &mut WindowGroupBuilder) -> Result<()>,
     ) -> Result<Self> {
         let dispatcher = FifoDispatcher::new();
-        let mut windows = Vec::new();
+        let mut builder = WindowGroupBuilder::default();
         let mut result = None;
         let mut build = Some(build);
         let mut components = ComponentInstance::new(dispatcher.route(), |context| {
             result = Some(build.take().expect("WindowGroup build runs once")(
                 context,
-                &mut windows,
+                &mut builder,
             ));
         });
         result.expect("the WindowGroup build runs once")?;
@@ -39,7 +40,7 @@ impl WindowGroup {
         Ok(Self {
             dispatcher,
             components,
-            windows,
+            windows: builder.windows,
         })
     }
 
@@ -104,5 +105,25 @@ impl WindowGroup {
 
     pub(super) fn windows_mut(&mut self) -> &mut [WindowHost] {
         &mut self.windows
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct WindowGroupBuilder {
+    windows: Vec<WindowHost>,
+}
+
+impl WindowGroupBuilder {
+    pub(crate) fn mount_window(
+        &mut self,
+        context: &mut MountContext<'_>,
+        title: &str,
+        width: u32,
+        height: u32,
+        build: impl FnOnce(&mut MountContext<'_>, &WindowEvents<'_>) -> Computed<WindowContent>,
+    ) -> Result<()> {
+        self.windows
+            .push(WindowHost::mount(context, title, width, height, build)?);
+        Ok(())
     }
 }

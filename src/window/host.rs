@@ -35,7 +35,7 @@ pub(crate) struct WindowHost {
 }
 
 impl WindowHost {
-    pub(crate) fn mount(
+    pub(super) fn mount(
         context: &mut MountContext<'_>,
         title: &str,
         width: u32,

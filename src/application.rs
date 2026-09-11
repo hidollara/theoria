@@ -9,8 +9,9 @@ use crate::{
     component::MountContext,
     reactive::Computed,
     window::{
-        WindowContent, WindowEvents, event_loop::WindowEventLoop, group::WindowGroup,
-        host::WindowHost,
+        WindowContent, WindowEvents,
+        event_loop::WindowEventLoop,
+        group::{WindowGroup, WindowGroupBuilder},
     },
 };
 
@@ -56,7 +57,7 @@ impl Application {
 /// child Component lifetime boundary beneath it.
 pub struct ApplicationContext<'context, 'mount> {
     mount: &'context mut MountContext<'mount>,
-    windows: &'context mut Vec<WindowHost>,
+    windows: &'context mut WindowGroupBuilder,
 }
 
 impl ApplicationContext<'_, '_> {
@@ -68,9 +69,8 @@ impl ApplicationContext<'_, '_> {
         height: u32,
         build: impl FnOnce(&mut MountContext<'_>, &WindowEvents<'_>) -> Computed<WindowContent>,
     ) -> Result<()> {
-        let window = WindowHost::mount(self.mount, title, width, height, build)?;
-        self.windows.push(window);
-        Ok(())
+        self.windows
+            .mount_window(self.mount, title, width, height, build)
     }
 }
 
