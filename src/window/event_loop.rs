@@ -2,12 +2,12 @@
 
 use std::time::{Duration, Instant};
 
-use crate::windows::message_pump::{MessagePumpProgress, WindowsMessagePump};
+use crate::{
+    drive::PRESENTATION_WAIT_SLICE,
+    windows::message_pump::{MessagePumpProgress, WindowsMessagePump},
+};
 
 use super::{Result, Window, WindowProgress};
-
-/// Time an otherwise idle iteration may lend to GPU presentation progress.
-const PRESENTATION_WAIT_SLICE: Duration = Duration::from_millis(1);
 
 /// Drives Windows through the Win32 message queue of their GUI thread.
 ///

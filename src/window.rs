@@ -13,6 +13,7 @@ use crate::{
     canvas::{Canvas, CanvasView},
     color::Color,
     component::{Component, ComponentInstance, MountContext},
+    drive::{COMPONENT_WORK_SLICE, ComponentProgress, drive_components},
     event::{DispatchRoute, EventSink, EventSource, FifoDispatcher, channel},
     gesture::MovementThreshold,
     input::{pointer::PointerEvent, scroll::ScrollEvent},
@@ -27,8 +28,6 @@ mod event_loop;
 use self::event_loop::WindowEventLoop;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
-
-const COMPONENT_WORK_TIME: Duration = Duration::from_millis(4);
 
 /// Notification that the native host asked to close this Window.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -194,7 +193,11 @@ impl Window {
         self.host.process_native_event()?;
         self.host.publish_due_animation_frame(Instant::now());
 
-        let component_work_pending = match self.drive_components(COMPONENT_WORK_TIME)? {
+        let component_work_pending = match drive_components(
+            &mut self.dispatcher,
+            &mut self.components,
+            COMPONENT_WORK_SLICE,
+        )? {
             ComponentProgress::Idle => false,
             ComponentProgress::Pending => true,
             ComponentProgress::Finished => return Ok(WindowProgress::Finished),
@@ -218,10 +221,6 @@ impl Window {
 
     fn has_ready_work(&self) -> bool {
         self.host.has_ready_work()
-    }
-
-    fn drive_components(&mut self, available_time: Duration) -> Result<ComponentProgress> {
-        drive_components(&mut self.dispatcher, &mut self.components, available_time)
     }
 
     fn request_redraw_if_needed(&mut self) {
@@ -423,12 +422,6 @@ impl WindowHost {
     }
 }
 
-pub(crate) enum ComponentProgress {
-    Idle,
-    Pending,
-    Finished,
-}
-
 #[derive(Clone, Copy)]
 enum WindowProgress {
     Idle,
@@ -440,30 +433,6 @@ enum WindowProgress {
 enum PresentationProgress {
     Complete,
     Pending,
-}
-
-pub(crate) fn drive_components(
-    dispatcher: &mut FifoDispatcher,
-    components: &mut ComponentInstance,
-    available_time: Duration,
-) -> Result<ComponentProgress> {
-    let started_at = Instant::now();
-    loop {
-        if components.is_finished() {
-            return Ok(ComponentProgress::Finished);
-        }
-        if !dispatcher.deliver_next() {
-            components.flush_effects()?;
-            return Ok(ComponentProgress::Idle);
-        }
-        if components.is_finished() {
-            return Ok(ComponentProgress::Finished);
-        }
-        if started_at.elapsed() >= available_time {
-            components.flush_effects()?;
-            return Ok(ComponentProgress::Pending);
-        }
-    }
 }
 
 #[derive(Default)]

@@ -4,12 +4,9 @@ use std::time::{Duration, Instant};
 
 use crate::{
     application::{Application, Result},
-    window::{ComponentProgress, drive_components},
+    drive::{COMPONENT_WORK_SLICE, ComponentProgress, PRESENTATION_WAIT_SLICE, drive_components},
     windows::message_pump::{MessagePumpProgress, WindowsMessagePump},
 };
-
-const COMPONENT_WORK_TIME: Duration = Duration::from_millis(4);
-const PRESENTATION_WAIT_SLICE: Duration = Duration::from_millis(1);
 
 pub(super) struct ApplicationEventLoop {
     application: Application,
@@ -59,7 +56,7 @@ impl ApplicationEventLoop {
             self.component_work_pending = match drive_components(
                 &mut self.application.dispatcher,
                 &mut self.application.components,
-                COMPONENT_WORK_TIME,
+                COMPONENT_WORK_SLICE,
             )? {
                 ComponentProgress::Idle => false,
                 ComponentProgress::Pending => true,
