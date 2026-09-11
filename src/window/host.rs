@@ -1,13 +1,8 @@
 //! Native Window input, reactive output, and presentation integration.
 
-use std::{
-    cell::{Cell, RefCell},
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
 use crate::{
-    Viewport,
     animation::FrameScheduler,
     component::{Component, MountContext},
     event::{DispatchRoute, EventSink, EventSource, channel},
@@ -15,22 +10,21 @@ use crate::{
     input::{pointer::PointerEvent, scroll::ScrollEvent},
     reactive::{Computed, State},
     surface::{SurfaceEvent, SurfaceSize},
-    vulkan::{CanvasRenderer, PresentOutcome, Presenter},
     windows::window::Win32Window,
 };
 
-use super::{CloseRequested, Result, WindowContent, WindowEvents, native_event::NativeWindowEvent};
+use super::{
+    CloseRequested, Result, WindowContent, WindowEvents, native_event::NativeWindowEvent,
+    presentation::WindowPresentation,
+};
 
 /// Native and presentation state for one Window attached to a Component tree.
 pub(crate) struct WindowHost {
     native_events: EventSink<NativeWindowEvent>,
     unmount: EventSink<()>,
-    presenter: Presenter,
-    canvas_renderer: CanvasRenderer,
     native: Win32Window,
     frames: FrameScheduler,
-    output: Rc<RenderOutput>,
-    presentation_pending: bool,
+    presentation: WindowPresentation,
     close_requested: bool,
 }
 
@@ -44,9 +38,7 @@ impl WindowHost {
     ) -> Result<Self> {
         let native = Win32Window::new(title, width, height)?;
         let frames = FrameScheduler::new();
-        let presenter = Presenter::new(native.presentation_target())?;
-        let canvas_renderer = CanvasRenderer::new(presenter.device());
-        let output = Rc::new(RenderOutput::default());
+        let presentation = WindowPresentation::new(native.presentation_target())?;
         let initial_size = native.size();
         let (horizontal, vertical) = native.movement_threshold_extents();
         let movement_threshold = MovementThreshold::AxisAligned {
@@ -74,14 +66,7 @@ impl WindowHost {
                 movement_threshold,
             };
             let content = build(context, &events);
-            let effect_output = Rc::clone(&output);
-            let effect = context.create_effect(move |context| {
-                effect_output
-                    .content
-                    .replace(Some(context.read(&content).cloned()));
-                effect_output.redraw_needed.set(true);
-            });
-            context.sync(&effect);
+            presentation.bind(context, content);
 
             context.mount(WindowComponent {
                 native: native_source,
@@ -98,12 +83,9 @@ impl WindowHost {
         Ok(Self {
             native_events,
             unmount: unmount.expect("the Window Component produces its unmount input"),
-            presenter,
-            canvas_renderer,
             native,
             frames,
-            output,
-            presentation_pending: false,
+            presentation,
             close_requested: false,
         })
     }
@@ -119,10 +101,10 @@ impl WindowHost {
             event,
             NativeWindowEvent::Surface(SurfaceEvent::RedrawRequested)
         ) {
-            self.presentation_pending = true;
+            self.presentation.mark_pending();
         }
         if let NativeWindowEvent::Surface(SurfaceEvent::Resized(size)) = event {
-            self.presenter.resize(size)?;
+            self.presentation.resize(size)?;
         }
         if matches!(event, NativeWindowEvent::CloseRequested) {
             self.close_requested = true;
@@ -167,7 +149,7 @@ impl WindowHost {
     }
 
     pub(super) fn has_pending_presentation(&self) -> bool {
-        self.presentation_pending || self.presenter.has_retired_swapchain()
+        self.presentation.has_pending()
     }
 
     pub(super) fn unmount(&self) {
@@ -175,68 +157,18 @@ impl WindowHost {
     }
 
     pub(super) fn request_redraw_if_needed(&mut self) {
-        if self.output.redraw_needed.replace(false) {
+        if self.presentation.take_redraw_request() {
             self.native.request_redraw();
         }
     }
 
     pub(super) fn advance_presentation(&mut self, wait: Duration) -> Result<()> {
-        if self.close_requested {
-            return Ok(());
-        }
-        if self.presentation_pending {
-            self.presentation_pending = match self.present_latest(wait)? {
-                PresentationProgress::Complete => false,
-                PresentationProgress::Pending => true,
-            };
-            self.presenter.reap_retired_swapchain(Duration::ZERO)?;
-        } else {
+        if !self.close_requested {
             self.request_redraw_if_needed();
-            self.presenter.reap_retired_swapchain(wait)?;
+            self.presentation.advance(self.native.size(), wait)?;
         }
         Ok(())
     }
-
-    fn present_latest(&mut self, wait: Duration) -> Result<PresentationProgress> {
-        let size = self.native.size();
-        if size.width == 0 || size.height == 0 {
-            self.output.redraw_needed.set(false);
-            return Ok(PresentationProgress::Complete);
-        }
-        let content = self
-            .output
-            .content
-            .borrow()
-            .as_ref()
-            .expect("the Window presentation Effect produces initial content")
-            .clone();
-        let viewport = Viewport::new(0.0, 0.0, size.width as f32, size.height as f32);
-
-        let Some(frame) = self.presenter.begin_frame(wait)? else {
-            return Ok(PresentationProgress::Pending);
-        };
-        let target = frame.render_target(content.clear_color());
-        self.canvas_renderer
-            .render(target, viewport, content.canvas(), content.view())?;
-        let outcome = frame.present()?;
-        if matches!(outcome, PresentOutcome::SwapchainInvalidated) {
-            return Ok(PresentationProgress::Pending);
-        }
-
-        self.output.redraw_needed.set(false);
-        Ok(PresentationProgress::Complete)
-    }
-}
-
-enum PresentationProgress {
-    Complete,
-    Pending,
-}
-
-#[derive(Default)]
-struct RenderOutput {
-    content: RefCell<Option<WindowContent>>,
-    redraw_needed: Cell<bool>,
 }
 
 struct WindowComponent {
