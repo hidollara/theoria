@@ -136,22 +136,30 @@ impl WindowHost {
         Ok(())
     }
 
-    pub(super) fn prepare_animation_frame(&mut self, now: Instant) {
+    fn schedule_requested_frame(&mut self, now: Instant) {
         let size = self.native.size();
         self.frames
             .prepare(now, size.width != 0 && size.height != 0);
     }
 
-    pub(super) fn time_until_animation_frame(&self, now: Instant) -> Option<Duration> {
-        self.frames.time_until_frame(now)
+    pub(super) fn prepare_scheduled_work(&mut self, now: Instant) {
+        self.schedule_requested_frame(now);
     }
 
-    pub(super) fn publish_due_animation_frame(&mut self, now: Instant) {
+    pub(super) fn next_deadline(&self) -> Option<Instant> {
+        self.frames.deadline()
+    }
+
+    fn publish_due_frame(&mut self, now: Instant) {
         self.frames.publish_due(now);
     }
 
     pub(super) fn has_ready_work(&self) -> bool {
         !self.close_requested && self.native.has_pending_event()
+    }
+
+    pub(super) fn process_scheduled_work(&mut self, now: Instant) {
+        self.publish_due_frame(now);
     }
 
     pub(super) const fn is_closing(&self) -> bool {

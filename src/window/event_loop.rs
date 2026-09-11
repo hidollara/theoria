@@ -33,11 +33,12 @@ impl WindowEventLoop {
         while !self.groups.is_empty() {
             let now = Instant::now();
             for group in &mut self.groups {
-                group.prepare_animation_frames(now);
+                group.prepare_scheduled_work(now);
             }
             let message_progress = if self.groups.iter().all(WindowGroup::is_idle) {
-                if let Some(wait) = self.time_until_animation_frame(now) {
-                    self.message_pump.wait_for(wait)?
+                if let Some(deadline) = self.next_deadline() {
+                    self.message_pump
+                        .wait_for(deadline.saturating_duration_since(now))?
                 } else {
                     self.message_pump.wait()?
                 }
@@ -110,10 +111,10 @@ impl WindowEventLoop {
             .map(|(index, _)| index)
     }
 
-    fn time_until_animation_frame(&self, now: Instant) -> Option<Duration> {
+    fn next_deadline(&self) -> Option<Instant> {
         self.groups
             .iter()
-            .filter_map(|group| group.time_until_animation_frame(now))
+            .filter_map(WindowGroup::next_deadline)
             .min()
     }
 }

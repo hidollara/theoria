@@ -184,9 +184,8 @@ impl FrameScheduler {
         }));
     }
 
-    pub(crate) fn time_until_frame(&self, now: Instant) -> Option<Duration> {
+    pub(crate) const fn deadline(&self) -> Option<Instant> {
         self.deadline
-            .map(|deadline| deadline.saturating_duration_since(now))
     }
 
     /// Publishes a due frame and consumes its request.
@@ -231,7 +230,7 @@ mod tests {
         assert!(clock.request_frame());
         assert!(clock.request_frame());
         scheduler.prepare(origin, true);
-        assert_eq!(scheduler.time_until_frame(origin), Some(Duration::ZERO));
+        assert_eq!(scheduler.deadline(), Some(origin));
         assert!(scheduler.take_due(origin));
         assert_eq!(
             scheduler.sample(origin),
@@ -242,7 +241,7 @@ mod tests {
         );
 
         scheduler.prepare(origin, true);
-        assert_eq!(scheduler.time_until_frame(origin), None);
+        assert_eq!(scheduler.deadline(), None);
     }
 
     #[test]
@@ -257,10 +256,7 @@ mod tests {
 
         assert!(clock.request_frame());
         scheduler.prepare(origin + Duration::from_millis(2), true);
-        assert_eq!(
-            scheduler.time_until_frame(origin + Duration::from_millis(2)),
-            Some(Duration::from_millis(8))
-        );
+        assert_eq!(scheduler.deadline(), Some(origin + INTERVAL));
         assert!(!scheduler.take_due(origin + Duration::from_millis(9)));
         assert!(scheduler.take_due(origin + INTERVAL));
         assert_eq!(
@@ -285,7 +281,7 @@ mod tests {
         let late = origin + Duration::from_secs(1);
         assert!(clock.request_frame());
         scheduler.prepare(late, true);
-        assert_eq!(scheduler.time_until_frame(late), Some(Duration::ZERO));
+        assert_eq!(scheduler.deadline(), Some(late));
         assert!(scheduler.take_due(late));
         assert_eq!(
             scheduler.sample(late),
@@ -294,7 +290,7 @@ mod tests {
                 delta: Duration::from_secs(1),
             }
         );
-        assert_eq!(scheduler.time_until_frame(late), None);
+        assert_eq!(scheduler.deadline(), None);
     }
 
     #[test]
@@ -315,11 +311,11 @@ mod tests {
 
         assert!(clock.request_frame());
         scheduler.prepare(origin, false);
-        assert_eq!(scheduler.time_until_frame(origin), None);
+        assert_eq!(scheduler.deadline(), None);
 
         let restored = origin + Duration::from_secs(1);
         scheduler.prepare(restored, true);
-        assert_eq!(scheduler.time_until_frame(restored), Some(Duration::ZERO));
+        assert_eq!(scheduler.deadline(), Some(restored));
         assert!(scheduler.take_due(restored));
         assert_eq!(
             scheduler.sample(restored),

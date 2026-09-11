@@ -1,6 +1,6 @@
 //! One Component update boundary shared by one or more Windows.
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use crate::{
     component::{ComponentInstance, MountContext},
@@ -46,16 +46,16 @@ impl WindowGroup {
         }
     }
 
-    pub(super) fn prepare_animation_frames(&mut self, now: Instant) {
+    pub(super) fn prepare_scheduled_work(&mut self, now: Instant) {
         for window in &mut self.windows {
-            window.prepare_animation_frame(now);
+            window.prepare_scheduled_work(now);
         }
     }
 
-    pub(super) fn time_until_animation_frame(&self, now: Instant) -> Option<Duration> {
+    pub(super) fn next_deadline(&self) -> Option<Instant> {
         self.windows
             .iter()
-            .filter_map(|window| window.time_until_animation_frame(now))
+            .filter_map(WindowHost::next_deadline)
             .min()
     }
 
@@ -70,7 +70,7 @@ impl WindowGroup {
     pub(super) fn process_ready_work(&mut self, now: Instant) -> Result<bool> {
         for window in &mut self.windows {
             window.process_native_event()?;
-            window.publish_due_animation_frame(now);
+            window.process_scheduled_work(now);
         }
 
         let progress = drive_components(
