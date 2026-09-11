@@ -19,6 +19,7 @@ pub(crate) struct WindowEventLoop {
 impl WindowEventLoop {
     pub(crate) fn new(groups: impl IntoIterator<Item = WindowGroup>) -> Self {
         let mut groups: Vec<_> = groups.into_iter().collect();
+        groups.retain(|group| !group.is_finished());
         for group in &mut groups {
             group.request_initial_redraws();
         }
@@ -116,5 +117,19 @@ impl WindowEventLoop {
             .iter()
             .filter_map(WindowGroup::next_deadline)
             .min()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_group_without_windows_finishes_without_waiting_for_messages() {
+        let group = WindowGroup::mount(|_, _| Ok(())).expect("empty group construction succeeds");
+
+        WindowEventLoop::new([group])
+            .run()
+            .expect("an empty event loop finishes immediately");
     }
 }

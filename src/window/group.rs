@@ -46,6 +46,10 @@ impl WindowGroup {
         }
     }
 
+    pub(super) fn is_finished(&self) -> bool {
+        self.windows.is_empty() || self.components.is_finished()
+    }
+
     pub(super) fn prepare_scheduled_work(&mut self, now: Instant) {
         for window in &mut self.windows {
             window.prepare_scheduled_work(now);
