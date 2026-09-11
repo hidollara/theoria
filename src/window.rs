@@ -115,12 +115,19 @@ impl WindowContent {
 pub struct Window {
     dispatcher: FifoDispatcher,
     components: ComponentInstance,
+    host: WindowHost,
+}
+
+/// Native and presentation state for one Window attached to a Component tree.
+pub(crate) struct WindowHost {
     native_events: EventSink<NativeWindowEvent>,
+    unmount: EventSink<()>,
     canvas_renderer: CanvasRenderer,
     presenter: Presenter,
     native: Win32Window,
     output: Rc<RenderOutput>,
     presentation_pending: bool,
+    close_requested: bool,
 }
 
 impl Window {
@@ -134,67 +141,29 @@ impl Window {
         height: u32,
         build: impl FnOnce(&mut MountContext<'_>, &WindowEvents<'_>) -> Computed<WindowContent>,
     ) -> Result<Self> {
-        let native = Win32Window::new(title, width, height)?;
-        let presenter = Presenter::new(native.presentation_target())?;
-        let canvas_renderer = CanvasRenderer::new(presenter.device());
-        let output = Rc::new(RenderOutput::default());
-        let effect_output = Rc::clone(&output);
-        let initial_size = native.size();
-        let (horizontal, vertical) = native.movement_threshold_extents();
-        let movement_threshold = MovementThreshold::AxisAligned {
-            horizontal,
-            vertical,
-        };
-
-        let (native_provider, native_source) = channel::<NativeWindowEvent>();
-        let native_events = EventSink::from(&native_provider);
         let dispatcher = FifoDispatcher::new();
-        let mut components = ComponentInstance::new(dispatcher.route(), move |context| {
-            let size = context.create_state(initial_size);
-            let (surface, surface_events) = context.event_source::<SurfaceEvent>();
-            let (pointer, pointer_events) = context.event_source::<PointerEvent>();
-            let (scroll, scroll_events) = context.event_source::<ScrollEvent>();
-            let (close_requested, close_requests) = context.event_source::<CloseRequested>();
-            let events = WindowEvents {
-                surface: &surface,
-                pointer: &pointer,
-                scroll: &scroll,
-                close_requested: &close_requested,
-                size: size.value(),
-                movement_threshold,
-            };
-            let content = build(context, &events);
-
-            let effect = context.create_effect(move |context| {
-                effect_output
-                    .content
-                    .replace(Some(context.read(&content).cloned()));
-                effect_output.redraw_needed.set(true);
-            });
-            context.sync(&effect);
-
-            let component = WindowComponent {
-                native: native_source,
-                size,
-                surface_events,
-                pointer_events,
-                scroll_events,
-                close_requests,
-            };
-            context.mount(component);
-            context.retain(native_provider);
+        let mut host = None;
+        let mut result = Ok(());
+        let mut build = Some(build);
+        let mut components = ComponentInstance::new(dispatcher.route(), |context| {
+            match WindowHost::mount(
+                context,
+                title,
+                width,
+                height,
+                build.take().expect("Window build runs once"),
+            ) {
+                Ok(window) => host = Some(window),
+                Err(error) => result = Err(error),
+            }
         });
+        result?;
         components.flush_effects()?;
 
         Ok(Self {
             dispatcher,
             components,
-            native_events,
-            canvas_renderer,
-            presenter,
-            native,
-            output,
-            presentation_pending: false,
+            host: host.expect("successful Window construction produces a host"),
         })
     }
 
@@ -214,30 +183,7 @@ impl Window {
 
     /// Advances semantic Window work after the thread message pump has run.
     fn process_ready_work(&mut self, presentation_wait: Duration) -> Result<WindowProgress> {
-        let event = self.native.pop_event();
-        let redraw = event.is_some_and(|event| {
-            matches!(
-                event,
-                NativeWindowEvent::Surface(SurfaceEvent::RedrawRequested)
-            )
-        });
-        let close = matches!(event, Some(NativeWindowEvent::CloseRequested));
-        if redraw {
-            self.presentation_pending = true;
-        }
-
-        if let Some(event) = event {
-            if let NativeWindowEvent::Surface(SurfaceEvent::Resized(size)) = event {
-                self.presenter.resize(size)?;
-            }
-
-            if DispatchRoute::Inline
-                .send(&self.native_events, event)
-                .is_err()
-            {
-                return Ok(WindowProgress::Finished);
-            }
-        }
+        self.host.process_native_event()?;
 
         let component_work_pending = match self.drive_components(COMPONENT_WORK_TIME)? {
             ComponentProgress::Idle => false,
@@ -245,22 +191,16 @@ impl Window {
             ComponentProgress::Finished => return Ok(WindowProgress::Finished),
         };
 
-        if self.presentation_pending {
-            self.presentation_pending = match self.present_latest(presentation_wait)? {
-                PresentationProgress::Complete => false,
-                PresentationProgress::Pending => true,
-            };
-        } else {
-            self.request_redraw_if_needed();
-        }
-
-        if close {
+        if self.host.close_requested && !component_work_pending {
+            self.host.unmount();
             return Ok(WindowProgress::Finished);
         }
 
-        if component_work_pending || self.native.has_pending_event() {
+        self.host.advance_presentation(presentation_wait)?;
+
+        if component_work_pending || self.host.has_ready_work() {
             Ok(WindowProgress::Pending)
-        } else if self.presentation_pending {
+        } else if self.host.presentation_pending {
             Ok(WindowProgress::PresentationPending)
         } else {
             Ok(WindowProgress::Idle)
@@ -268,33 +208,151 @@ impl Window {
     }
 
     fn has_ready_work(&self) -> bool {
-        self.native.has_pending_event()
+        self.host.has_ready_work()
     }
 
     fn drive_components(&mut self, available_time: Duration) -> Result<ComponentProgress> {
-        let started_at = Instant::now();
-        loop {
-            if self.components.is_finished() {
-                return Ok(ComponentProgress::Finished);
-            }
-            if !self.dispatcher.deliver_next() {
-                self.components.flush_effects()?;
-                return Ok(ComponentProgress::Idle);
-            }
-            if self.components.is_finished() {
-                return Ok(ComponentProgress::Finished);
-            }
-            if started_at.elapsed() >= available_time {
-                self.components.flush_effects()?;
-                return Ok(ComponentProgress::Pending);
-            }
-        }
+        drive_components(&mut self.dispatcher, &mut self.components, available_time)
     }
 
     fn request_redraw_if_needed(&mut self) {
+        self.host.request_redraw_if_needed();
+    }
+}
+
+impl WindowHost {
+    pub(crate) fn mount(
+        context: &mut MountContext<'_>,
+        title: &str,
+        width: u32,
+        height: u32,
+        build: impl FnOnce(&mut MountContext<'_>, &WindowEvents<'_>) -> Computed<WindowContent>,
+    ) -> Result<Self> {
+        let native = Win32Window::new(title, width, height)?;
+        let presenter = Presenter::new(native.presentation_target())?;
+        let canvas_renderer = CanvasRenderer::new(presenter.device());
+        let output = Rc::new(RenderOutput::default());
+        let initial_size = native.size();
+        let (horizontal, vertical) = native.movement_threshold_extents();
+        let movement_threshold = MovementThreshold::AxisAligned {
+            horizontal,
+            vertical,
+        };
+        let (native_provider, native_source) = channel::<NativeWindowEvent>();
+        let native_events = EventSink::from(&native_provider);
+        let mut unmount = None;
+
+        context.mount_with(|context| {
+            let size = context.create_state(initial_size);
+            let (surface, surface_events) = context.event_source::<SurfaceEvent>();
+            let (pointer, pointer_events) = context.event_source::<PointerEvent>();
+            let (scroll, scroll_events) = context.event_source::<ScrollEvent>();
+            let (close_requested, close_requests) = context.event_source::<CloseRequested>();
+            let events = WindowEvents {
+                surface: &surface,
+                pointer: &pointer,
+                scroll: &scroll,
+                close_requested: &close_requested,
+                size: size.value(),
+                movement_threshold,
+            };
+            let content = build(context, &events);
+            let effect_output = Rc::clone(&output);
+            let effect = context.create_effect(move |context| {
+                effect_output
+                    .content
+                    .replace(Some(context.read(&content).cloned()));
+                effect_output.redraw_needed.set(true);
+            });
+            context.sync(&effect);
+
+            context.mount(WindowComponent {
+                native: native_source,
+                size,
+                surface_events,
+                pointer_events,
+                scroll_events,
+                close_requests,
+            });
+            context.retain(native_provider);
+            unmount = Some(context.receive(|(), context| context.unmount()));
+        });
+
+        Ok(Self {
+            native_events,
+            unmount: unmount.expect("the Window Component produces its unmount input"),
+            canvas_renderer,
+            presenter,
+            native,
+            output,
+            presentation_pending: false,
+            close_requested: false,
+        })
+    }
+
+    pub(crate) fn process_native_event(&mut self) -> Result<()> {
+        if self.close_requested {
+            return Ok(());
+        }
+        let Some(event) = self.native.pop_event() else {
+            return Ok(());
+        };
+        if matches!(
+            event,
+            NativeWindowEvent::Surface(SurfaceEvent::RedrawRequested)
+        ) {
+            self.presentation_pending = true;
+        }
+        if let NativeWindowEvent::Surface(SurfaceEvent::Resized(size)) = event {
+            self.presenter.resize(size)?;
+        }
+        if matches!(event, NativeWindowEvent::CloseRequested) {
+            self.close_requested = true;
+        }
+        if DispatchRoute::Inline
+            .send(&self.native_events, event)
+            .is_err()
+        {
+            self.close_requested = true;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn has_ready_work(&self) -> bool {
+        !self.close_requested && self.native.has_pending_event()
+    }
+
+    pub(crate) fn is_closing(&self) -> bool {
+        self.close_requested
+    }
+
+    pub(crate) fn has_pending_presentation(&self) -> bool {
+        self.presentation_pending
+    }
+
+    pub(crate) fn unmount(&self) {
+        let _ = DispatchRoute::Inline.send(&self.unmount, ());
+    }
+
+    pub(crate) fn request_redraw_if_needed(&mut self) {
         if self.output.redraw_needed.replace(false) {
             self.native.request_redraw();
         }
+    }
+
+    pub(crate) fn advance_presentation(&mut self, wait: Duration) -> Result<()> {
+        if self.close_requested {
+            return Ok(());
+        }
+        if self.presentation_pending {
+            self.presentation_pending = match self.present_latest(wait)? {
+                PresentationProgress::Complete => false,
+                PresentationProgress::Pending => true,
+            };
+        } else {
+            self.request_redraw_if_needed();
+        }
+        Ok(())
     }
 
     fn present_latest(&mut self, wait: Duration) -> Result<PresentationProgress> {
@@ -328,7 +386,7 @@ impl Window {
     }
 }
 
-enum ComponentProgress {
+pub(crate) enum ComponentProgress {
     Idle,
     Pending,
     Finished,
@@ -345,6 +403,30 @@ enum WindowProgress {
 enum PresentationProgress {
     Complete,
     Pending,
+}
+
+pub(crate) fn drive_components(
+    dispatcher: &mut FifoDispatcher,
+    components: &mut ComponentInstance,
+    available_time: Duration,
+) -> Result<ComponentProgress> {
+    let started_at = Instant::now();
+    loop {
+        if components.is_finished() {
+            return Ok(ComponentProgress::Finished);
+        }
+        if !dispatcher.deliver_next() {
+            components.flush_effects()?;
+            return Ok(ComponentProgress::Idle);
+        }
+        if components.is_finished() {
+            return Ok(ComponentProgress::Finished);
+        }
+        if started_at.elapsed() >= available_time {
+            components.flush_effects()?;
+            return Ok(ComponentProgress::Pending);
+        }
+    }
 }
 
 #[derive(Default)]

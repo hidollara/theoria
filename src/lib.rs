@@ -1,3 +1,4 @@
+pub mod application;
 pub mod canvas;
 pub mod color;
 pub mod font;
