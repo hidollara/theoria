@@ -15,13 +15,11 @@ use crate::{
 };
 
 pub(crate) mod event_loop;
+pub(crate) mod group;
 pub(crate) mod host;
 pub(crate) mod native_event;
 
-use self::{
-    event_loop::{WindowEventLoop, WindowGroup},
-    host::WindowHost,
-};
+use self::{event_loop::WindowEventLoop, group::WindowGroup, host::WindowHost};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -115,9 +113,7 @@ impl WindowContent {
 /// tree, publishes native input through typed event sources, and presents
 /// the latest reactive Canvas result.
 pub struct Window {
-    dispatcher: FifoDispatcher,
-    components: ComponentInstance,
-    host: WindowHost,
+    group: WindowGroup,
 }
 
 impl Window {
@@ -151,9 +147,11 @@ impl Window {
         components.flush_effects()?;
 
         Ok(Self {
-            dispatcher,
-            components,
-            host: host.expect("successful Window construction produces a host"),
+            group: WindowGroup::new(
+                dispatcher,
+                components,
+                [host.expect("successful Window construction produces a host")],
+            ),
         })
     }
 
@@ -168,14 +166,7 @@ impl Window {
     /// Closing one Window removes only that Window; processing ends after the
     /// final Window closes or the thread receives its quit message.
     pub fn run_all(windows: impl IntoIterator<Item = Self>) -> Result<()> {
-        let groups = windows.into_iter().map(|window| {
-            let Self {
-                dispatcher,
-                components,
-                host,
-            } = window;
-            WindowGroup::new(dispatcher, components, [host])
-        });
+        let groups = windows.into_iter().map(|window| window.group);
         WindowEventLoop::new(groups).run()
     }
 }

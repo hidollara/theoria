@@ -10,8 +10,7 @@ use crate::{
     event::FifoDispatcher,
     reactive::Computed,
     window::{
-        WindowContent, WindowEvents,
-        event_loop::{WindowEventLoop, WindowGroup},
+        WindowContent, WindowEvents, event_loop::WindowEventLoop, group::WindowGroup,
         host::WindowHost,
     },
 };
@@ -24,9 +23,7 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 /// event dispatcher, and Effect synchronization boundary. Native presentation
 /// remains independent per Window.
 pub struct Application {
-    dispatcher: FifoDispatcher,
-    components: ComponentInstance,
-    windows: Vec<WindowHost>,
+    group: WindowGroup,
 }
 
 impl Application {
@@ -46,21 +43,14 @@ impl Application {
         components.flush_effects()?;
 
         Ok(Self {
-            dispatcher,
-            components,
-            windows,
+            group: WindowGroup::new(dispatcher, components, windows),
         })
     }
 
     /// Drives native messages, Component work, and presentation until the last
     /// Window closes or the root Component unmounts.
     pub fn run(self) -> Result<()> {
-        let Self {
-            dispatcher,
-            components,
-            windows,
-        } = self;
-        WindowEventLoop::new([WindowGroup::new(dispatcher, components, windows)]).run()
+        WindowEventLoop::new([self.group]).run()
     }
 }
 
