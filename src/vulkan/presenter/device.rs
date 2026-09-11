@@ -12,6 +12,82 @@ const REQUIRED_API_VERSION: u32 = vk::make_api_version(0, 1, 4, 0);
 const KHR_SURFACE_MAINTENANCE1_NAME: &CStr = c"VK_KHR_surface_maintenance1";
 const KHR_SWAPCHAIN_MAINTENANCE1_NAME: &CStr = c"VK_KHR_swapchain_maintenance1";
 
+struct PresentationDeviceConstruction {
+    entry: Option<ash::Entry>,
+    instance: Option<ash::Instance>,
+    surface_loader: Option<khr::surface::Instance>,
+    surface: vk::SurfaceKHR,
+}
+
+impl PresentationDeviceConstruction {
+    fn new(entry: ash::Entry, instance: ash::Instance) -> Self {
+        Self {
+            entry: Some(entry),
+            instance: Some(instance),
+            surface_loader: None,
+            surface: vk::SurfaceKHR::null(),
+        }
+    }
+
+    fn attach_surface(&mut self, surface_loader: khr::surface::Instance, surface: vk::SurfaceKHR) {
+        self.surface_loader = Some(surface_loader);
+        self.surface = surface;
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn finish(
+        mut self,
+        physical_device: vk::PhysicalDevice,
+        device: ash::Device,
+        memory_properties: vk::PhysicalDeviceMemoryProperties,
+        graphics_queue: vk::Queue,
+        queue_family_index: u32,
+        swapchain_loader: khr::swapchain::Device,
+        swapchain_maintenance1: bool,
+    ) -> PresentationDevice {
+        let entry = self.entry.take().expect("entry is present");
+        let instance = self.instance.take().expect("instance is present");
+        let surface_loader = self
+            .surface_loader
+            .take()
+            .expect("surface loader is present");
+        let surface = std::mem::replace(&mut self.surface, vk::SurfaceKHR::null());
+        let render = RenderDevice(Arc::new(DeviceInner {
+            _entry: entry,
+            instance,
+            physical_device,
+            device,
+            memory_properties,
+            graphics_queue,
+            queue_family_index,
+        }));
+        PresentationDevice {
+            render,
+            surface_loader,
+            surface,
+            physical_device,
+            present_queue: graphics_queue,
+            swapchain_loader,
+            swapchain_maintenance1,
+        }
+    }
+}
+
+impl Drop for PresentationDeviceConstruction {
+    fn drop(&mut self) {
+        unsafe {
+            if self.surface != vk::SurfaceKHR::null()
+                && let Some(surface_loader) = self.surface_loader.as_ref()
+            {
+                surface_loader.destroy_surface(self.surface, None);
+            }
+            if let Some(instance) = self.instance.as_ref() {
+                instance.destroy_instance(None);
+            }
+        }
+    }
+}
+
 struct DeviceInner {
     _entry: ash::Entry,
     instance: ash::Instance,
@@ -136,26 +212,32 @@ impl PresentationDevice {
                 .application_info(&app_info)
                 .enabled_extension_names(&instance_extensions);
             let instance = entry.create_instance(&instance_info, None)?;
+            let mut construction = PresentationDeviceConstruction::new(entry, instance);
 
-            let win32_surface_loader = khr::win32_surface::Instance::new(&entry, &instance);
+            let entry = construction.entry.as_ref().unwrap();
+            let instance = construction.instance.as_ref().unwrap();
+            let win32_surface_loader = khr::win32_surface::Instance::new(entry, instance);
             let surface_info = vk::Win32SurfaceCreateInfoKHR::default()
                 .hinstance(hinstance)
                 .hwnd(hwnd);
             let surface = win32_surface_loader.create_win32_surface(&surface_info, None)?;
-            let surface_loader = khr::surface::Instance::new(&entry, &instance);
+            let surface_loader = khr::surface::Instance::new(entry, instance);
+            construction.attach_surface(surface_loader, surface);
+            let instance = construction.instance.as_ref().unwrap();
+            let surface_loader = construction.surface_loader.as_ref().unwrap();
 
             let (physical_device, queue_family_index) =
-                pick_physical_device(&instance, &surface_loader, surface)?;
+                pick_physical_device(instance, surface_loader, surface)?;
             let swapchain_maintenance1_extension = if khr_surface_maintenance1
                 && supports_device_extension(
-                    &instance,
+                    instance,
                     physical_device,
                     KHR_SWAPCHAIN_MAINTENANCE1_NAME,
                 )? {
                 Some(KHR_SWAPCHAIN_MAINTENANCE1_NAME)
             } else if ext_surface_maintenance1
                 && supports_device_extension(
-                    &instance,
+                    instance,
                     physical_device,
                     ext::swapchain_maintenance1::NAME,
                 )?
@@ -164,7 +246,7 @@ impl PresentationDevice {
             } else {
                 None
             }
-            .filter(|_| supports_swapchain_maintenance1(&instance, physical_device));
+            .filter(|_| supports_swapchain_maintenance1(instance, physical_device));
             let swapchain_maintenance1 = swapchain_maintenance1_extension.is_some();
 
             let queue_priorities = [1.0];
@@ -191,27 +273,17 @@ impl PresentationDevice {
             let device = instance.create_device(physical_device, &device_info, None)?;
             let graphics_queue = device.get_device_queue(queue_family_index, 0);
             let memory_properties = instance.get_physical_device_memory_properties(physical_device);
-            let swapchain_loader = khr::swapchain::Device::new(&instance, &device);
+            let swapchain_loader = khr::swapchain::Device::new(instance, &device);
 
-            let render = RenderDevice(Arc::new(DeviceInner {
-                _entry: entry,
-                instance,
+            Ok(construction.finish(
                 physical_device,
                 device,
                 memory_properties,
                 graphics_queue,
                 queue_family_index,
-            }));
-
-            Ok(Self {
-                render,
-                surface_loader,
-                surface,
-                physical_device,
-                present_queue: graphics_queue,
                 swapchain_loader,
                 swapchain_maintenance1,
-            })
+            ))
         }
     }
 }

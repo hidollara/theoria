@@ -47,7 +47,13 @@ impl Presenter {
                 .render
                 .raw()
                 .create_command_pool(&command_pool_info, None)?;
-            let frame_synchronization = FrameSynchronization::new(device.render.raw())?;
+            let frame_synchronization = match FrameSynchronization::new(device.render.raw()) {
+                Ok(synchronization) => synchronization,
+                Err(error) => {
+                    device.render.raw().destroy_command_pool(command_pool, None);
+                    return Err(error);
+                }
+            };
 
             let mut renderer = Self {
                 device,
