@@ -9,7 +9,7 @@ use crate::{
     windows::message_pump::{MessagePumpProgress, WindowsMessagePump},
 };
 
-use super::{Result, WindowHost};
+use super::{Result, host::WindowHost};
 
 /// One Component tree and the native Windows sharing its update boundary.
 pub(crate) struct WindowGroup {

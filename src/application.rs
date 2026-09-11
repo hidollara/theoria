@@ -10,8 +10,9 @@ use crate::{
     event::FifoDispatcher,
     reactive::Computed,
     window::{
-        WindowContent, WindowEvents, WindowHost,
+        WindowContent, WindowEvents,
         event_loop::{WindowEventLoop, WindowGroup},
+        host::WindowHost,
     },
 };
 

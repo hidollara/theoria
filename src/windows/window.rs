@@ -33,7 +33,7 @@ use crate::target::PresentationTarget;
 
 use crate::{
     surface::{SurfaceEvent, SurfaceSize},
-    window::NativeWindowEvent,
+    window::native_event::NativeWindowEvent,
 };
 
 mod pointer;
