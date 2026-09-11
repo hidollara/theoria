@@ -1,7 +1,7 @@
 use super::super::image::GpuAlphaMode;
 use super::canvas_plan::{can_record_directly, collect_images, required_scratch_images};
 use super::encoding::ImagePushConstants;
-use super::mesh_paint::{PathSampler, paint_triangle, point_to_clip, screen_space_tolerance};
+use super::mesh_paint::{paint_triangle, point_to_clip, screen_space_tolerance};
 use super::pipeline::composite_blend_factors;
 use super::*;
 use crate::canvas::{
@@ -10,7 +10,7 @@ use crate::canvas::{
 };
 use crate::color::Color;
 use crate::geometry::Point;
-use crate::path::{Path, Subpath};
+use crate::path::Path;
 use crate::tessellation::DEFAULT_TESSELLATION_TOLERANCE;
 
 #[test]
@@ -184,36 +184,6 @@ fn porter_duff_operators_use_premultiplied_alpha_factors() {
     assert_eq!(
         composite_blend_factors(Composite::Plus),
         (vk::BlendFactor::ONE, vk::BlendFactor::ONE)
-    );
-}
-
-#[test]
-fn along_path_offsets_restart_for_each_subpath() {
-    let path = Path::from_subpaths([
-        Subpath::new(Point::new(0.0, 0.0)).line_to(Point::new(10.0, 0.0)),
-        Subpath::new(Point::new(0.0, 20.0)).line_to(Point::new(100.0, 20.0)),
-    ]);
-    let sampler = PathSampler::new(&path, DEFAULT_TESSELLATION_TOLERANCE);
-
-    assert!((sampler.nearest_offset(Point::new(2.5, 1.0)).unwrap() - 0.25).abs() < 0.001);
-    assert!((sampler.nearest_offset(Point::new(25.0, 19.0)).unwrap() - 0.25).abs() < 0.001);
-    assert!(
-        (sampler
-            .nearest_sample(Point::new(2.5, 1.0))
-            .unwrap()
-            .signed_distance
-            - 1.0)
-            .abs()
-            < 0.001
-    );
-    assert!(
-        (sampler
-            .nearest_sample(Point::new(25.0, 19.0))
-            .unwrap()
-            .signed_distance
-            + 1.0)
-            .abs()
-            < 0.001
     );
 }
 

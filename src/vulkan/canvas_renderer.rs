@@ -18,6 +18,7 @@ use super::{
 mod canvas_plan;
 mod encoding;
 mod mesh_paint;
+mod path_sampling;
 mod pipeline;
 mod recording;
 mod resources;

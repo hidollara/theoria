@@ -19,7 +19,8 @@ use super::{
     canvas_plan::can_record_directly,
     encoding::{BlendCompositePushConstants, ImagePushConstants, TrianglePushConstants},
     full_viewport,
-    mesh_paint::{PathSampler, paint_triangle_prepared, screen_space_tolerance},
+    mesh_paint::{paint_triangle_prepared, screen_space_tolerance},
+    path_sampling::PathSampler,
     pipeline::{Pipeline, Pipelines},
 };
 use crate::vulkan::{
