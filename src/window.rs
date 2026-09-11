@@ -13,7 +13,6 @@ use crate::{
     canvas::{Canvas, CanvasView},
     color::Color,
     component::{Component, ComponentInstance, MountContext},
-    drive::{COMPONENT_WORK_SLICE, ComponentProgress, drive_components},
     event::{DispatchRoute, EventSink, EventSource, FifoDispatcher, channel},
     gesture::MovementThreshold,
     input::{pointer::PointerEvent, scroll::ScrollEvent},
@@ -23,9 +22,9 @@ use crate::{
     windows::window::Win32Window,
 };
 
-mod event_loop;
+pub(crate) mod event_loop;
 
-use self::event_loop::WindowEventLoop;
+use self::event_loop::{WindowEventLoop, WindowGroup};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -185,54 +184,15 @@ impl Window {
     /// Closing one Window removes only that Window; processing ends after the
     /// final Window closes or the thread receives its quit message.
     pub fn run_all(windows: impl IntoIterator<Item = Self>) -> Result<()> {
-        WindowEventLoop::new(windows).run()
-    }
-
-    /// Advances semantic Window work after the thread message pump has run.
-    fn process_ready_work(&mut self, presentation_wait: Duration) -> Result<WindowProgress> {
-        self.host.process_native_event()?;
-        self.host.publish_due_animation_frame(Instant::now());
-
-        let component_work_pending = match drive_components(
-            &mut self.dispatcher,
-            &mut self.components,
-            COMPONENT_WORK_SLICE,
-        )? {
-            ComponentProgress::Idle => false,
-            ComponentProgress::Pending => true,
-            ComponentProgress::Finished => return Ok(WindowProgress::Finished),
-        };
-
-        if self.host.close_requested && !component_work_pending {
-            self.host.unmount();
-            return Ok(WindowProgress::Finished);
-        }
-
-        self.host.advance_presentation(presentation_wait)?;
-
-        if component_work_pending || self.host.has_ready_work() {
-            Ok(WindowProgress::Pending)
-        } else if self.host.has_pending_presentation() {
-            Ok(WindowProgress::PresentationPending)
-        } else {
-            Ok(WindowProgress::Idle)
-        }
-    }
-
-    fn has_ready_work(&self) -> bool {
-        self.host.has_ready_work()
-    }
-
-    fn request_redraw_if_needed(&mut self) {
-        self.host.request_redraw_if_needed();
-    }
-
-    fn prepare_animation_frame(&mut self, now: Instant) {
-        self.host.prepare_animation_frame(now);
-    }
-
-    fn time_until_animation_frame(&self, now: Instant) -> Option<Duration> {
-        self.host.time_until_animation_frame(now)
+        let groups = windows.into_iter().map(|window| {
+            let Self {
+                dispatcher,
+                components,
+                host,
+            } = window;
+            WindowGroup::new(dispatcher, components, [host])
+        });
+        WindowEventLoop::new(groups).run()
     }
 }
 
@@ -420,14 +380,6 @@ impl WindowHost {
         self.output.redraw_needed.set(false);
         Ok(PresentationProgress::Complete)
     }
-}
-
-#[derive(Clone, Copy)]
-enum WindowProgress {
-    Idle,
-    Pending,
-    PresentationPending,
-    Finished,
 }
 
 enum PresentationProgress {

@@ -1,61 +1,114 @@
-//! Thread-level driving of native messages and Window work.
+//! Thread-level driving of native messages, Component work, and presentation.
 
 use std::time::{Duration, Instant};
 
 use crate::{
-    drive::PRESENTATION_WAIT_SLICE,
+    component::ComponentInstance,
+    drive::{COMPONENT_WORK_SLICE, ComponentProgress, PRESENTATION_WAIT_SLICE, drive_components},
+    event::FifoDispatcher,
     windows::message_pump::{MessagePumpProgress, WindowsMessagePump},
 };
 
-use super::{Result, Window, WindowProgress};
+use super::{Result, WindowHost};
 
-/// Drives Windows through the Win32 message queue of their GUI thread.
-///
-/// Keeping the thread message-pump capability here avoids assigning ownership
-/// of that shared queue to any individual native Window.
-pub(super) struct WindowEventLoop {
+/// One Component tree and the native Windows sharing its update boundary.
+pub(crate) struct WindowGroup {
+    dispatcher: FifoDispatcher,
+    components: ComponentInstance,
+    windows: Vec<WindowHost>,
+    component_work_pending: bool,
+}
+
+impl WindowGroup {
+    pub(crate) fn new(
+        dispatcher: FifoDispatcher,
+        components: ComponentInstance,
+        windows: impl IntoIterator<Item = WindowHost>,
+    ) -> Self {
+        let mut windows: Vec<_> = windows.into_iter().collect();
+        for window in &mut windows {
+            window.request_redraw_if_needed();
+        }
+        Self {
+            dispatcher,
+            components,
+            windows,
+            // Construction may have submitted deferred events. Start by
+            // polling rather than sleeping without inspecting the queue.
+            component_work_pending: true,
+        }
+    }
+
+    fn prepare_animation_frames(&mut self, now: Instant) {
+        for window in &mut self.windows {
+            window.prepare_animation_frame(now);
+        }
+    }
+
+    fn time_until_animation_frame(&self, now: Instant) -> Option<Duration> {
+        self.windows
+            .iter()
+            .filter_map(|window| window.time_until_animation_frame(now))
+            .min()
+    }
+
+    fn is_idle(&self) -> bool {
+        !self.component_work_pending
+            && self
+                .windows
+                .iter()
+                .all(|window| !window.has_ready_work() && !window.has_pending_presentation())
+    }
+
+    fn process_ready_work(&mut self, now: Instant) -> Result<bool> {
+        for window in &mut self.windows {
+            window.process_native_event()?;
+            window.publish_due_animation_frame(now);
+        }
+
+        self.component_work_pending = match drive_components(
+            &mut self.dispatcher,
+            &mut self.components,
+            COMPONENT_WORK_SLICE,
+        )? {
+            ComponentProgress::Idle => false,
+            ComponentProgress::Pending => true,
+            ComponentProgress::Finished => return Ok(false),
+        };
+
+        if !self.component_work_pending {
+            for window in self.windows.iter().filter(|window| window.is_closing()) {
+                window.unmount();
+            }
+            self.windows.retain(|window| !window.is_closing());
+        }
+        Ok(!self.windows.is_empty())
+    }
+}
+
+/// Drives all Window groups using their shared current-thread Win32 queue.
+pub(crate) struct WindowEventLoop {
     message_pump: WindowsMessagePump,
-    windows: Vec<DrivenWindow>,
+    groups: Vec<WindowGroup>,
     next_presentation_wait: usize,
 }
 
-struct DrivenWindow {
-    window: Window,
-    progress: WindowProgress,
-}
-
 impl WindowEventLoop {
-    pub(super) fn new(windows: impl IntoIterator<Item = Window>) -> Self {
-        let windows = windows
-            .into_iter()
-            .map(|mut window| {
-                window.request_redraw_if_needed();
-                let progress = if window.has_ready_work() {
-                    WindowProgress::Pending
-                } else {
-                    WindowProgress::Idle
-                };
-                DrivenWindow { window, progress }
-            })
-            .collect();
+    pub(crate) fn new(groups: impl IntoIterator<Item = WindowGroup>) -> Self {
         Self {
             message_pump: WindowsMessagePump::new(),
-            windows,
+            groups: groups.into_iter().collect(),
             next_presentation_wait: 0,
         }
     }
 
-    pub(super) fn run(mut self) -> Result<()> {
-        while !self.windows.is_empty() {
+    pub(crate) fn run(mut self) -> Result<()> {
+        while !self.groups.is_empty() {
             let now = Instant::now();
-            for window in &mut self.windows {
-                window.window.prepare_animation_frame(now);
+            for group in &mut self.groups {
+                group.prepare_animation_frames(now);
             }
-            let all_idle = self
-                .windows
-                .iter()
-                .all(|window| matches!(window.progress, WindowProgress::Idle));
-            let message_progress = if all_idle {
+            let message_progress = if self.groups.iter().all(WindowGroup::is_idle) {
                 if let Some(wait) = self.time_until_animation_frame(now) {
                     self.message_pump.wait_for(wait)?
                 } else {
@@ -68,6 +121,19 @@ impl WindowEventLoop {
                 break;
             }
 
+            let now = Instant::now();
+            let mut index = 0;
+            while index < self.groups.len() {
+                if self.groups[index].process_ready_work(now)? {
+                    index += 1;
+                } else {
+                    self.groups.remove(index);
+                }
+            }
+            if self.groups.is_empty() {
+                break;
+            }
+
             let waiting_window = if matches!(message_progress, MessagePumpProgress::Idle) {
                 self.next_window_waiting_for_presentation()
             } else {
@@ -77,39 +143,54 @@ impl WindowEventLoop {
                 self.next_presentation_wait = index + 1;
             }
 
-            for (index, window) in self.windows.iter_mut().enumerate() {
-                let presentation_wait = if Some(index) == waiting_window {
-                    PRESENTATION_WAIT_SLICE
-                } else {
-                    Duration::ZERO
-                };
-                window.progress = window.window.process_ready_work(presentation_wait)?;
+            let mut flat_index = 0;
+            for group in &mut self.groups {
+                for window in &mut group.windows {
+                    let wait = if Some(flat_index) == waiting_window {
+                        PRESENTATION_WAIT_SLICE
+                    } else {
+                        Duration::ZERO
+                    };
+                    window.advance_presentation(wait)?;
+                    flat_index += 1;
+                }
             }
-            self.windows
-                .retain(|window| !matches!(window.progress, WindowProgress::Finished));
-            if !self.windows.is_empty() {
-                self.next_presentation_wait %= self.windows.len();
-            }
+            self.next_presentation_wait %= flat_index;
         }
         Ok(())
     }
 
     fn next_window_waiting_for_presentation(&self) -> Option<usize> {
-        let count = self.windows.len();
-        (0..count)
-            .map(|offset| (self.next_presentation_wait + offset) % count)
-            .find(|&index| {
-                matches!(
-                    self.windows[index].progress,
-                    WindowProgress::PresentationPending
-                )
+        let count = self
+            .groups
+            .iter()
+            .flat_map(|group| group.windows.iter())
+            .count();
+        if count == 0 {
+            return None;
+        }
+        let start = self.next_presentation_wait % count;
+        let windows = || {
+            self.groups
+                .iter()
+                .flat_map(|group| group.windows.iter())
+                .enumerate()
+        };
+        windows()
+            .skip(start)
+            .find(|(_, window)| window.has_pending_presentation())
+            .or_else(|| {
+                windows()
+                    .take(start)
+                    .find(|(_, window)| window.has_pending_presentation())
             })
+            .map(|(index, _)| index)
     }
 
     fn time_until_animation_frame(&self, now: Instant) -> Option<Duration> {
-        self.windows
+        self.groups
             .iter()
-            .filter_map(|window| window.window.time_until_animation_frame(now))
+            .filter_map(|group| group.time_until_animation_frame(now))
             .min()
     }
 }

@@ -9,12 +9,11 @@ use crate::{
     component::{ComponentInstance, MountContext},
     event::FifoDispatcher,
     reactive::Computed,
-    window::{WindowContent, WindowEvents, WindowHost},
+    window::{
+        WindowContent, WindowEvents, WindowHost,
+        event_loop::{WindowEventLoop, WindowGroup},
+    },
 };
-
-mod event_loop;
-
-use self::event_loop::ApplicationEventLoop;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -55,7 +54,12 @@ impl Application {
     /// Drives native messages, Component work, and presentation until the last
     /// Window closes or the root Component unmounts.
     pub fn run(self) -> Result<()> {
-        ApplicationEventLoop::new(self).run()
+        let Self {
+            dispatcher,
+            components,
+            windows,
+        } = self;
+        WindowEventLoop::new([WindowGroup::new(dispatcher, components, windows)]).run()
     }
 }
 
