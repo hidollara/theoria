@@ -1,7 +1,7 @@
 use super::super::image::GpuAlphaMode;
 use super::canvas_plan::{can_record_directly, collect_images, required_scratch_images};
 use super::encoding::ImagePushConstants;
-use super::mesh_paint::{paint_triangle, point_to_clip, screen_space_tolerance};
+use super::mesh_paint::paint_triangle;
 use super::pipeline::composite_blend_factors;
 use super::*;
 use crate::canvas::{
@@ -10,8 +10,6 @@ use crate::canvas::{
 };
 use crate::color::Color;
 use crate::geometry::Point;
-use crate::path::Path;
-use crate::tessellation::DEFAULT_TESSELLATION_TOLERANCE;
 
 #[test]
 fn image_is_a_raster_boundary_while_canvas_color_field_stays_semantic() {
@@ -83,28 +81,6 @@ fn four_sample_msaa_is_preferred_with_a_single_sample_fallback() {
         choose_sample_count(vk::SampleCountFlags::TYPE_1 | vk::SampleCountFlags::TYPE_2),
         vk::SampleCountFlags::TYPE_1
     );
-}
-
-#[test]
-fn path_tolerance_tracks_target_pixel_scale() {
-    let path = Path::polyline([Point::new(0.0, 0.0), Point::new(1.0, 1.0)]);
-    let identity = screen_space_tolerance(&path, Projective2::IDENTITY, 100.0, 100.0);
-    let enlarged = screen_space_tolerance(
-        &path,
-        Projective2::from_rows([[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 1.0]]),
-        100.0,
-        100.0,
-    );
-    let reduced = screen_space_tolerance(
-        &path,
-        Projective2::from_rows([[0.1, 0.0, 0.0], [0.0, 0.1, 0.0], [0.0, 0.0, 1.0]]),
-        100.0,
-        100.0,
-    );
-
-    assert!((identity - DEFAULT_TESSELLATION_TOLERANCE / 100.0).abs() < 1.0e-6);
-    assert!((enlarged - identity / 10.0).abs() < 1.0e-6);
-    assert!((reduced - identity * 10.0).abs() < 1.0e-6);
 }
 
 #[test]
@@ -184,56 +160,6 @@ fn porter_duff_operators_use_premultiplied_alpha_factors() {
     assert_eq!(
         composite_blend_factors(Composite::Plus),
         (vk::BlendFactor::ONE, vk::BlendFactor::ONE)
-    );
-}
-
-#[test]
-fn converts_canvas_corners_to_clip_space() {
-    let view = CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(800.0, 600.0)).unwrap();
-    assert_eq!(
-        point_to_clip(Point::new(0.0, 0.0), view),
-        [-1.0, 1.0, 0.0, 1.0]
-    );
-    assert_eq!(
-        point_to_clip(Point::new(800.0, 600.0), view),
-        [1.0, -1.0, 0.0, 1.0]
-    );
-}
-
-#[test]
-fn applies_view_transform_before_projection() {
-    let view = CanvasView::axis_aligned(Point::new(100.0, 50.0), Point::new(200.0, 100.0)).unwrap();
-    assert_eq!(
-        point_to_clip(Point::new(100.0, 50.0), view),
-        [-1.0, 1.0, 0.0, 1.0]
-    );
-    assert_eq!(
-        point_to_clip(Point::new(200.0, 100.0), view),
-        [1.0, -1.0, 0.0, 1.0]
-    );
-}
-
-#[test]
-fn preserves_projective_w_until_the_gpu_divide() {
-    let quad = [
-        Point::new(-2.0, -1.0),
-        Point::new(2.0, -1.0),
-        Point::new(1.0, 1.0),
-        Point::new(-1.0, 1.0),
-    ];
-    let [p00, p10, p11, p01] = quad;
-    let view = CanvasView::projective(p00, p10, p11, p01).unwrap();
-    let expected_ndc = [[-1.0, 1.0], [1.0, 1.0], [1.0, -1.0], [-1.0, -1.0]];
-
-    let clip_positions = quad.map(|point| point_to_clip(point, view));
-    for (clip, expected) in clip_positions.into_iter().zip(expected_ndc) {
-        assert!((clip[0] / clip[3] - expected[0]).abs() < 0.001);
-        assert!((clip[1] / clip[3] - expected[1]).abs() < 0.001);
-    }
-    assert!(
-        clip_positions
-            .windows(2)
-            .any(|pair| (pair[0][3] - pair[1][3]).abs() > 0.001)
     );
 }
 

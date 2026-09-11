@@ -6,6 +6,8 @@ use crate::{
     transform::Projective2,
 };
 
+use super::view_space::transformed_point_to_clip;
+
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub(super) struct BlendCompositePushConstants {
@@ -142,16 +144,6 @@ impl ImagePushConstants {
 pub(super) struct ImageVertex {
     position: [f32; 4],
     pub(super) uv: [f32; 4],
-}
-
-fn transformed_point_to_clip(point: Point, canvas_to_view: Projective2) -> [f32; 4] {
-    let transformed = canvas_to_view.transform_homogeneous(point);
-    [
-        transformed.x * 2.0 - transformed.z,
-        transformed.z - transformed.y * 2.0,
-        0.0,
-        transformed.z,
-    ]
 }
 
 #[cfg(test)]

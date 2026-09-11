@@ -22,6 +22,7 @@ mod path_sampling;
 mod pipeline;
 mod recording;
 mod resources;
+mod view_space;
 
 use crate::vulkan::one_shot::OneShotCommands;
 use canvas_plan::{collect_images, required_scratch_images};

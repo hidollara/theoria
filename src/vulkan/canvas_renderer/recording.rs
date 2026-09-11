@@ -19,9 +19,10 @@ use super::{
     canvas_plan::can_record_directly,
     encoding::{BlendCompositePushConstants, ImagePushConstants, TrianglePushConstants},
     full_viewport,
-    mesh_paint::{paint_triangle_prepared, screen_space_tolerance},
+    mesh_paint::paint_triangle_prepared,
     path_sampling::PathSampler,
     pipeline::{Pipeline, Pipelines},
+    view_space::screen_space_tolerance,
 };
 use crate::vulkan::{
     image::ImageCache, image_layout::transition_image, scratch_image::ScratchImage,
