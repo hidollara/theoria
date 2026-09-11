@@ -54,6 +54,28 @@ pub(super) struct Pipeline {
     pub(super) handle: vk::Pipeline,
 }
 
+struct PipelineGuard<'a> {
+    device: &'a ash::Device,
+    pipeline: Option<Pipeline>,
+}
+
+impl PipelineGuard<'_> {
+    fn into_pipeline(mut self) -> Pipeline {
+        self.pipeline.take().unwrap()
+    }
+}
+
+impl Drop for PipelineGuard<'_> {
+    fn drop(&mut self) {
+        if let Some(pipeline) = self.pipeline.take() {
+            unsafe {
+                self.device.destroy_pipeline(pipeline.handle, None);
+                self.device.destroy_pipeline_layout(pipeline.layout, None);
+            }
+        }
+    }
+}
+
 pub(super) struct Pipelines {
     pub(super) format: vk::Format,
     pub(super) sample_count: vk::SampleCountFlags,
@@ -91,7 +113,7 @@ pub(super) unsafe fn create_pipelines(
             Composite::SourceOver,
         )?
     };
-    let image = match unsafe {
+    let image = unsafe {
         create_pipeline(
             device,
             color_format,
@@ -102,18 +124,9 @@ pub(super) unsafe fn create_pipelines(
             &[image_descriptor_set_layout],
             sample_count,
             Composite::SourceOver,
-        )
-    } {
-        Ok(image) => image,
-        Err(error) => {
-            unsafe {
-                device.destroy_pipeline(triangle.handle, None);
-                device.destroy_pipeline_layout(triangle.layout, None);
-            }
-            return Err(error);
-        }
+        )?
     };
-    let source_over = match unsafe {
+    let source_over = unsafe {
         create_pipeline(
             device,
             color_format,
@@ -124,25 +137,14 @@ pub(super) unsafe fn create_pipelines(
             &[image_descriptor_set_layout],
             vk::SampleCountFlags::TYPE_1,
             Composite::SourceOver,
-        )
-    } {
-        Ok(composite) => composite,
-        Err(error) => {
-            unsafe {
-                for pipeline in [triangle, image] {
-                    device.destroy_pipeline(pipeline.handle, None);
-                    device.destroy_pipeline_layout(pipeline.layout, None);
-                }
-            }
-            return Err(error);
-        }
+        )?
     };
     let mut composites = HashMap::from([(Composite::SourceOver, source_over)]);
     for composite in Composite::ALL {
         if composite == Composite::SourceOver {
             continue;
         }
-        let composite_pipeline = match unsafe {
+        let composite_pipeline = unsafe {
             create_pipeline(
                 device,
                 color_format,
@@ -153,25 +155,11 @@ pub(super) unsafe fn create_pipelines(
                 &[image_descriptor_set_layout],
                 sample_count,
                 composite,
-            )
-        } {
-            Ok(composite) => composite,
-            Err(error) => {
-                unsafe {
-                    for pipeline in [triangle, image]
-                        .into_iter()
-                        .chain(composites.into_values())
-                    {
-                        device.destroy_pipeline(pipeline.handle, None);
-                        device.destroy_pipeline_layout(pipeline.layout, None);
-                    }
-                }
-                return Err(error);
-            }
+            )?
         };
         composites.insert(composite, composite_pipeline);
     }
-    let mask = match unsafe {
+    let mask = unsafe {
         create_pipeline(
             device,
             color_format,
@@ -182,23 +170,9 @@ pub(super) unsafe fn create_pipelines(
             &[image_descriptor_set_layout],
             sample_count,
             Composite::DestinationIn,
-        )
-    } {
-        Ok(mask) => mask,
-        Err(error) => {
-            unsafe {
-                for pipeline in [triangle, image]
-                    .into_iter()
-                    .chain(composites.into_values())
-                {
-                    device.destroy_pipeline(pipeline.handle, None);
-                    device.destroy_pipeline_layout(pipeline.layout, None);
-                }
-            }
-            return Err(error);
-        }
+        )?
     };
-    let present = match unsafe {
+    let present = unsafe {
         create_pipeline(
             device,
             color_format,
@@ -209,23 +183,9 @@ pub(super) unsafe fn create_pipelines(
             &[image_descriptor_set_layout],
             vk::SampleCountFlags::TYPE_1,
             Composite::SourceOver,
-        )
-    } {
-        Ok(present) => present,
-        Err(error) => {
-            unsafe {
-                for pipeline in [triangle, image, mask]
-                    .into_iter()
-                    .chain(composites.into_values())
-                {
-                    device.destroy_pipeline(pipeline.handle, None);
-                    device.destroy_pipeline_layout(pipeline.layout, None);
-                }
-            }
-            return Err(error);
-        }
+        )?
     };
-    let blend = match unsafe {
+    let blend = unsafe {
         create_pipeline(
             device,
             color_format,
@@ -236,23 +196,9 @@ pub(super) unsafe fn create_pipelines(
             &[image_descriptor_set_layout, image_descriptor_set_layout],
             sample_count,
             Composite::Copy,
-        )
-    } {
-        Ok(blend) => blend,
-        Err(error) => {
-            unsafe {
-                for pipeline in [triangle, image, mask, present]
-                    .into_iter()
-                    .chain(composites.into_values())
-                {
-                    device.destroy_pipeline(pipeline.handle, None);
-                    device.destroy_pipeline_layout(pipeline.layout, None);
-                }
-            }
-            return Err(error);
-        }
+        )?
     };
-    let coverage = match unsafe {
+    let coverage = unsafe {
         create_pipeline(
             device,
             color_format,
@@ -267,32 +213,21 @@ pub(super) unsafe fn create_pipelines(
             ],
             sample_count,
             Composite::Copy,
-        )
-    } {
-        Ok(coverage) => coverage,
-        Err(error) => {
-            unsafe {
-                for pipeline in [triangle, image, mask, present, blend]
-                    .into_iter()
-                    .chain(composites.into_values())
-                {
-                    device.destroy_pipeline(pipeline.handle, None);
-                    device.destroy_pipeline_layout(pipeline.layout, None);
-                }
-            }
-            return Err(error);
-        }
+        )?
     };
     Ok(Pipelines {
         format: color_format,
         sample_count,
-        triangle,
-        image,
-        composites,
-        mask,
-        present,
-        blend,
-        coverage,
+        triangle: triangle.into_pipeline(),
+        image: image.into_pipeline(),
+        composites: composites
+            .into_iter()
+            .map(|(composite, pipeline)| (composite, pipeline.into_pipeline()))
+            .collect(),
+        mask: mask.into_pipeline(),
+        present: present.into_pipeline(),
+        blend: blend.into_pipeline(),
+        coverage: coverage.into_pipeline(),
     })
 }
 
@@ -324,8 +259,8 @@ pub(super) fn composite_blend_factors(composite: Composite) -> (vk::BlendFactor,
 }
 
 #[allow(clippy::too_many_arguments)]
-unsafe fn create_pipeline(
-    device: &ash::Device,
+unsafe fn create_pipeline<'a>(
+    device: &'a ash::Device,
     color_format: vk::Format,
     vertex_shader: &[u8],
     fragment_shader: &[u8],
@@ -334,7 +269,7 @@ unsafe fn create_pipeline(
     descriptor_set_layouts: &[vk::DescriptorSetLayout],
     sample_count: vk::SampleCountFlags,
     blend: Composite,
-) -> Result<Pipeline> {
+) -> Result<PipelineGuard<'a>> {
     let vertex_code = ash::util::read_spv(&mut Cursor::new(vertex_shader))?;
     let fragment_code = ash::util::read_spv(&mut Cursor::new(fragment_shader))?;
     let vertex_module = unsafe { ShaderModule::new(device, &vertex_code)? };
@@ -429,8 +364,11 @@ unsafe fn create_pipeline(
                 return Err(error.into());
             }
         };
-    Ok(Pipeline {
-        layout,
-        handle: pipeline,
+    Ok(PipelineGuard {
+        device,
+        pipeline: Some(Pipeline {
+            layout,
+            handle: pipeline,
+        }),
     })
 }
