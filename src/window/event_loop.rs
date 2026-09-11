@@ -1,6 +1,6 @@
 //! Thread-level driving of native messages and Window work.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::windows::message_pump::{MessagePumpProgress, WindowsMessagePump};
 
@@ -47,12 +47,20 @@ impl WindowEventLoop {
 
     pub(super) fn run(mut self) -> Result<()> {
         while !self.windows.is_empty() {
+            let now = Instant::now();
+            for window in &mut self.windows {
+                window.window.prepare_animation_frame(now);
+            }
             let all_idle = self
                 .windows
                 .iter()
                 .all(|window| matches!(window.progress, WindowProgress::Idle));
             let message_progress = if all_idle {
-                self.message_pump.wait()?
+                if let Some(wait) = self.time_until_animation_frame(now) {
+                    self.message_pump.wait_for(wait)?
+                } else {
+                    self.message_pump.wait()?
+                }
             } else {
                 self.message_pump.poll()
             };
@@ -96,5 +104,12 @@ impl WindowEventLoop {
                     WindowProgress::PresentationPending
                 )
             })
+    }
+
+    fn time_until_animation_frame(&self, now: Instant) -> Option<Duration> {
+        self.windows
+            .iter()
+            .filter_map(|window| window.window.time_until_animation_frame(now))
+            .min()
     }
 }

@@ -9,6 +9,7 @@ use std::{
 
 use crate::{
     Viewport,
+    animation::{AnimationFrame, FrameClock, FrameOpportunity, FrameScheduler},
     canvas::{Canvas, CanvasView},
     color::Color,
     component::{Component, ComponentInstance, MountContext},
@@ -39,6 +40,7 @@ pub struct WindowEvents<'window> {
     pointer: &'window EventSource<PointerEvent>,
     scroll: &'window EventSource<ScrollEvent>,
     close_requested: &'window EventSource<CloseRequested>,
+    frame_clock: &'window FrameClock,
     size: Value<SurfaceSize>,
     movement_threshold: MovementThreshold,
 }
@@ -58,6 +60,11 @@ impl WindowEvents<'_> {
 
     pub const fn close_requested(&self) -> &EventSource<CloseRequested> {
         self.close_requested
+    }
+
+    /// Returns this Window's request-driven animation frame clock.
+    pub fn frame_clock(&self) -> FrameClock {
+        self.frame_clock.clone()
     }
 
     /// Current drawable client-area size as a reactive value.
@@ -125,6 +132,7 @@ pub(crate) struct WindowHost {
     presenter: Presenter,
     canvas_renderer: CanvasRenderer,
     native: Win32Window,
+    frames: FrameScheduler,
     output: Rc<RenderOutput>,
     presentation_pending: bool,
     close_requested: bool,
@@ -184,6 +192,7 @@ impl Window {
     /// Advances semantic Window work after the thread message pump has run.
     fn process_ready_work(&mut self, presentation_wait: Duration) -> Result<WindowProgress> {
         self.host.process_native_event()?;
+        self.host.publish_due_animation_frame(Instant::now());
 
         let component_work_pending = match self.drive_components(COMPONENT_WORK_TIME)? {
             ComponentProgress::Idle => false,
@@ -218,6 +227,14 @@ impl Window {
     fn request_redraw_if_needed(&mut self) {
         self.host.request_redraw_if_needed();
     }
+
+    fn prepare_animation_frame(&mut self, now: Instant) {
+        self.host.prepare_animation_frame(now);
+    }
+
+    fn time_until_animation_frame(&self, now: Instant) -> Option<Duration> {
+        self.host.time_until_animation_frame(now)
+    }
 }
 
 impl WindowHost {
@@ -229,6 +246,7 @@ impl WindowHost {
         build: impl FnOnce(&mut MountContext<'_>, &WindowEvents<'_>) -> Computed<WindowContent>,
     ) -> Result<Self> {
         let native = Win32Window::new(title, width, height)?;
+        let frames = FrameScheduler::new();
         let presenter = Presenter::new(native.presentation_target())?;
         let canvas_renderer = CanvasRenderer::new(presenter.device());
         let output = Rc::new(RenderOutput::default());
@@ -244,6 +262,13 @@ impl WindowHost {
 
         context.mount_with(|context| {
             let size = context.create_state(initial_size);
+            let animation_frame = context.create_state(AnimationFrame::default());
+            let frame_clock = frames.clock(animation_frame.value());
+            let sample_frame = frames.sampler();
+            let animation_frames = context.receive(move |_: FrameOpportunity, context| {
+                context.set(&animation_frame, sample_frame());
+            });
+            assert!(context.connect_cloned(frames.opportunities(), &animation_frames));
             let (surface, surface_events) = context.event_source::<SurfaceEvent>();
             let (pointer, pointer_events) = context.event_source::<PointerEvent>();
             let (scroll, scroll_events) = context.event_source::<ScrollEvent>();
@@ -253,6 +278,7 @@ impl WindowHost {
                 pointer: &pointer,
                 scroll: &scroll,
                 close_requested: &close_requested,
+                frame_clock: &frame_clock,
                 size: size.value(),
                 movement_threshold,
             };
@@ -284,6 +310,7 @@ impl WindowHost {
             presenter,
             canvas_renderer,
             native,
+            frames,
             output,
             presentation_pending: false,
             close_requested: false,
@@ -316,6 +343,20 @@ impl WindowHost {
             self.close_requested = true;
         }
         Ok(())
+    }
+
+    pub(crate) fn prepare_animation_frame(&mut self, now: Instant) {
+        let size = self.native.size();
+        self.frames
+            .prepare(now, size.width != 0 && size.height != 0);
+    }
+
+    pub(crate) fn time_until_animation_frame(&self, now: Instant) -> Option<Duration> {
+        self.frames.time_until_frame(now)
+    }
+
+    pub(crate) fn publish_due_animation_frame(&mut self, now: Instant) {
+        self.frames.publish_due(now);
     }
 
     pub(crate) fn has_ready_work(&self) -> bool {

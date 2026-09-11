@@ -1,6 +1,6 @@
 //! Thread-level driving of one multi-Window Application.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::{
     application::{Application, Result},
@@ -33,8 +33,16 @@ impl ApplicationEventLoop {
 
     pub(super) fn run(mut self) -> Result<()> {
         while !self.application.windows.is_empty() && !self.application.components.is_finished() {
+            let now = Instant::now();
+            for window in &mut self.application.windows {
+                window.prepare_animation_frame(now);
+            }
             let message_progress = if self.is_idle() {
-                self.message_pump.wait()?
+                if let Some(wait) = self.time_until_animation_frame(now) {
+                    self.message_pump.wait_for(wait)?
+                } else {
+                    self.message_pump.wait()?
+                }
             } else {
                 self.message_pump.poll()
             };
@@ -42,8 +50,10 @@ impl ApplicationEventLoop {
                 break;
             }
 
+            let now = Instant::now();
             for window in &mut self.application.windows {
                 window.process_native_event()?;
+                window.publish_due_animation_frame(now);
             }
 
             self.component_work_pending = match drive_components(
@@ -109,5 +119,13 @@ impl ApplicationEventLoop {
         (0..count)
             .map(|offset| (self.next_presentation_wait + offset) % count)
             .find(|&index| self.application.windows[index].has_pending_presentation())
+    }
+
+    fn time_until_animation_frame(&self, now: Instant) -> Option<Duration> {
+        self.application
+            .windows
+            .iter()
+            .filter_map(|window| window.time_until_animation_frame(now))
+            .min()
     }
 }
