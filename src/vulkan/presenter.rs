@@ -5,6 +5,7 @@ use std::{
 
 use ash::vk;
 
+use crate::vulkan::image_layout::transition_image;
 use crate::{surface::SurfaceSize, target::PresentationTarget};
 
 mod device;
@@ -15,7 +16,7 @@ use device::PresentationDevice;
 pub use device::RenderDevice;
 use frame::FrameSynchronization;
 pub use frame::{PresentFrame, PresentOutcome, RenderTarget};
-use swapchain::{SwapchainResources, transition_image};
+use swapchain::SwapchainResources;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 

@@ -5,12 +5,10 @@ use std::{error::Error, marker::PhantomData};
 use ash::vk;
 
 use crate::color::Color;
+use crate::vulkan::image_layout::transition_image;
 
 use super::swapchain::SwapchainResources;
-use super::{
-    device::PresentationDevice,
-    swapchain::{SurfaceRenderTarget, transition_image},
-};
+use super::{device::PresentationDevice, swapchain::SurfaceRenderTarget};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 

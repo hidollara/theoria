@@ -21,9 +21,10 @@ use super::{
     full_viewport,
     mesh_paint::{PathSampler, paint_triangle_prepared, screen_space_tolerance},
     pipeline::{Pipeline, Pipelines},
-    transition_image,
 };
-use crate::vulkan::{image::ImageCache, scratch_image::ScratchImage};
+use crate::vulkan::{
+    image::ImageCache, image_layout::transition_image, scratch_image::ScratchImage,
+};
 
 pub(super) struct CanvasRecorder<'a> {
     pub(super) device: &'a ash::Device,
