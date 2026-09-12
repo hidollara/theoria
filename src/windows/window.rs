@@ -70,7 +70,6 @@ impl Win32Window {
                 }
             };
             state.finish_initialization(actual_size);
-            let _ = ShowWindow(hwnd, SW_SHOW);
 
             Ok(Self {
                 hwnd,
@@ -79,6 +78,11 @@ impl Win32Window {
                 _thread_affinity: PhantomData,
             })
         }
+    }
+
+    /// Makes this hidden native Window visible.
+    pub(crate) fn show(&self) {
+        let _ = unsafe { ShowWindow(self.hwnd, SW_SHOW) };
     }
 
     pub(crate) fn presentation_target(&self) -> PresentationTarget {

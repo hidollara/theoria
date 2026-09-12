@@ -15,7 +15,6 @@ use crate::{
 };
 
 mod drive;
-mod event_component;
 pub(crate) mod event_loop;
 pub(crate) mod group;
 mod host;

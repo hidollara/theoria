@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use crate::{
     animation::FrameScheduler,
     component::MountContext,
-    event::{DispatchRoute, EventSink, channel},
+    event::{DispatchRoute, EventSink},
     gesture::MovementThreshold,
     input::{pointer::PointerEvent, scroll::ScrollEvent},
     reactive::Computed,
@@ -14,13 +14,16 @@ use crate::{
 };
 
 use super::{
-    CloseRequested, Result, WindowContent, WindowEvents, event_component::WindowEventComponent,
-    native_event::NativeWindowEvent, presentation::WindowPresentation,
+    CloseRequested, Result, WindowContent, WindowEvents, native_event::NativeWindowEvent,
+    presentation::WindowPresentation,
 };
 
 /// Native and presentation state for one Window attached to a Component tree.
 pub(super) struct WindowHost {
-    native_events: EventSink<NativeWindowEvent>,
+    surface_input: EventSink<SurfaceEvent>,
+    pointer_input: EventSink<PointerEvent>,
+    scroll_input: EventSink<ScrollEvent>,
+    close_input: EventSink<CloseRequested>,
     unmount: EventSink<()>,
     native: Win32Window,
     frames: FrameScheduler,
@@ -45,17 +48,32 @@ impl WindowHost {
             horizontal,
             vertical,
         };
-        let (native_provider, native_source) = channel::<NativeWindowEvent>();
-        let native_events = EventSink::from(&native_provider);
+        let mut surface_input = None;
+        let mut pointer_input = None;
+        let mut scroll_input = None;
+        let mut close_input = None;
         let mut unmount = None;
 
         context.mount_with(|context| {
             let size = context.create_state(initial_size);
             let frame_clock = frames.mount(context);
-            let (surface, surface_events) = context.event_source::<SurfaceEvent>();
-            let (pointer, pointer_events) = context.event_source::<PointerEvent>();
-            let (scroll, scroll_events) = context.event_source::<ScrollEvent>();
-            let (close_requested, close_requests) = context.event_source::<CloseRequested>();
+            let (surface, input) = context.event_source::<SurfaceEvent>();
+            surface_input = Some(input);
+            let (pointer, input) = context.event_source::<PointerEvent>();
+            pointer_input = Some(input);
+            let (scroll, input) = context.event_source::<ScrollEvent>();
+            scroll_input = Some(input);
+            let (close_requested, input) = context.event_source::<CloseRequested>();
+            close_input = Some(input);
+
+            let surface_size = size.clone();
+            let update_size = context.receive(move |event: SurfaceEvent, context| {
+                if let SurfaceEvent::Resized(size) = event {
+                    context.set(&surface_size, size);
+                }
+            });
+            assert!(context.connect_cloned(&surface, update_size));
+
             let events = WindowEvents {
                 surface: &surface,
                 pointer: &pointer,
@@ -68,26 +86,24 @@ impl WindowHost {
             let content = build(context, &events);
             presentation.bind(context, content);
 
-            context.mount(WindowEventComponent::new(
-                native_source,
-                size,
-                surface_events,
-                pointer_events,
-                scroll_events,
-                close_requests,
-            ));
-            context.retain(native_provider);
             unmount = Some(context.receive(|(), context| context.unmount()));
         });
 
-        Ok(Self {
-            native_events,
+        let host = Self {
+            surface_input: surface_input.expect("the Window Component produces surface input"),
+            pointer_input: pointer_input.expect("the Window Component produces pointer input"),
+            scroll_input: scroll_input.expect("the Window Component produces scroll input"),
+            close_input: close_input.expect("the Window Component produces close input"),
             unmount: unmount.expect("the Window Component produces its unmount input"),
             native,
             frames,
             presentation,
             close_requested: false,
-        })
+        };
+        // Expose native callbacks only after every event and presentation
+        // connection needed to process them has been established.
+        host.native.show();
+        Ok(host)
     }
 
     pub(super) fn process_native_event(&mut self) -> Result<()> {
@@ -109,10 +125,21 @@ impl WindowHost {
         if matches!(event, NativeWindowEvent::CloseRequested) {
             self.close_requested = true;
         }
-        if DispatchRoute::Inline
-            .send(&self.native_events, event)
-            .is_err()
-        {
+        let delivered = match event {
+            NativeWindowEvent::Surface(event) => DispatchRoute::Inline
+                .send(&self.surface_input, event)
+                .is_ok(),
+            NativeWindowEvent::Pointer(event) => DispatchRoute::Inline
+                .send(&self.pointer_input, event)
+                .is_ok(),
+            NativeWindowEvent::Scroll(event) => DispatchRoute::Inline
+                .send(&self.scroll_input, event)
+                .is_ok(),
+            NativeWindowEvent::CloseRequested => DispatchRoute::Inline
+                .send(&self.close_input, CloseRequested)
+                .is_ok(),
+        };
+        if !delivered {
             self.close_requested = true;
         }
         Ok(())
