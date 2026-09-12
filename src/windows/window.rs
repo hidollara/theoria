@@ -20,7 +20,7 @@ use ::windows::{
 use crate::{
     PresentationTarget,
     surface::SurfaceSize,
-    window_backend::{WindowBackend, WindowBackendEvent},
+    window_backend::{WindowBackend, WindowEventBuffer},
 };
 
 mod pointer;
@@ -40,16 +40,16 @@ struct Win32Window {
 }
 
 impl Win32Window {
-    fn new(title: &str, width: u32, height: u32) -> Result<Self> {
+    fn new(title: &str, width: u32, height: u32, events: Rc<WindowEventBuffer>) -> Result<Self> {
         unsafe {
             let module = GetModuleHandleW(None)?;
             let hinstance = HINSTANCE(module.0);
             initialize_windowing(hinstance)?;
 
-            let state = Box::new(RefCell::new(WindowState::new(SurfaceSize {
-                width,
-                height,
-            })));
+            let state = Box::new(RefCell::new(WindowState::new(
+                SurfaceSize { width, height },
+                events,
+            )));
             let state_ptr = (&*state as *const RefCell<WindowState>).cast::<c_void>();
             let title: Vec<u16> = title.encode_utf16().chain(Some(0)).collect();
 
@@ -116,22 +116,15 @@ impl WindowBackend for Win32Window {
     fn request_redraw(&mut self) {
         self.state.borrow_mut().request_redraw();
     }
-
-    fn has_pending_event(&self) -> bool {
-        self.state.borrow().has_pending_event()
-    }
-
-    fn pop_event(&mut self) -> Option<WindowBackendEvent> {
-        self.state.borrow_mut().pop_event()
-    }
 }
 
 pub(crate) fn create_window(
     title: &str,
     width: u32,
     height: u32,
+    events: Rc<WindowEventBuffer>,
 ) -> Result<Box<dyn WindowBackend>> {
-    Ok(Box::new(Win32Window::new(title, width, height)?))
+    Ok(Box::new(Win32Window::new(title, width, height, events)?))
 }
 
 impl Drop for Win32Window {

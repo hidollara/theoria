@@ -14,7 +14,7 @@ use crate::{
     input::{pointer::PointerEvent, scroll::ScrollEvent},
     reactive::Computed,
     surface::SurfaceEvent,
-    window_backend::{WindowBackend, WindowBackendEvent},
+    window_backend::{WindowBackend, WindowBackendEvent, WindowEventBuffer},
     windows::create_window,
 };
 
@@ -28,6 +28,7 @@ pub(super) struct WindowHost {
     pointer_input: EventSink<PointerEvent>,
     scroll_input: EventSink<ScrollEvent>,
     close_input: EventSink<CloseRequested>,
+    events: Rc<WindowEventBuffer>,
     native: Box<dyn WindowBackend>,
     frames: FrameScheduler,
     presentation: WindowPresentation,
@@ -42,7 +43,8 @@ impl WindowHost {
         height: u32,
         build: impl FnOnce(&mut MountContext<'_>, &WindowEvents<'_>) -> Computed<WindowContent>,
     ) -> Result<Weak<RefCell<Self>>> {
-        let native = create_window(title, width, height)?;
+        let backend_events = Rc::new(WindowEventBuffer::new());
+        let native = create_window(title, width, height, Rc::clone(&backend_events))?;
         let frames = FrameScheduler::new();
         let presentation = WindowPresentation::new(native.presentation_target())?;
         let initial_size = native.size();
@@ -92,6 +94,7 @@ impl WindowHost {
                 pointer_input,
                 scroll_input,
                 close_input,
+                events: backend_events,
                 native,
                 frames,
                 presentation,
@@ -108,7 +111,7 @@ impl WindowHost {
     }
 
     pub(super) fn process_native_event(&mut self) -> Result<()> {
-        let Some(event) = self.native.pop_event() else {
+        let Some(event) = self.events.pop() else {
             return Ok(());
         };
         if matches!(
@@ -148,7 +151,7 @@ impl WindowHost {
     }
 
     pub(super) fn has_ready_work(&self) -> bool {
-        self.native.has_pending_event()
+        self.events.has_pending()
     }
 
     pub(super) fn process_scheduled_work(&mut self, now: Instant) {
