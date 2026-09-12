@@ -1,12 +1,14 @@
 //! Public construction of Windows sharing one Component boundary.
 
-use std::ops::{Deref, DerefMut};
+use std::{
+    ops::{Deref, DerefMut},
+    rc::Rc,
+};
 
-use crate::{component::MountContext, reactive::Computed};
+use crate::{component::MountContext, event_loop::EventLoopHandle, reactive::Computed};
 
 use super::{
     Result, WindowContent, WindowEvents,
-    event_loop::WindowEventLoop,
     mounted_group::{MountedWindowGroup, WindowGroupMounts},
 };
 
@@ -14,16 +16,18 @@ use super::{
 ///
 /// All Windows created during `build` share a Reactive graph, event dispatcher,
 /// and Effect synchronization boundary. Native presentation remains independent
-/// per Window. For independent Component boundaries on the same native message
-/// loop, create separate [`Window`](super::Window) values and use
-/// [`Window::run_all`](super::Window::run_all).
+/// per Window. Separate groups may register with the same [`EventLoopHandle`]
+/// while retaining independent Component boundaries.
 pub struct WindowGroup {
-    mounted: MountedWindowGroup,
+    _mounted: Rc<MountedWindowGroup>,
 }
 
 impl WindowGroup {
     /// Builds one shared Component root and all of its initial Windows.
-    pub fn new(build: impl FnOnce(&mut WindowGroupContext<'_, '_>) -> Result<()>) -> Result<Self> {
+    pub fn new(
+        event_loop: &EventLoopHandle,
+        build: impl FnOnce(&mut WindowGroupContext<'_, '_>) -> Result<()>,
+    ) -> Result<Self> {
         let mut build = Some(build);
         let mounted = MountedWindowGroup::mount(|context, windows| {
             let mut context = WindowGroupContext {
@@ -32,13 +36,8 @@ impl WindowGroup {
             };
             build.take().expect("WindowGroup build runs once")(&mut context)
         })?;
-        Ok(Self { mounted })
-    }
-
-    /// Drives native messages, Component work, and presentation until the last
-    /// Window closes or the shared root Component unmounts.
-    pub fn run(self) -> Result<()> {
-        WindowEventLoop::new([self.mounted]).run()
+        event_loop.register(&mounted)?;
+        Ok(Self { _mounted: mounted })
     }
 }
 

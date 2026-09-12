@@ -5,6 +5,7 @@ use theoria::{
         LinearGradient, MeshGradient, RadialGradient,
     },
     color::Color,
+    event_loop::EventLoop,
     geometry::Point,
     image::{Image, ImageError},
     math::Vector2,
@@ -16,6 +17,8 @@ use theoria::{
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut event_loop = EventLoop::new();
+    let event_loop_handle = event_loop.handle();
     let source_image = make_sample_image()?;
     let image_width = source_image.width();
     let image_height = source_image.height();
@@ -31,7 +34,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .expect("the sample image view is non-degenerate"),
     )?;
 
-    let window = Window::new(
+    let _window = Window::new(
+        &event_loop_handle,
         "Theoria — Canvas Sample",
         960,
         640,
@@ -233,7 +237,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             })
         },
     )?;
-    window.run()
+    event_loop.run()
 }
 
 fn ellipse_path(center: Point, radii: Vector2) -> Path {

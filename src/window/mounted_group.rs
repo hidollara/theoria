@@ -1,14 +1,15 @@
-//! Mounted Component work and Window registrations sharing one update boundary.
+//! Component work and Window registrations sharing one update boundary.
 
 use std::{
     cell::RefCell,
     rc::{Rc, Weak},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use crate::{
     component::{ComponentInstance, MountContext},
     event::FifoDispatcher,
+    event_loop::EventLoopParticipant,
     reactive::Computed,
 };
 
@@ -18,14 +19,74 @@ use super::{
     host::WindowHost,
 };
 
+/// One independently owned Window group registered non-owningly for driving.
 pub(super) struct MountedWindowGroup {
+    state: RefCell<WindowGroupState>,
+}
+
+impl MountedWindowGroup {
+    pub(super) fn mount(
+        build: impl FnOnce(&mut MountContext<'_>, &mut WindowGroupMounts) -> Result<()>,
+    ) -> Result<Rc<Self>> {
+        let state = WindowGroupState::mount(build)?;
+        let mounted = Rc::new(Self {
+            state: RefCell::new(state),
+        });
+        mounted.state.borrow_mut().request_initial_redraws();
+        Ok(mounted)
+    }
+}
+
+impl EventLoopParticipant for MountedWindowGroup {
+    fn is_finished(&self) -> bool {
+        self.state.borrow().is_finished()
+    }
+
+    fn prepare(&self, now: Instant) {
+        self.state.borrow_mut().prepare_scheduled_work(now);
+    }
+
+    fn next_deadline(&self) -> Option<Instant> {
+        self.state.borrow().next_deadline()
+    }
+
+    fn is_idle(&self) -> bool {
+        self.state.borrow().is_idle()
+    }
+
+    fn process_ready_work(&self, now: Instant) -> Result<()> {
+        self.state.borrow_mut().process_ready_work(now)
+    }
+
+    fn presentation_count(&self) -> usize {
+        self.state.borrow().windows().count()
+    }
+
+    fn presentation_pending(&self, index: usize) -> bool {
+        self.state
+            .borrow()
+            .windows()
+            .nth(index)
+            .is_some_and(|window| window.borrow().has_pending_presentation())
+    }
+
+    fn advance_presentation(&self, index: usize, wait: Duration) -> Result<()> {
+        let window = self.state.borrow().windows().nth(index);
+        if let Some(window) = window {
+            window.borrow_mut().advance_presentation(wait)?;
+        }
+        Ok(())
+    }
+}
+
+struct WindowGroupState {
     dispatcher: FifoDispatcher,
     components: ComponentInstance,
     windows: Vec<Weak<RefCell<WindowHost>>>,
 }
 
-impl MountedWindowGroup {
-    pub(super) fn mount(
+impl WindowGroupState {
+    fn mount(
         build: impl FnOnce(&mut MountContext<'_>, &mut WindowGroupMounts) -> Result<()>,
     ) -> Result<Self> {
         let dispatcher = FifoDispatcher::new();
@@ -48,32 +109,32 @@ impl MountedWindowGroup {
         })
     }
 
-    pub(super) fn request_initial_redraws(&mut self) {
+    fn request_initial_redraws(&mut self) {
         self.prune_windows();
         for window in self.windows() {
             window.borrow_mut().request_redraw_if_needed();
         }
     }
 
-    pub(super) fn is_finished(&self) -> bool {
+    fn is_finished(&self) -> bool {
         self.windows.iter().all(|window| window.strong_count() == 0)
             || self.components.is_finished()
     }
 
-    pub(super) fn prepare_scheduled_work(&mut self, now: Instant) {
+    fn prepare_scheduled_work(&mut self, now: Instant) {
         self.prune_windows();
         for window in self.windows() {
             window.borrow_mut().prepare_scheduled_work(now);
         }
     }
 
-    pub(super) fn next_deadline(&self) -> Option<Instant> {
+    fn next_deadline(&self) -> Option<Instant> {
         self.windows()
             .filter_map(|window| window.borrow().next_deadline())
             .min()
     }
 
-    pub(super) fn is_idle(&self) -> bool {
+    fn is_idle(&self) -> bool {
         !self.dispatcher.has_pending()
             && self.windows().all(|window| {
                 let window = window.borrow();
@@ -81,7 +142,7 @@ impl MountedWindowGroup {
             })
     }
 
-    pub(super) fn process_ready_work(&mut self, now: Instant) -> Result<bool> {
+    fn process_ready_work(&mut self, now: Instant) -> Result<()> {
         self.prune_windows();
         for window in self.windows() {
             let mut window = window.borrow_mut();
@@ -96,8 +157,7 @@ impl MountedWindowGroup {
         )?;
         match progress {
             ComponentProgress::Idle => {}
-            ComponentProgress::Pending => return Ok(true),
-            ComponentProgress::Finished => return Ok(false),
+            ComponentProgress::Pending | ComponentProgress::Finished => return Ok(()),
         }
 
         let closing: Vec<_> = self
@@ -108,10 +168,10 @@ impl MountedWindowGroup {
             window.borrow().unmount();
         }
         self.prune_windows();
-        Ok(self.windows.iter().any(|window| window.strong_count() != 0))
+        Ok(())
     }
 
-    pub(super) fn windows(&self) -> impl Iterator<Item = Rc<RefCell<WindowHost>>> + '_ {
+    fn windows(&self) -> impl Iterator<Item = Rc<RefCell<WindowHost>>> + '_ {
         self.windows.iter().filter_map(Weak::upgrade)
     }
 

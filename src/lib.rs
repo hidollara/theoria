@@ -1,6 +1,7 @@
 pub mod animation;
 pub mod canvas;
 pub mod color;
+pub mod event_loop;
 pub mod font;
 pub mod geometry;
 pub mod gesture;

@@ -1,6 +1,6 @@
 //! Public Window construction and semantic content.
 
-use std::error::Error;
+use std::{error::Error, rc::Rc};
 
 use crate::{
     animation::FrameClock,
@@ -8,6 +8,7 @@ use crate::{
     color::Color,
     component::MountContext,
     event::EventSource,
+    event_loop::EventLoopHandle,
     gesture::MovementThreshold,
     input::{pointer::PointerEvent, scroll::ScrollEvent},
     reactive::{Computed, Value},
@@ -15,7 +16,6 @@ use crate::{
 };
 
 mod drive;
-mod event_loop;
 mod group;
 mod host;
 mod mounted_group;
@@ -24,7 +24,7 @@ mod presentation;
 
 pub use self::group::{WindowGroup, WindowGroupContext};
 
-use self::{event_loop::WindowEventLoop, mounted_group::MountedWindowGroup};
+use self::mounted_group::MountedWindowGroup;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -116,11 +116,10 @@ impl WindowContent {
 ///
 /// Its concrete platform adapter is private. A Window publishes native input
 /// through typed event sources and presents the latest reactive Canvas result.
-/// Several Windows passed to [`run_all`](Self::run_all) share a native message
-/// loop while retaining separate Reactive graphs and Effect synchronization
-/// boundaries.
+/// Separate Windows may register with the same [`EventLoopHandle`] while
+/// retaining independent Reactive graphs and Effect synchronization boundaries.
 pub struct Window {
-    group: MountedWindowGroup,
+    _mounted: Rc<MountedWindowGroup>,
 }
 
 impl Window {
@@ -129,13 +128,14 @@ impl Window {
     /// `build` can create State, Computed values, Effects, event connections, and
     /// child components. Its return value is the Window's sole semantic output.
     pub fn new(
+        event_loop: &EventLoopHandle,
         title: &str,
         width: u32,
         height: u32,
         build: impl FnOnce(&mut MountContext<'_>, &WindowEvents<'_>) -> Computed<WindowContent>,
     ) -> Result<Self> {
         let mut build = Some(build);
-        let group = MountedWindowGroup::mount(|context, windows| {
+        let mounted = MountedWindowGroup::mount(|context, windows| {
             windows.mount_window(
                 context,
                 title,
@@ -144,21 +144,7 @@ impl Window {
                 build.take().expect("Window build runs once"),
             )
         })?;
-        Ok(Self { group })
-    }
-
-    /// Delivers native events and presents content until the Window closes.
-    pub fn run(self) -> Result<()> {
-        Self::run_all([self])
-    }
-
-    /// Drives several Windows on their shared current-thread message queue.
-    ///
-    /// Each Window keeps an independent Component tree and presentation state.
-    /// Closing one Window removes only that Window; processing ends after the
-    /// final Window closes or the thread receives its quit message.
-    pub fn run_all(windows: impl IntoIterator<Item = Self>) -> Result<()> {
-        let groups = windows.into_iter().map(|window| window.group);
-        WindowEventLoop::new(groups).run()
+        event_loop.register(&mounted)?;
+        Ok(Self { _mounted: mounted })
     }
 }

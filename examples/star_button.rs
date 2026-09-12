@@ -5,6 +5,7 @@ use theoria::{
     color::Color,
     component::{Component, MountContext},
     event::EventSource,
+    event_loop::EventLoop,
     font::Font,
     geometry::Point,
     gesture::{
@@ -148,10 +149,13 @@ impl Component for StarButton {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut event_loop = EventLoop::new();
+    let event_loop_handle = event_loop.handle();
     let font = Font::from_bytes(std::fs::read(r"C:\Windows\Fonts\segoeui.ttf")?)?;
     let star = star_path(Point::new(0.0, 0.0), 155.0, 68.0);
     let hit_region = HitRegion::fill(star.clone(), FillRule::NonZero);
-    let window = Window::new(
+    let _window = Window::new(
+        &event_loop_handle,
         "Theoria — Star Button",
         WIDTH,
         HEIGHT,
@@ -225,7 +229,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             })
         },
     )?;
-    window.run()
+    event_loop.run()
 }
 
 fn star_path(center: Point, outer_radius: f32, inner_radius: f32) -> Path {
