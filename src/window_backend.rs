@@ -42,7 +42,7 @@ impl WindowEventBuffer {
     pub(crate) fn request_redraw(&self) {
         let redraw = WindowBackendEvent::Surface(SurfaceEvent::RedrawRequested);
         let mut events = self.events.borrow_mut();
-        if !events.contains(&redraw) {
+        if events.back() != Some(&redraw) {
             events.push_back(redraw);
         }
     }
@@ -99,6 +99,26 @@ mod tests {
         events.request_redraw();
         events.request_redraw();
 
+        assert_eq!(
+            events.pop(),
+            Some(WindowBackendEvent::Surface(SurfaceEvent::RedrawRequested))
+        );
+        assert_eq!(events.pop(), None);
+    }
+
+    #[test]
+    fn redraw_coalescing_does_not_cross_an_intervening_event() {
+        let events = WindowEventBuffer::new();
+
+        events.request_redraw();
+        events.push(WindowBackendEvent::CloseRequested);
+        events.request_redraw();
+
+        assert_eq!(
+            events.pop(),
+            Some(WindowBackendEvent::Surface(SurfaceEvent::RedrawRequested))
+        );
+        assert_eq!(events.pop(), Some(WindowBackendEvent::CloseRequested));
         assert_eq!(
             events.pop(),
             Some(WindowBackendEvent::Surface(SurfaceEvent::RedrawRequested))

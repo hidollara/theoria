@@ -66,23 +66,15 @@ struct WindowHosts {
 impl WindowHosts {
     fn request_initial_redraws(&self) {
         self.prune();
-        for window in self.windows() {
+        for window in self.hosts.borrow().iter().filter_map(Weak::upgrade) {
             window.borrow_mut().request_redraw_if_needed();
         }
     }
 
     fn show(&self) {
-        for window in self.windows() {
+        for window in self.hosts.borrow().iter().filter_map(Weak::upgrade) {
             window.borrow().show();
         }
-    }
-
-    fn windows(&self) -> impl Iterator<Item = Rc<RefCell<WindowHost>>> + '_ {
-        self.hosts
-            .borrow()
-            .clone()
-            .into_iter()
-            .filter_map(|window| window.upgrade())
     }
 
     fn prune(&self) {
@@ -110,59 +102,76 @@ impl EventLoopParticipant for WindowHosts {
 
     fn prepare(&self, now: Instant) {
         self.prune();
-        for window in self.windows() {
+        for window in self.hosts.borrow().iter().filter_map(Weak::upgrade) {
             window.borrow_mut().prepare_scheduled_work(now);
         }
     }
 
     fn next_deadline(&self) -> Option<Instant> {
-        self.windows()
+        self.hosts
+            .borrow()
+            .iter()
+            .filter_map(Weak::upgrade)
             .filter_map(|window| window.borrow().next_deadline())
             .min()
     }
 
     fn is_idle(&self) -> bool {
-        self.windows().all(|window| {
-            let window = window.borrow();
-            !window.has_ready_work() && !window.has_pending_presentation()
-        })
+        self.hosts
+            .borrow()
+            .iter()
+            .filter_map(Weak::upgrade)
+            .all(|window| {
+                let window = window.borrow();
+                !window.has_ready_work() && !window.has_pending_presentation()
+            })
     }
 
     fn process_ready_work(&self, now: Instant) -> Result<()> {
         self.prune();
-        for window in self.windows() {
-            let mut window = window.borrow_mut();
-            window.process_native_event()?;
-            window.process_scheduled_work(now);
+        {
+            let hosts = self.hosts.borrow();
+            for window in hosts.iter().filter_map(Weak::upgrade) {
+                let mut window = window.borrow_mut();
+                window.process_native_event()?;
+                window.process_scheduled_work(now);
+            }
         }
         self.prune();
         Ok(())
     }
 
     fn has_waitable_work(&self) -> bool {
-        self.windows()
+        self.hosts
+            .borrow()
+            .iter()
+            .filter_map(Weak::upgrade)
             .any(|window| window.borrow().has_pending_presentation())
     }
 
     fn advance_waitable_work(&self, wait: Duration) -> Result<()> {
-        let windows: Vec<_> = self.windows().collect();
-        if windows.is_empty() {
+        let hosts = self.hosts.borrow();
+        if hosts.is_empty() {
             return Ok(());
         }
-        let start = self.next_waitable.get() % windows.len();
-        let selected = (start..windows.len())
-            .chain(0..start)
-            .find(|&index| windows[index].borrow().has_pending_presentation());
+        let start = self.next_waitable.get() % hosts.len();
+        let selected = (start..hosts.len()).chain(0..start).find(|&index| {
+            hosts[index]
+                .upgrade()
+                .is_some_and(|window| window.borrow().has_pending_presentation())
+        });
         if let Some(index) = selected {
             self.next_waitable.set(index + 1);
         }
-        for (index, window) in windows.into_iter().enumerate() {
-            let wait = if Some(index) == selected {
-                wait
-            } else {
-                Duration::ZERO
-            };
-            window.borrow_mut().advance_presentation(wait)?;
+        for (index, host) in hosts.iter().enumerate() {
+            if let Some(window) = host.upgrade() {
+                let window_wait = if Some(index) == selected {
+                    wait
+                } else {
+                    Duration::ZERO
+                };
+                window.borrow_mut().advance_presentation(window_wait)?;
+            }
         }
         Ok(())
     }

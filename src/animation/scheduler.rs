@@ -8,7 +8,9 @@ use std::{
 
 use crate::{
     component::MountContext,
-    event::{DispatchRoute, EventProvider, EventSource, channel},
+    event::{
+        DispatchOutcome, DispatchRoute, EventProvider, EventSource, SubmissionOutcome, channel,
+    },
     reactive::Value,
 };
 
@@ -117,7 +119,13 @@ impl FrameScheduler {
             return false;
         }
         let result = DispatchRoute::Inline.send(&self.provider, FrameOpportunity);
-        debug_assert!(result.is_ok(), "the FrameScheduler owns its Provider");
+        debug_assert!(
+            matches!(
+                result,
+                Ok(SubmissionOutcome::Completed(DispatchOutcome::Delivered))
+            ),
+            "the FrameScheduler owns its live Provider and publishes inline"
+        );
         true
     }
 

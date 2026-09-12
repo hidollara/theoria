@@ -9,7 +9,7 @@ use std::{
 use crate::{
     animation::FrameScheduler,
     component::MountContext,
-    event::{DispatchRoute, EventSink},
+    event::{DispatchOutcome, DispatchRoute, EventSink, SubmissionOutcome},
     gesture::MovementThreshold,
     input::{pointer::PointerEvent, scroll::ScrollEvent},
     reactive::Computed,
@@ -24,10 +24,7 @@ use super::{
 
 /// Native and presentation state for one Window attached to a Component tree.
 pub(super) struct WindowHost {
-    surface_input: EventSink<SurfaceEvent>,
-    pointer_input: EventSink<PointerEvent>,
-    scroll_input: EventSink<ScrollEvent>,
-    close_input: EventSink<CloseRequested>,
+    inputs: WindowInputs,
     events: Rc<WindowEventBuffer>,
     native: Box<dyn WindowBackend>,
     frames: FrameScheduler,
@@ -90,10 +87,12 @@ impl WindowHost {
             assert!(context.connect_cloned(&close_requested, close_window));
 
             let host = Rc::new(RefCell::new(Self {
-                surface_input,
-                pointer_input,
-                scroll_input,
-                close_input,
+                inputs: WindowInputs {
+                    surface: surface_input,
+                    pointer: pointer_input,
+                    scroll: scroll_input,
+                    close_requested: close_input,
+                },
                 events: backend_events,
                 native,
                 frames,
@@ -123,20 +122,7 @@ impl WindowHost {
         if let WindowBackendEvent::Surface(SurfaceEvent::Resized(size)) = event {
             self.presentation.resize(size)?;
         }
-        match event {
-            WindowBackendEvent::Surface(event) => {
-                let _ = DispatchRoute::Inline.send(&self.surface_input, event);
-            }
-            WindowBackendEvent::Pointer(event) => {
-                let _ = DispatchRoute::Inline.send(&self.pointer_input, event);
-            }
-            WindowBackendEvent::Scroll(event) => {
-                let _ = DispatchRoute::Inline.send(&self.scroll_input, event);
-            }
-            WindowBackendEvent::CloseRequested => {
-                let _ = DispatchRoute::Inline.send(&self.close_input, CloseRequested);
-            }
-        }
+        self.inputs.publish(event);
         Ok(())
     }
 
@@ -172,5 +158,34 @@ impl WindowHost {
         self.request_redraw_if_needed();
         self.presentation.advance(self.native.size(), wait)?;
         Ok(())
+    }
+}
+
+/// Component event inputs associated with one live native Window.
+struct WindowInputs {
+    surface: EventSink<SurfaceEvent>,
+    pointer: EventSink<PointerEvent>,
+    scroll: EventSink<ScrollEvent>,
+    close_requested: EventSink<CloseRequested>,
+}
+
+impl WindowInputs {
+    fn publish(&self, event: WindowBackendEvent) {
+        match event {
+            WindowBackendEvent::Surface(event) => Self::publish_to(&self.surface, event),
+            WindowBackendEvent::Pointer(event) => Self::publish_to(&self.pointer, event),
+            WindowBackendEvent::Scroll(event) => Self::publish_to(&self.scroll, event),
+            WindowBackendEvent::CloseRequested => {
+                Self::publish_to(&self.close_requested, CloseRequested);
+            }
+        }
+    }
+
+    fn publish_to<E: 'static>(sink: &EventSink<E>, event: E) {
+        let outcome = DispatchRoute::Inline.send(sink, event);
+        debug_assert!(matches!(
+            outcome,
+            Ok(SubmissionOutcome::Completed(DispatchOutcome::Delivered))
+        ));
     }
 }
