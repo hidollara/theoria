@@ -12,8 +12,9 @@ use theoria::{
     path::{
         ArcSize, ArcSweep, DashPattern, FillRule, LineCap, LineJoin, Path, StrokeStyle, Subpath,
     },
+    surface::SurfaceContent,
     transform::Affine2,
-    window::{Window, WindowContent},
+    window::Window,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -40,11 +41,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         960,
         640,
         move |context, events| {
-            let size = events.size();
+            let size = events.surface().size();
             context.create_computed(move |context| {
                 let size = *context.read(&size);
                 let image = &image;
-                (|| -> Result<WindowContent, Box<dyn std::error::Error>> {
+                (|| -> Result<SurfaceContent, Box<dyn std::error::Error>> {
                     let width = size.width.max(1) as f32;
                     let height = size.height.max(1) as f32;
                     let coverage_path = Path::new()
@@ -231,7 +232,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     )
                     .expect("the sample view quadrilateral is non-degenerate");
                     let clear_color = Color::rgba(0.025, 0.035, 0.055, 1.0)?;
-                    Ok(WindowContent::new(content, view, clear_color))
+                    Ok(SurfaceContent::new(content, view, clear_color))
                 })()
                 .expect("the Canvas sample uses valid fixed drawing parameters")
             })

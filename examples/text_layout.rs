@@ -5,9 +5,10 @@ use theoria::{
     font::Font,
     geometry::Point,
     math::Vector2,
+    surface::SurfaceContent,
     text::{OpenTypeFeatureTag, Span, Text, TextStyle},
     transform::Affine2,
-    window::{Window, WindowContent},
+    window::Window,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -23,7 +24,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         960,
         640,
         move |context, events| {
-            let size = events.size();
+            let size = events.surface().size();
             context.create_computed(move |context| {
                 let size = *context.read(&size);
                 let width = size.width.max(1) as f32;
@@ -82,7 +83,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let view =
                     CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(width, height))
                         .expect("a positive surface extent has a non-degenerate view");
-                WindowContent::new(
+                SurfaceContent::new(
                     canvas,
                     view,
                     Color::rgba(0.025, 0.035, 0.055, 1.0).expect("the fixed clear color is valid"),

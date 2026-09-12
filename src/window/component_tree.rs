@@ -11,9 +11,10 @@ use crate::{
     component_execution::ComponentExecution,
     event_loop::{EventLoopHandle, EventLoopParticipant},
     reactive::Computed,
+    surface::SurfaceContent,
 };
 
-use super::{Result, WindowContent, WindowEvents, host::WindowHost};
+use super::{Result, WindowCapabilities, host::WindowHost};
 
 /// Owns one Component tree together with the Window producers built beneath it.
 pub(super) struct WindowComponentTree {
@@ -189,7 +190,7 @@ impl WindowChildren {
         title: &str,
         width: u32,
         height: u32,
-        build: impl FnOnce(&mut MountContext<'_>, &WindowEvents<'_>) -> Computed<WindowContent>,
+        build: impl FnOnce(&mut MountContext<'_>, &WindowCapabilities) -> Computed<SurfaceContent>,
     ) -> Result<()> {
         self.hosts.push(WindowHost::mount_child(
             context, title, width, height, build,

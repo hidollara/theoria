@@ -11,9 +11,10 @@ use theoria::{
     interaction::HitRegion,
     math::Vector2,
     path::{FillRule, LineCap, LineJoin, Path, StrokeStyle},
+    surface::SurfaceContent,
     text::{Text, TextStyle},
     transform::Affine2,
-    window::{WindowContent, WindowGroup},
+    window::WindowGroup,
 };
 
 const WIDTH: u32 = 640;
@@ -101,7 +102,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         )))
                         .composite(label, Composite::SourceOver)
                 });
-                window_content(context, events.size(), canvas)
+                window_content(context, events.surface().size(), canvas)
             },
         )?;
 
@@ -150,7 +151,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .composite(value, Composite::SourceOver)
                         .composite(status, Composite::SourceOver)
                 });
-                window_content(context, events.size(), canvas)
+                window_content(context, events.surface().size(), canvas)
             },
         )?;
         Ok(())
@@ -163,7 +164,7 @@ fn window_content(
     context: &mut theoria::component::MountContext<'_>,
     size: theoria::reactive::Value<theoria::surface::SurfaceSize>,
     canvas: theoria::reactive::Computed<Canvas>,
-) -> theoria::reactive::Computed<WindowContent> {
+) -> theoria::reactive::Computed<SurfaceContent> {
     context.create_computed(move |context| {
         let canvas = context.read(&canvas).cloned();
         let size = *context.read(&size);
@@ -171,7 +172,7 @@ fn window_content(
         let height = size.height.max(1) as f32;
         let view = CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(width, height))
             .expect("a positive surface extent has a non-degenerate view");
-        WindowContent::new(canvas, view, Color::rgb8(6, 9, 14))
+        SurfaceContent::new(canvas, view, Color::rgb8(6, 9, 14))
     })
 }
 

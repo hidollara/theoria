@@ -3,16 +3,13 @@
 use std::{error::Error, rc::Rc};
 
 use crate::{
-    animation::FrameClock,
-    canvas::{Canvas, CanvasView},
-    color::Color,
     component::MountContext,
     event::EventSource,
     event_loop::EventLoopHandle,
     gesture::MovementThreshold,
     input::{pointer::PointerEvent, scroll::ScrollEvent},
-    reactive::{Computed, Value},
-    surface::{SurfaceEvent, SurfaceSize},
+    reactive::Computed,
+    surface::{Surface, SurfaceContent},
 };
 
 mod component_tree;
@@ -34,42 +31,33 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct CloseRequested;
 
-/// Typed inputs published by one Window while its Component tree is built.
-pub struct WindowEvents<'window> {
-    surface: &'window EventSource<SurfaceEvent>,
-    pointer: &'window EventSource<PointerEvent>,
-    scroll: &'window EventSource<ScrollEvent>,
-    close_requested: &'window EventSource<CloseRequested>,
-    frame_clock: &'window FrameClock,
-    size: Value<SurfaceSize>,
+/// Portable capabilities exposed by one Window during Component construction.
+///
+/// These are a convenient standard projection of the native host. Platform-
+/// specific producers may expose additional event sources alongside them.
+pub struct WindowCapabilities {
+    surface: Surface,
+    pointer: EventSource<PointerEvent>,
+    scroll: EventSource<ScrollEvent>,
+    close_requested: EventSource<CloseRequested>,
     movement_threshold: MovementThreshold,
 }
 
-impl WindowEvents<'_> {
-    pub const fn surface(&self) -> &EventSource<SurfaceEvent> {
-        self.surface
+impl WindowCapabilities {
+    pub const fn surface(&self) -> &Surface {
+        &self.surface
     }
 
     pub const fn pointer(&self) -> &EventSource<PointerEvent> {
-        self.pointer
+        &self.pointer
     }
 
     pub const fn scroll(&self) -> &EventSource<ScrollEvent> {
-        self.scroll
+        &self.scroll
     }
 
     pub const fn close_requested(&self) -> &EventSource<CloseRequested> {
-        self.close_requested
-    }
-
-    /// Returns this Window's request-driven animation frame clock.
-    pub fn frame_clock(&self) -> FrameClock {
-        self.frame_clock.clone()
-    }
-
-    /// Current drawable client-area size as a reactive value.
-    pub fn size(&self) -> Value<SurfaceSize> {
-        self.size.clone()
+        &self.close_requested
     }
 
     /// Host-provided default movement boundary for click and drag recognition.
@@ -78,39 +66,6 @@ impl WindowEvents<'_> {
     /// may choose another policy per device.
     pub const fn movement_threshold(&self) -> MovementThreshold {
         self.movement_threshold
-    }
-}
-
-/// Semantic Canvas content to present in a Window.
-///
-/// This is still backend-independent drawing data. The renderer determines
-/// its physical GPU execution after the terminal Effect snapshots it.
-#[derive(Clone, Debug)]
-pub struct WindowContent {
-    canvas: Canvas,
-    view: CanvasView,
-    clear_color: Color,
-}
-
-impl WindowContent {
-    pub const fn new(canvas: Canvas, view: CanvasView, clear_color: Color) -> Self {
-        Self {
-            canvas,
-            view,
-            clear_color,
-        }
-    }
-
-    pub const fn canvas(&self) -> &Canvas {
-        &self.canvas
-    }
-
-    pub const fn view(&self) -> CanvasView {
-        self.view
-    }
-
-    pub const fn clear_color(&self) -> Color {
-        self.clear_color
     }
 }
 
@@ -136,7 +91,7 @@ impl Window {
         title: &str,
         width: u32,
         height: u32,
-        build: impl FnOnce(&mut MountContext<'_>, &WindowEvents<'_>) -> Computed<WindowContent>,
+        build: impl FnOnce(&mut MountContext<'_>, &WindowCapabilities) -> Computed<SurfaceContent>,
     ) -> Result<Self> {
         let mut build = Some(build);
         let tree = WindowComponentTree::mount(|context, windows| {

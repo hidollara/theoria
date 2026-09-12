@@ -5,10 +5,13 @@ use std::{
     rc::Rc,
 };
 
-use crate::{component::MountContext, event_loop::EventLoopHandle, reactive::Computed};
+use crate::{
+    component::MountContext, event_loop::EventLoopHandle, reactive::Computed,
+    surface::SurfaceContent,
+};
 
 use super::{
-    Result, WindowContent, WindowEvents,
+    Result, WindowCapabilities,
     component_tree::{WindowChildren, WindowComponentTree},
 };
 
@@ -65,7 +68,7 @@ impl WindowGroupContext<'_, '_> {
         title: &str,
         width: u32,
         height: u32,
-        build: impl FnOnce(&mut MountContext<'_>, &WindowEvents<'_>) -> Computed<WindowContent>,
+        build: impl FnOnce(&mut MountContext<'_>, &WindowCapabilities) -> Computed<SurfaceContent>,
     ) -> Result<()> {
         self.windows
             .mount_window(self.mount, title, width, height, build)

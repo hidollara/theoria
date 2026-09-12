@@ -17,9 +17,10 @@ use theoria::{
     math::Vector2,
     path::{FillRule, LineCap, LineJoin, Path, StrokeStyle},
     reactive::State,
+    surface::SurfaceContent,
     text::{Text, TextStyle},
     transform::Affine2,
-    window::{Window, WindowContent},
+    window::Window,
 };
 
 const WIDTH: u32 = 960;
@@ -216,7 +217,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .composite(counter, Composite::SourceOver)
                     .composite(hint, Composite::SourceOver)
             });
-            let size = events.size();
+            let size = events.surface().size();
             context.create_computed(move |context| {
                 let canvas = context.read(&canvas).cloned();
                 let size = *context.read(&size);
@@ -225,7 +226,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let view =
                     CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(width, height))
                         .expect("a positive surface extent has a non-degenerate view");
-                WindowContent::new(canvas, view, Color::rgb8(6, 9, 14))
+                SurfaceContent::new(canvas, view, Color::rgb8(6, 9, 14))
             })
         },
     )?;

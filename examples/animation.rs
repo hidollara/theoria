@@ -8,8 +8,9 @@ use theoria::{
     input::pointer::{PointerButton, PointerEvent, PointerPhase},
     math::{Matrix2, Vector2},
     path::{LineJoin, Path, StrokeStyle},
+    surface::SurfaceContent,
     transform::Affine2,
-    window::{Window, WindowContent},
+    window::Window,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -37,7 +38,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             });
             assert!(context.connect_cloned(events.pointer(), &pointer_events));
 
-            let clock = events.frame_clock();
+            let clock = events.surface().frame_clock();
             let frame = clock.frame();
             let next_frame = clock.clone();
             let continuous_frame = frame.clone();
@@ -47,7 +48,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             });
             context.sync(&continuous);
 
-            let size = events.size();
+            let size = events.surface().size();
             context.create_computed(move |context| {
                 let elapsed = context.read(&frame).elapsed().as_secs_f32();
                 let size = *context.read(&size);
@@ -93,7 +94,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let view =
                     CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(width, height))
                         .expect("a positive surface extent has a non-degenerate view");
-                WindowContent::new(canvas, view, Color::rgb8(7, 10, 18))
+                SurfaceContent::new(canvas, view, Color::rgb8(7, 10, 18))
             })
         },
     )?;

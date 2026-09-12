@@ -13,14 +13,12 @@ use crate::{
     gesture::MovementThreshold,
     input::{pointer::PointerEvent, scroll::ScrollEvent},
     reactive::Computed,
-    surface::SurfaceEvent,
+    surface::{Surface, SurfaceContent, SurfaceEvent},
     window_backend::{WindowBackend, WindowBackendEvent, WindowEventBuffer},
     windows::create_window,
 };
 
-use super::{
-    CloseRequested, Result, WindowContent, WindowEvents, presentation::WindowPresentation,
-};
+use super::{CloseRequested, Result, WindowCapabilities, presentation::WindowPresentation};
 
 /// Native and presentation state for one Window attached to a Component tree.
 pub(super) struct WindowHost {
@@ -38,7 +36,7 @@ impl WindowHost {
         title: &str,
         width: u32,
         height: u32,
-        build: impl FnOnce(&mut MountContext<'_>, &WindowEvents<'_>) -> Computed<WindowContent>,
+        build: impl FnOnce(&mut MountContext<'_>, &WindowCapabilities) -> Computed<SurfaceContent>,
     ) -> Result<Weak<RefCell<Self>>> {
         let backend_events = Rc::new(WindowEventBuffer::new());
         let native = create_window(title, width, height, Rc::clone(&backend_events))?;
@@ -68,23 +66,21 @@ impl WindowHost {
             });
             assert!(context.connect_cloned(&surface, update_size));
 
-            let events = WindowEvents {
-                surface: &surface,
-                pointer: &pointer,
-                scroll: &scroll,
-                close_requested: &close_requested,
-                frame_clock: &frame_clock,
-                size: size.value(),
+            let capabilities = WindowCapabilities {
+                surface: Surface::new(surface, size.value(), frame_clock),
+                pointer,
+                scroll,
+                close_requested,
                 movement_threshold,
             };
-            let content = build(context, &events);
+            let content = build(context, &capabilities);
             presentation.bind(context, content);
 
             // Closing is ordinary Component behavior. User subscriptions made
             // by `build` are registered first on the default route; this final
             // subscription supplies the default non-cancellable close action.
             let close_window = context.receive(|_: CloseRequested, context| context.unmount());
-            assert!(context.connect_cloned(&close_requested, close_window));
+            assert!(context.connect_cloned(capabilities.close_requested(), close_window));
 
             let host = Rc::new(RefCell::new(Self {
                 inputs: WindowInputs {

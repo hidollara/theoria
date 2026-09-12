@@ -10,11 +10,11 @@ use crate::{
     PresentationTarget, Viewport,
     component::MountContext,
     reactive::Computed,
-    surface::SurfaceSize,
+    surface::{SurfaceContent, SurfaceSize},
     vulkan::{CanvasRenderer, PresentOutcome, Presenter},
 };
 
-use super::{Result, WindowContent};
+use super::Result;
 
 pub(super) struct WindowPresentation {
     presenter: Presenter,
@@ -35,7 +35,7 @@ impl WindowPresentation {
         })
     }
 
-    pub(super) fn bind(&self, context: &mut MountContext<'_>, content: Computed<WindowContent>) {
+    pub(super) fn bind(&self, context: &mut MountContext<'_>, content: Computed<SurfaceContent>) {
         let output = Rc::clone(&self.output);
         let effect = context.create_effect(move |context| {
             output
@@ -116,6 +116,6 @@ enum PresentationProgress {
 
 #[derive(Default)]
 struct RenderOutput {
-    content: RefCell<Option<WindowContent>>,
+    content: RefCell<Option<SurfaceContent>>,
     redraw_needed: Cell<bool>,
 }
