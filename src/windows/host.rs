@@ -19,11 +19,12 @@ use crate::{
     window::CloseRequested,
 };
 
-use super::{
-    Result, WindowCapabilities,
+use crate::windows::{
+    Result,
+    capabilities::WindowCapabilities,
     event_buffer::{Win32WindowEvent, WindowEventBuffer},
+    native_window::Win32Window,
     presentation::WindowPresentation,
-    window::Win32Window,
 };
 
 /// Native and presentation state for one Window attached to a Component tree.

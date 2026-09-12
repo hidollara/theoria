@@ -1,4 +1,4 @@
-// Translates the Windows pointer message family into Theoria input events.
+//! Translates the Win32 pointer message family into Theoria input events.
 use ::windows::{
     Win32::{
         Foundation::{HWND, POINT, WPARAM},

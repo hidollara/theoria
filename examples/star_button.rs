@@ -159,8 +159,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "Theoria — Star Button",
         WIDTH,
         HEIGHT,
-        move |context, events| {
-            let movement_threshold = events.movement_threshold();
+        move |context, window| {
+            let movement_threshold = window.movement_threshold();
             let count = context.create_state(0_u32);
             let count_value = count.value();
             let center = context.create_state(INITIAL_CENTER);
@@ -168,7 +168,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             context.mount(StarButton {
                 count,
                 center,
-                pointers: events.pointer().clone(),
+                pointers: window.pointer().clone(),
                 movement_threshold,
                 hit_region,
             });
@@ -216,7 +216,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .composite(counter, Composite::SourceOver)
                     .composite(hint, Composite::SourceOver)
             });
-            let size = events.surface().size();
+            let size = window.surface().size();
             context.create_computed(move |context| {
                 let canvas = context.read(&canvas).cloned();
                 let size = *context.read(&size);

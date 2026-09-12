@@ -39,8 +39,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "Theoria — Canvas Sample",
         960,
         640,
-        move |context, events| {
-            let size = events.surface().size();
+        move |context, window| {
+            let size = window.surface().size();
             context.create_computed(move |context| {
                 let size = *context.read(&size);
                 let image = &image;

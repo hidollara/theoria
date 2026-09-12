@@ -13,7 +13,7 @@ use crate::{
     vulkan::{CanvasRenderer, PresentOutcome, Presenter},
 };
 
-use super::{Result, Win32PresentationTarget};
+use crate::windows::{Result, presentation_target::Win32PresentationTarget};
 
 pub(super) struct WindowPresentation {
     presenter: Presenter,

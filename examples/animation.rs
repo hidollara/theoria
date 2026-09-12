@@ -21,7 +21,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "Theoria — Request-driven Animation",
         960,
         640,
-        move |context, events| {
+        move |context, window| {
             let pointer = context.create_state(None::<PointerVisual>);
             let pointer_value = pointer.value();
             let pointer_events = context.receive(move |event: PointerEvent, context| {
@@ -35,9 +35,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 };
                 context.set(&pointer, visual);
             });
-            assert!(context.connect_cloned(events.pointer(), &pointer_events));
+            assert!(context.connect_cloned(window.pointer(), &pointer_events));
 
-            let clock = events.frame_clock();
+            let clock = window.frame_clock();
             let frame = clock.frame();
             let next_frame = clock.clone();
             let continuous_frame = frame.clone();
@@ -47,7 +47,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             });
             context.sync(&continuous);
 
-            let size = events.surface().size();
+            let size = window.surface().size();
             context.create_computed(move |context| {
                 let elapsed = context.read(&frame).elapsed().as_secs_f32();
                 let size = *context.read(&size);

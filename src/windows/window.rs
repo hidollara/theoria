@@ -1,132 +1,55 @@
-//! Native Windows implementation of Theoria's window adapter.
+//! Public construction of one Win32 Window composition.
 
-use std::{cell::RefCell, ffi::c_void, marker::PhantomData, rc::Rc};
+use std::rc::Rc;
 
-use ::windows::{
-    Win32::{
-        Foundation::{HINSTANCE, HWND},
-        System::LibraryLoader::GetModuleHandleW,
-        UI::{
-            HiDpi::{GetDpiForWindow, GetSystemMetricsForDpi},
-            WindowsAndMessaging::{
-                CW_USEDEFAULT, CreateWindowExW, DestroyWindow, SM_CXDRAG, SM_CYDRAG, SW_SHOW,
-                ShowWindow, WINDOW_EX_STYLE, WS_OVERLAPPEDWINDOW,
-            },
-        },
+use crate::{
+    component::MountContext,
+    event_loop::EventLoopHandle,
+    reactive::Computed,
+    surface::SurfaceContent,
+    windows::{
+        Result, capabilities::WindowCapabilities, component_tree::WindowComponentTree,
     },
-    core::{PCWSTR, Result, w},
 };
 
-use crate::surface::SurfaceSize;
-
-mod pointer;
-mod procedure;
-mod state;
-
-use self::{procedure::initialize_windowing, procedure::resize_client_area, state::WindowState};
-use super::{Win32PresentationTarget, event_buffer::WindowEventBuffer};
-
-pub(super) struct Win32Window {
-    hwnd: HWND,
-    hinstance: HINSTANCE,
-    // User32 may invoke the Window procedure synchronously during a native
-    // call. Interior mutability makes that callback access explicit instead of
-    // manufacturing a mutable reference beside Win32Window's active borrow.
-    state: Box<RefCell<WindowState>>,
-    _thread_affinity: PhantomData<Rc<()>>,
+/// One Win32 Window with an independent Component update boundary.
+///
+/// Native observations are projected into Theoria's portable Surface and input
+/// vocabulary before entering the Component tree. Windows-specific integrations
+/// may expose additional event sources beside those projections.
+pub struct Window {
+    tree: Rc<WindowComponentTree>,
 }
 
-impl Win32Window {
-    pub(super) fn new(
+impl Window {
+    /// Creates a hidden Win32 Window and mounts its Component tree.
+    ///
+    /// `build` can create State, Computed values, Effects, event connections, and
+    /// child components. Its return value is the Window's sole semantic output.
+    /// Call [`Window::show`] when the Window is ready to become visible.
+    pub fn new(
+        event_loop: &EventLoopHandle,
         title: &str,
         width: u32,
         height: u32,
-        events: Rc<WindowEventBuffer>,
+        build: impl FnOnce(&mut MountContext<'_>, &WindowCapabilities) -> Computed<SurfaceContent>,
     ) -> Result<Self> {
-        unsafe {
-            let module = GetModuleHandleW(None)?;
-            let hinstance = HINSTANCE(module.0);
-            initialize_windowing(hinstance)?;
-
-            let state = Box::new(RefCell::new(WindowState::new(
-                SurfaceSize { width, height },
-                events,
-            )));
-            let state_ptr = (&*state as *const RefCell<WindowState>).cast::<c_void>();
-            let title: Vec<u16> = title.encode_utf16().chain(Some(0)).collect();
-
-            let style = WS_OVERLAPPEDWINDOW;
-            let extended_style = WINDOW_EX_STYLE::default();
-            let hwnd = CreateWindowExW(
-                extended_style,
-                w!("TheoriaWindow"),
-                PCWSTR(title.as_ptr()),
-                style,
-                CW_USEDEFAULT,
-                CW_USEDEFAULT,
-                width as i32,
-                height as i32,
-                None,
-                None,
-                Some(hinstance),
-                Some(state_ptr),
-            )?;
-
-            let actual_size = match resize_client_area(hwnd, style, extended_style, width, height) {
-                Ok(size) => size,
-                Err(error) => {
-                    let _ = DestroyWindow(hwnd);
-                    return Err(error);
-                }
-            };
-            state.borrow_mut().finish_initialization(actual_size);
-
-            Ok(Self {
-                hwnd,
-                hinstance,
-                state,
-                _thread_affinity: PhantomData,
-            })
-        }
-    }
-    pub(super) fn show(&self) {
-        let _ = unsafe { ShowWindow(self.hwnd, SW_SHOW) };
-    }
-
-    pub(super) fn presentation_target(&self) -> Win32PresentationTarget {
-        unsafe {
-            Win32PresentationTarget::from_raw(
-                self.hwnd.0 as isize,
-                self.hinstance.0 as isize,
-                self.state.borrow().size(),
+        let mut build = Some(build);
+        let tree = WindowComponentTree::mount(|context, windows| {
+            windows.mount_window(
+                context,
+                title,
+                width,
+                height,
+                build.take().expect("Window build runs once"),
             )
-        }
+        })?;
+        tree.register(event_loop)?;
+        Ok(Self { tree })
     }
 
-    pub(super) fn size(&self) -> SurfaceSize {
-        self.state.borrow().size()
-    }
-
-    pub(super) fn movement_threshold_extents(&self) -> (f32, f32) {
-        // Win32 defines the native drag boundary in device pixels for the
-        // Window's current DPI.
-        let dpi = unsafe { GetDpiForWindow(self.hwnd) };
-        let horizontal = unsafe { GetSystemMetricsForDpi(SM_CXDRAG, dpi) }.unsigned_abs() as f32;
-        let vertical = unsafe { GetSystemMetricsForDpi(SM_CYDRAG, dpi) }.unsigned_abs() as f32;
-        (horizontal, vertical)
-    }
-
-    pub(super) fn request_redraw(&mut self) {
-        self.state.borrow_mut().request_redraw();
-    }
-}
-
-impl Drop for Win32Window {
-    fn drop(&mut self) {
-        unsafe {
-            if !self.hwnd.is_invalid() {
-                let _ = DestroyWindow(self.hwnd);
-            }
-        }
+    /// Makes this Window visible after its Component tree has been mounted.
+    pub fn show(&self) {
+        self.tree.show();
     }
 }

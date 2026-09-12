@@ -10,8 +10,9 @@ use crate::{
     surface::SurfaceContent,
 };
 
-use super::{
-    Result, WindowCapabilities,
+use crate::windows::{
+    Result,
+    capabilities::WindowCapabilities,
     component_tree::{WindowChildren, WindowComponentTree},
 };
 

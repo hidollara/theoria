@@ -41,11 +41,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "Theoria — Controller",
             WIDTH,
             HEIGHT,
-            move |context, events| {
+            move |context, window| {
                 let close = context.receive(move |_: theoria::window::CloseRequested, context| {
                     context.set(&controller_lifecycle, false);
                 });
-                assert!(context.connect_cloned(events.close_requested(), close));
+                assert!(context.connect_cloned(window.close_requested(), close));
 
                 let increment = context.receive(move |click: Click, context| {
                     if click.button == PointerButton::Primary {
@@ -61,9 +61,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let _ = area.try_forward(&click, HIT_TOLERANCE, context);
                 });
                 context.mount(ClickGesture::new(
-                    ClickRecognizer::new(events.movement_threshold())
+                    ClickRecognizer::new(window.movement_threshold())
                         .expect("the Window provides a valid movement threshold"),
-                    events.pointer().clone(),
+                    window.pointer().clone(),
                     route_click,
                 ));
 
@@ -101,7 +101,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         )))
                         .composite(label, Composite::SourceOver)
                 });
-                window_content(context, events.surface().size(), canvas)
+                window_content(context, window.surface().size(), canvas)
             },
         )?;
 
@@ -111,7 +111,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "Theoria — Shared Preview",
             WIDTH,
             HEIGHT,
-            move |context, events| {
+            move |context, window| {
                 let canvas = context.create_computed(move |context| {
                     let count = *context.read(&preview_value);
                     let controller_open = *context.read(&preview_controller_open);
@@ -150,7 +150,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .composite(value, Composite::SourceOver)
                         .composite(status, Composite::SourceOver)
                 });
-                window_content(context, events.surface().size(), canvas)
+                window_content(context, window.surface().size(), canvas)
             },
         )?;
         Ok(())
