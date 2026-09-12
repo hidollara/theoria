@@ -9,13 +9,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::event_pump::{EventPump, EventPumpWake, PumpEvent, ThreadMessage};
-
 mod bridge;
 mod component;
+pub(crate) mod pump;
 
 pub use self::bridge::{EventLoopBridge, EventLoopBridgeSendError, EventLoopBridgeSender};
 pub(crate) use self::component::ComponentParticipant;
+use self::pump::{EventPump, EventPumpWake, PumpEvent, ThreadMessage};
 
 /// Time an otherwise idle iteration may lend to one waitable work item.
 const WAIT_SLICE: Duration = Duration::from_millis(1);
@@ -405,15 +405,15 @@ mod tests {
             Arc::downgrade(&wake)
         }
 
-        fn wait(&mut self) -> crate::event_pump::PumpResult<PumpEvent> {
+        fn wait(&mut self) -> crate::event_loop::pump::PumpResult<PumpEvent> {
             Ok(PumpEvent::Idle)
         }
 
-        fn wait_for(&mut self, _: Duration) -> crate::event_pump::PumpResult<PumpEvent> {
+        fn wait_for(&mut self, _: Duration) -> crate::event_loop::pump::PumpResult<PumpEvent> {
             Ok(PumpEvent::Idle)
         }
 
-        fn poll(&mut self) -> crate::event_pump::PumpResult<PumpEvent> {
+        fn poll(&mut self) -> crate::event_loop::pump::PumpResult<PumpEvent> {
             Ok(PumpEvent::Idle)
         }
     }

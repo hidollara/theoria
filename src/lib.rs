@@ -3,7 +3,6 @@ pub mod canvas;
 pub mod color;
 mod component_execution;
 pub mod event_loop;
-mod event_pump;
 pub mod font;
 pub mod geometry;
 pub mod gesture;

@@ -20,7 +20,7 @@ use ::windows::{
     core::{Error, Result},
 };
 
-use crate::event_pump::{EventPump, EventPumpWake, PumpEvent, PumpResult, ThreadMessage};
+use crate::event_loop::pump::{EventPump, EventPumpWake, PumpEvent, PumpResult, ThreadMessage};
 
 /// Drives the Win32 message queue belonging to the current GUI thread.
 ///

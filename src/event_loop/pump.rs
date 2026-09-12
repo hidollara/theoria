@@ -1,4 +1,4 @@
-//! Internal contract between EventLoop coordination and a platform event pump.
+//! Internal contract between EventLoop coordination and a platform pump.
 
 use std::{error::Error, io, sync::Weak, time::Duration};
 
