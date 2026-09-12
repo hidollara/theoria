@@ -3,12 +3,14 @@
 use std::{
     cell::RefCell,
     error::Error,
-    fmt,
+    fmt, io,
     rc::{Rc, Weak},
     time::{Duration, Instant},
 };
 
-use crate::windows::message_pump::{MessagePumpEvent, ThreadMessage, WindowsMessagePump};
+use crate::windows::message_pump::{
+    MessagePumpEvent, MessagePumpWaker, ThreadMessage, WindowsMessagePump,
+};
 
 /// Time an otherwise idle iteration may lend to presentation progress.
 const PRESENTATION_WAIT_SLICE: Duration = Duration::from_millis(1);
@@ -40,6 +42,18 @@ impl EventLoop {
     pub fn handle(&self) -> EventLoopHandle {
         EventLoopHandle {
             registrations: Rc::downgrade(&self.registrations),
+        }
+    }
+
+    /// Returns a thread-safe, non-owning capability for interrupting this loop's
+    /// native wait.
+    ///
+    /// Waking does not itself enqueue application work. Producers that cross an
+    /// execution boundary should first make their work observable, then wake the
+    /// loop so registered local work can consume it.
+    pub fn waker(&self) -> EventLoopWaker {
+        EventLoopWaker {
+            message_pump: self.message_pump.waker(),
         }
     }
 
@@ -198,6 +212,33 @@ impl fmt::Debug for EventLoopHandle {
     }
 }
 
+/// A cloneable capability for interrupting one [`EventLoop`]'s native wait.
+///
+/// Unlike [`EventLoopHandle`], a Waker is `Send + Sync` and may cross execution
+/// boundaries. It does not retain the EventLoop or any registered work.
+#[derive(Clone)]
+pub struct EventLoopWaker {
+    message_pump: MessagePumpWaker,
+}
+
+impl EventLoopWaker {
+    /// Interrupts the EventLoop's current or next native wait.
+    ///
+    /// Returns [`io::ErrorKind::BrokenPipe`] after the EventLoop has been
+    /// dropped. Other errors report that Win32 rejected the wake request.
+    pub fn wake(&self) -> io::Result<()> {
+        self.message_pump.wake()
+    }
+}
+
+impl fmt::Debug for EventLoopWaker {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("EventLoopWaker")
+            .finish_non_exhaustive()
+    }
+}
+
 #[derive(Default)]
 struct Registrations {
     participants: RefCell<Vec<Weak<dyn EventLoopParticipant>>>,
@@ -314,5 +355,21 @@ mod tests {
             handle.register(&Rc::new(FinishedParticipant)),
             Err(EventLoopClosed)
         );
+    }
+
+    #[test]
+    fn a_waker_is_safe_to_move_between_threads() {
+        fn assert_send_sync<T: Send + Sync>() {}
+
+        assert_send_sync::<EventLoopWaker>();
+    }
+
+    #[test]
+    fn a_waker_does_not_keep_its_event_loop_available() {
+        let event_loop = EventLoop::new();
+        let waker = event_loop.waker();
+        drop(event_loop);
+
+        assert_eq!(waker.wake().unwrap_err().kind(), io::ErrorKind::BrokenPipe);
     }
 }

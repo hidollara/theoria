@@ -1,13 +1,21 @@
 //! Win32 message pumping for one GUI thread.
 
-use std::{marker::PhantomData, rc::Rc, time::Duration};
+use std::{
+    io,
+    marker::PhantomData,
+    rc::Rc,
+    sync::{Arc, Mutex, Weak},
+    time::Duration,
+};
 
 use ::windows::{
     Win32::{
-        Foundation::{HWND, WAIT_FAILED, WAIT_TIMEOUT},
+        Foundation::{HWND, LPARAM, WAIT_FAILED, WAIT_TIMEOUT, WPARAM},
+        System::Threading::GetCurrentThreadId,
         UI::WindowsAndMessaging::{
             DispatchMessageW, GetMessageW, MSG, MWMO_INPUTAVAILABLE, MsgWaitForMultipleObjectsEx,
-            PM_NOREMOVE, PM_REMOVE, PeekMessageW, QS_ALLINPUT, TranslateMessage, WM_QUIT, WM_USER,
+            PM_NOREMOVE, PM_REMOVE, PeekMessageW, PostThreadMessageW, QS_ALLINPUT,
+            TranslateMessage, WM_NULL, WM_QUIT, WM_USER,
         },
     },
     core::{Error, Result},
@@ -21,6 +29,7 @@ use ::windows::{
 /// and `!Sync`: Win32 associates the queue and its Windows with the thread that
 /// created them.
 pub(crate) struct WindowsMessagePump {
+    wake: Arc<WakeState>,
     _thread_affinity: PhantomData<Rc<()>>,
 }
 
@@ -34,7 +43,18 @@ impl WindowsMessagePump {
             let _ = PeekMessageW(&mut message, None, WM_USER, WM_USER, PM_NOREMOVE);
         }
         Self {
+            wake: Arc::new(WakeState {
+                thread_id: unsafe { GetCurrentThreadId() },
+                open: Mutex::new(true),
+            }),
             _thread_affinity: PhantomData,
+        }
+    }
+
+    /// Returns a thread-safe, non-owning capability that interrupts a wait.
+    pub(crate) fn waker(&self) -> MessagePumpWaker {
+        MessagePumpWaker {
+            state: Arc::downgrade(&self.wake),
         }
     }
 
@@ -97,6 +117,48 @@ impl WindowsMessagePump {
     }
 }
 
+impl Drop for WindowsMessagePump {
+    fn drop(&mut self) {
+        *self
+            .wake
+            .open
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = false;
+    }
+}
+
+/// A thread-safe, non-owning capability for interrupting a message-pump wait.
+#[derive(Clone)]
+pub(crate) struct MessagePumpWaker {
+    state: Weak<WakeState>,
+}
+
+impl MessagePumpWaker {
+    pub(crate) fn wake(&self) -> io::Result<()> {
+        let Some(state) = self.state.upgrade() else {
+            return Err(unavailable_wake_error());
+        };
+        let open = state
+            .open
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if !*open {
+            return Err(unavailable_wake_error());
+        }
+        unsafe { PostThreadMessageW(state.thread_id, WM_NULL, WPARAM(0), LPARAM(0)) }
+            .map_err(io::Error::other)
+    }
+}
+
+struct WakeState {
+    thread_id: u32,
+    open: Mutex<bool>,
+}
+
+fn unavailable_wake_error() -> io::Error {
+    io::Error::new(io::ErrorKind::BrokenPipe, "the event loop is unavailable")
+}
+
 fn timeout_milliseconds(timeout: Duration) -> u32 {
     let milliseconds = timeout.as_millis();
     let rounded_up = milliseconds + u128::from(!timeout.subsec_nanos().is_multiple_of(1_000_000));
@@ -140,12 +202,14 @@ unsafe fn dispatch(message: &MSG) {
 
 #[cfg(test)]
 mod tests {
-    use super::{MessagePumpEvent, ThreadMessage, process, timeout_milliseconds};
+    use super::{
+        MessagePumpEvent, ThreadMessage, WindowsMessagePump, process, timeout_milliseconds,
+    };
     use std::time::Duration;
 
     use windows::Win32::{
         Foundation::{LPARAM, WPARAM},
-        UI::WindowsAndMessaging::{MSG, WM_APP},
+        UI::WindowsAndMessaging::{MSG, WM_APP, WM_NULL},
     };
 
     #[test]
@@ -177,5 +241,37 @@ mod tests {
                 lparam: 13,
             }) if message == WM_APP + 7
         ));
+    }
+
+    #[test]
+    fn a_waker_interrupts_its_owning_thread_queue() {
+        let mut pump = WindowsMessagePump::new();
+        let waker = pump.waker();
+
+        std::thread::spawn(move || waker.wake())
+            .join()
+            .expect("the waking thread exits normally")
+            .expect("the live message pump accepts a cross-thread wake");
+
+        assert!(matches!(
+            pump.wait().expect("the posted wake can be received"),
+            MessagePumpEvent::ThreadMessage(ThreadMessage {
+                message: WM_NULL,
+                wparam: 0,
+                lparam: 0,
+            })
+        ));
+    }
+
+    #[test]
+    fn a_waker_does_not_keep_its_message_pump_available() {
+        let pump = WindowsMessagePump::new();
+        let waker = pump.waker();
+        drop(pump);
+
+        assert_eq!(
+            waker.wake().unwrap_err().kind(),
+            std::io::ErrorKind::BrokenPipe
+        );
     }
 }
