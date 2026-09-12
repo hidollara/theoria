@@ -28,7 +28,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let star = star_path(125.0, 54.0);
     let star_hit_region = HitRegion::fill(star.clone(), FillRule::NonZero);
 
-    let _windows = WindowGroup::new(&event_loop_handle, move |group| {
+    let windows = WindowGroup::new(&event_loop_handle, move |group| {
         let count = group.create_state(0_u32);
         let controller_open = group.create_state(true);
 
@@ -155,6 +155,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )?;
         Ok(())
     })?;
+    windows.show();
     event_loop.run()
 }
 

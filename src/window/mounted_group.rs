@@ -35,6 +35,12 @@ impl MountedWindowGroup {
         mounted.state.borrow_mut().request_initial_redraws();
         Ok(mounted)
     }
+
+    pub(super) fn show(&self) {
+        for window in self.state.borrow().windows() {
+            window.borrow().show();
+        }
+    }
 }
 
 impl EventLoopParticipant for MountedWindowGroup {

@@ -154,7 +154,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let font = Font::from_bytes(std::fs::read(r"C:\Windows\Fonts\segoeui.ttf")?)?;
     let star = star_path(Point::new(0.0, 0.0), 155.0, 68.0);
     let hit_region = HitRegion::fill(star.clone(), FillRule::NonZero);
-    let _window = Window::new(
+    let window = Window::new(
         &event_loop_handle,
         "Theoria — Star Button",
         WIDTH,
@@ -229,6 +229,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             })
         },
     )?;
+    window.show();
     event_loop.run()
 }
 

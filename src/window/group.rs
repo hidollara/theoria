@@ -19,11 +19,13 @@ use super::{
 /// per Window. Separate groups may register with the same [`EventLoopHandle`]
 /// while retaining independent Component boundaries.
 pub struct WindowGroup {
-    _mounted: Rc<MountedWindowGroup>,
+    mounted: Rc<MountedWindowGroup>,
 }
 
 impl WindowGroup {
-    /// Builds one shared Component root and all of its initial Windows.
+    /// Builds one shared Component root and all of its initial hidden Windows.
+    ///
+    /// Call [`WindowGroup::show`] when the group is ready to become visible.
     pub fn new(
         event_loop: &EventLoopHandle,
         build: impl FnOnce(&mut WindowGroupContext<'_, '_>) -> Result<()>,
@@ -37,7 +39,12 @@ impl WindowGroup {
             build.take().expect("WindowGroup build runs once")(&mut context)
         })?;
         event_loop.register(&mounted)?;
-        Ok(Self { _mounted: mounted })
+        Ok(Self { mounted })
+    }
+
+    /// Makes every currently mounted Window in this group visible.
+    pub fn show(&self) {
+        self.mounted.show();
     }
 }
 
@@ -52,7 +59,7 @@ pub struct WindowGroupContext<'context, 'mount> {
 }
 
 impl WindowGroupContext<'_, '_> {
-    /// Creates a native Window and mounts its Component subtree.
+    /// Creates a hidden native Window and mounts its Component subtree.
     pub fn mount_window(
         &mut self,
         title: &str,

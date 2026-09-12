@@ -96,13 +96,13 @@ impl WindowHost {
             }));
             mounted = Some(Rc::downgrade(&host));
             context.retain(Rc::clone(&host));
-
-            // Expose native callbacks only after every event and presentation
-            // connection needed to process them has been established.
-            host.borrow().native.show();
         });
 
         Ok(mounted.expect("the Window Component retains its native host"))
+    }
+
+    pub(super) fn show(&self) {
+        self.native.show();
     }
 
     pub(super) fn process_native_event(&mut self) -> Result<()> {

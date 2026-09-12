@@ -17,7 +17,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Font::from_bytes(std::fs::read(r"C:\Windows\Fonts\segoeui.ttf")?)?,
         Font::from_bytes(std::fs::read(r"C:\Windows\Fonts\meiryo.ttc")?)?,
     ];
-    let _window = Window::new(
+    let window = Window::new(
         &event_loop_handle,
         "Theoria — Text Layout Sample",
         960,
@@ -90,5 +90,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             })
         },
     )?;
+    window.show();
     event_loop.run()
 }

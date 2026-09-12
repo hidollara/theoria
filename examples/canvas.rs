@@ -34,7 +34,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .expect("the sample image view is non-degenerate"),
     )?;
 
-    let _window = Window::new(
+    let window = Window::new(
         &event_loop_handle,
         "Theoria — Canvas Sample",
         960,
@@ -237,6 +237,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             })
         },
     )?;
+    window.show();
     event_loop.run()
 }
 

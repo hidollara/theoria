@@ -16,7 +16,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut event_loop = EventLoop::new();
     let event_loop_handle = event_loop.handle();
     let star = star_path(150.0, 65.0);
-    let _window = Window::new(
+    let window = Window::new(
         &event_loop_handle,
         "Theoria — Request-driven Animation",
         960,
@@ -97,6 +97,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             })
         },
     )?;
+    window.show();
     event_loop.run()
 }
 

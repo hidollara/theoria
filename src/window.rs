@@ -119,14 +119,15 @@ impl WindowContent {
 /// Separate Windows may register with the same [`EventLoopHandle`] while
 /// retaining independent Reactive graphs and Effect synchronization boundaries.
 pub struct Window {
-    _mounted: Rc<MountedWindowGroup>,
+    mounted: Rc<MountedWindowGroup>,
 }
 
 impl Window {
-    /// Creates a Window and mounts its Component tree.
+    /// Creates a hidden Window and mounts its Component tree.
     ///
     /// `build` can create State, Computed values, Effects, event connections, and
     /// child components. Its return value is the Window's sole semantic output.
+    /// Call [`Window::show`] when the Window is ready to become visible.
     pub fn new(
         event_loop: &EventLoopHandle,
         title: &str,
@@ -145,6 +146,11 @@ impl Window {
             )
         })?;
         event_loop.register(&mounted)?;
-        Ok(Self { _mounted: mounted })
+        Ok(Self { mounted })
+    }
+
+    /// Makes this Window visible after its Component tree has been mounted.
+    pub fn show(&self) {
+        self.mounted.show();
     }
 }
