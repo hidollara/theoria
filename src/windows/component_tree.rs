@@ -8,8 +8,7 @@ use std::{
 
 use crate::{
     component::MountContext,
-    component_execution::ComponentExecution,
-    event_loop::{EventLoopHandle, EventLoopParticipant},
+    event_loop::{ComponentParticipant, EventLoopHandle, EventLoopParticipant},
     reactive::Computed,
     surface::SurfaceContent,
 };
@@ -18,7 +17,7 @@ use super::{Result, WindowCapabilities, host::WindowHost};
 
 /// Owns one Component tree together with the Window producers built beneath it.
 pub(super) struct WindowComponentTree {
-    components: Rc<ComponentExecution>,
+    components: Rc<ComponentParticipant>,
     windows: Rc<WindowHosts>,
 }
 
@@ -28,7 +27,7 @@ impl WindowComponentTree {
     ) -> Result<Rc<Self>> {
         let mut windows = WindowChildren::default();
         let mut build = Some(build);
-        let (components, result) = ComponentExecution::mount(|context| {
+        let (components, result) = ComponentParticipant::mount(|context| {
             build.take().expect("Window group build runs once")(context, &mut windows)
         });
         result?;

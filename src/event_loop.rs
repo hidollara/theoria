@@ -12,8 +12,10 @@ use std::{
 use crate::event_pump::{EventPump, EventPumpWake, PumpEvent, ThreadMessage};
 
 mod bridge;
+mod component;
 
 pub use self::bridge::{EventLoopBridge, EventLoopBridgeSendError, EventLoopBridgeSender};
+pub(crate) use self::component::ComponentParticipant;
 
 /// Time an otherwise idle iteration may lend to one waitable work item.
 const WAIT_SLICE: Duration = Duration::from_millis(1);
