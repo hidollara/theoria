@@ -24,7 +24,7 @@ use ::windows::{
     core::{Error, Result, w},
 };
 
-use crate::{surface::SurfaceSize, window::backend::WindowBackendEvent};
+use crate::{surface::SurfaceSize, windows::event_buffer::Win32WindowEvent};
 
 use super::{pointer, state::WindowState};
 
@@ -140,7 +140,7 @@ unsafe extern "system" fn window_proc(
             if let Some(state) = state
                 && let Some(event) = pointer::pointer_event(hwnd, message, wparam)
             {
-                state.borrow_mut().push(WindowBackendEvent::Pointer(event));
+                state.borrow_mut().push(Win32WindowEvent::Pointer(event));
             }
             LRESULT(0)
         }
@@ -148,14 +148,14 @@ unsafe extern "system" fn window_proc(
             if let Some(state) = state
                 && let Some(event) = pointer::scroll_event(hwnd, message, wparam)
             {
-                state.borrow_mut().push(WindowBackendEvent::Scroll(event));
+                state.borrow_mut().push(Win32WindowEvent::Scroll(event));
             }
             LRESULT(0)
         }
         WM_ERASEBKGND => LRESULT(1),
         WM_CLOSE => {
             if let Some(state) = state {
-                state.borrow_mut().push(WindowBackendEvent::CloseRequested);
+                state.borrow_mut().push(Win32WindowEvent::CloseRequested);
             }
             LRESULT(0)
         }

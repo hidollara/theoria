@@ -4,7 +4,7 @@ use std::error::Error;
 
 use ash::{khr, vk};
 
-use crate::target::PresentationTarget;
+use crate::windows::Win32PresentationTarget;
 
 mod render;
 mod selection;
@@ -104,9 +104,9 @@ pub(super) struct PresentationDevice {
 }
 
 impl PresentationDevice {
-    pub(super) fn new(target: PresentationTarget) -> Result<Self> {
+    pub(super) fn new(target: Win32PresentationTarget) -> Result<Self> {
         unsafe {
-            let (hwnd, hinstance) = target.win32_handles();
+            let (hwnd, hinstance) = target.raw_handles();
             let entry = ash::Entry::load()?;
             let instance_support = InstanceSupport::query(&entry)?;
 

@@ -6,7 +6,7 @@ use std::{
 use ash::vk;
 
 use crate::vulkan::image_layout::transition_image;
-use crate::{surface::SurfaceSize, target::PresentationTarget};
+use crate::{surface::SurfaceSize, windows::Win32PresentationTarget};
 
 mod device;
 mod frame;
@@ -35,7 +35,7 @@ pub struct Presenter {
 }
 
 impl Presenter {
-    pub fn new(target: PresentationTarget) -> Result<Self> {
+    pub fn new(target: Win32PresentationTarget) -> Result<Self> {
         unsafe {
             let size = target.size();
             let device = PresentationDevice::new(target)?;

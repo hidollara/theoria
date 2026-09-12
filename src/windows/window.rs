@@ -17,19 +17,16 @@ use ::windows::{
     core::{PCWSTR, Result, w},
 };
 
-use crate::{
-    PresentationTarget,
-    surface::SurfaceSize,
-    window::backend::{WindowBackend, WindowEventBuffer},
-};
+use crate::surface::SurfaceSize;
 
 mod pointer;
 mod procedure;
 mod state;
 
 use self::{procedure::initialize_windowing, procedure::resize_client_area, state::WindowState};
+use super::{Win32PresentationTarget, event_buffer::WindowEventBuffer};
 
-struct Win32Window {
+pub(super) struct Win32Window {
     hwnd: HWND,
     hinstance: HINSTANCE,
     // User32 may invoke the Window procedure synchronously during a native
@@ -40,7 +37,12 @@ struct Win32Window {
 }
 
 impl Win32Window {
-    fn new(title: &str, width: u32, height: u32, events: Rc<WindowEventBuffer>) -> Result<Self> {
+    pub(super) fn new(
+        title: &str,
+        width: u32,
+        height: u32,
+        events: Rc<WindowEventBuffer>,
+    ) -> Result<Self> {
         unsafe {
             let module = GetModuleHandleW(None)?;
             let hinstance = HINSTANCE(module.0);
@@ -87,26 +89,25 @@ impl Win32Window {
             })
         }
     }
-}
-
-impl WindowBackend for Win32Window {
-    fn show(&self) {
+    pub(super) fn show(&self) {
         let _ = unsafe { ShowWindow(self.hwnd, SW_SHOW) };
     }
 
-    fn presentation_target(&self) -> PresentationTarget {
-        PresentationTarget::win32(
-            self.hwnd.0 as isize,
-            self.hinstance.0 as isize,
-            self.state.borrow().size(),
-        )
+    pub(super) fn presentation_target(&self) -> Win32PresentationTarget {
+        unsafe {
+            Win32PresentationTarget::from_raw(
+                self.hwnd.0 as isize,
+                self.hinstance.0 as isize,
+                self.state.borrow().size(),
+            )
+        }
     }
 
-    fn size(&self) -> SurfaceSize {
+    pub(super) fn size(&self) -> SurfaceSize {
         self.state.borrow().size()
     }
 
-    fn movement_threshold_extents(&self) -> (f32, f32) {
+    pub(super) fn movement_threshold_extents(&self) -> (f32, f32) {
         // Win32 defines the native drag boundary in device pixels for the
         // Window's current DPI.
         let dpi = unsafe { GetDpiForWindow(self.hwnd) };
@@ -115,18 +116,9 @@ impl WindowBackend for Win32Window {
         (horizontal, vertical)
     }
 
-    fn request_redraw(&mut self) {
+    pub(super) fn request_redraw(&mut self) {
         self.state.borrow_mut().request_redraw();
     }
-}
-
-pub(crate) fn create_window(
-    title: &str,
-    width: u32,
-    height: u32,
-    events: Rc<WindowEventBuffer>,
-) -> Result<Box<dyn WindowBackend>> {
-    Ok(Box::new(Win32Window::new(title, width, height, events)?))
 }
 
 impl Drop for Win32Window {

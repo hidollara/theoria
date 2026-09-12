@@ -13,7 +13,6 @@ pub mod interaction;
 pub mod math;
 pub mod path;
 pub mod surface;
-mod target;
 mod tessellation;
 pub mod text;
 pub mod transform;
@@ -24,7 +23,6 @@ pub mod window;
 pub(crate) mod test_support;
 pub mod windows;
 
-pub use target::{PresentationTarget, Viewport};
 pub use theoria_component as component;
 pub use theoria_event as event;
 pub use theoria_reactive as reactive;

@@ -1,4 +1,4 @@
-//! Reactive Canvas output and GPU presentation for one Window.
+//! Reactive Canvas output and GPU presentation for one Win32 Window.
 
 use std::{
     cell::{Cell, RefCell},
@@ -7,14 +7,13 @@ use std::{
 };
 
 use crate::{
-    PresentationTarget, Viewport,
     component::MountContext,
     reactive::Computed,
-    surface::{SurfaceContent, SurfaceSize},
+    surface::{SurfaceContent, SurfaceSize, Viewport},
     vulkan::{CanvasRenderer, PresentOutcome, Presenter},
 };
 
-use super::Result;
+use super::{Result, Win32PresentationTarget};
 
 pub(super) struct WindowPresentation {
     presenter: Presenter,
@@ -24,7 +23,7 @@ pub(super) struct WindowPresentation {
 }
 
 impl WindowPresentation {
-    pub(super) fn new(target: PresentationTarget) -> Result<Self> {
+    pub(super) fn new(target: Win32PresentationTarget) -> Result<Self> {
         let presenter = Presenter::new(target)?;
         let canvas_renderer = CanvasRenderer::new(presenter.device());
         Ok(Self {

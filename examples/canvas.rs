@@ -13,8 +13,7 @@ use theoria::{
     },
     surface::SurfaceContent,
     transform::Affine2,
-    window::Window,
-    windows,
+    windows::{self, Window},
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

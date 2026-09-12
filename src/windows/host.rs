@@ -16,17 +16,21 @@ use crate::{
     },
     reactive::Computed,
     surface::{Surface, SurfaceContent, SurfaceEvent},
-    window::backend::{WindowBackend, WindowBackendEvent, WindowEventBuffer},
-    windows::create_window,
+    window::CloseRequested,
 };
 
-use super::{CloseRequested, Result, WindowCapabilities, presentation::WindowPresentation};
+use super::{
+    Result, WindowCapabilities,
+    event_buffer::{Win32WindowEvent, WindowEventBuffer},
+    presentation::WindowPresentation,
+    window::Win32Window,
+};
 
 /// Native and presentation state for one Window attached to a Component tree.
 pub(super) struct WindowHost {
     inputs: WindowInputs,
     events: Rc<WindowEventBuffer>,
-    native: Box<dyn WindowBackend>,
+    native: Win32Window,
     frames: FrameScheduler,
     presentation: WindowPresentation,
 }
@@ -40,8 +44,8 @@ impl WindowHost {
         height: u32,
         build: impl FnOnce(&mut MountContext<'_>, &WindowCapabilities) -> Computed<SurfaceContent>,
     ) -> Result<Weak<RefCell<Self>>> {
-        let backend_events = Rc::new(WindowEventBuffer::new());
-        let native = create_window(title, width, height, Rc::clone(&backend_events))?;
+        let native_events = Rc::new(WindowEventBuffer::new());
+        let native = Win32Window::new(title, width, height, Rc::clone(&native_events))?;
         let frames = FrameScheduler::new();
         let presentation = WindowPresentation::new(native.presentation_target())?;
         let initial_size = native.size();
@@ -68,13 +72,14 @@ impl WindowHost {
             });
             assert!(context.connect_cloned(&surface, update_size));
 
-            let capabilities = WindowCapabilities {
-                surface: Surface::new(surface, size.value(), frame_clock),
+            let capabilities = WindowCapabilities::new(
+                Surface::new(surface, size.value()),
                 pointer,
                 scroll,
                 close_requested,
+                frame_clock,
                 movement_threshold,
-            };
+            );
             let content = build(context, &capabilities);
             presentation.bind(context, content);
 
@@ -91,7 +96,7 @@ impl WindowHost {
                     scroll: scroll_input,
                     close_requested: close_input,
                 },
-                events: backend_events,
+                events: native_events,
                 native,
                 frames,
                 presentation,
@@ -113,11 +118,11 @@ impl WindowHost {
         };
         if matches!(
             event,
-            WindowBackendEvent::Surface(SurfaceEvent::RedrawRequested)
+            Win32WindowEvent::Surface(SurfaceEvent::RedrawRequested)
         ) {
             self.presentation.mark_pending();
         }
-        if let WindowBackendEvent::Surface(SurfaceEvent::Resized(size)) = event {
+        if let Win32WindowEvent::Surface(SurfaceEvent::Resized(size)) = event {
             self.presentation.resize(size)?;
         }
         self.inputs.publish(event);
@@ -168,12 +173,12 @@ struct WindowInputs {
 }
 
 impl WindowInputs {
-    fn publish(&self, event: WindowBackendEvent) {
+    fn publish(&self, event: Win32WindowEvent) {
         match event {
-            WindowBackendEvent::Surface(event) => Self::publish_to(&self.surface, event),
-            WindowBackendEvent::Pointer(event) => Self::publish_to(&self.pointer, event),
-            WindowBackendEvent::Scroll(event) => Self::publish_to(&self.scroll, event),
-            WindowBackendEvent::CloseRequested => {
+            Win32WindowEvent::Surface(event) => Self::publish_to(&self.surface, event),
+            Win32WindowEvent::Pointer(event) => Self::publish_to(&self.pointer, event),
+            Win32WindowEvent::Scroll(event) => Self::publish_to(&self.scroll, event),
+            Win32WindowEvent::CloseRequested => {
                 Self::publish_to(&self.close_requested, CloseRequested);
             }
         }

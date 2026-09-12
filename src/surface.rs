@@ -1,12 +1,15 @@
 //! Platform-independent drawable-surface capabilities and content.
 
 use crate::{
-    animation::FrameClock,
     canvas::{Canvas, CanvasView},
     color::Color,
     event::EventSource,
     reactive::Value,
 };
+
+mod viewport;
+
+pub use viewport::Viewport;
 
 /// The finite extent of a drawable surface in surface pixels.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -30,20 +33,12 @@ pub enum SurfaceEvent {
 pub struct Surface {
     events: EventSource<SurfaceEvent>,
     size: Value<SurfaceSize>,
-    frame_clock: FrameClock,
 }
 
 impl Surface {
-    pub(crate) const fn new(
-        events: EventSource<SurfaceEvent>,
-        size: Value<SurfaceSize>,
-        frame_clock: FrameClock,
-    ) -> Self {
-        Self {
-            events,
-            size,
-            frame_clock,
-        }
+    /// Combines one producer's observable Surface event and size capabilities.
+    pub const fn new(events: EventSource<SurfaceEvent>, size: Value<SurfaceSize>) -> Self {
+        Self { events, size }
     }
 
     /// Observations concerning this drawable surface.
@@ -54,11 +49,6 @@ impl Surface {
     /// Current drawable extent as a reactive value.
     pub fn size(&self) -> Value<SurfaceSize> {
         self.size.clone()
-    }
-
-    /// This surface's request-driven animation frame clock.
-    pub fn frame_clock(&self) -> FrameClock {
-        self.frame_clock.clone()
     }
 }
 

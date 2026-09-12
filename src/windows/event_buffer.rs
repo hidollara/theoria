@@ -1,16 +1,15 @@
-//! Internal contract between semantic Windows and platform implementations.
+//! Owned semantic events staged by Win32 callbacks.
 
 use std::{cell::RefCell, collections::VecDeque};
 
 use crate::{
-    PresentationTarget,
     input::{pointer::PointerEvent, scroll::ScrollEvent},
     surface::{SurfaceEvent, SurfaceSize},
 };
 
-/// Platform input translated into Theoria's Window vocabulary.
+/// One owned observation translated from a Win32 Window callback.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) enum WindowBackendEvent {
+pub(crate) enum Win32WindowEvent {
     Surface(SurfaceEvent),
     Pointer(PointerEvent),
     Scroll(ScrollEvent),
@@ -24,7 +23,7 @@ pub(crate) enum WindowBackendEvent {
 /// that boundary because only their latest presentation state remains
 /// observable; intervening input keeps its causal ordering.
 pub(crate) struct WindowEventBuffer {
-    events: RefCell<VecDeque<WindowBackendEvent>>,
+    events: RefCell<VecDeque<Win32WindowEvent>>,
 }
 
 impl WindowEventBuffer {
@@ -40,7 +39,7 @@ impl WindowEventBuffer {
     }
 
     pub(crate) fn request_redraw(&self) {
-        let redraw = WindowBackendEvent::Surface(SurfaceEvent::RedrawRequested);
+        let redraw = Win32WindowEvent::Surface(SurfaceEvent::RedrawRequested);
         let mut events = self.events.borrow_mut();
         if events.back() != Some(&redraw) {
             events.push_back(redraw);
@@ -52,18 +51,16 @@ impl WindowEventBuffer {
         while events.back().is_some_and(|event| {
             matches!(
                 event,
-                WindowBackendEvent::Surface(
-                    SurfaceEvent::Resized(_) | SurfaceEvent::RedrawRequested
-                )
+                Win32WindowEvent::Surface(SurfaceEvent::Resized(_) | SurfaceEvent::RedrawRequested)
             )
         }) {
             events.pop_back();
         }
-        events.push_back(WindowBackendEvent::Surface(SurfaceEvent::Resized(size)));
-        events.push_back(WindowBackendEvent::Surface(SurfaceEvent::RedrawRequested));
+        events.push_back(Win32WindowEvent::Surface(SurfaceEvent::Resized(size)));
+        events.push_back(Win32WindowEvent::Surface(SurfaceEvent::RedrawRequested));
     }
 
-    pub(crate) fn push(&self, event: WindowBackendEvent) {
+    pub(crate) fn push(&self, event: Win32WindowEvent) {
         self.events.borrow_mut().push_back(event);
     }
 
@@ -71,21 +68,9 @@ impl WindowEventBuffer {
         !self.events.borrow().is_empty()
     }
 
-    pub(crate) fn pop(&self) -> Option<WindowBackendEvent> {
+    pub(crate) fn pop(&self) -> Option<Win32WindowEvent> {
         self.events.borrow_mut().pop_front()
     }
-}
-
-/// Native operations needed by Theoria's platform-independent Window host.
-///
-/// Implementations retain any required thread affinity. This contract remains
-/// private so public Window APIs expose only Theoria types.
-pub(crate) trait WindowBackend {
-    fn show(&self);
-    fn presentation_target(&self) -> PresentationTarget;
-    fn size(&self) -> SurfaceSize;
-    fn movement_threshold_extents(&self) -> (f32, f32);
-    fn request_redraw(&mut self);
 }
 
 #[cfg(test)]
@@ -101,7 +86,7 @@ mod tests {
 
         assert_eq!(
             events.pop(),
-            Some(WindowBackendEvent::Surface(SurfaceEvent::RedrawRequested))
+            Some(Win32WindowEvent::Surface(SurfaceEvent::RedrawRequested))
         );
         assert_eq!(events.pop(), None);
     }
@@ -111,17 +96,17 @@ mod tests {
         let events = WindowEventBuffer::new();
 
         events.request_redraw();
-        events.push(WindowBackendEvent::CloseRequested);
+        events.push(Win32WindowEvent::CloseRequested);
         events.request_redraw();
 
         assert_eq!(
             events.pop(),
-            Some(WindowBackendEvent::Surface(SurfaceEvent::RedrawRequested))
+            Some(Win32WindowEvent::Surface(SurfaceEvent::RedrawRequested))
         );
-        assert_eq!(events.pop(), Some(WindowBackendEvent::CloseRequested));
+        assert_eq!(events.pop(), Some(Win32WindowEvent::CloseRequested));
         assert_eq!(
             events.pop(),
-            Some(WindowBackendEvent::Surface(SurfaceEvent::RedrawRequested))
+            Some(Win32WindowEvent::Surface(SurfaceEvent::RedrawRequested))
         );
         assert_eq!(events.pop(), None);
     }
@@ -143,11 +128,11 @@ mod tests {
 
         assert_eq!(
             events.pop(),
-            Some(WindowBackendEvent::Surface(SurfaceEvent::Resized(latest)))
+            Some(Win32WindowEvent::Surface(SurfaceEvent::Resized(latest)))
         );
         assert_eq!(
             events.pop(),
-            Some(WindowBackendEvent::Surface(SurfaceEvent::RedrawRequested))
+            Some(Win32WindowEvent::Surface(SurfaceEvent::RedrawRequested))
         );
         assert_eq!(events.pop(), None);
     }
@@ -165,25 +150,25 @@ mod tests {
         };
 
         events.resize(first);
-        events.push(WindowBackendEvent::CloseRequested);
+        events.push(Win32WindowEvent::CloseRequested);
         events.resize(second);
 
         assert_eq!(
             events.pop(),
-            Some(WindowBackendEvent::Surface(SurfaceEvent::Resized(first)))
+            Some(Win32WindowEvent::Surface(SurfaceEvent::Resized(first)))
         );
         assert_eq!(
             events.pop(),
-            Some(WindowBackendEvent::Surface(SurfaceEvent::RedrawRequested))
+            Some(Win32WindowEvent::Surface(SurfaceEvent::RedrawRequested))
         );
-        assert_eq!(events.pop(), Some(WindowBackendEvent::CloseRequested));
+        assert_eq!(events.pop(), Some(Win32WindowEvent::CloseRequested));
         assert_eq!(
             events.pop(),
-            Some(WindowBackendEvent::Surface(SurfaceEvent::Resized(second)))
+            Some(Win32WindowEvent::Surface(SurfaceEvent::Resized(second)))
         );
         assert_eq!(
             events.pop(),
-            Some(WindowBackendEvent::Surface(SurfaceEvent::RedrawRequested))
+            Some(Win32WindowEvent::Surface(SurfaceEvent::RedrawRequested))
         );
     }
 }

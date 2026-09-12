@@ -13,8 +13,7 @@ use theoria::{
     surface::SurfaceContent,
     text::{Text, TextStyle},
     transform::Affine2,
-    window::WindowGroup,
-    windows,
+    windows::{self, WindowGroup},
 };
 
 const WIDTH: u32 = 640;

@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use crate::{
     surface::SurfaceSize,
-    window::backend::{WindowBackendEvent, WindowEventBuffer},
+    windows::event_buffer::{Win32WindowEvent, WindowEventBuffer},
 };
 
 pub(super) struct WindowState {
@@ -38,7 +38,7 @@ impl WindowState {
         self.events.resize(size);
     }
 
-    pub(super) fn push(&mut self, event: WindowBackendEvent) {
+    pub(super) fn push(&mut self, event: Win32WindowEvent) {
         self.events.push(event);
     }
 }

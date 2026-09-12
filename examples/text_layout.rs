@@ -7,8 +7,7 @@ use theoria::{
     surface::SurfaceContent,
     text::{OpenTypeFeatureTag, Span, Text, TextStyle},
     transform::Affine2,
-    window::Window,
-    windows,
+    windows::{self, Window},
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

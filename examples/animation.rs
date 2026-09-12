@@ -9,8 +9,7 @@ use theoria::{
     path::{LineJoin, Path, StrokeStyle},
     surface::SurfaceContent,
     transform::Affine2,
-    window::Window,
-    windows,
+    windows::{self, Window},
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -38,7 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             });
             assert!(context.connect_cloned(events.pointer(), &pointer_events));
 
-            let clock = events.surface().frame_clock();
+            let clock = events.frame_clock();
             let frame = clock.frame();
             let next_frame = clock.clone();
             let continuous_frame = frame.clone();

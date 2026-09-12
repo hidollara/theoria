@@ -5,7 +5,7 @@ use ash::vk;
 use crate::{
     canvas::{Canvas, CanvasView},
     image::{Image, ImageContent, ImageInstanceKey},
-    target::Viewport,
+    surface::Viewport,
 };
 
 use super::{
