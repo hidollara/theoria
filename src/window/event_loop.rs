@@ -2,7 +2,7 @@
 
 use std::time::{Duration, Instant};
 
-use crate::windows::message_pump::{MessagePumpProgress, WindowsMessagePump};
+use crate::windows::message_pump::{MessagePumpEvent, ThreadMessage, WindowsMessagePump};
 
 use super::{Result, mounted_group::MountedWindowGroup};
 
@@ -46,8 +46,16 @@ impl WindowEventLoop {
             } else {
                 self.message_pump.poll()
             };
-            if matches!(message_progress, MessagePumpProgress::Finished) {
-                break;
+            match message_progress {
+                MessagePumpEvent::Quit(_exit_code) => break,
+                MessagePumpEvent::ThreadMessage(ThreadMessage {
+                    message: _message,
+                    wparam: _wparam,
+                    lparam: _lparam,
+                }) => {
+                    // This Window-only owner has no thread-message consumer.
+                }
+                MessagePumpEvent::WindowDispatched | MessagePumpEvent::Idle => {}
             }
 
             let now = Instant::now();
@@ -63,7 +71,7 @@ impl WindowEventLoop {
                 break;
             }
 
-            let waiting_window = if matches!(message_progress, MessagePumpProgress::Idle) {
+            let waiting_window = if matches!(message_progress, MessagePumpEvent::Idle) {
                 self.next_window_waiting_for_presentation()
             } else {
                 None

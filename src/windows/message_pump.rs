@@ -4,10 +4,10 @@ use std::{marker::PhantomData, rc::Rc, time::Duration};
 
 use ::windows::{
     Win32::{
-        Foundation::{WAIT_FAILED, WAIT_TIMEOUT},
+        Foundation::{HWND, WAIT_FAILED, WAIT_TIMEOUT},
         UI::WindowsAndMessaging::{
             DispatchMessageW, GetMessageW, MSG, MWMO_INPUTAVAILABLE, MsgWaitForMultipleObjectsEx,
-            PM_REMOVE, PeekMessageW, QS_ALLINPUT, TranslateMessage, WM_QUIT,
+            PM_NOREMOVE, PM_REMOVE, PeekMessageW, QS_ALLINPUT, TranslateMessage, WM_QUIT, WM_USER,
         },
     },
     core::{Error, Result},
@@ -16,21 +16,33 @@ use ::windows::{
 /// Drives the Win32 message queue belonging to the current GUI thread.
 ///
 /// One thread queue services every Window created on that thread. This access
-/// object is deliberately `!Send` and `!Sync`: Win32 associates the queue and
-/// its Windows with the thread that created them.
+/// object also receives messages posted directly to the thread, so neither the
+/// queue nor this pump requires a Window to exist. It is deliberately `!Send`
+/// and `!Sync`: Win32 associates the queue and its Windows with the thread that
+/// created them.
 pub(crate) struct WindowsMessagePump {
     _thread_affinity: PhantomData<Rc<()>>,
 }
 
 impl WindowsMessagePump {
     pub(crate) fn new() -> Self {
+        // A thread message queue is created lazily by User32. Establish it now
+        // so a subsequently issued cross-thread posting cannot race the first
+        // blocking wait, including when this thread owns no Window.
+        unsafe {
+            let mut message = MSG::default();
+            let _ = PeekMessageW(&mut message, None, WM_USER, WM_USER, PM_NOREMOVE);
+        }
         Self {
             _thread_affinity: PhantomData,
         }
     }
 
-    /// Waits for and dispatches one message from the current thread's queue.
-    pub(crate) fn wait(&mut self) -> Result<MessagePumpProgress> {
+    /// Waits for and processes one message from the current thread's queue.
+    ///
+    /// Window messages are dispatched to their Window procedures. A message
+    /// without an HWND is returned to the caller as a thread message instead.
+    pub(crate) fn wait(&mut self) -> Result<MessagePumpEvent> {
         unsafe {
             let mut message = MSG::default();
             let result = GetMessageW(&mut message, None, 0, 0).0;
@@ -38,15 +50,14 @@ impl WindowsMessagePump {
                 return Err(Error::from_thread());
             }
             if result == 0 {
-                return Ok(MessagePumpProgress::Finished);
+                return Ok(MessagePumpEvent::Quit(message.wParam.0 as i32));
             }
-            dispatch(&message);
-            Ok(MessagePumpProgress::Dispatched)
+            Ok(process(message))
         }
     }
 
     /// Waits until either native input arrives or `timeout` elapses.
-    pub(crate) fn wait_for(&mut self, timeout: Duration) -> Result<MessagePumpProgress> {
+    pub(crate) fn wait_for(&mut self, timeout: Duration) -> Result<MessagePumpEvent> {
         if timeout.is_zero() {
             return Ok(self.poll());
         }
@@ -62,28 +73,26 @@ impl WindowsMessagePump {
             return Err(Error::from_thread());
         }
         if result == WAIT_TIMEOUT {
-            return Ok(MessagePumpProgress::Idle);
+            return Ok(MessagePumpEvent::Idle);
         }
         Ok(self.poll())
     }
 
-    /// Dispatches every message currently ready on the current thread's queue.
-    pub(crate) fn poll(&mut self) -> MessagePumpProgress {
+    /// Processes at most one ready message from the current thread's queue.
+    ///
+    /// Limiting one call to one message lets the owner interleave native input
+    /// with other execution domains instead of allowing an active Win32 queue
+    /// to monopolize its thread.
+    pub(crate) fn poll(&mut self) -> MessagePumpEvent {
         unsafe {
-            let mut dispatched = false;
             let mut message = MSG::default();
-            while PeekMessageW(&mut message, None, 0, 0, PM_REMOVE).as_bool() {
-                if message.message == WM_QUIT {
-                    return MessagePumpProgress::Finished;
-                }
-                dispatch(&message);
-                dispatched = true;
+            if !PeekMessageW(&mut message, None, 0, 0, PM_REMOVE).as_bool() {
+                return MessagePumpEvent::Idle;
             }
-            if dispatched {
-                MessagePumpProgress::Dispatched
-            } else {
-                MessagePumpProgress::Idle
+            if message.message == WM_QUIT {
+                return MessagePumpEvent::Quit(message.wParam.0 as i32);
             }
+            process(message)
         }
     }
 }
@@ -94,10 +103,32 @@ fn timeout_milliseconds(timeout: Duration) -> u32 {
     rounded_up.clamp(1, u128::from(u32::MAX - 1)) as u32
 }
 
-pub(crate) enum MessagePumpProgress {
-    Dispatched,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum MessagePumpEvent {
+    WindowDispatched,
+    ThreadMessage(ThreadMessage),
     Idle,
-    Finished,
+    Quit(i32),
+}
+
+/// One posted message that belongs to a thread rather than a Window.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ThreadMessage {
+    pub(crate) message: u32,
+    pub(crate) wparam: usize,
+    pub(crate) lparam: isize,
+}
+
+fn process(message: MSG) -> MessagePumpEvent {
+    if message.hwnd == HWND::default() {
+        return MessagePumpEvent::ThreadMessage(ThreadMessage {
+            message: message.message,
+            wparam: message.wParam.0,
+            lparam: message.lParam.0,
+        });
+    }
+    unsafe { dispatch(&message) };
+    MessagePumpEvent::WindowDispatched
 }
 
 unsafe fn dispatch(message: &MSG) {
@@ -109,8 +140,13 @@ unsafe fn dispatch(message: &MSG) {
 
 #[cfg(test)]
 mod tests {
-    use super::timeout_milliseconds;
+    use super::{MessagePumpEvent, ThreadMessage, process, timeout_milliseconds};
     use std::time::Duration;
+
+    use windows::Win32::{
+        Foundation::{LPARAM, WPARAM},
+        UI::WindowsAndMessaging::{MSG, WM_APP},
+    };
 
     #[test]
     fn finite_waits_round_up_to_the_next_millisecond() {
@@ -122,5 +158,24 @@ mod tests {
     #[test]
     fn finite_waits_never_use_the_infinite_timeout_value() {
         assert_eq!(timeout_milliseconds(Duration::MAX), u32::MAX - 1);
+    }
+
+    #[test]
+    fn a_message_without_a_window_is_returned_to_the_thread_owner() {
+        let message = MSG {
+            message: WM_APP + 7,
+            wParam: WPARAM(11),
+            lParam: LPARAM(13),
+            ..Default::default()
+        };
+
+        assert!(matches!(
+            process(message),
+            MessagePumpEvent::ThreadMessage(ThreadMessage {
+                message,
+                wparam: 11,
+                lparam: 13,
+            }) if message == WM_APP + 7
+        ));
     }
 }
