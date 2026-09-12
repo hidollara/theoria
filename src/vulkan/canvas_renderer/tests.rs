@@ -10,6 +10,7 @@ use crate::canvas::{
 };
 use crate::color::Color;
 use crate::geometry::Point;
+use crate::transform::Projective2;
 
 #[test]
 fn image_is_a_raster_boundary_while_canvas_color_field_stays_semantic() {

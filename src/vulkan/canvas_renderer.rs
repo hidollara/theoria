@@ -6,7 +6,6 @@ use crate::{
     canvas::{Canvas, CanvasView},
     image::{Image, ImageContent, ImageInstanceKey},
     target::Viewport,
-    transform::Projective2,
 };
 
 use super::{
@@ -205,53 +204,17 @@ impl CanvasRenderer {
             extent,
         };
 
-        unsafe {
-            let mut recorder = CanvasRecorder {
-                device,
-                command_buffer,
-                pipelines,
-                image_cache,
-                scratch_images: &self.gpu.scratch_images,
-                attachment_area,
-                target_region,
-                view,
-                next_image: 0,
-            };
-            let canvas_image = recorder.evaluate(canvas, Projective2::IDENTITY);
-
-            let color_attachment = vk::RenderingAttachmentInfo::default()
-                .image_view(image_view)
-                .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                .load_op(vk::AttachmentLoadOp::CLEAR)
-                .store_op(vk::AttachmentStoreOp::STORE)
-                .clear_value(vk::ClearValue {
-                    color: vk::ClearColorValue {
-                        float32: clear_color,
-                    },
-                });
-            let rendering_info = vk::RenderingInfo::default()
-                .render_area(attachment_area)
-                .layer_count(1)
-                .color_attachments(std::slice::from_ref(&color_attachment));
-            device.cmd_begin_rendering(command_buffer, &rendering_info);
-            device.cmd_set_viewport(command_buffer, 0, &[full_viewport(extent)]);
-            device.cmd_set_scissor(command_buffer, 0, &[attachment_area]);
-            device.cmd_bind_pipeline(
-                command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                pipelines.present.handle,
-            );
-            device.cmd_bind_descriptor_sets(
-                command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                pipelines.present.layout,
-                0,
-                &[self.gpu.scratch_images[canvas_image].descriptor_set()],
-                &[],
-            );
-            device.cmd_draw(command_buffer, 3, 1, 0, 0);
-            device.cmd_end_rendering(command_buffer);
-        }
+        let mut recorder = CanvasRecorder::new(
+            device,
+            command_buffer,
+            pipelines,
+            image_cache,
+            &self.gpu.scratch_images,
+            attachment_area,
+            target_region,
+            view,
+        );
+        recorder.record(canvas, image_view, clear_color);
         Ok(())
     }
 }
@@ -301,17 +264,6 @@ fn target_region(viewport: Viewport, extent: vk::Extent2D) -> Option<(vk::Viewpo
             },
         },
     ))
-}
-
-pub(super) fn full_viewport(extent: vk::Extent2D) -> vk::Viewport {
-    vk::Viewport {
-        x: 0.0,
-        y: 0.0,
-        width: extent.width as f32,
-        height: extent.height as f32,
-        min_depth: 0.0,
-        max_depth: 1.0,
-    }
 }
 
 fn preferred_sample_count(device: &RenderDevice, format: vk::Format) -> vk::SampleCountFlags {
