@@ -158,8 +158,12 @@ struct BridgeState<E: Send + 'static> {
 }
 
 impl<E: Send + 'static> EventLoopParticipant for BridgeState<E> {
-    fn is_finished(&self) -> bool {
+    fn is_closed(&self) -> bool {
         self.closed.get()
+    }
+
+    fn keeps_alive(&self) -> bool {
+        true
     }
 
     fn process_ready_work(&self, _now: Instant) -> Result<()> {

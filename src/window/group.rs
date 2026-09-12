@@ -38,7 +38,7 @@ impl WindowGroup {
             };
             build.take().expect("WindowGroup build runs once")(&mut context)
         })?;
-        event_loop.register(&tree)?;
+        tree.register(event_loop)?;
         Ok(Self { tree })
     }
 

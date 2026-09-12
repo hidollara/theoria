@@ -148,7 +148,7 @@ impl Window {
                 build.take().expect("Window build runs once"),
             )
         })?;
-        event_loop.register(&tree)?;
+        tree.register(event_loop)?;
         Ok(Self { tree })
     }
 

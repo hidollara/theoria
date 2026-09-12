@@ -91,8 +91,8 @@ impl EventLoop {
     }
 
     fn advance(&mut self, idle_wait: IdleWait) -> Result<EventLoopStatus> {
-        let participants = self.live_participants();
-        if participants.is_empty() {
+        let participants = self.available_participants();
+        if should_finish(&participants) {
             return Ok(EventLoopStatus::Empty);
         }
 
@@ -131,8 +131,8 @@ impl EventLoop {
             participant.process_ready_work(now)?;
         }
 
-        let participants = self.live_participants();
-        if participants.is_empty() {
+        let participants = self.available_participants();
+        if should_finish(&participants) {
             return Ok(EventLoopStatus::Empty);
         }
 
@@ -165,7 +165,7 @@ impl EventLoop {
         Ok(EventLoopStatus::Active)
     }
 
-    fn live_participants(&self) -> Vec<Rc<dyn EventLoopParticipant>> {
+    fn available_participants(&self) -> Vec<Rc<dyn EventLoopParticipant>> {
         let participants: Vec<_> = self
             .registrations
             .participants
@@ -179,7 +179,7 @@ impl EventLoop {
             .retain(|participant| participant.strong_count() != 0);
         participants
             .into_iter()
-            .filter(|participant| !participant.is_finished())
+            .filter(|participant| !participant.is_closed())
             .collect()
     }
 
@@ -331,7 +331,15 @@ impl fmt::Display for EventLoopClosed {
 impl Error for EventLoopClosed {}
 
 pub(crate) trait EventLoopParticipant {
-    fn is_finished(&self) -> bool;
+    /// Returns whether this participant can never process or produce work again.
+    fn is_closed(&self) -> bool;
+
+    /// Returns whether this participant can produce future work while idle.
+    ///
+    /// Passive processors return `false`: pending work is still drained, but an
+    /// idle processor alone does not keep the EventLoop running.
+    fn keeps_alive(&self) -> bool;
+
     fn prepare(&self, _now: Instant) {}
     fn next_deadline(&self) -> Option<Instant> {
         None
@@ -349,6 +357,14 @@ pub(crate) trait EventLoopParticipant {
     fn advance_waitable_work(&self, _index: usize, _wait: Duration) -> Result<()> {
         Ok(())
     }
+}
+
+fn should_finish(participants: &[Rc<dyn EventLoopParticipant>]) -> bool {
+    participants.is_empty()
+        || (participants
+            .iter()
+            .all(|participant| !participant.keeps_alive())
+            && participants.iter().all(|participant| participant.is_idle()))
 }
 
 fn next_deadline(participants: &[Rc<dyn EventLoopParticipant>]) -> Option<Instant> {
@@ -381,8 +397,12 @@ mod tests {
     struct FinishedParticipant;
 
     impl EventLoopParticipant for FinishedParticipant {
-        fn is_finished(&self) -> bool {
+        fn is_closed(&self) -> bool {
             true
+        }
+
+        fn keeps_alive(&self) -> bool {
+            false
         }
 
         fn process_ready_work(&self, _: Instant) -> Result<()> {
@@ -395,8 +415,12 @@ mod tests {
     }
 
     impl EventLoopParticipant for OneStepParticipant {
-        fn is_finished(&self) -> bool {
+        fn is_closed(&self) -> bool {
             self.processed.get()
+        }
+
+        fn keeps_alive(&self) -> bool {
+            false
         }
 
         fn is_idle(&self) -> bool {
@@ -439,6 +463,106 @@ mod tests {
 
         assert_eq!(event_loop.poll().unwrap(), EventLoopStatus::Empty);
         assert!(participant.processed.get());
+    }
+
+    struct DormantParticipant;
+
+    impl EventLoopParticipant for DormantParticipant {
+        fn is_closed(&self) -> bool {
+            false
+        }
+
+        fn keeps_alive(&self) -> bool {
+            false
+        }
+
+        fn process_ready_work(&self, _: Instant) -> Result<()> {
+            panic!("a dormant passive participant has no work to process")
+        }
+    }
+
+    #[test]
+    fn a_dormant_passive_participant_does_not_keep_the_loop_alive() {
+        let mut event_loop = EventLoop::new();
+        let participant = Rc::new(DormantParticipant);
+        event_loop.handle().register(&participant).unwrap();
+
+        assert_eq!(event_loop.poll().unwrap(), EventLoopStatus::Empty);
+    }
+
+    struct PassiveWork {
+        pending: Rc<Cell<bool>>,
+        processed: Rc<Cell<bool>>,
+    }
+
+    impl EventLoopParticipant for PassiveWork {
+        fn is_closed(&self) -> bool {
+            false
+        }
+
+        fn keeps_alive(&self) -> bool {
+            false
+        }
+
+        fn is_idle(&self) -> bool {
+            !self.pending.get()
+        }
+
+        fn process_ready_work(&self, _: Instant) -> Result<()> {
+            if self.pending.replace(false) {
+                self.processed.set(true);
+            }
+            Ok(())
+        }
+    }
+
+    struct OneShotProducer {
+        pending: Rc<Cell<bool>>,
+        finished: Cell<bool>,
+    }
+
+    impl EventLoopParticipant for OneShotProducer {
+        fn is_closed(&self) -> bool {
+            self.finished.get()
+        }
+
+        fn keeps_alive(&self) -> bool {
+            true
+        }
+
+        fn is_idle(&self) -> bool {
+            self.finished.get()
+        }
+
+        fn process_ready_work(&self, _: Instant) -> Result<()> {
+            self.pending.set(true);
+            self.finished.set(true);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn passive_work_outlives_the_producer_that_submitted_it() {
+        let mut event_loop = EventLoop::new();
+        let pending = Rc::new(Cell::new(false));
+        let processed = Rc::new(Cell::new(false));
+        let passive = Rc::new(PassiveWork {
+            pending: Rc::clone(&pending),
+            processed: Rc::clone(&processed),
+        });
+        let producer = Rc::new(OneShotProducer {
+            pending,
+            finished: Cell::new(false),
+        });
+        let handle = event_loop.handle();
+        handle.register(&passive).unwrap();
+        handle.register(&producer).unwrap();
+
+        assert_eq!(event_loop.poll().unwrap(), EventLoopStatus::Active);
+        assert!(!processed.get());
+
+        assert_eq!(event_loop.poll().unwrap(), EventLoopStatus::Empty);
+        assert!(processed.get());
     }
 
     #[test]

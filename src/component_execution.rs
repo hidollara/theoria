@@ -1,15 +1,26 @@
 //! Default local execution of one Component tree.
 
-use std::time::{Duration, Instant};
+use std::{
+    cell::RefCell,
+    error::Error,
+    time::{Duration, Instant},
+};
 
 use crate::{
     component::{ComponentInstance, MountContext},
     event::FifoDispatcher,
+    event_loop::EventLoopParticipant,
     reactive::ReactiveError,
 };
 
+const DEFAULT_WORK_SLICE: Duration = Duration::from_millis(4);
+
 /// Drives one Component tree without assigning Window ownership to it.
 pub(crate) struct ComponentExecution {
+    state: RefCell<ComponentExecutionState>,
+}
+
+struct ComponentExecutionState {
     dispatcher: FifoDispatcher,
     instance: ComponentInstance,
 }
@@ -26,61 +37,63 @@ impl ComponentExecution {
         });
         (
             Self {
-                dispatcher,
-                instance,
+                state: RefCell::new(ComponentExecutionState {
+                    dispatcher,
+                    instance,
+                }),
             },
             result.expect("the Component build runs once"),
         )
     }
 
-    pub(crate) fn flush_effects(&mut self) -> Result<(), ReactiveError> {
-        self.instance.flush_effects()
+    pub(crate) fn flush_effects(&self) -> Result<(), ReactiveError> {
+        self.state.borrow_mut().instance.flush_effects()
     }
 
-    pub(crate) fn is_finished(&self) -> bool {
-        self.instance.is_finished()
-    }
-
-    pub(crate) fn is_idle(&self) -> bool {
-        !self.dispatcher.has_pending()
-    }
-
-    pub(crate) fn advance(
-        &mut self,
-        available_time: Duration,
-    ) -> Result<ComponentProgress, ReactiveError> {
-        let started_at = Instant::now();
-        loop {
-            if self.instance.is_finished() {
-                return Ok(ComponentProgress::Finished);
-            }
-            if !self.dispatcher.deliver_next() {
-                self.instance.flush_effects()?;
-                return Ok(if self.dispatcher.has_pending() {
-                    ComponentProgress::Pending
-                } else {
-                    ComponentProgress::Idle
-                });
-            }
-            if self.instance.is_finished() {
-                return Ok(ComponentProgress::Finished);
-            }
-            if started_at.elapsed() >= available_time {
-                self.instance.flush_effects()?;
-                return Ok(if self.dispatcher.has_pending() {
-                    ComponentProgress::Pending
-                } else {
-                    ComponentProgress::Idle
-                });
-            }
-        }
+    fn advance(&self, available_time: Duration) -> Result<(), ReactiveError> {
+        self.state.borrow_mut().advance(available_time)
     }
 }
 
-pub(crate) enum ComponentProgress {
-    Idle,
-    Pending,
-    Finished,
+impl EventLoopParticipant for ComponentExecution {
+    fn is_closed(&self) -> bool {
+        self.state.borrow().instance.is_finished()
+    }
+
+    fn keeps_alive(&self) -> bool {
+        false
+    }
+
+    fn is_idle(&self) -> bool {
+        !self.state.borrow().dispatcher.has_pending()
+    }
+
+    fn process_ready_work(&self, _now: Instant) -> Result<(), Box<dyn Error>> {
+        self.advance(DEFAULT_WORK_SLICE)?;
+        Ok(())
+    }
+}
+
+impl ComponentExecutionState {
+    fn advance(&mut self, available_time: Duration) -> Result<(), ReactiveError> {
+        let started_at = Instant::now();
+        loop {
+            if self.instance.is_finished() {
+                return Ok(());
+            }
+            if !self.dispatcher.deliver_next() {
+                self.instance.flush_effects()?;
+                return Ok(());
+            }
+            if self.instance.is_finished() {
+                return Ok(());
+            }
+            if started_at.elapsed() >= available_time {
+                self.instance.flush_effects()?;
+                return Ok(());
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -103,21 +116,23 @@ mod tests {
             });
             context.sync(&effect);
         });
-        let mut execution = ComponentExecution {
-            dispatcher,
-            instance,
+        let execution = ComponentExecution {
+            state: RefCell::new(ComponentExecutionState {
+                dispatcher,
+                instance,
+            }),
         };
 
-        let progress = execution
+        execution
             .advance(Duration::MAX)
             .expect("the synchronized Effect is valid");
-        assert!(matches!(progress, ComponentProgress::Pending));
+        assert!(execution.state.borrow().dispatcher.has_pending());
         assert!(!received.get());
 
-        let progress = execution
+        execution
             .advance(Duration::MAX)
             .expect("the event handler is valid");
-        assert!(matches!(progress, ComponentProgress::Idle));
+        assert!(!execution.state.borrow().dispatcher.has_pending());
         assert!(received.get());
     }
 }
