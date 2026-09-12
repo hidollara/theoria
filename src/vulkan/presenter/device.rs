@@ -1,10 +1,14 @@
 //! Vulkan device and Surface lifetime used by presentation.
 
-use std::{error::Error, ffi::CStr, sync::Arc};
+use std::{error::Error, ffi::CStr};
 
 use ash::{ext, khr, vk};
 
 use crate::target::PresentationTarget;
+
+mod render;
+
+pub use render::RenderDevice;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -52,15 +56,15 @@ impl PresentationDeviceConstruction {
             .take()
             .expect("surface loader is present");
         let surface = std::mem::replace(&mut self.surface, vk::SurfaceKHR::null());
-        let render = RenderDevice(Arc::new(DeviceInner {
-            _entry: entry,
+        let render = RenderDevice::new(
+            entry,
             instance,
             physical_device,
             device,
             memory_properties,
             graphics_queue,
             queue_family_index,
-        }));
+        );
         PresentationDevice {
             render,
             surface_loader,
@@ -85,74 +89,6 @@ impl Drop for PresentationDeviceConstruction {
                 instance.destroy_instance(None);
             }
         }
-    }
-}
-
-struct DeviceInner {
-    _entry: ash::Entry,
-    instance: ash::Instance,
-    physical_device: vk::PhysicalDevice,
-    device: ash::Device,
-    memory_properties: vk::PhysicalDeviceMemoryProperties,
-    graphics_queue: vk::Queue,
-    queue_family_index: u32,
-}
-
-impl Drop for DeviceInner {
-    fn drop(&mut self) {
-        unsafe {
-            self.device.destroy_device(None);
-            self.instance.destroy_instance(None);
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct RenderDevice(Arc<DeviceInner>);
-
-impl RenderDevice {
-    pub(crate) fn raw(&self) -> &ash::Device {
-        &self.0.device
-    }
-
-    pub(crate) fn graphics_queue(&self) -> vk::Queue {
-        self.0.graphics_queue
-    }
-
-    pub(crate) fn queue_family_index(&self) -> u32 {
-        self.0.queue_family_index
-    }
-
-    pub(crate) fn supported_color_sample_counts(&self, format: vk::Format) -> vk::SampleCountFlags {
-        unsafe {
-            self.0
-                .instance
-                .get_physical_device_image_format_properties(
-                    self.0.physical_device,
-                    format,
-                    vk::ImageType::TYPE_2D,
-                    vk::ImageTiling::OPTIMAL,
-                    vk::ImageUsageFlags::COLOR_ATTACHMENT,
-                    vk::ImageCreateFlags::empty(),
-                )
-                .map_or(vk::SampleCountFlags::TYPE_1, |properties| {
-                    properties.sample_counts
-                })
-        }
-    }
-
-    pub(crate) fn find_memory_type(
-        &self,
-        allowed_types: u32,
-        required: vk::MemoryPropertyFlags,
-    ) -> Option<u32> {
-        self.0.memory_properties.memory_types[..self.0.memory_properties.memory_type_count as usize]
-            .iter()
-            .enumerate()
-            .find(|(index, memory_type)| {
-                allowed_types & (1 << index) != 0 && memory_type.property_flags.contains(required)
-            })
-            .map(|(index, _)| index as u32)
     }
 }
 
