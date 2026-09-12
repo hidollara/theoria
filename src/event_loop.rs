@@ -5,12 +5,12 @@ use std::{
     error::Error,
     fmt, io,
     rc::{Rc, Weak},
+    sync::Weak as SyncWeak,
     time::{Duration, Instant},
 };
 
-use crate::windows::message_pump::{
-    MessagePumpEvent, MessagePumpWaker, ThreadMessage, WindowsMessagePump,
-};
+use crate::event_pump::{EventPump, EventPumpWake, PumpEvent, ThreadMessage};
+use crate::windows::message_pump::WindowsMessagePump;
 
 mod bridge;
 
@@ -27,7 +27,7 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 /// Windows, Components, or other producers. Those objects retain themselves
 /// through their own lifetime boundaries and register here non-owningly.
 pub struct EventLoop {
-    message_pump: WindowsMessagePump,
+    pump: Box<dyn EventPump>,
     registrations: Rc<Registrations>,
     next_waitable_work: usize,
 }
@@ -36,7 +36,7 @@ impl EventLoop {
     /// Creates an independent driver for the current GUI thread.
     pub fn new() -> Self {
         Self {
-            message_pump: WindowsMessagePump::new(),
+            pump: Box::new(WindowsMessagePump::new()),
             registrations: Rc::new(Registrations::default()),
             next_waitable_work: 0,
         }
@@ -46,7 +46,7 @@ impl EventLoop {
     pub fn handle(&self) -> EventLoopHandle {
         EventLoopHandle {
             registrations: Rc::downgrade(&self.registrations),
-            message_pump: self.message_pump.waker(),
+            waker: self.waker(),
         }
     }
 
@@ -58,7 +58,7 @@ impl EventLoop {
     /// loop so registered local work can consume it.
     pub fn waker(&self) -> EventLoopWaker {
         EventLoopWaker {
-            message_pump: self.message_pump.waker(),
+            wake: self.pump.wake_capability(),
         }
     }
 
@@ -104,26 +104,26 @@ impl EventLoop {
             && participants.iter().all(|participant| participant.is_idle())
         {
             if let Some(deadline) = next_deadline(&participants) {
-                self.message_pump
+                self.pump
                     .wait_for(deadline.saturating_duration_since(now))?
             } else {
-                self.message_pump.wait()?
+                self.pump.wait()?
             }
         } else {
-            self.message_pump.poll()
+            self.pump.poll()?
         };
         match message_progress {
-            MessagePumpEvent::Quit(exit_code) => {
+            PumpEvent::ExitRequested(exit_code) => {
                 return Ok(EventLoopStatus::ExitRequested(exit_code));
             }
-            MessagePumpEvent::ThreadMessage(ThreadMessage {
+            PumpEvent::ThreadMessage(ThreadMessage {
                 message: _message,
                 wparam: _wparam,
                 lparam: _lparam,
             }) => {
                 // No registered thread-message producer consumes this yet.
             }
-            MessagePumpEvent::WindowDispatched | MessagePumpEvent::Idle => {}
+            PumpEvent::NativeDispatched | PumpEvent::Idle => {}
         }
 
         let now = Instant::now();
@@ -136,13 +136,12 @@ impl EventLoop {
             return Ok(EventLoopStatus::Empty);
         }
 
-        let waiting_work = if idle_wait == IdleWait::Allowed
-            && matches!(message_progress, MessagePumpEvent::Idle)
-        {
-            self.next_waitable_work(&participants)
-        } else {
-            None
-        };
+        let waiting_work =
+            if idle_wait == IdleWait::Allowed && matches!(message_progress, PumpEvent::Idle) {
+                self.next_waitable_work(&participants)
+            } else {
+                None
+            };
         if let Some(index) = waiting_work {
             self.next_waitable_work = index + 1;
         }
@@ -234,7 +233,7 @@ impl fmt::Debug for EventLoop {
 #[derive(Clone)]
 pub struct EventLoopHandle {
     registrations: Weak<Registrations>,
-    message_pump: MessagePumpWaker,
+    waker: EventLoopWaker,
 }
 
 impl EventLoopHandle {
@@ -272,9 +271,7 @@ impl EventLoopHandle {
 
     /// Returns a thread-safe, non-owning capability for interrupting this loop.
     pub fn waker(&self) -> EventLoopWaker {
-        EventLoopWaker {
-            message_pump: self.message_pump.clone(),
-        }
+        self.waker.clone()
     }
 }
 
@@ -292,17 +289,24 @@ impl fmt::Debug for EventLoopHandle {
 /// boundaries. It does not retain the EventLoop or any registered work.
 #[derive(Clone)]
 pub struct EventLoopWaker {
-    message_pump: MessagePumpWaker,
+    wake: SyncWeak<dyn EventPumpWake>,
 }
 
 impl EventLoopWaker {
     /// Interrupts the EventLoop's current or next native wait.
     ///
     /// Returns [`io::ErrorKind::BrokenPipe`] after the EventLoop has been
-    /// dropped. Other errors report that Win32 rejected the wake request.
+    /// dropped. Other errors report that the platform rejected the wake request.
     pub fn wake(&self) -> io::Result<()> {
-        self.message_pump.wake()
+        self.wake
+            .upgrade()
+            .ok_or_else(unavailable_wake_error)?
+            .wake()
     }
+}
+
+fn unavailable_wake_error() -> io::Error {
+    io::Error::new(io::ErrorKind::BrokenPipe, "the event loop is unavailable")
 }
 
 impl fmt::Debug for EventLoopWaker {

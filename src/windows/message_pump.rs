@@ -1,7 +1,6 @@
 //! Win32 message pumping for one GUI thread.
 
 use std::{
-    io,
     marker::PhantomData,
     rc::Rc,
     sync::{Arc, Mutex, Weak},
@@ -20,6 +19,8 @@ use ::windows::{
     },
     core::{Error, Result},
 };
+
+use crate::event_pump::{EventPump, EventPumpWake, PumpEvent, PumpResult, ThreadMessage};
 
 /// Drives the Win32 message queue belonging to the current GUI thread.
 ///
@@ -51,18 +52,16 @@ impl WindowsMessagePump {
         }
     }
 
-    /// Returns a thread-safe, non-owning capability that interrupts a wait.
-    pub(crate) fn waker(&self) -> MessagePumpWaker {
-        MessagePumpWaker {
-            state: Arc::downgrade(&self.wake),
-        }
+    fn downgraded_wake(&self) -> Weak<dyn EventPumpWake> {
+        let wake: Arc<dyn EventPumpWake> = self.wake.clone();
+        Arc::downgrade(&wake)
     }
 
     /// Waits for and processes one message from the current thread's queue.
     ///
     /// Window messages are dispatched to their Window procedures. A message
     /// without an HWND is returned to the caller as a thread message instead.
-    pub(crate) fn wait(&mut self) -> Result<MessagePumpEvent> {
+    fn wait_native(&mut self) -> Result<PumpEvent> {
         unsafe {
             let mut message = MSG::default();
             let result = GetMessageW(&mut message, None, 0, 0).0;
@@ -70,16 +69,16 @@ impl WindowsMessagePump {
                 return Err(Error::from_thread());
             }
             if result == 0 {
-                return Ok(MessagePumpEvent::Quit(message.wParam.0 as i32));
+                return Ok(PumpEvent::ExitRequested(message.wParam.0 as i32));
             }
             Ok(process(message))
         }
     }
 
     /// Waits until either native input arrives or `timeout` elapses.
-    pub(crate) fn wait_for(&mut self, timeout: Duration) -> Result<MessagePumpEvent> {
+    fn wait_for_native(&mut self, timeout: Duration) -> Result<PumpEvent> {
         if timeout.is_zero() {
-            return Ok(self.poll());
+            return Ok(self.poll_native());
         }
         let result = unsafe {
             MsgWaitForMultipleObjectsEx(
@@ -93,9 +92,9 @@ impl WindowsMessagePump {
             return Err(Error::from_thread());
         }
         if result == WAIT_TIMEOUT {
-            return Ok(MessagePumpEvent::Idle);
+            return Ok(PumpEvent::Idle);
         }
-        Ok(self.poll())
+        Ok(self.poll_native())
     }
 
     /// Processes at most one ready message from the current thread's queue.
@@ -103,17 +102,35 @@ impl WindowsMessagePump {
     /// Limiting one call to one message lets the owner interleave native input
     /// with other execution domains instead of allowing an active Win32 queue
     /// to monopolize its thread.
-    pub(crate) fn poll(&mut self) -> MessagePumpEvent {
+    fn poll_native(&mut self) -> PumpEvent {
         unsafe {
             let mut message = MSG::default();
             if !PeekMessageW(&mut message, None, 0, 0, PM_REMOVE).as_bool() {
-                return MessagePumpEvent::Idle;
+                return PumpEvent::Idle;
             }
             if message.message == WM_QUIT {
-                return MessagePumpEvent::Quit(message.wParam.0 as i32);
+                return PumpEvent::ExitRequested(message.wParam.0 as i32);
             }
             process(message)
         }
+    }
+}
+
+impl EventPump for WindowsMessagePump {
+    fn wake_capability(&self) -> Weak<dyn EventPumpWake> {
+        self.downgraded_wake()
+    }
+
+    fn wait(&mut self) -> PumpResult<PumpEvent> {
+        Ok(self.wait_native()?)
+    }
+
+    fn wait_for(&mut self, timeout: Duration) -> PumpResult<PumpEvent> {
+        Ok(self.wait_for_native(timeout)?)
+    }
+
+    fn poll(&mut self) -> PumpResult<PumpEvent> {
+        Ok(self.poll_native())
     }
 }
 
@@ -127,26 +144,20 @@ impl Drop for WindowsMessagePump {
     }
 }
 
-/// A thread-safe, non-owning capability for interrupting a message-pump wait.
-#[derive(Clone)]
-pub(crate) struct MessagePumpWaker {
-    state: Weak<WakeState>,
-}
-
-impl MessagePumpWaker {
-    pub(crate) fn wake(&self) -> io::Result<()> {
-        let Some(state) = self.state.upgrade() else {
-            return Err(unavailable_wake_error());
-        };
-        let open = state
+impl EventPumpWake for WakeState {
+    fn wake(&self) -> std::io::Result<()> {
+        let open = self
             .open
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         if !*open {
-            return Err(unavailable_wake_error());
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "the event loop is unavailable",
+            ));
         }
-        unsafe { PostThreadMessageW(state.thread_id, WM_NULL, WPARAM(0), LPARAM(0)) }
-            .map_err(io::Error::other)
+        unsafe { PostThreadMessageW(self.thread_id, WM_NULL, WPARAM(0), LPARAM(0)) }
+            .map_err(std::io::Error::other)
     }
 }
 
@@ -155,42 +166,22 @@ struct WakeState {
     open: Mutex<bool>,
 }
 
-fn unavailable_wake_error() -> io::Error {
-    io::Error::new(io::ErrorKind::BrokenPipe, "the event loop is unavailable")
-}
-
 fn timeout_milliseconds(timeout: Duration) -> u32 {
     let milliseconds = timeout.as_millis();
     let rounded_up = milliseconds + u128::from(!timeout.subsec_nanos().is_multiple_of(1_000_000));
     rounded_up.clamp(1, u128::from(u32::MAX - 1)) as u32
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum MessagePumpEvent {
-    WindowDispatched,
-    ThreadMessage(ThreadMessage),
-    Idle,
-    Quit(i32),
-}
-
-/// One posted message that belongs to a thread rather than a Window.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct ThreadMessage {
-    pub(crate) message: u32,
-    pub(crate) wparam: usize,
-    pub(crate) lparam: isize,
-}
-
-fn process(message: MSG) -> MessagePumpEvent {
+fn process(message: MSG) -> PumpEvent {
     if message.hwnd == HWND::default() {
-        return MessagePumpEvent::ThreadMessage(ThreadMessage {
+        return PumpEvent::ThreadMessage(ThreadMessage {
             message: message.message,
             wparam: message.wParam.0,
             lparam: message.lParam.0,
         });
     }
     unsafe { dispatch(&message) };
-    MessagePumpEvent::WindowDispatched
+    PumpEvent::NativeDispatched
 }
 
 unsafe fn dispatch(message: &MSG) {
@@ -202,9 +193,7 @@ unsafe fn dispatch(message: &MSG) {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        MessagePumpEvent, ThreadMessage, WindowsMessagePump, process, timeout_milliseconds,
-    };
+    use super::{PumpEvent, ThreadMessage, WindowsMessagePump, process, timeout_milliseconds};
     use std::time::Duration;
 
     use windows::Win32::{
@@ -235,7 +224,7 @@ mod tests {
 
         assert!(matches!(
             process(message),
-            MessagePumpEvent::ThreadMessage(ThreadMessage {
+            PumpEvent::ThreadMessage(ThreadMessage {
                 message,
                 wparam: 11,
                 lparam: 13,
@@ -246,16 +235,16 @@ mod tests {
     #[test]
     fn a_waker_interrupts_its_owning_thread_queue() {
         let mut pump = WindowsMessagePump::new();
-        let waker = pump.waker();
+        let waker = pump.downgraded_wake();
 
-        std::thread::spawn(move || waker.wake())
+        std::thread::spawn(move || waker.upgrade().unwrap().wake())
             .join()
             .expect("the waking thread exits normally")
             .expect("the live message pump accepts a cross-thread wake");
 
         assert!(matches!(
-            pump.wait().expect("the posted wake can be received"),
-            MessagePumpEvent::ThreadMessage(ThreadMessage {
+            pump.wait_native().expect("the posted wake can be received"),
+            PumpEvent::ThreadMessage(ThreadMessage {
                 message: WM_NULL,
                 wparam: 0,
                 lparam: 0,
@@ -266,12 +255,9 @@ mod tests {
     #[test]
     fn a_waker_does_not_keep_its_message_pump_available() {
         let pump = WindowsMessagePump::new();
-        let waker = pump.waker();
+        let waker = pump.downgraded_wake();
         drop(pump);
 
-        assert_eq!(
-            waker.wake().unwrap_err().kind(),
-            std::io::ErrorKind::BrokenPipe
-        );
+        assert!(waker.upgrade().is_none());
     }
 }
