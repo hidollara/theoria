@@ -12,13 +12,12 @@ use ::windows::{
                 GetDpiForWindow, SetProcessDpiAwarenessContext,
             },
             WindowsAndMessaging::{
-                CREATESTRUCTW, CS_HREDRAW, CS_OWNDC, CS_VREDRAW, DefWindowProcW, GWLP_USERDATA,
-                GetClientRect, GetWindowLongPtrW, RegisterClassExW, SWP_NOACTIVATE, SWP_NOMOVE,
-                SWP_NOZORDER, SetWindowLongPtrW, SetWindowPos, WINDOW_EX_STYLE, WINDOW_STYLE,
-                WM_CLOSE, WM_DESTROY, WM_ERASEBKGND, WM_NCCREATE, WM_PAINT,
-                WM_POINTERCAPTURECHANGED, WM_POINTERDOWN, WM_POINTERENTER, WM_POINTERHWHEEL,
-                WM_POINTERLEAVE, WM_POINTERUP, WM_POINTERUPDATE, WM_POINTERWHEEL, WM_SIZE,
-                WNDCLASSEXW,
+                CREATESTRUCTW, DefWindowProcW, GWLP_USERDATA, GetClientRect, GetWindowLongPtrW,
+                RegisterClassExW, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOZORDER, SetWindowLongPtrW,
+                SetWindowPos, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_DESTROY, WM_ERASEBKGND,
+                WM_NCCREATE, WM_PAINT, WM_POINTERCAPTURECHANGED, WM_POINTERDOWN, WM_POINTERENTER,
+                WM_POINTERHWHEEL, WM_POINTERLEAVE, WM_POINTERUP, WM_POINTERUPDATE, WM_POINTERWHEEL,
+                WM_SIZE, WNDCLASSEXW,
             },
         },
     },
@@ -37,9 +36,10 @@ pub(super) fn initialize_windowing(hinstance: HINSTANCE) -> Result<()> {
         .get_or_init(|| unsafe {
             let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
             pointer::enable()?;
+            // WM_SIZE explicitly stages a semantic redraw, and Vulkan does not
+            // require a persistent GDI device context for the Window.
             let class = WNDCLASSEXW {
                 cbSize: size_of::<WNDCLASSEXW>() as u32,
-                style: CS_HREDRAW | CS_VREDRAW | CS_OWNDC,
                 lpfnWndProc: Some(window_proc),
                 hInstance: hinstance,
                 lpszClassName: w!("TheoriaWindow"),

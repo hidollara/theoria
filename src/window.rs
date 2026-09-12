@@ -74,8 +74,8 @@ impl WindowEvents<'_> {
 
     /// Host-provided default movement boundary for click and drag recognition.
     ///
-    /// The Win32 host resolves this from `SM_CXDRAG` and `SM_CYDRAG` at the
-    /// Window's initial DPI. Applications may choose another policy per device.
+    /// The host resolves this from its platform's input metrics. Applications
+    /// may choose another policy per device.
     pub const fn movement_threshold(&self) -> MovementThreshold {
         self.movement_threshold
     }

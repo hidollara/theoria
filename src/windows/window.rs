@@ -107,6 +107,8 @@ impl WindowBackend for Win32Window {
     }
 
     fn movement_threshold_extents(&self) -> (f32, f32) {
+        // Win32 defines the native drag boundary in device pixels for the
+        // Window's current DPI.
         let dpi = unsafe { GetDpiForWindow(self.hwnd) };
         let horizontal = unsafe { GetSystemMetricsForDpi(SM_CXDRAG, dpi) }.unsigned_abs() as f32;
         let vertical = unsafe { GetSystemMetricsForDpi(SM_CYDRAG, dpi) }.unsigned_abs() as f32;

@@ -35,7 +35,7 @@ pub struct EventLoop {
 }
 
 impl EventLoop {
-    /// Creates an independent driver for the current GUI thread.
+    /// Creates an independent event loop for the current GUI thread.
     pub fn new() -> Self {
         Self::with_pump(Box::new(WindowsMessagePump::new()))
     }
