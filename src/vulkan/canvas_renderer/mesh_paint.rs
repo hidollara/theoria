@@ -8,6 +8,9 @@ use crate::{
 use super::path_sampling::PathSampler;
 
 #[cfg(test)]
+mod tests;
+
+#[cfg(test)]
 use crate::tessellation::DEFAULT_TESSELLATION_TOLERANCE;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -23,7 +26,7 @@ struct GradientVertex {
 }
 
 #[cfg(test)]
-pub(super) fn paint_triangle(points: [Point; 3], source: &ColorField) -> Vec<PaintedTriangle> {
+fn paint_triangle(points: [Point; 3], source: &ColorField) -> Vec<PaintedTriangle> {
     let path_sampler = match source {
         ColorField::AlongPathGradient(gradient) => Some(PathSampler::new(
             gradient.path(),
