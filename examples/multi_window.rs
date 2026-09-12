@@ -1,7 +1,6 @@
 use std::f32::consts::PI;
 
 use theoria::{
-    application::Application,
     canvas::{Canvas, CanvasView, Composite, Coverage},
     color::Color,
     font::Font,
@@ -13,7 +12,7 @@ use theoria::{
     path::{FillRule, LineCap, LineJoin, Path, StrokeStyle},
     text::{Text, TextStyle},
     transform::Affine2,
-    window::WindowContent,
+    window::{WindowContent, WindowGroup},
 };
 
 const WIDTH: u32 = 640;
@@ -26,16 +25,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let star = star_path(125.0, 54.0);
     let star_hit_region = HitRegion::fill(star.clone(), FillRule::NonZero);
 
-    Application::new(move |application| {
-        let count = application.create_state(0_u32);
-        let controller_open = application.create_state(true);
+    WindowGroup::new(move |group| {
+        let count = group.create_state(0_u32);
+        let controller_open = group.create_state(true);
 
         let controller_count = count.clone();
         let controller_value = count.value();
         let controller_lifecycle = controller_open.clone();
         let controller_font = font.clone();
         let controller_star = star.clone();
-        application.mount_window(
+        group.mount_window(
             "Theoria — Controller",
             WIDTH,
             HEIGHT,
@@ -105,7 +104,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let preview_value = count.value();
         let preview_controller_open = controller_open.value();
-        application.mount_window(
+        group.mount_window(
             "Theoria — Shared Preview",
             WIDTH,
             HEIGHT,

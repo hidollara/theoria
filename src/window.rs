@@ -15,13 +15,16 @@ use crate::{
 };
 
 mod drive;
-pub(crate) mod event_loop;
-pub(crate) mod group;
+mod event_loop;
+mod group;
 mod host;
+mod mounted_group;
 pub(crate) mod native_event;
 mod presentation;
 
-use self::{event_loop::WindowEventLoop, group::WindowGroup};
+pub use self::group::{WindowGroup, WindowGroupContext};
+
+use self::{event_loop::WindowEventLoop, mounted_group::MountedWindowGroup};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -117,7 +120,7 @@ impl WindowContent {
 /// loop while retaining separate Reactive graphs and Effect synchronization
 /// boundaries.
 pub struct Window {
-    group: WindowGroup,
+    group: MountedWindowGroup,
 }
 
 impl Window {
@@ -132,7 +135,7 @@ impl Window {
         build: impl FnOnce(&mut MountContext<'_>, &WindowEvents<'_>) -> Computed<WindowContent>,
     ) -> Result<Self> {
         let mut build = Some(build);
-        let group = WindowGroup::mount(|context, windows| {
+        let group = MountedWindowGroup::mount(|context, windows| {
             windows.mount_window(
                 context,
                 title,

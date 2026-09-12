@@ -1,141 +1,81 @@
-//! One Component update boundary shared by one or more Windows.
+//! Public construction of Windows sharing one Component boundary.
 
-use std::{
-    cell::RefCell,
-    rc::{Rc, Weak},
-    time::Instant,
-};
+use std::ops::{Deref, DerefMut};
 
-use crate::{
-    component::{ComponentInstance, MountContext},
-    event::FifoDispatcher,
-    reactive::Computed,
-};
+use crate::{component::MountContext, reactive::Computed};
 
 use super::{
     Result, WindowContent, WindowEvents,
-    drive::{COMPONENT_WORK_SLICE, ComponentProgress, drive_components},
-    host::WindowHost,
+    event_loop::WindowEventLoop,
+    mounted_group::{MountedWindowGroup, WindowGroupMounts},
 };
 
-pub(crate) struct WindowGroup {
-    dispatcher: FifoDispatcher,
-    components: ComponentInstance,
-    windows: Vec<Weak<RefCell<WindowHost>>>,
+/// Windows mounted beneath one shared Component root.
+///
+/// All Windows created during `build` share a Reactive graph, event dispatcher,
+/// and Effect synchronization boundary. Native presentation remains independent
+/// per Window. For independent Component boundaries on the same native message
+/// loop, create separate [`Window`](super::Window) values and use
+/// [`Window::run_all`](super::Window::run_all).
+pub struct WindowGroup {
+    mounted: MountedWindowGroup,
 }
 
 impl WindowGroup {
-    pub(crate) fn mount(
-        build: impl FnOnce(&mut MountContext<'_>, &mut WindowGroupBuilder) -> Result<()>,
-    ) -> Result<Self> {
-        let dispatcher = FifoDispatcher::new();
-        let mut builder = WindowGroupBuilder::default();
-        let mut result = None;
+    /// Builds one shared Component root and all of its initial Windows.
+    pub fn new(build: impl FnOnce(&mut WindowGroupContext<'_, '_>) -> Result<()>) -> Result<Self> {
         let mut build = Some(build);
-        let mut components = ComponentInstance::new(dispatcher.route(), |context| {
-            result = Some(build.take().expect("WindowGroup build runs once")(
-                context,
-                &mut builder,
-            ));
-        });
-        result.expect("the WindowGroup build runs once")?;
-        components.flush_effects()?;
-
-        Ok(Self {
-            dispatcher,
-            components,
-            windows: builder.windows,
-        })
+        let mounted = MountedWindowGroup::mount(|context, windows| {
+            let mut context = WindowGroupContext {
+                mount: context,
+                windows,
+            };
+            build.take().expect("WindowGroup build runs once")(&mut context)
+        })?;
+        Ok(Self { mounted })
     }
 
-    pub(super) fn request_initial_redraws(&mut self) {
-        self.prune_windows();
-        for window in self.windows() {
-            window.borrow_mut().request_redraw_if_needed();
-        }
-    }
-
-    pub(super) fn is_finished(&self) -> bool {
-        self.windows.iter().all(|window| window.strong_count() == 0)
-            || self.components.is_finished()
-    }
-
-    pub(super) fn prepare_scheduled_work(&mut self, now: Instant) {
-        self.prune_windows();
-        for window in self.windows() {
-            window.borrow_mut().prepare_scheduled_work(now);
-        }
-    }
-
-    pub(super) fn next_deadline(&self) -> Option<Instant> {
-        self.windows()
-            .filter_map(|window| window.borrow().next_deadline())
-            .min()
-    }
-
-    pub(super) fn is_idle(&self) -> bool {
-        !self.dispatcher.has_pending()
-            && self.windows().all(|window| {
-                let window = window.borrow();
-                !window.has_ready_work() && !window.has_pending_presentation()
-            })
-    }
-
-    pub(super) fn process_ready_work(&mut self, now: Instant) -> Result<bool> {
-        self.prune_windows();
-        for window in self.windows() {
-            let mut window = window.borrow_mut();
-            window.process_native_event()?;
-            window.process_scheduled_work(now);
-        }
-
-        let progress = drive_components(
-            &mut self.dispatcher,
-            &mut self.components,
-            COMPONENT_WORK_SLICE,
-        )?;
-        match progress {
-            ComponentProgress::Idle => {}
-            ComponentProgress::Pending => return Ok(true),
-            ComponentProgress::Finished => return Ok(false),
-        }
-
-        let closing: Vec<_> = self
-            .windows()
-            .filter(|window| window.borrow().is_closing())
-            .collect();
-        for window in closing {
-            window.borrow().unmount();
-        }
-        self.prune_windows();
-        Ok(self.windows.iter().any(|window| window.strong_count() != 0))
-    }
-
-    pub(super) fn windows(&self) -> impl Iterator<Item = Rc<RefCell<WindowHost>>> + '_ {
-        self.windows.iter().filter_map(Weak::upgrade)
-    }
-
-    fn prune_windows(&mut self) {
-        self.windows.retain(|window| window.strong_count() != 0);
+    /// Drives native messages, Component work, and presentation until the last
+    /// Window closes or the shared root Component unmounts.
+    pub fn run(self) -> Result<()> {
+        WindowEventLoop::new([self.mounted]).run()
     }
 }
 
-#[derive(Default)]
-pub(crate) struct WindowGroupBuilder {
-    windows: Vec<Weak<RefCell<WindowHost>>>,
+/// Construction capabilities for a shared Window group root.
+///
+/// Reactive values and Components created through the inherited
+/// [`MountContext`] belong to the shared root. Each Window receives a distinct
+/// child Component lifetime boundary beneath it.
+pub struct WindowGroupContext<'context, 'mount> {
+    mount: &'context mut MountContext<'mount>,
+    windows: &'context mut WindowGroupMounts,
 }
 
-impl WindowGroupBuilder {
-    pub(crate) fn mount_window(
+impl WindowGroupContext<'_, '_> {
+    /// Creates a native Window and mounts its Component subtree.
+    pub fn mount_window(
         &mut self,
-        context: &mut MountContext<'_>,
         title: &str,
         width: u32,
         height: u32,
         build: impl FnOnce(&mut MountContext<'_>, &WindowEvents<'_>) -> Computed<WindowContent>,
     ) -> Result<()> {
         self.windows
-            .push(WindowHost::mount(context, title, width, height, build)?);
-        Ok(())
+            .mount_window(self.mount, title, width, height, build)
+    }
+}
+
+impl<'mount> Deref for WindowGroupContext<'_, 'mount> {
+    type Target = MountContext<'mount>;
+
+    fn deref(&self) -> &Self::Target {
+        self.mount
+    }
+}
+
+impl DerefMut for WindowGroupContext<'_, '_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.mount
     }
 }

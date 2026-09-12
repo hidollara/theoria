@@ -4,20 +4,20 @@ use std::time::{Duration, Instant};
 
 use crate::windows::message_pump::{MessagePumpProgress, WindowsMessagePump};
 
-use super::{Result, group::WindowGroup};
+use super::{Result, mounted_group::MountedWindowGroup};
 
 /// Time an otherwise idle iteration may lend to GPU presentation progress.
 const PRESENTATION_WAIT_SLICE: Duration = Duration::from_millis(1);
 
 /// Drives all Window groups using their shared current-thread Win32 queue.
-pub(crate) struct WindowEventLoop {
+pub(super) struct WindowEventLoop {
     message_pump: WindowsMessagePump,
-    groups: Vec<WindowGroup>,
+    groups: Vec<MountedWindowGroup>,
     next_presentation_wait: usize,
 }
 
 impl WindowEventLoop {
-    pub(crate) fn new(groups: impl IntoIterator<Item = WindowGroup>) -> Self {
+    pub(super) fn new(groups: impl IntoIterator<Item = MountedWindowGroup>) -> Self {
         let mut groups: Vec<_> = groups.into_iter().collect();
         groups.retain(|group| !group.is_finished());
         for group in &mut groups {
@@ -30,13 +30,13 @@ impl WindowEventLoop {
         }
     }
 
-    pub(crate) fn run(mut self) -> Result<()> {
+    pub(super) fn run(mut self) -> Result<()> {
         while !self.groups.is_empty() {
             let now = Instant::now();
             for group in &mut self.groups {
                 group.prepare_scheduled_work(now);
             }
-            let message_progress = if self.groups.iter().all(WindowGroup::is_idle) {
+            let message_progress = if self.groups.iter().all(MountedWindowGroup::is_idle) {
                 if let Some(deadline) = self.next_deadline() {
                     self.message_pump
                         .wait_for(deadline.saturating_duration_since(now))?
@@ -92,7 +92,11 @@ impl WindowEventLoop {
     }
 
     fn next_window_waiting_for_presentation(&self) -> Option<usize> {
-        let count = self.groups.iter().flat_map(WindowGroup::windows).count();
+        let count = self
+            .groups
+            .iter()
+            .flat_map(MountedWindowGroup::windows)
+            .count();
         if count == 0 {
             return None;
         }
@@ -100,7 +104,7 @@ impl WindowEventLoop {
         let windows = || {
             self.groups
                 .iter()
-                .flat_map(WindowGroup::windows)
+                .flat_map(MountedWindowGroup::windows)
                 .enumerate()
         };
         windows()
@@ -117,7 +121,7 @@ impl WindowEventLoop {
     fn next_deadline(&self) -> Option<Instant> {
         self.groups
             .iter()
-            .filter_map(WindowGroup::next_deadline)
+            .filter_map(MountedWindowGroup::next_deadline)
             .min()
     }
 }
@@ -128,7 +132,8 @@ mod tests {
 
     #[test]
     fn a_group_without_windows_finishes_without_waiting_for_messages() {
-        let group = WindowGroup::mount(|_, _| Ok(())).expect("empty group construction succeeds");
+        let group =
+            MountedWindowGroup::mount(|_, _| Ok(())).expect("empty group construction succeeds");
 
         WindowEventLoop::new([group])
             .run()
