@@ -7,9 +7,7 @@ use crate::{
     event_loop::EventLoopHandle,
     reactive::Computed,
     surface::SurfaceContent,
-    windows::{
-        Result, capabilities::WindowCapabilities, component_tree::WindowComponentTree,
-    },
+    windows::{Result, capabilities::WindowCapabilities, component_tree::WindowComponentTree},
 };
 
 /// One Win32 Window with an independent Component update boundary.

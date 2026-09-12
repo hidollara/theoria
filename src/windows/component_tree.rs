@@ -13,9 +13,7 @@ use crate::{
     surface::SurfaceContent,
 };
 
-use crate::windows::{
-    Result, capabilities::WindowCapabilities, host::WindowHost,
-};
+use crate::windows::{Result, capabilities::WindowCapabilities, host::WindowHost};
 
 /// Owns one Component tree together with the Window producers built beneath it.
 pub(super) struct WindowComponentTree {

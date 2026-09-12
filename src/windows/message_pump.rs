@@ -29,13 +29,13 @@ use crate::event_loop::pump::{EventPump, EventPumpWake, PumpEvent, PumpResult, T
 /// queue nor this pump requires a Window to exist. It is deliberately `!Send`
 /// and `!Sync`: Win32 associates the queue and its Windows with the thread that
 /// created them.
-pub(crate) struct WindowsMessagePump {
+pub(super) struct WindowsMessagePump {
     wake: Arc<WakeState>,
     _thread_affinity: PhantomData<Rc<()>>,
 }
 
 impl WindowsMessagePump {
-    pub(crate) fn new() -> Self {
+    pub(super) fn new() -> Self {
         // A thread message queue is created lazily by User32. Establish it now
         // so a subsequently issued cross-thread posting cannot race the first
         // blocking wait, including when this thread owns no Window.

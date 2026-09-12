@@ -9,7 +9,7 @@ use crate::{
 
 /// One owned observation translated from a Win32 Window callback.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) enum Win32WindowEvent {
+pub(super) enum Win32WindowEvent {
     Surface(SurfaceEvent),
     Pointer(PointerEvent),
     Scroll(ScrollEvent),
@@ -22,23 +22,23 @@ pub(crate) enum Win32WindowEvent {
 /// delivery. Contiguous resize and redraw bursts are coalesced before crossing
 /// that boundary because only their latest presentation state remains
 /// observable; intervening input keeps its causal ordering.
-pub(crate) struct WindowEventBuffer {
+pub(super) struct WindowEventBuffer {
     events: RefCell<VecDeque<Win32WindowEvent>>,
 }
 
 impl WindowEventBuffer {
-    pub(crate) fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             events: RefCell::new(VecDeque::new()),
         }
     }
 
-    pub(crate) fn reset_for_initial_redraw(&self) {
+    pub(super) fn reset_for_initial_redraw(&self) {
         self.events.borrow_mut().clear();
         self.request_redraw();
     }
 
-    pub(crate) fn request_redraw(&self) {
+    pub(super) fn request_redraw(&self) {
         let redraw = Win32WindowEvent::Surface(SurfaceEvent::RedrawRequested);
         let mut events = self.events.borrow_mut();
         if events.back() != Some(&redraw) {
@@ -46,7 +46,7 @@ impl WindowEventBuffer {
         }
     }
 
-    pub(crate) fn resize(&self, size: SurfaceSize) {
+    pub(super) fn resize(&self, size: SurfaceSize) {
         let mut events = self.events.borrow_mut();
         while events.back().is_some_and(|event| {
             matches!(
@@ -60,15 +60,15 @@ impl WindowEventBuffer {
         events.push_back(Win32WindowEvent::Surface(SurfaceEvent::RedrawRequested));
     }
 
-    pub(crate) fn push(&self, event: Win32WindowEvent) {
+    pub(super) fn push(&self, event: Win32WindowEvent) {
         self.events.borrow_mut().push_back(event);
     }
 
-    pub(crate) fn has_pending(&self) -> bool {
+    pub(super) fn has_pending(&self) -> bool {
         !self.events.borrow().is_empty()
     }
 
-    pub(crate) fn pop(&self) -> Option<Win32WindowEvent> {
+    pub(super) fn pop(&self) -> Option<Win32WindowEvent> {
         self.events.borrow_mut().pop_front()
     }
 }

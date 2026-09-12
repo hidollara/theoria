@@ -9,7 +9,7 @@ mod component_tree;
 mod event_buffer;
 mod group;
 mod host;
-pub(crate) mod message_pump;
+mod message_pump;
 mod native_window;
 mod presentation;
 mod presentation_target;

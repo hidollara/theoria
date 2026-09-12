@@ -26,7 +26,7 @@ pub struct WindowCapabilities {
 }
 
 impl WindowCapabilities {
-    pub(crate) const fn new(
+    pub(super) const fn new(
         surface: Surface,
         pointer: EventSource<PointerEvent>,
         scroll: EventSource<ScrollEvent>,
