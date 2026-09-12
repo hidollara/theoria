@@ -16,8 +16,8 @@ mod bridge;
 
 pub use self::bridge::{EventLoopBridge, EventLoopBridgeSendError, EventLoopBridgeSender};
 
-/// Time an otherwise idle iteration may lend to presentation progress.
-const PRESENTATION_WAIT_SLICE: Duration = Duration::from_millis(1);
+/// Time an otherwise idle iteration may lend to one waitable work item.
+const WAIT_SLICE: Duration = Duration::from_millis(1);
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -29,7 +29,7 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 pub struct EventLoop {
     message_pump: WindowsMessagePump,
     registrations: Rc<Registrations>,
-    next_presentation_wait: usize,
+    next_waitable_work: usize,
 }
 
 impl EventLoop {
@@ -38,7 +38,7 @@ impl EventLoop {
         Self {
             message_pump: WindowsMessagePump::new(),
             registrations: Rc::new(Registrations::default()),
-            next_presentation_wait: 0,
+            next_waitable_work: 0,
         }
     }
 
@@ -107,27 +107,27 @@ impl EventLoop {
                 return Ok(());
             }
 
-            let waiting_presentation = matches!(message_progress, MessagePumpEvent::Idle)
-                .then(|| self.next_presentation_waiting(&participants))
+            let waiting_work = matches!(message_progress, MessagePumpEvent::Idle)
+                .then(|| self.next_waitable_work(&participants))
                 .flatten();
-            if let Some(index) = waiting_presentation {
-                self.next_presentation_wait = index + 1;
+            if let Some(index) = waiting_work {
+                self.next_waitable_work = index + 1;
             }
 
             let mut flat_index = 0;
             for participant in &participants {
-                for presentation in 0..participant.presentation_count() {
-                    let wait = if Some(flat_index) == waiting_presentation {
-                        PRESENTATION_WAIT_SLICE
+                for work in 0..participant.waitable_work_count() {
+                    let wait = if Some(flat_index) == waiting_work {
+                        WAIT_SLICE
                     } else {
                         Duration::ZERO
                     };
-                    participant.advance_presentation(presentation, wait)?;
+                    participant.advance_waitable_work(work, wait)?;
                     flat_index += 1;
                 }
             }
             if flat_index != 0 {
-                self.next_presentation_wait %= flat_index;
+                self.next_waitable_work %= flat_index;
             }
         }
     }
@@ -150,21 +150,18 @@ impl EventLoop {
             .collect()
     }
 
-    fn next_presentation_waiting(
-        &self,
-        participants: &[Rc<dyn EventLoopParticipant>],
-    ) -> Option<usize> {
+    fn next_waitable_work(&self, participants: &[Rc<dyn EventLoopParticipant>]) -> Option<usize> {
         let count = participants
             .iter()
-            .map(|participant| participant.presentation_count())
+            .map(|participant| participant.waitable_work_count())
             .sum::<usize>();
         if count == 0 {
             return None;
         }
-        let start = self.next_presentation_wait % count;
+        let start = self.next_waitable_work % count;
         (start..count)
             .chain(0..start)
-            .find(|&index| presentation_pending(participants, index))
+            .find(|&index| waitable_work_pending(participants, index))
     }
 }
 
@@ -293,13 +290,13 @@ pub(crate) trait EventLoopParticipant {
         true
     }
     fn process_ready_work(&self, now: Instant) -> Result<()>;
-    fn presentation_count(&self) -> usize {
+    fn waitable_work_count(&self) -> usize {
         0
     }
-    fn presentation_pending(&self, _index: usize) -> bool {
+    fn waitable_work_pending(&self, _index: usize) -> bool {
         false
     }
-    fn advance_presentation(&self, _index: usize, _wait: Duration) -> Result<()> {
+    fn advance_waitable_work(&self, _index: usize, _wait: Duration) -> Result<()> {
         Ok(())
     }
 }
@@ -311,14 +308,14 @@ fn next_deadline(participants: &[Rc<dyn EventLoopParticipant>]) -> Option<Instan
         .min()
 }
 
-fn presentation_pending(
+fn waitable_work_pending(
     participants: &[Rc<dyn EventLoopParticipant>],
     mut flat_index: usize,
 ) -> bool {
     for participant in participants {
-        let count = participant.presentation_count();
+        let count = participant.waitable_work_count();
         if flat_index < count {
-            return participant.presentation_pending(flat_index);
+            return participant.waitable_work_pending(flat_index);
         }
         flat_index -= count;
     }

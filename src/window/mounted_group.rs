@@ -58,11 +58,11 @@ impl EventLoopParticipant for MountedWindowGroup {
         self.state.borrow_mut().process_ready_work(now)
     }
 
-    fn presentation_count(&self) -> usize {
+    fn waitable_work_count(&self) -> usize {
         self.state.borrow().windows().count()
     }
 
-    fn presentation_pending(&self, index: usize) -> bool {
+    fn waitable_work_pending(&self, index: usize) -> bool {
         self.state
             .borrow()
             .windows()
@@ -70,7 +70,7 @@ impl EventLoopParticipant for MountedWindowGroup {
             .is_some_and(|window| window.borrow().has_pending_presentation())
     }
 
-    fn advance_presentation(&self, index: usize, wait: Duration) -> Result<()> {
+    fn advance_waitable_work(&self, index: usize, wait: Duration) -> Result<()> {
         let window = self.state.borrow().windows().nth(index);
         if let Some(window) = window {
             window.borrow_mut().advance_presentation(wait)?;
