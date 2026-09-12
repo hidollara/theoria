@@ -166,7 +166,11 @@ impl<E: Send + 'static> EventLoopParticipant for BridgeState<E> {
         true
     }
 
-    fn process_ready_work(&self, _now: Instant) -> Result<()> {
+    fn process_ready_work(
+        &self,
+        _now: Instant,
+        _available_time: std::time::Duration,
+    ) -> Result<()> {
         if self.bridge.forward_next() == BridgeProgress::Closed {
             self.closed.set(true);
         }

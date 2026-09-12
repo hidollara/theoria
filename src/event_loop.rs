@@ -18,6 +18,8 @@ pub use self::bridge::{EventLoopBridge, EventLoopBridgeSendError, EventLoopBridg
 
 /// Time an otherwise idle iteration may lend to one waitable work item.
 const WAIT_SLICE: Duration = Duration::from_millis(1);
+/// Time one iteration lends to each participant's immediately ready work.
+const READY_WORK_SLICE: Duration = Duration::from_millis(4);
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -132,7 +134,7 @@ impl EventLoop {
 
         let now = Instant::now();
         for participant in &participants {
-            participant.process_ready_work(now)?;
+            participant.process_ready_work(now, READY_WORK_SLICE)?;
         }
 
         let participants = self.available_participants();
@@ -354,7 +356,11 @@ pub(crate) trait EventLoopParticipant {
     fn is_idle(&self) -> bool {
         true
     }
-    fn process_ready_work(&self, now: Instant) -> Result<()>;
+    /// Processes immediately ready work within the loop's suggested time slice.
+    ///
+    /// One indivisible operation may exceed `available_time`; the participant
+    /// should yield before starting another operation once the slice is spent.
+    fn process_ready_work(&self, now: Instant, available_time: Duration) -> Result<()>;
     /// Returns whether advancing internal work may benefit from a short wait.
     fn has_waitable_work(&self) -> bool {
         false
@@ -443,13 +449,14 @@ mod tests {
             false
         }
 
-        fn process_ready_work(&self, _: Instant) -> Result<()> {
+        fn process_ready_work(&self, _: Instant, _: Duration) -> Result<()> {
             Ok(())
         }
     }
 
     struct OneStepParticipant {
         processed: Cell<bool>,
+        available_time: Cell<Duration>,
     }
 
     impl EventLoopParticipant for OneStepParticipant {
@@ -465,7 +472,8 @@ mod tests {
             false
         }
 
-        fn process_ready_work(&self, _: Instant) -> Result<()> {
+        fn process_ready_work(&self, _: Instant, available_time: Duration) -> Result<()> {
+            self.available_time.set(available_time);
             self.processed.set(true);
             Ok(())
         }
@@ -496,11 +504,13 @@ mod tests {
         let mut event_loop = test_event_loop();
         let participant = Rc::new(OneStepParticipant {
             processed: Cell::new(false),
+            available_time: Cell::new(Duration::ZERO),
         });
         event_loop.handle().register(&participant).unwrap();
 
         assert_eq!(event_loop.poll().unwrap(), EventLoopStatus::Empty);
         assert!(participant.processed.get());
+        assert_eq!(participant.available_time.get(), READY_WORK_SLICE);
     }
 
     struct DormantParticipant;
@@ -514,7 +524,7 @@ mod tests {
             false
         }
 
-        fn process_ready_work(&self, _: Instant) -> Result<()> {
+        fn process_ready_work(&self, _: Instant, _: Duration) -> Result<()> {
             panic!("a dormant passive participant has no work to process")
         }
     }
@@ -546,7 +556,7 @@ mod tests {
             !self.pending.get()
         }
 
-        fn process_ready_work(&self, _: Instant) -> Result<()> {
+        fn process_ready_work(&self, _: Instant, _: Duration) -> Result<()> {
             if self.pending.replace(false) {
                 self.processed.set(true);
             }
@@ -572,7 +582,7 @@ mod tests {
             self.finished.get()
         }
 
-        fn process_ready_work(&self, _: Instant) -> Result<()> {
+        fn process_ready_work(&self, _: Instant, _: Duration) -> Result<()> {
             self.pending.set(true);
             self.finished.set(true);
             Ok(())
@@ -620,7 +630,7 @@ mod tests {
             false
         }
 
-        fn process_ready_work(&self, _: Instant) -> Result<()> {
+        fn process_ready_work(&self, _: Instant, _: Duration) -> Result<()> {
             Ok(())
         }
 

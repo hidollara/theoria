@@ -127,7 +127,7 @@ impl EventLoopParticipant for WindowHosts {
             })
     }
 
-    fn process_ready_work(&self, now: Instant) -> Result<()> {
+    fn process_ready_work(&self, now: Instant, _available_time: Duration) -> Result<()> {
         self.prune();
         {
             let hosts = self.hosts.borrow();

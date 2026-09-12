@@ -13,8 +13,6 @@ use crate::{
     reactive::ReactiveError,
 };
 
-const DEFAULT_WORK_SLICE: Duration = Duration::from_millis(4);
-
 /// Drives one Component tree without assigning Window ownership to it.
 pub(crate) struct ComponentExecution {
     state: RefCell<ComponentExecutionState>,
@@ -68,8 +66,12 @@ impl EventLoopParticipant for ComponentExecution {
         !self.state.borrow().dispatcher.has_pending()
     }
 
-    fn process_ready_work(&self, _now: Instant) -> Result<(), Box<dyn Error>> {
-        self.advance(DEFAULT_WORK_SLICE)?;
+    fn process_ready_work(
+        &self,
+        _now: Instant,
+        available_time: Duration,
+    ) -> Result<(), Box<dyn Error>> {
+        self.advance(available_time)?;
         Ok(())
     }
 }
