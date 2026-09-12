@@ -15,11 +15,9 @@ use crate::{
     surface::{SurfaceEvent, SurfaceSize},
 };
 
-mod component_driver;
 mod component_tree;
 mod group;
 mod host;
-pub(crate) mod native_event;
 mod presentation;
 
 pub use self::group::{WindowGroup, WindowGroupContext};

@@ -17,9 +17,11 @@ use ::windows::{
     core::{PCWSTR, Result, w},
 };
 
-use crate::target::PresentationTarget;
-
-use crate::{surface::SurfaceSize, window::native_event::NativeWindowEvent};
+use crate::{
+    PresentationTarget,
+    surface::SurfaceSize,
+    window_backend::{WindowBackend, WindowBackendEvent},
+};
 
 mod pointer;
 mod procedure;
@@ -27,7 +29,7 @@ mod state;
 
 use self::{procedure::initialize_windowing, procedure::resize_client_area, state::WindowState};
 
-pub(crate) struct Win32Window {
+struct Win32Window {
     hwnd: HWND,
     hinstance: HINSTANCE,
     state: Box<WindowState>,
@@ -35,7 +37,7 @@ pub(crate) struct Win32Window {
 }
 
 impl Win32Window {
-    pub(crate) fn new(title: &str, width: u32, height: u32) -> Result<Self> {
+    fn new(title: &str, width: u32, height: u32) -> Result<Self> {
         unsafe {
             let module = GetModuleHandleW(None)?;
             let hinstance = HINSTANCE(module.0);
@@ -79,40 +81,51 @@ impl Win32Window {
             })
         }
     }
+}
 
-    /// Makes this hidden native Window visible.
-    pub(crate) fn show(&self) {
+impl WindowBackend for Win32Window {
+    fn show(&self) {
         let _ = unsafe { ShowWindow(self.hwnd, SW_SHOW) };
     }
 
-    pub(crate) fn presentation_target(&self) -> PresentationTarget {
-        PresentationTarget::win32(self.hwnd.0 as isize, self.hinstance.0 as isize, self.size())
+    fn presentation_target(&self) -> PresentationTarget {
+        PresentationTarget::win32(
+            self.hwnd.0 as isize,
+            self.hinstance.0 as isize,
+            self.state.size(),
+        )
     }
 
-    pub(crate) fn size(&self) -> SurfaceSize {
+    fn size(&self) -> SurfaceSize {
         self.state.size()
     }
 
-    pub(crate) fn movement_threshold_extents(&self) -> (f32, f32) {
+    fn movement_threshold_extents(&self) -> (f32, f32) {
         let dpi = unsafe { GetDpiForWindow(self.hwnd) };
         let horizontal = unsafe { GetSystemMetricsForDpi(SM_CXDRAG, dpi) }.unsigned_abs() as f32;
         let vertical = unsafe { GetSystemMetricsForDpi(SM_CYDRAG, dpi) }.unsigned_abs() as f32;
         (horizontal, vertical)
     }
 
-    /// Queues one semantic redraw request, coalescing repeated requests.
-    pub(crate) fn request_redraw(&mut self) {
+    fn request_redraw(&mut self) {
         self.state.request_redraw();
     }
 
-    pub(crate) fn has_pending_event(&self) -> bool {
+    fn has_pending_event(&self) -> bool {
         self.state.has_pending_event()
     }
 
-    /// Takes one semantic event previously produced by this Window procedure.
-    pub(crate) fn pop_event(&mut self) -> Option<NativeWindowEvent> {
+    fn pop_event(&mut self) -> Option<WindowBackendEvent> {
         self.state.pop_event()
     }
+}
+
+pub(crate) fn create_window(
+    title: &str,
+    width: u32,
+    height: u32,
+) -> Result<Box<dyn WindowBackend>> {
+    Ok(Box::new(Win32Window::new(title, width, height)?))
 }
 
 impl Drop for Win32Window {

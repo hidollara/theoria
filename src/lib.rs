@@ -1,6 +1,7 @@
 pub mod animation;
 pub mod canvas;
 pub mod color;
+mod component_execution;
 pub mod event_loop;
 pub mod font;
 pub mod geometry;
@@ -17,6 +18,7 @@ pub mod text;
 pub mod transform;
 pub mod vulkan;
 pub mod window;
+mod window_backend;
 
 #[cfg(test)]
 pub(crate) mod test_support;

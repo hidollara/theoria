@@ -6,13 +6,14 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::{component::MountContext, event_loop::EventLoopParticipant, reactive::Computed};
-
-use super::{
-    Result, WindowContent, WindowEvents,
-    component_driver::{ComponentDriver, ComponentProgress},
-    host::WindowHost,
+use crate::{
+    component::MountContext,
+    component_execution::{ComponentExecution, ComponentProgress},
+    event_loop::EventLoopParticipant,
+    reactive::Computed,
 };
+
+use super::{Result, WindowContent, WindowEvents, host::WindowHost};
 
 const COMPONENT_WORK_SLICE: Duration = Duration::from_millis(4);
 
@@ -83,7 +84,7 @@ impl EventLoopParticipant for WindowComponentTree {
 }
 
 struct WindowComponentTreeState {
-    components: ComponentDriver,
+    components: ComponentExecution,
     windows: Vec<Weak<RefCell<WindowHost>>>,
 }
 
@@ -93,7 +94,7 @@ impl WindowComponentTreeState {
     ) -> Result<Self> {
         let mut windows = WindowChildren::default();
         let mut build = Some(build);
-        let (mut components, result) = ComponentDriver::mount(|context| {
+        let (mut components, result) = ComponentExecution::mount(|context| {
             build.take().expect("Window group build runs once")(context, &mut windows)
         });
         result?;

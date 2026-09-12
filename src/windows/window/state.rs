@@ -4,12 +4,12 @@ use std::collections::VecDeque;
 
 use crate::{
     surface::{SurfaceEvent, SurfaceSize},
-    window::native_event::NativeWindowEvent,
+    window_backend::WindowBackendEvent,
 };
 
 pub(super) struct WindowState {
     size: SurfaceSize,
-    events: VecDeque<NativeWindowEvent>,
+    events: VecDeque<WindowBackendEvent>,
 }
 
 impl WindowState {
@@ -33,7 +33,7 @@ impl WindowState {
     }
 
     pub(super) fn request_redraw(&mut self) {
-        let redraw = NativeWindowEvent::Surface(SurfaceEvent::RedrawRequested);
+        let redraw = WindowBackendEvent::Surface(SurfaceEvent::RedrawRequested);
         if !self.events.contains(&redraw) {
             self.events.push_back(redraw);
         }
@@ -46,21 +46,21 @@ impl WindowState {
         // of its redraw so stale intermediate window sizes cannot build up
         // while an expensive frame is being prepared.
         self.events
-            .retain(|event| *event != NativeWindowEvent::Surface(SurfaceEvent::RedrawRequested));
+            .retain(|event| *event != WindowBackendEvent::Surface(SurfaceEvent::RedrawRequested));
         if let Some(event) = self
             .events
             .iter_mut()
-            .find(|event| matches!(event, NativeWindowEvent::Surface(SurfaceEvent::Resized(_))))
+            .find(|event| matches!(event, WindowBackendEvent::Surface(SurfaceEvent::Resized(_))))
         {
-            *event = NativeWindowEvent::Surface(SurfaceEvent::Resized(size));
+            *event = WindowBackendEvent::Surface(SurfaceEvent::Resized(size));
         } else {
             self.events
-                .push_back(NativeWindowEvent::Surface(SurfaceEvent::Resized(size)));
+                .push_back(WindowBackendEvent::Surface(SurfaceEvent::Resized(size)));
         }
         self.request_redraw();
     }
 
-    pub(super) fn push(&mut self, event: NativeWindowEvent) {
+    pub(super) fn push(&mut self, event: WindowBackendEvent) {
         self.events.push_back(event);
     }
 
@@ -68,7 +68,7 @@ impl WindowState {
         !self.events.is_empty()
     }
 
-    pub(super) fn pop_event(&mut self) -> Option<NativeWindowEvent> {
+    pub(super) fn pop_event(&mut self) -> Option<WindowBackendEvent> {
         self.events.pop_front()
     }
 }
@@ -89,7 +89,7 @@ mod tests {
 
         assert_eq!(
             state.events,
-            VecDeque::from([NativeWindowEvent::Surface(SurfaceEvent::RedrawRequested)])
+            VecDeque::from([WindowBackendEvent::Surface(SurfaceEvent::RedrawRequested)])
         );
     }
 
@@ -115,8 +115,8 @@ mod tests {
         assert_eq!(
             state.events,
             VecDeque::from([
-                NativeWindowEvent::Surface(SurfaceEvent::Resized(state.size)),
-                NativeWindowEvent::Surface(SurfaceEvent::RedrawRequested),
+                WindowBackendEvent::Surface(SurfaceEvent::Resized(state.size)),
+                WindowBackendEvent::Surface(SurfaceEvent::RedrawRequested),
             ])
         );
     }

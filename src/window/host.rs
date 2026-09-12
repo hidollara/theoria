@@ -14,12 +14,12 @@ use crate::{
     input::{pointer::PointerEvent, scroll::ScrollEvent},
     reactive::Computed,
     surface::SurfaceEvent,
-    windows::window::Win32Window,
+    window_backend::{WindowBackend, WindowBackendEvent},
+    windows::create_window,
 };
 
 use super::{
-    CloseRequested, Result, WindowContent, WindowEvents, native_event::NativeWindowEvent,
-    presentation::WindowPresentation,
+    CloseRequested, Result, WindowContent, WindowEvents, presentation::WindowPresentation,
 };
 
 /// Native and presentation state for one Window attached to a Component tree.
@@ -29,7 +29,7 @@ pub(super) struct WindowHost {
     scroll_input: EventSink<ScrollEvent>,
     close_input: EventSink<CloseRequested>,
     unmount: EventSink<()>,
-    native: Win32Window,
+    native: Box<dyn WindowBackend>,
     frames: FrameScheduler,
     presentation: WindowPresentation,
     close_requested: bool,
@@ -44,7 +44,7 @@ impl WindowHost {
         height: u32,
         build: impl FnOnce(&mut MountContext<'_>, &WindowEvents<'_>) -> Computed<WindowContent>,
     ) -> Result<Weak<RefCell<Self>>> {
-        let native = Win32Window::new(title, width, height)?;
+        let native = create_window(title, width, height)?;
         let frames = FrameScheduler::new();
         let presentation = WindowPresentation::new(native.presentation_target())?;
         let initial_size = native.size();
@@ -115,27 +115,27 @@ impl WindowHost {
         };
         if matches!(
             event,
-            NativeWindowEvent::Surface(SurfaceEvent::RedrawRequested)
+            WindowBackendEvent::Surface(SurfaceEvent::RedrawRequested)
         ) {
             self.presentation.mark_pending();
         }
-        if let NativeWindowEvent::Surface(SurfaceEvent::Resized(size)) = event {
+        if let WindowBackendEvent::Surface(SurfaceEvent::Resized(size)) = event {
             self.presentation.resize(size)?;
         }
-        if matches!(event, NativeWindowEvent::CloseRequested) {
+        if matches!(event, WindowBackendEvent::CloseRequested) {
             self.close_requested = true;
         }
         let delivered = match event {
-            NativeWindowEvent::Surface(event) => DispatchRoute::Inline
+            WindowBackendEvent::Surface(event) => DispatchRoute::Inline
                 .send(&self.surface_input, event)
                 .is_ok(),
-            NativeWindowEvent::Pointer(event) => DispatchRoute::Inline
+            WindowBackendEvent::Pointer(event) => DispatchRoute::Inline
                 .send(&self.pointer_input, event)
                 .is_ok(),
-            NativeWindowEvent::Scroll(event) => DispatchRoute::Inline
+            WindowBackendEvent::Scroll(event) => DispatchRoute::Inline
                 .send(&self.scroll_input, event)
                 .is_ok(),
-            NativeWindowEvent::CloseRequested => DispatchRoute::Inline
+            WindowBackendEvent::CloseRequested => DispatchRoute::Inline
                 .send(&self.close_input, CloseRequested)
                 .is_ok(),
         };

@@ -1,4 +1,6 @@
 //! Private Windows platform implementations.
 
 pub(crate) mod message_pump;
-pub(crate) mod window;
+mod window;
+
+pub(crate) use window::create_window;

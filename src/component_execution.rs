@@ -1,4 +1,4 @@
-//! Component execution owned by the Window integration layer.
+//! Default local execution of one Component tree.
 
 use std::time::{Duration, Instant};
 
@@ -9,18 +9,20 @@ use crate::{
 };
 
 /// Drives one Component tree without assigning Window ownership to it.
-pub(super) struct ComponentDriver {
+pub(crate) struct ComponentExecution {
     dispatcher: FifoDispatcher,
     instance: ComponentInstance,
 }
 
-impl ComponentDriver {
-    pub(super) fn mount<R>(build: impl FnOnce(&mut MountContext<'_>) -> R) -> (Self, R) {
+impl ComponentExecution {
+    pub(crate) fn mount<R>(build: impl FnOnce(&mut MountContext<'_>) -> R) -> (Self, R) {
         let dispatcher = FifoDispatcher::new();
         let mut result = None;
         let mut build = Some(build);
         let instance = ComponentInstance::new(dispatcher.route(), |context| {
-            result = Some(build.take().expect("the Component build runs once")(context));
+            result = Some(build.take().expect("the Component build runs once")(
+                context,
+            ));
         });
         (
             Self {
@@ -31,19 +33,19 @@ impl ComponentDriver {
         )
     }
 
-    pub(super) fn flush_effects(&mut self) -> Result<(), ReactiveError> {
+    pub(crate) fn flush_effects(&mut self) -> Result<(), ReactiveError> {
         self.instance.flush_effects()
     }
 
-    pub(super) fn is_finished(&self) -> bool {
+    pub(crate) fn is_finished(&self) -> bool {
         self.instance.is_finished()
     }
 
-    pub(super) fn is_idle(&self) -> bool {
+    pub(crate) fn is_idle(&self) -> bool {
         !self.dispatcher.has_pending()
     }
 
-    pub(super) fn advance(
+    pub(crate) fn advance(
         &mut self,
         available_time: Duration,
     ) -> Result<ComponentProgress, ReactiveError> {
@@ -75,7 +77,7 @@ impl ComponentDriver {
     }
 }
 
-pub(super) enum ComponentProgress {
+pub(crate) enum ComponentProgress {
     Idle,
     Pending,
     Finished,
@@ -101,18 +103,18 @@ mod tests {
             });
             context.sync(&effect);
         });
-        let mut driver = ComponentDriver {
+        let mut execution = ComponentExecution {
             dispatcher,
             instance,
         };
 
-        let progress = driver
+        let progress = execution
             .advance(Duration::MAX)
             .expect("the synchronized Effect is valid");
         assert!(matches!(progress, ComponentProgress::Pending));
         assert!(!received.get());
 
-        let progress = driver
+        let progress = execution
             .advance(Duration::MAX)
             .expect("the event handler is valid");
         assert!(matches!(progress, ComponentProgress::Idle));
