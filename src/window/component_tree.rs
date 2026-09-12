@@ -7,10 +7,8 @@ use std::{
 };
 
 use crate::{
-    component::MountContext,
-    component_execution::{ComponentExecution, ComponentProgress},
-    event_loop::EventLoopParticipant,
-    reactive::Computed,
+    component::MountContext, component_execution::ComponentExecution,
+    event_loop::EventLoopParticipant, reactive::Computed,
 };
 
 use super::{Result, WindowContent, WindowEvents, host::WindowHost};
@@ -147,19 +145,7 @@ impl WindowComponentTreeState {
             window.process_scheduled_work(now);
         }
 
-        let progress = self.components.advance(COMPONENT_WORK_SLICE)?;
-        match progress {
-            ComponentProgress::Idle => {}
-            ComponentProgress::Pending | ComponentProgress::Finished => return Ok(()),
-        }
-
-        let closing: Vec<_> = self
-            .windows()
-            .filter(|window| window.borrow().is_closing())
-            .collect();
-        for window in closing {
-            window.borrow().unmount();
-        }
+        let _ = self.components.advance(COMPONENT_WORK_SLICE)?;
         self.prune_windows();
         Ok(())
     }

@@ -28,11 +28,9 @@ pub(super) struct WindowHost {
     pointer_input: EventSink<PointerEvent>,
     scroll_input: EventSink<ScrollEvent>,
     close_input: EventSink<CloseRequested>,
-    unmount: EventSink<()>,
     native: Box<dyn WindowBackend>,
     frames: FrameScheduler,
     presentation: WindowPresentation,
-    close_requested: bool,
 }
 
 impl WindowHost {
@@ -83,17 +81,20 @@ impl WindowHost {
             let content = build(context, &events);
             presentation.bind(context, content);
 
-            let unmount = context.receive(|(), context| context.unmount());
+            // Closing is ordinary Component behavior. User subscriptions made
+            // by `build` are registered first on the default route; this final
+            // subscription supplies the default non-cancellable close action.
+            let close_window = context.receive(|_: CloseRequested, context| context.unmount());
+            assert!(context.connect_cloned(&close_requested, close_window));
+
             let host = Rc::new(RefCell::new(Self {
                 surface_input,
                 pointer_input,
                 scroll_input,
                 close_input,
-                unmount,
                 native,
                 frames,
                 presentation,
-                close_requested: false,
             }));
             mounted = Some(Rc::downgrade(&host));
             context.retain(Rc::clone(&host));
@@ -107,9 +108,6 @@ impl WindowHost {
     }
 
     pub(super) fn process_native_event(&mut self) -> Result<()> {
-        if self.close_requested {
-            return Ok(());
-        }
         let Some(event) = self.native.pop_event() else {
             return Ok(());
         };
@@ -122,25 +120,19 @@ impl WindowHost {
         if let WindowBackendEvent::Surface(SurfaceEvent::Resized(size)) = event {
             self.presentation.resize(size)?;
         }
-        if matches!(event, WindowBackendEvent::CloseRequested) {
-            self.close_requested = true;
-        }
-        let delivered = match event {
-            WindowBackendEvent::Surface(event) => DispatchRoute::Inline
-                .send(&self.surface_input, event)
-                .is_ok(),
-            WindowBackendEvent::Pointer(event) => DispatchRoute::Inline
-                .send(&self.pointer_input, event)
-                .is_ok(),
-            WindowBackendEvent::Scroll(event) => DispatchRoute::Inline
-                .send(&self.scroll_input, event)
-                .is_ok(),
-            WindowBackendEvent::CloseRequested => DispatchRoute::Inline
-                .send(&self.close_input, CloseRequested)
-                .is_ok(),
-        };
-        if !delivered {
-            self.close_requested = true;
+        match event {
+            WindowBackendEvent::Surface(event) => {
+                let _ = DispatchRoute::Inline.send(&self.surface_input, event);
+            }
+            WindowBackendEvent::Pointer(event) => {
+                let _ = DispatchRoute::Inline.send(&self.pointer_input, event);
+            }
+            WindowBackendEvent::Scroll(event) => {
+                let _ = DispatchRoute::Inline.send(&self.scroll_input, event);
+            }
+            WindowBackendEvent::CloseRequested => {
+                let _ = DispatchRoute::Inline.send(&self.close_input, CloseRequested);
+            }
         }
         Ok(())
     }
@@ -156,23 +148,15 @@ impl WindowHost {
     }
 
     pub(super) fn has_ready_work(&self) -> bool {
-        !self.close_requested && self.native.has_pending_event()
+        self.native.has_pending_event()
     }
 
     pub(super) fn process_scheduled_work(&mut self, now: Instant) {
         self.frames.publish_due(now);
     }
 
-    pub(super) const fn is_closing(&self) -> bool {
-        self.close_requested
-    }
-
     pub(super) fn has_pending_presentation(&self) -> bool {
         self.presentation.has_pending()
-    }
-
-    pub(super) fn unmount(&self) {
-        let _ = DispatchRoute::Inline.send(&self.unmount, ());
     }
 
     pub(super) fn request_redraw_if_needed(&mut self) {
@@ -182,10 +166,8 @@ impl WindowHost {
     }
 
     pub(super) fn advance_presentation(&mut self, wait: Duration) -> Result<()> {
-        if !self.close_requested {
-            self.request_redraw_if_needed();
-            self.presentation.advance(self.native.size(), wait)?;
-        }
+        self.request_redraw_if_needed();
+        self.presentation.advance(self.native.size(), wait)?;
         Ok(())
     }
 }

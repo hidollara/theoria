@@ -26,7 +26,11 @@ use self::component_tree::WindowComponentTree;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-/// Notification that the native host asked to close this Window.
+/// A platform-independent request to close a Window.
+///
+/// Subscribers may observe the request. A Window also installs an ordinary
+/// Component subscription that unmounts it as the default, non-cancellable
+/// response.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct CloseRequested;
 
