@@ -1,6 +1,6 @@
 //! Native Windows implementation of Theoria's window adapter.
 
-use std::{ffi::c_void, marker::PhantomData, rc::Rc};
+use std::{cell::RefCell, ffi::c_void, marker::PhantomData, rc::Rc};
 
 use ::windows::{
     Win32::{
@@ -32,7 +32,10 @@ use self::{procedure::initialize_windowing, procedure::resize_client_area, state
 struct Win32Window {
     hwnd: HWND,
     hinstance: HINSTANCE,
-    state: Box<WindowState>,
+    // User32 may invoke the Window procedure synchronously during a native
+    // call. Interior mutability makes that callback access explicit instead of
+    // manufacturing a mutable reference beside Win32Window's active borrow.
+    state: Box<RefCell<WindowState>>,
     _thread_affinity: PhantomData<Rc<()>>,
 }
 
@@ -43,8 +46,11 @@ impl Win32Window {
             let hinstance = HINSTANCE(module.0);
             initialize_windowing(hinstance)?;
 
-            let mut state = Box::new(WindowState::new(SurfaceSize { width, height }));
-            let state_ptr = (&mut *state as *mut WindowState).cast::<c_void>();
+            let state = Box::new(RefCell::new(WindowState::new(SurfaceSize {
+                width,
+                height,
+            })));
+            let state_ptr = (&*state as *const RefCell<WindowState>).cast::<c_void>();
             let title: Vec<u16> = title.encode_utf16().chain(Some(0)).collect();
 
             let style = WS_OVERLAPPEDWINDOW;
@@ -61,7 +67,7 @@ impl Win32Window {
                 None,
                 None,
                 Some(hinstance),
-                Some(state_ptr.cast_const()),
+                Some(state_ptr),
             )?;
 
             let actual_size = match resize_client_area(hwnd, style, extended_style, width, height) {
@@ -71,7 +77,7 @@ impl Win32Window {
                     return Err(error);
                 }
             };
-            state.finish_initialization(actual_size);
+            state.borrow_mut().finish_initialization(actual_size);
 
             Ok(Self {
                 hwnd,
@@ -92,12 +98,12 @@ impl WindowBackend for Win32Window {
         PresentationTarget::win32(
             self.hwnd.0 as isize,
             self.hinstance.0 as isize,
-            self.state.size(),
+            self.state.borrow().size(),
         )
     }
 
     fn size(&self) -> SurfaceSize {
-        self.state.size()
+        self.state.borrow().size()
     }
 
     fn movement_threshold_extents(&self) -> (f32, f32) {
@@ -108,15 +114,15 @@ impl WindowBackend for Win32Window {
     }
 
     fn request_redraw(&mut self) {
-        self.state.request_redraw();
+        self.state.borrow_mut().request_redraw();
     }
 
     fn has_pending_event(&self) -> bool {
-        self.state.has_pending_event()
+        self.state.borrow().has_pending_event()
     }
 
     fn pop_event(&mut self) -> Option<WindowBackendEvent> {
-        self.state.pop_event()
+        self.state.borrow_mut().pop_event()
     }
 }
 

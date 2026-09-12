@@ -1,6 +1,6 @@
 //! Win32 Window class initialization and message procedure.
 
-use std::{mem::size_of, sync::OnceLock};
+use std::{cell::RefCell, mem::size_of, sync::OnceLock};
 
 use ::windows::{
     Win32::{
@@ -104,12 +104,14 @@ unsafe extern "system" fn window_proc(
         unsafe { SetWindowLongPtrW(hwnd, GWLP_USERDATA, create.lpCreateParams as isize) };
     }
 
-    let state_ptr = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut WindowState;
-    let state = unsafe { state_ptr.as_mut() };
+    let state_ptr =
+        unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *const RefCell<WindowState>;
+    let state = unsafe { state_ptr.as_ref() };
 
     match message {
         WM_SIZE => {
             if let Some(state) = state {
+                let mut state = state.borrow_mut();
                 let packed = lparam.0 as u32;
                 state.resize(SurfaceSize {
                     width: packed & 0xffff,
@@ -120,7 +122,7 @@ unsafe extern "system" fn window_proc(
         }
         WM_PAINT => {
             if let Some(state) = state {
-                state.request_redraw();
+                state.borrow_mut().request_redraw();
             }
             let mut paint = PAINTSTRUCT::default();
             unsafe {
@@ -138,7 +140,7 @@ unsafe extern "system" fn window_proc(
             if let Some(state) = state
                 && let Some(event) = pointer::pointer_event(hwnd, message, wparam)
             {
-                state.push(WindowBackendEvent::Pointer(event));
+                state.borrow_mut().push(WindowBackendEvent::Pointer(event));
             }
             LRESULT(0)
         }
@@ -146,14 +148,14 @@ unsafe extern "system" fn window_proc(
             if let Some(state) = state
                 && let Some(event) = pointer::scroll_event(hwnd, message, wparam)
             {
-                state.push(WindowBackendEvent::Scroll(event));
+                state.borrow_mut().push(WindowBackendEvent::Scroll(event));
             }
             LRESULT(0)
         }
         WM_ERASEBKGND => LRESULT(1),
         WM_CLOSE => {
             if let Some(state) = state {
-                state.push(WindowBackendEvent::CloseRequested);
+                state.borrow_mut().push(WindowBackendEvent::CloseRequested);
             }
             LRESULT(0)
         }
