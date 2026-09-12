@@ -15,16 +15,16 @@ use crate::{
     surface::{SurfaceEvent, SurfaceSize},
 };
 
-mod drive;
+mod component_driver;
+mod component_tree;
 mod group;
 mod host;
-mod mounted_group;
 pub(crate) mod native_event;
 mod presentation;
 
 pub use self::group::{WindowGroup, WindowGroupContext};
 
-use self::mounted_group::MountedWindowGroup;
+use self::component_tree::WindowComponentTree;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -116,10 +116,11 @@ impl WindowContent {
 ///
 /// Its concrete platform adapter is private. A Window publishes native input
 /// through typed event sources and presents the latest reactive Canvas result.
-/// Separate Windows may register with the same [`EventLoopHandle`] while
-/// retaining independent Reactive graphs and Effect synchronization boundaries.
+/// This convenience type owns one Component root containing one Window child.
+/// Separate values may register with the same [`EventLoopHandle`] while
+/// retaining independent Component and Reactive lifetime boundaries.
 pub struct Window {
-    mounted: Rc<MountedWindowGroup>,
+    tree: Rc<WindowComponentTree>,
 }
 
 impl Window {
@@ -136,7 +137,7 @@ impl Window {
         build: impl FnOnce(&mut MountContext<'_>, &WindowEvents<'_>) -> Computed<WindowContent>,
     ) -> Result<Self> {
         let mut build = Some(build);
-        let mounted = MountedWindowGroup::mount(|context, windows| {
+        let tree = WindowComponentTree::mount(|context, windows| {
             windows.mount_window(
                 context,
                 title,
@@ -145,12 +146,12 @@ impl Window {
                 build.take().expect("Window build runs once"),
             )
         })?;
-        event_loop.register(&mounted)?;
-        Ok(Self { mounted })
+        event_loop.register(&tree)?;
+        Ok(Self { tree })
     }
 
     /// Makes this Window visible after its Component tree has been mounted.
     pub fn show(&self) {
-        self.mounted.show();
+        self.tree.show();
     }
 }

@@ -36,7 +36,8 @@ pub(super) struct WindowHost {
 }
 
 impl WindowHost {
-    pub(super) fn mount(
+    /// Mounts one Window as a child of the Component currently being built.
+    pub(super) fn mount_child(
         context: &mut MountContext<'_>,
         title: &str,
         width: u32,

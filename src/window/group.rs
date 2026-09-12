@@ -9,17 +9,17 @@ use crate::{component::MountContext, event_loop::EventLoopHandle, reactive::Comp
 
 use super::{
     Result, WindowContent, WindowEvents,
-    mounted_group::{MountedWindowGroup, WindowGroupMounts},
+    component_tree::{WindowChildren, WindowComponentTree},
 };
 
-/// Windows mounted beneath one shared Component root.
+/// Convenience ownership for one Component root with multiple Window children.
 ///
-/// All Windows created during `build` share a Reactive graph, event dispatcher,
-/// and Effect synchronization boundary. Native presentation remains independent
-/// per Window. Separate groups may register with the same [`EventLoopHandle`]
-/// while retaining independent Component boundaries.
+/// The group does not implicitly share state between its Windows. Values created
+/// in `build` belong to the root Component and may be passed explicitly into its
+/// Window children. Component ownership then keeps those parent values alive for
+/// every dependent child. Native presentation remains independent per Window.
 pub struct WindowGroup {
-    mounted: Rc<MountedWindowGroup>,
+    tree: Rc<WindowComponentTree>,
 }
 
 impl WindowGroup {
@@ -31,20 +31,20 @@ impl WindowGroup {
         build: impl FnOnce(&mut WindowGroupContext<'_, '_>) -> Result<()>,
     ) -> Result<Self> {
         let mut build = Some(build);
-        let mounted = MountedWindowGroup::mount(|context, windows| {
+        let tree = WindowComponentTree::mount(|context, windows| {
             let mut context = WindowGroupContext {
                 mount: context,
                 windows,
             };
             build.take().expect("WindowGroup build runs once")(&mut context)
         })?;
-        event_loop.register(&mounted)?;
-        Ok(Self { mounted })
+        event_loop.register(&tree)?;
+        Ok(Self { tree })
     }
 
     /// Makes every currently mounted Window in this group visible.
     pub fn show(&self) {
-        self.mounted.show();
+        self.tree.show();
     }
 }
 
@@ -55,7 +55,7 @@ impl WindowGroup {
 /// child Component lifetime boundary beneath it.
 pub struct WindowGroupContext<'context, 'mount> {
     mount: &'context mut MountContext<'mount>,
-    windows: &'context mut WindowGroupMounts,
+    windows: &'context mut WindowChildren,
 }
 
 impl WindowGroupContext<'_, '_> {

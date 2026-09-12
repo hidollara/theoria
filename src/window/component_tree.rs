@@ -1,4 +1,4 @@
-//! Component work and Window registrations sharing one update boundary.
+//! One Component tree and the native Windows owned by its children.
 
 use std::{
     cell::RefCell,
@@ -6,29 +6,26 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::{
-    component::{ComponentInstance, MountContext},
-    event::FifoDispatcher,
-    event_loop::EventLoopParticipant,
-    reactive::Computed,
-};
+use crate::{component::MountContext, event_loop::EventLoopParticipant, reactive::Computed};
 
 use super::{
     Result, WindowContent, WindowEvents,
-    drive::{COMPONENT_WORK_SLICE, ComponentProgress, drive_components},
+    component_driver::{ComponentDriver, ComponentProgress},
     host::WindowHost,
 };
 
-/// One independently owned Window group registered non-owningly for driving.
-pub(super) struct MountedWindowGroup {
-    state: RefCell<WindowGroupState>,
+const COMPONENT_WORK_SLICE: Duration = Duration::from_millis(4);
+
+/// Drives one Component tree and observes its Window children non-owningly.
+pub(super) struct WindowComponentTree {
+    state: RefCell<WindowComponentTreeState>,
 }
 
-impl MountedWindowGroup {
+impl WindowComponentTree {
     pub(super) fn mount(
-        build: impl FnOnce(&mut MountContext<'_>, &mut WindowGroupMounts) -> Result<()>,
+        build: impl FnOnce(&mut MountContext<'_>, &mut WindowChildren) -> Result<()>,
     ) -> Result<Rc<Self>> {
-        let state = WindowGroupState::mount(build)?;
+        let state = WindowComponentTreeState::mount(build)?;
         let mounted = Rc::new(Self {
             state: RefCell::new(state),
         });
@@ -43,7 +40,7 @@ impl MountedWindowGroup {
     }
 }
 
-impl EventLoopParticipant for MountedWindowGroup {
+impl EventLoopParticipant for WindowComponentTree {
     fn is_finished(&self) -> bool {
         self.state.borrow().is_finished()
     }
@@ -85,31 +82,24 @@ impl EventLoopParticipant for MountedWindowGroup {
     }
 }
 
-struct WindowGroupState {
-    dispatcher: FifoDispatcher,
-    components: ComponentInstance,
+struct WindowComponentTreeState {
+    components: ComponentDriver,
     windows: Vec<Weak<RefCell<WindowHost>>>,
 }
 
-impl WindowGroupState {
+impl WindowComponentTreeState {
     fn mount(
-        build: impl FnOnce(&mut MountContext<'_>, &mut WindowGroupMounts) -> Result<()>,
+        build: impl FnOnce(&mut MountContext<'_>, &mut WindowChildren) -> Result<()>,
     ) -> Result<Self> {
-        let dispatcher = FifoDispatcher::new();
-        let mut windows = WindowGroupMounts::default();
-        let mut result = None;
+        let mut windows = WindowChildren::default();
         let mut build = Some(build);
-        let mut components = ComponentInstance::new(dispatcher.route(), |context| {
-            result = Some(build.take().expect("Window group build runs once")(
-                context,
-                &mut windows,
-            ));
+        let (mut components, result) = ComponentDriver::mount(|context| {
+            build.take().expect("Window group build runs once")(context, &mut windows)
         });
-        result.expect("the Window group build runs once")?;
+        result?;
         components.flush_effects()?;
 
         Ok(Self {
-            dispatcher,
             components,
             windows: windows.hosts,
         })
@@ -141,7 +131,7 @@ impl WindowGroupState {
     }
 
     fn is_idle(&self) -> bool {
-        !self.dispatcher.has_pending()
+        self.components.is_idle()
             && self.windows().all(|window| {
                 let window = window.borrow();
                 !window.has_ready_work() && !window.has_pending_presentation()
@@ -156,11 +146,7 @@ impl WindowGroupState {
             window.process_scheduled_work(now);
         }
 
-        let progress = drive_components(
-            &mut self.dispatcher,
-            &mut self.components,
-            COMPONENT_WORK_SLICE,
-        )?;
+        let progress = self.components.advance(COMPONENT_WORK_SLICE)?;
         match progress {
             ComponentProgress::Idle => {}
             ComponentProgress::Pending | ComponentProgress::Finished => return Ok(()),
@@ -187,11 +173,11 @@ impl WindowGroupState {
 }
 
 #[derive(Default)]
-pub(super) struct WindowGroupMounts {
+pub(super) struct WindowChildren {
     hosts: Vec<Weak<RefCell<WindowHost>>>,
 }
 
-impl WindowGroupMounts {
+impl WindowChildren {
     pub(super) fn mount_window(
         &mut self,
         context: &mut MountContext<'_>,
@@ -200,8 +186,9 @@ impl WindowGroupMounts {
         height: u32,
         build: impl FnOnce(&mut MountContext<'_>, &WindowEvents<'_>) -> Computed<WindowContent>,
     ) -> Result<()> {
-        self.hosts
-            .push(WindowHost::mount(context, title, width, height, build)?);
+        self.hosts.push(WindowHost::mount_child(
+            context, title, width, height, build,
+        )?);
         Ok(())
     }
 }
