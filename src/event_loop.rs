@@ -66,70 +66,103 @@ impl EventLoop {
     /// active or the current thread receives its quit message.
     pub fn run(&mut self) -> Result<()> {
         loop {
-            let participants = self.live_participants();
-            if participants.is_empty() {
-                return Ok(());
-            }
-
-            let now = Instant::now();
-            for participant in &participants {
-                participant.prepare(now);
-            }
-            let message_progress = if participants.iter().all(|participant| participant.is_idle()) {
-                if let Some(deadline) = next_deadline(&participants) {
-                    self.message_pump
-                        .wait_for(deadline.saturating_duration_since(now))?
-                } else {
-                    self.message_pump.wait()?
-                }
-            } else {
-                self.message_pump.poll()
-            };
-            match message_progress {
-                MessagePumpEvent::Quit(_exit_code) => return Ok(()),
-                MessagePumpEvent::ThreadMessage(ThreadMessage {
-                    message: _message,
-                    wparam: _wparam,
-                    lparam: _lparam,
-                }) => {
-                    // No registered thread-message producer consumes this yet.
-                }
-                MessagePumpEvent::WindowDispatched | MessagePumpEvent::Idle => {}
-            }
-
-            let now = Instant::now();
-            for participant in &participants {
-                participant.process_ready_work(now)?;
-            }
-
-            let participants = self.live_participants();
-            if participants.is_empty() {
-                return Ok(());
-            }
-
-            let waiting_work = matches!(message_progress, MessagePumpEvent::Idle)
-                .then(|| self.next_waitable_work(&participants))
-                .flatten();
-            if let Some(index) = waiting_work {
-                self.next_waitable_work = index + 1;
-            }
-
-            let mut flat_index = 0;
-            for participant in &participants {
-                for work in 0..participant.waitable_work_count() {
-                    let wait = if Some(flat_index) == waiting_work {
-                        WAIT_SLICE
-                    } else {
-                        Duration::ZERO
-                    };
-                    participant.advance_waitable_work(work, wait)?;
-                    flat_index += 1;
-                }
-            }
-            if flat_index != 0 {
-                self.next_waitable_work %= flat_index;
+            match self.step()? {
+                EventLoopStatus::Active => {}
+                EventLoopStatus::Empty | EventLoopStatus::ExitRequested(_) => return Ok(()),
             }
         }
+    }
+
+    /// Performs one driving step, waiting for native input or the next deadline
+    /// when every registered participant is idle.
+    ///
+    /// This is the composable form of [`run`](Self::run). Callers that own a
+    /// surrounding loop can inspect the returned status between steps.
+    pub fn step(&mut self) -> Result<EventLoopStatus> {
+        self.advance(IdleWait::Allowed)
+    }
+
+    /// Performs one driving step without intentionally waiting for work.
+    ///
+    /// This lets another loop retain responsibility for blocking and call into
+    /// Theoria only when appropriate.
+    pub fn poll(&mut self) -> Result<EventLoopStatus> {
+        self.advance(IdleWait::Forbidden)
+    }
+
+    fn advance(&mut self, idle_wait: IdleWait) -> Result<EventLoopStatus> {
+        let participants = self.live_participants();
+        if participants.is_empty() {
+            return Ok(EventLoopStatus::Empty);
+        }
+
+        let now = Instant::now();
+        for participant in &participants {
+            participant.prepare(now);
+        }
+        let message_progress = if idle_wait == IdleWait::Allowed
+            && participants.iter().all(|participant| participant.is_idle())
+        {
+            if let Some(deadline) = next_deadline(&participants) {
+                self.message_pump
+                    .wait_for(deadline.saturating_duration_since(now))?
+            } else {
+                self.message_pump.wait()?
+            }
+        } else {
+            self.message_pump.poll()
+        };
+        match message_progress {
+            MessagePumpEvent::Quit(exit_code) => {
+                return Ok(EventLoopStatus::ExitRequested(exit_code));
+            }
+            MessagePumpEvent::ThreadMessage(ThreadMessage {
+                message: _message,
+                wparam: _wparam,
+                lparam: _lparam,
+            }) => {
+                // No registered thread-message producer consumes this yet.
+            }
+            MessagePumpEvent::WindowDispatched | MessagePumpEvent::Idle => {}
+        }
+
+        let now = Instant::now();
+        for participant in &participants {
+            participant.process_ready_work(now)?;
+        }
+
+        let participants = self.live_participants();
+        if participants.is_empty() {
+            return Ok(EventLoopStatus::Empty);
+        }
+
+        let waiting_work = if idle_wait == IdleWait::Allowed
+            && matches!(message_progress, MessagePumpEvent::Idle)
+        {
+            self.next_waitable_work(&participants)
+        } else {
+            None
+        };
+        if let Some(index) = waiting_work {
+            self.next_waitable_work = index + 1;
+        }
+
+        let mut flat_index = 0;
+        for participant in &participants {
+            for work in 0..participant.waitable_work_count() {
+                let wait = if Some(flat_index) == waiting_work {
+                    WAIT_SLICE
+                } else {
+                    Duration::ZERO
+                };
+                participant.advance_waitable_work(work, wait)?;
+                flat_index += 1;
+            }
+        }
+        if flat_index != 0 {
+            self.next_waitable_work %= flat_index;
+        }
+        Ok(EventLoopStatus::Active)
     }
 
     fn live_participants(&self) -> Vec<Rc<dyn EventLoopParticipant>> {
@@ -163,6 +196,23 @@ impl EventLoop {
             .chain(0..start)
             .find(|&index| waitable_work_pending(participants, index))
     }
+}
+
+/// State of an [`EventLoop`] after one driving step.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EventLoopStatus {
+    /// At least one registered participant can still make progress.
+    Active,
+    /// No live, active registration remains.
+    Empty,
+    /// The native thread requested termination with the supplied exit code.
+    ExitRequested(i32),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum IdleWait {
+    Allowed,
+    Forbidden,
 }
 
 impl Default for EventLoop {
@@ -324,6 +374,8 @@ fn waitable_work_pending(
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
+
     use super::*;
 
     struct FinishedParticipant;
@@ -338,11 +390,55 @@ mod tests {
         }
     }
 
+    struct OneStepParticipant {
+        processed: Cell<bool>,
+    }
+
+    impl EventLoopParticipant for OneStepParticipant {
+        fn is_finished(&self) -> bool {
+            self.processed.get()
+        }
+
+        fn is_idle(&self) -> bool {
+            false
+        }
+
+        fn process_ready_work(&self, _: Instant) -> Result<()> {
+            self.processed.set(true);
+            Ok(())
+        }
+    }
+
     #[test]
     fn an_empty_event_loop_finishes_without_waiting_for_messages() {
-        EventLoop::new()
-            .run()
-            .expect("an empty event loop finishes immediately");
+        assert_eq!(
+            EventLoop::new()
+                .step()
+                .expect("an empty event loop finishes immediately"),
+            EventLoopStatus::Empty
+        );
+    }
+
+    #[test]
+    fn polling_an_empty_event_loop_finishes_without_waiting_for_messages() {
+        assert_eq!(
+            EventLoop::new()
+                .poll()
+                .expect("an empty event loop finishes immediately"),
+            EventLoopStatus::Empty
+        );
+    }
+
+    #[test]
+    fn polling_advances_registered_work_once_without_entering_the_run_loop() {
+        let mut event_loop = EventLoop::new();
+        let participant = Rc::new(OneStepParticipant {
+            processed: Cell::new(false),
+        });
+        event_loop.handle().register(&participant).unwrap();
+
+        assert_eq!(event_loop.poll().unwrap(), EventLoopStatus::Empty);
+        assert!(participant.processed.get());
     }
 
     #[test]
