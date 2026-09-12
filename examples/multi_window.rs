@@ -3,7 +3,6 @@ use std::f32::consts::PI;
 use theoria::{
     canvas::{Canvas, CanvasView, Composite, Coverage},
     color::Color,
-    event_loop::EventLoop,
     font::Font,
     geometry::Point,
     gesture::{Click, ClickArea, ClickGesture, ClickRecognizer},
@@ -15,6 +14,7 @@ use theoria::{
     text::{Text, TextStyle},
     transform::Affine2,
     window::WindowGroup,
+    windows,
 };
 
 const WIDTH: u32 = 640;
@@ -23,7 +23,7 @@ const STAR_CENTER: Point = Point::new(320.0, 205.0);
 const HIT_TOLERANCE: f32 = 0.25;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut event_loop = EventLoop::new();
+    let mut event_loop = windows::event_loop();
     let event_loop_handle = event_loop.handle();
     let font = Font::from_bytes(std::fs::read(r"C:\Windows\Fonts\segoeui.ttf")?)?;
     let star = star_path(125.0, 54.0);

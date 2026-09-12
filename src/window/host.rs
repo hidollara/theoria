@@ -10,11 +10,13 @@ use crate::{
     animation::FrameScheduler,
     component::MountContext,
     event::{DispatchOutcome, DispatchRoute, EventSink, SubmissionOutcome},
-    gesture::MovementThreshold,
-    input::{pointer::PointerEvent, scroll::ScrollEvent},
+    input::{
+        pointer::{MovementThreshold, PointerEvent},
+        scroll::ScrollEvent,
+    },
     reactive::Computed,
     surface::{Surface, SurfaceContent, SurfaceEvent},
-    window_backend::{WindowBackend, WindowBackendEvent, WindowEventBuffer},
+    window::backend::{WindowBackend, WindowBackendEvent, WindowEventBuffer},
     windows::create_window,
 };
 

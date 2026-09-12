@@ -3,7 +3,6 @@ use std::f32::consts::TAU;
 use theoria::{
     canvas::{Canvas, CanvasView, Composite, Coverage},
     color::Color,
-    event_loop::EventLoop,
     geometry::Point,
     input::pointer::{PointerButton, PointerEvent, PointerPhase},
     math::{Matrix2, Vector2},
@@ -11,10 +10,11 @@ use theoria::{
     surface::SurfaceContent,
     transform::Affine2,
     window::Window,
+    windows,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut event_loop = EventLoop::new();
+    let mut event_loop = windows::event_loop();
     let event_loop_handle = event_loop.handle();
     let star = star_path(150.0, 65.0);
     let window = Window::new(

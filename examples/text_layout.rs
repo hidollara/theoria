@@ -1,7 +1,6 @@
 use theoria::{
     canvas::{CanvasView, Composite},
     color::Color,
-    event_loop::EventLoop,
     font::Font,
     geometry::Point,
     math::Vector2,
@@ -9,10 +8,11 @@ use theoria::{
     text::{OpenTypeFeatureTag, Span, Text, TextStyle},
     transform::Affine2,
     window::Window,
+    windows,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut event_loop = EventLoop::new();
+    let mut event_loop = windows::event_loop();
     let event_loop_handle = event_loop.handle();
     let fonts = [
         Font::from_bytes(std::fs::read(r"C:\Windows\Fonts\segoeui.ttf")?)?,

@@ -6,12 +6,15 @@ use crate::{
     component::MountContext,
     event::EventSource,
     event_loop::EventLoopHandle,
-    gesture::MovementThreshold,
-    input::{pointer::PointerEvent, scroll::ScrollEvent},
+    input::{
+        pointer::{MovementThreshold, PointerEvent},
+        scroll::ScrollEvent,
+    },
     reactive::Computed,
     surface::{Surface, SurfaceContent},
 };
 
+pub(crate) mod backend;
 mod component_tree;
 mod group;
 mod host;

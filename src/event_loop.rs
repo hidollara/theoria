@@ -10,7 +10,6 @@ use std::{
 };
 
 use crate::event_pump::{EventPump, EventPumpWake, PumpEvent, ThreadMessage};
-use crate::windows::message_pump::WindowsMessagePump;
 
 mod bridge;
 
@@ -23,11 +22,13 @@ const READY_WORK_SLICE: Duration = Duration::from_millis(4);
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-/// Drives the current thread's native messages and registered local work.
+/// Coordinates one platform pump and its registered local work.
 ///
-/// An EventLoop owns its platform message pump but does not own registered
-/// Windows, Components, or other producers. Those objects retain themselves
-/// through their own lifetime boundaries and register here non-owningly.
+/// An EventLoop owns the platform pump selected when it is constructed, but
+/// does not own registered Windows, Components, or other producers. Platform
+/// modules construct this value; for example, [`crate::windows::event_loop`]
+/// selects the Win32 message pump. Registered objects retain themselves through
+/// their own lifetime boundaries and register here non-owningly.
 pub struct EventLoop {
     pump: Box<dyn EventPump>,
     registrations: Rc<Registrations>,
@@ -35,12 +36,7 @@ pub struct EventLoop {
 }
 
 impl EventLoop {
-    /// Creates an independent event loop for the current GUI thread.
-    pub fn new() -> Self {
-        Self::with_pump(Box::new(WindowsMessagePump::new()))
-    }
-
-    fn with_pump(pump: Box<dyn EventPump>) -> Self {
+    pub(crate) fn with_pump(pump: Box<dyn EventPump>) -> Self {
         Self {
             pump,
             registrations: Rc::new(Registrations::default()),
@@ -213,12 +209,6 @@ pub enum EventLoopStatus {
 enum IdleWait {
     Allowed,
     Forbidden,
-}
-
-impl Default for EventLoop {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl fmt::Debug for EventLoop {

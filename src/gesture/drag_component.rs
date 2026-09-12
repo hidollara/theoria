@@ -50,10 +50,9 @@ mod tests {
     use crate::{
         component::MountContext,
         geometry::Point,
-        gesture::MovementThreshold,
         input::pointer::{
-            PointerButton, PointerButtonChange, PointerButtons, PointerEvent, PointerId,
-            PointerKind, PointerPhase,
+            MovementThreshold, PointerButton, PointerButtonChange, PointerButtons, PointerEvent,
+            PointerId, PointerKind, PointerPhase,
         },
         test_support::TestRuntime,
     };

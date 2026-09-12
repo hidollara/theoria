@@ -1,5 +1,9 @@
 use crate::geometry::Point;
 
+mod movement_threshold;
+
+pub use movement_threshold::MovementThreshold;
+
 /// Identifies one pointer for the duration of its platform-defined lifetime.
 ///
 /// An identifier is meaningful only within the input stream that produced it;

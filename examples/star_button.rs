@@ -5,14 +5,13 @@ use theoria::{
     color::Color,
     component::{Component, MountContext},
     event::EventSource,
-    event_loop::EventLoop,
     font::Font,
     geometry::Point,
     gesture::{
         Click, ClickArea, ClickGesture, ClickRecognizer, Drag, DragArea, DragGesture, DragPhase,
-        DragRecognizer, MovementThreshold,
+        DragRecognizer,
     },
-    input::pointer::{PointerButton, PointerEvent, PointerId},
+    input::pointer::{MovementThreshold, PointerButton, PointerEvent, PointerId},
     interaction::HitRegion,
     math::Vector2,
     path::{FillRule, LineCap, LineJoin, Path, StrokeStyle},
@@ -21,6 +20,7 @@ use theoria::{
     text::{Text, TextStyle},
     transform::Affine2,
     window::Window,
+    windows,
 };
 
 const WIDTH: u32 = 960;
@@ -150,7 +150,7 @@ impl Component for StarButton {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut event_loop = EventLoop::new();
+    let mut event_loop = windows::event_loop();
     let event_loop_handle = event_loop.handle();
     let font = Font::from_bytes(std::fs::read(r"C:\Windows\Fonts\segoeui.ttf")?)?;
     let star = star_path(Point::new(0.0, 0.0), 155.0, 68.0);
@@ -253,7 +253,7 @@ fn star_path(center: Point, outer_radius: f32, inner_radius: f32) -> Path {
 mod tests {
     use std::{cell::Cell, rc::Rc};
 
-    use theoria::gesture::MovementThreshold;
+    use theoria::input::pointer::MovementThreshold;
     use theoria::input::pointer::{
         PointerButtonChange, PointerButtons, PointerEvent, PointerId, PointerKind, PointerPhase,
     };

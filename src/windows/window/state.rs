@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use crate::{
     surface::SurfaceSize,
-    window_backend::{WindowBackendEvent, WindowEventBuffer},
+    window::backend::{WindowBackendEvent, WindowEventBuffer},
 };
 
 pub(super) struct WindowState {

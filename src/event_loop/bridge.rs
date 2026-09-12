@@ -185,11 +185,11 @@ mod tests {
     use crate::event::{DispatchRoute, EventHandler, EventSink};
 
     use super::*;
-    use crate::event_loop::EventLoop;
+    use crate::windows;
 
     #[test]
     fn cross_thread_events_are_published_on_the_event_loop_thread() {
-        let mut event_loop = EventLoop::new();
+        let mut event_loop = windows::event_loop();
         let (bridge, sender) = event_loop.handle().bridge::<u32>().unwrap();
         let received = Rc::new(Cell::new(None));
         let output = Rc::clone(&received);
@@ -212,7 +212,7 @@ mod tests {
 
     #[test]
     fn a_bridge_sender_does_not_keep_its_bridge_alive() {
-        let event_loop = EventLoop::new();
+        let event_loop = windows::event_loop();
         let (bridge, sender) = event_loop.handle().bridge::<u32>().unwrap();
         drop(bridge);
 

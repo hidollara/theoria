@@ -1,4 +1,4 @@
-//! Request-driven animation frame scheduling for one drawable Window.
+//! Request-driven animation frame scheduling for one drawable surface.
 
 use std::{cell::Cell, fmt, rc::Weak, time::Duration};
 
@@ -41,7 +41,7 @@ impl From<&AnimationFrame> for AnimationFrame {
 /// A capability for observing and requesting animation frames.
 ///
 /// Every animation derived from [`frame`](Self::frame) observes the same time
-/// for one Window update. Requests are coalesced until the next frame is
+/// for one surface update. Requests are coalesced until the next frame is
 /// produced. Producing a frame consumes the current request; continuously
 /// animating code requests another frame from an Effect which observes the
 /// current frame. With no request, the Window can remain asleep indefinitely.
@@ -64,8 +64,8 @@ impl FrameClock {
     /// Requests one future animation frame.
     ///
     /// Repeated requests before that frame are coalesced. A request held while
-    /// the Window has no drawable extent resumes after it becomes drawable.
-    /// Returns `false` when the owning Window has already been dropped.
+    /// the surface has no drawable extent resumes after it becomes drawable.
+    /// Returns `false` when the owning scheduler has already been dropped.
     #[must_use]
     pub fn request_frame(&self) -> bool {
         let Some(requests) = self.requests.upgrade() else {

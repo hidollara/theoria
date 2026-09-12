@@ -5,7 +5,7 @@ use crate::{
     },
 };
 
-use super::MovementThreshold;
+use crate::input::pointer::MovementThreshold;
 
 /// A completed press-and-release gesture in one input coordinate space.
 ///

@@ -5,7 +5,6 @@ use theoria::{
         LinearGradient, MeshGradient, RadialGradient,
     },
     color::Color,
-    event_loop::EventLoop,
     geometry::Point,
     image::{Image, ImageError},
     math::Vector2,
@@ -15,10 +14,11 @@ use theoria::{
     surface::SurfaceContent,
     transform::Affine2,
     window::Window,
+    windows,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut event_loop = EventLoop::new();
+    let mut event_loop = windows::event_loop();
     let event_loop_handle = event_loop.handle();
     let source_image = make_sample_image()?;
     let image_width = source_image.width();

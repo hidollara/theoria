@@ -1,6 +1,9 @@
 use crate::{geometry::Point, math::Vector2};
 
-/// A movement boundary around a pointer-down position.
+/// A permitted movement boundary around a pointer-down position.
+///
+/// Platforms may provide a default derived from their input metrics. Gesture
+/// recognizers consume this common value without depending on its origin.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum MovementThreshold {
     /// A circular boundary measured from the pointer-down position.

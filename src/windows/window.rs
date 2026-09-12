@@ -20,7 +20,7 @@ use ::windows::{
 use crate::{
     PresentationTarget,
     surface::SurfaceSize,
-    window_backend::{WindowBackend, WindowEventBuffer},
+    window::backend::{WindowBackend, WindowEventBuffer},
 };
 
 mod pointer;

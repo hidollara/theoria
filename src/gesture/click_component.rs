@@ -54,10 +54,9 @@ mod tests {
     use crate::{
         event::EventSink,
         geometry::Point,
-        gesture::MovementThreshold,
         input::pointer::{
-            PointerButton, PointerButtonChange, PointerButtons, PointerEvent, PointerId,
-            PointerKind, PointerPhase,
+            MovementThreshold, PointerButton, PointerButtonChange, PointerButtons, PointerEvent,
+            PointerId, PointerKind, PointerPhase,
         },
         test_support::TestRuntime,
     };

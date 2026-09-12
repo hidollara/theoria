@@ -19,11 +19,10 @@ pub mod text;
 pub mod transform;
 pub mod vulkan;
 pub mod window;
-mod window_backend;
 
 #[cfg(test)]
 pub(crate) mod test_support;
-mod windows;
+pub mod windows;
 
 pub use target::{PresentationTarget, Viewport};
 pub use theoria_component as component;

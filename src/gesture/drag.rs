@@ -5,7 +5,7 @@ use crate::{
     },
 };
 
-use super::MovementThreshold;
+use crate::input::pointer::MovementThreshold;
 
 /// The lifecycle stage of a recognized drag.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]

@@ -24,7 +24,7 @@ use ::windows::{
     core::{Error, Result, w},
 };
 
-use crate::{surface::SurfaceSize, window_backend::WindowBackendEvent};
+use crate::{surface::SurfaceSize, window::backend::WindowBackendEvent};
 
 use super::{pointer, state::WindowState};
 
