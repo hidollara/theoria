@@ -1,6 +1,10 @@
 //! Native Window input, reactive output, and presentation integration.
 
-use std::time::{Duration, Instant};
+use std::{
+    cell::RefCell,
+    rc::{Rc, Weak},
+    time::{Duration, Instant},
+};
 
 use crate::{
     animation::FrameScheduler,
@@ -38,7 +42,7 @@ impl WindowHost {
         width: u32,
         height: u32,
         build: impl FnOnce(&mut MountContext<'_>, &WindowEvents<'_>) -> Computed<WindowContent>,
-    ) -> Result<Self> {
+    ) -> Result<Weak<RefCell<Self>>> {
         let native = Win32Window::new(title, width, height)?;
         let frames = FrameScheduler::new();
         let presentation = WindowPresentation::new(native.presentation_target())?;
@@ -48,23 +52,15 @@ impl WindowHost {
             horizontal,
             vertical,
         };
-        let mut surface_input = None;
-        let mut pointer_input = None;
-        let mut scroll_input = None;
-        let mut close_input = None;
-        let mut unmount = None;
+        let mut mounted = None;
 
         context.mount_with(|context| {
             let size = context.create_state(initial_size);
             let frame_clock = frames.mount(context);
-            let (surface, input) = context.event_source::<SurfaceEvent>();
-            surface_input = Some(input);
-            let (pointer, input) = context.event_source::<PointerEvent>();
-            pointer_input = Some(input);
-            let (scroll, input) = context.event_source::<ScrollEvent>();
-            scroll_input = Some(input);
-            let (close_requested, input) = context.event_source::<CloseRequested>();
-            close_input = Some(input);
+            let (surface, surface_input) = context.event_source::<SurfaceEvent>();
+            let (pointer, pointer_input) = context.event_source::<PointerEvent>();
+            let (scroll, scroll_input) = context.event_source::<ScrollEvent>();
+            let (close_requested, close_input) = context.event_source::<CloseRequested>();
 
             let surface_size = size.clone();
             let update_size = context.receive(move |event: SurfaceEvent, context| {
@@ -86,24 +82,27 @@ impl WindowHost {
             let content = build(context, &events);
             presentation.bind(context, content);
 
-            unmount = Some(context.receive(|(), context| context.unmount()));
+            let unmount = context.receive(|(), context| context.unmount());
+            let host = Rc::new(RefCell::new(Self {
+                surface_input,
+                pointer_input,
+                scroll_input,
+                close_input,
+                unmount,
+                native,
+                frames,
+                presentation,
+                close_requested: false,
+            }));
+            mounted = Some(Rc::downgrade(&host));
+            context.retain(Rc::clone(&host));
+
+            // Expose native callbacks only after every event and presentation
+            // connection needed to process them has been established.
+            host.borrow().native.show();
         });
 
-        let host = Self {
-            surface_input: surface_input.expect("the Window Component produces surface input"),
-            pointer_input: pointer_input.expect("the Window Component produces pointer input"),
-            scroll_input: scroll_input.expect("the Window Component produces scroll input"),
-            close_input: close_input.expect("the Window Component produces close input"),
-            unmount: unmount.expect("the Window Component produces its unmount input"),
-            native,
-            frames,
-            presentation,
-            close_requested: false,
-        };
-        // Expose native callbacks only after every event and presentation
-        // connection needed to process them has been established.
-        host.native.show();
-        Ok(host)
+        Ok(mounted.expect("the Window Component retains its native host"))
     }
 
     pub(super) fn process_native_event(&mut self) -> Result<()> {

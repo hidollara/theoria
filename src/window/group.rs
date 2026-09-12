@@ -1,6 +1,10 @@
 //! One Component update boundary shared by one or more Windows.
 
-use std::time::Instant;
+use std::{
+    cell::RefCell,
+    rc::{Rc, Weak},
+    time::Instant,
+};
 
 use crate::{
     component::{ComponentInstance, MountContext},
@@ -17,7 +21,7 @@ use super::{
 pub(crate) struct WindowGroup {
     dispatcher: FifoDispatcher,
     components: ComponentInstance,
-    windows: Vec<WindowHost>,
+    windows: Vec<Weak<RefCell<WindowHost>>>,
 }
 
 impl WindowGroup {
@@ -45,38 +49,42 @@ impl WindowGroup {
     }
 
     pub(super) fn request_initial_redraws(&mut self) {
-        for window in &mut self.windows {
-            window.request_redraw_if_needed();
+        self.prune_windows();
+        for window in self.windows() {
+            window.borrow_mut().request_redraw_if_needed();
         }
     }
 
     pub(super) fn is_finished(&self) -> bool {
-        self.windows.is_empty() || self.components.is_finished()
+        self.windows.iter().all(|window| window.strong_count() == 0)
+            || self.components.is_finished()
     }
 
     pub(super) fn prepare_scheduled_work(&mut self, now: Instant) {
-        for window in &mut self.windows {
-            window.prepare_scheduled_work(now);
+        self.prune_windows();
+        for window in self.windows() {
+            window.borrow_mut().prepare_scheduled_work(now);
         }
     }
 
     pub(super) fn next_deadline(&self) -> Option<Instant> {
-        self.windows
-            .iter()
-            .filter_map(WindowHost::next_deadline)
+        self.windows()
+            .filter_map(|window| window.borrow().next_deadline())
             .min()
     }
 
     pub(super) fn is_idle(&self) -> bool {
         !self.dispatcher.has_pending()
-            && self
-                .windows
-                .iter()
-                .all(|window| !window.has_ready_work() && !window.has_pending_presentation())
+            && self.windows().all(|window| {
+                let window = window.borrow();
+                !window.has_ready_work() && !window.has_pending_presentation()
+            })
     }
 
     pub(super) fn process_ready_work(&mut self, now: Instant) -> Result<bool> {
-        for window in &mut self.windows {
+        self.prune_windows();
+        for window in self.windows() {
+            let mut window = window.borrow_mut();
             window.process_native_event()?;
             window.process_scheduled_work(now);
         }
@@ -92,25 +100,29 @@ impl WindowGroup {
             ComponentProgress::Finished => return Ok(false),
         }
 
-        for window in self.windows.iter().filter(|window| window.is_closing()) {
-            window.unmount();
+        let closing: Vec<_> = self
+            .windows()
+            .filter(|window| window.borrow().is_closing())
+            .collect();
+        for window in closing {
+            window.borrow().unmount();
         }
-        self.windows.retain(|window| !window.is_closing());
-        Ok(!self.windows.is_empty())
+        self.prune_windows();
+        Ok(self.windows.iter().any(|window| window.strong_count() != 0))
     }
 
-    pub(super) fn windows(&self) -> &[WindowHost] {
-        &self.windows
+    pub(super) fn windows(&self) -> impl Iterator<Item = Rc<RefCell<WindowHost>>> + '_ {
+        self.windows.iter().filter_map(Weak::upgrade)
     }
 
-    pub(super) fn windows_mut(&mut self) -> &mut [WindowHost] {
-        &mut self.windows
+    fn prune_windows(&mut self) {
+        self.windows.retain(|window| window.strong_count() != 0);
     }
 }
 
 #[derive(Default)]
 pub(crate) struct WindowGroupBuilder {
-    windows: Vec<WindowHost>,
+    windows: Vec<Weak<RefCell<WindowHost>>>,
 }
 
 impl WindowGroupBuilder {

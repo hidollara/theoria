@@ -74,17 +74,19 @@ impl WindowEventLoop {
 
             let mut flat_index = 0;
             for group in &mut self.groups {
-                for window in group.windows_mut() {
+                for window in group.windows() {
                     let wait = if Some(flat_index) == waiting_window {
                         PRESENTATION_WAIT_SLICE
                     } else {
                         Duration::ZERO
                     };
-                    window.advance_presentation(wait)?;
+                    window.borrow_mut().advance_presentation(wait)?;
                     flat_index += 1;
                 }
             }
-            self.next_presentation_wait %= flat_index;
+            if flat_index != 0 {
+                self.next_presentation_wait %= flat_index;
+            }
         }
         Ok(())
     }
@@ -103,11 +105,11 @@ impl WindowEventLoop {
         };
         windows()
             .skip(start)
-            .find(|(_, window)| window.has_pending_presentation())
+            .find(|(_, window)| window.borrow().has_pending_presentation())
             .or_else(|| {
                 windows()
                     .take(start)
-                    .find(|(_, window)| window.has_pending_presentation())
+                    .find(|(_, window)| window.borrow().has_pending_presentation())
             })
             .map(|(index, _)| index)
     }
