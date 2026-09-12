@@ -1,7 +1,7 @@
 //! One Component tree and the native Windows owned by its children.
 
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     rc::{Rc, Weak},
     time::{Duration, Instant},
 };
@@ -37,6 +37,7 @@ impl WindowComponentTree {
             components: Rc::new(components),
             windows: Rc::new(WindowHosts {
                 hosts: RefCell::new(windows.hosts),
+                next_waitable: Cell::new(0),
             }),
         });
         mounted.windows.request_initial_redraws();
@@ -59,6 +60,7 @@ impl WindowComponentTree {
 /// Native Window producers and presentation work observed non-owningly.
 struct WindowHosts {
     hosts: RefCell<Vec<Weak<RefCell<WindowHost>>>>,
+    next_waitable: Cell<usize>,
 }
 
 impl WindowHosts {
@@ -137,19 +139,29 @@ impl EventLoopParticipant for WindowHosts {
         Ok(())
     }
 
-    fn waitable_work_count(&self) -> usize {
-        self.windows().count()
-    }
-
-    fn waitable_work_pending(&self, index: usize) -> bool {
+    fn has_waitable_work(&self) -> bool {
         self.windows()
-            .nth(index)
-            .is_some_and(|window| window.borrow().has_pending_presentation())
+            .any(|window| window.borrow().has_pending_presentation())
     }
 
-    fn advance_waitable_work(&self, index: usize, wait: Duration) -> Result<()> {
-        let window = self.windows().nth(index);
-        if let Some(window) = window {
+    fn advance_waitable_work(&self, wait: Duration) -> Result<()> {
+        let windows: Vec<_> = self.windows().collect();
+        if windows.is_empty() {
+            return Ok(());
+        }
+        let start = self.next_waitable.get() % windows.len();
+        let selected = (start..windows.len())
+            .chain(0..start)
+            .find(|&index| windows[index].borrow().has_pending_presentation());
+        if let Some(index) = selected {
+            self.next_waitable.set(index + 1);
+        }
+        for (index, window) in windows.into_iter().enumerate() {
+            let wait = if Some(index) == selected {
+                wait
+            } else {
+                Duration::ZERO
+            };
             window.borrow_mut().advance_presentation(wait)?;
         }
         Ok(())

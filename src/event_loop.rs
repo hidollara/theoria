@@ -29,16 +29,20 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 pub struct EventLoop {
     pump: Box<dyn EventPump>,
     registrations: Rc<Registrations>,
-    next_waitable_work: usize,
+    next_waitable_participant: usize,
 }
 
 impl EventLoop {
     /// Creates an independent driver for the current GUI thread.
     pub fn new() -> Self {
+        Self::with_pump(Box::new(WindowsMessagePump::new()))
+    }
+
+    fn with_pump(pump: Box<dyn EventPump>) -> Self {
         Self {
-            pump: Box::new(WindowsMessagePump::new()),
+            pump,
             registrations: Rc::new(Registrations::default()),
-            next_waitable_work: 0,
+            next_waitable_participant: 0,
         }
     }
 
@@ -62,8 +66,8 @@ impl EventLoop {
         }
     }
 
-    /// Drives native messages and registered work until no registration remains
-    /// active or the current thread receives its quit message.
+    /// Drives native messages and registered work until no participant can
+    /// produce or process further work, or the current thread requests exit.
     pub fn run(&mut self) -> Result<()> {
         loop {
             match self.step()? {
@@ -138,28 +142,24 @@ impl EventLoop {
 
         let waiting_work =
             if idle_wait == IdleWait::Allowed && matches!(message_progress, PumpEvent::Idle) {
-                self.next_waitable_work(&participants)
+                self.next_waitable_participant(&participants)
             } else {
                 None
             };
         if let Some(index) = waiting_work {
-            self.next_waitable_work = index + 1;
+            self.next_waitable_participant = index + 1;
         }
 
-        let mut flat_index = 0;
-        for participant in &participants {
-            for work in 0..participant.waitable_work_count() {
-                let wait = if Some(flat_index) == waiting_work {
-                    WAIT_SLICE
-                } else {
-                    Duration::ZERO
-                };
-                participant.advance_waitable_work(work, wait)?;
-                flat_index += 1;
-            }
+        for (index, participant) in participants.iter().enumerate() {
+            let wait = if Some(index) == waiting_work {
+                WAIT_SLICE
+            } else {
+                Duration::ZERO
+            };
+            participant.advance_waitable_work(wait)?;
         }
-        if flat_index != 0 {
-            self.next_waitable_work %= flat_index;
+        if !participants.is_empty() {
+            self.next_waitable_participant %= participants.len();
         }
         Ok(EventLoopStatus::Active)
     }
@@ -182,18 +182,17 @@ impl EventLoop {
             .collect()
     }
 
-    fn next_waitable_work(&self, participants: &[Rc<dyn EventLoopParticipant>]) -> Option<usize> {
-        let count = participants
-            .iter()
-            .map(|participant| participant.waitable_work_count())
-            .sum::<usize>();
-        if count == 0 {
+    fn next_waitable_participant(
+        &self,
+        participants: &[Rc<dyn EventLoopParticipant>],
+    ) -> Option<usize> {
+        if participants.is_empty() {
             return None;
         }
-        let start = self.next_waitable_work % count;
-        (start..count)
+        let start = self.next_waitable_participant % participants.len();
+        (start..participants.len())
             .chain(0..start)
-            .find(|&index| waitable_work_pending(participants, index))
+            .find(|&index| participants[index].has_waitable_work())
     }
 }
 
@@ -202,7 +201,7 @@ impl EventLoop {
 pub enum EventLoopStatus {
     /// At least one registered participant can still make progress.
     Active,
-    /// No live, active registration remains.
+    /// No participant can produce or process further work.
     Empty,
     /// The native thread requested termination with the supplied exit code.
     ExitRequested(i32),
@@ -348,17 +347,23 @@ pub(crate) trait EventLoopParticipant {
     fn next_deadline(&self) -> Option<Instant> {
         None
     }
+    /// Returns whether this participant currently has no immediate work.
+    ///
+    /// A participant that can become ready only through future native input or
+    /// a deadline must also return `true` from [`Self::keeps_alive`].
     fn is_idle(&self) -> bool {
         true
     }
     fn process_ready_work(&self, now: Instant) -> Result<()>;
-    fn waitable_work_count(&self) -> usize {
-        0
-    }
-    fn waitable_work_pending(&self, _index: usize) -> bool {
+    /// Returns whether advancing internal work may benefit from a short wait.
+    fn has_waitable_work(&self) -> bool {
         false
     }
-    fn advance_waitable_work(&self, _index: usize, _wait: Duration) -> Result<()> {
+    /// Advances this participant's internal waitable work.
+    ///
+    /// The participant owns selection and fairness among its internal work
+    /// items. `wait` is nonzero for at most one participant per loop step.
+    fn advance_waitable_work(&self, _wait: Duration) -> Result<()> {
         Ok(())
     }
 }
@@ -378,25 +383,54 @@ fn next_deadline(participants: &[Rc<dyn EventLoopParticipant>]) -> Option<Instan
         .min()
 }
 
-fn waitable_work_pending(
-    participants: &[Rc<dyn EventLoopParticipant>],
-    mut flat_index: usize,
-) -> bool {
-    for participant in participants {
-        let count = participant.waitable_work_count();
-        if flat_index < count {
-            return participant.waitable_work_pending(flat_index);
-        }
-        flat_index -= count;
-    }
-    false
-}
-
 #[cfg(test)]
 mod tests {
-    use std::cell::Cell;
+    use std::{cell::Cell, sync::Arc};
 
     use super::*;
+
+    struct TestPump {
+        wake: Arc<TestWake>,
+    }
+
+    impl TestPump {
+        fn new() -> Self {
+            Self {
+                wake: Arc::new(TestWake),
+            }
+        }
+    }
+
+    impl EventPump for TestPump {
+        fn wake_capability(&self) -> SyncWeak<dyn EventPumpWake> {
+            let wake: Arc<dyn EventPumpWake> = self.wake.clone();
+            Arc::downgrade(&wake)
+        }
+
+        fn wait(&mut self) -> crate::event_pump::PumpResult<PumpEvent> {
+            Ok(PumpEvent::Idle)
+        }
+
+        fn wait_for(&mut self, _: Duration) -> crate::event_pump::PumpResult<PumpEvent> {
+            Ok(PumpEvent::Idle)
+        }
+
+        fn poll(&mut self) -> crate::event_pump::PumpResult<PumpEvent> {
+            Ok(PumpEvent::Idle)
+        }
+    }
+
+    struct TestWake;
+
+    impl EventPumpWake for TestWake {
+        fn wake(&self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn test_event_loop() -> EventLoop {
+        EventLoop::with_pump(Box::new(TestPump::new()))
+    }
 
     struct FinishedParticipant;
 
@@ -440,7 +474,7 @@ mod tests {
     #[test]
     fn an_empty_event_loop_finishes_without_waiting_for_messages() {
         assert_eq!(
-            EventLoop::new()
+            test_event_loop()
                 .step()
                 .expect("an empty event loop finishes immediately"),
             EventLoopStatus::Empty
@@ -450,7 +484,7 @@ mod tests {
     #[test]
     fn polling_an_empty_event_loop_finishes_without_waiting_for_messages() {
         assert_eq!(
-            EventLoop::new()
+            test_event_loop()
                 .poll()
                 .expect("an empty event loop finishes immediately"),
             EventLoopStatus::Empty
@@ -459,7 +493,7 @@ mod tests {
 
     #[test]
     fn polling_advances_registered_work_once_without_entering_the_run_loop() {
-        let mut event_loop = EventLoop::new();
+        let mut event_loop = test_event_loop();
         let participant = Rc::new(OneStepParticipant {
             processed: Cell::new(false),
         });
@@ -487,7 +521,7 @@ mod tests {
 
     #[test]
     fn a_dormant_passive_participant_does_not_keep_the_loop_alive() {
-        let mut event_loop = EventLoop::new();
+        let mut event_loop = test_event_loop();
         let participant = Rc::new(DormantParticipant);
         event_loop.handle().register(&participant).unwrap();
 
@@ -547,7 +581,7 @@ mod tests {
 
     #[test]
     fn passive_work_outlives_the_producer_that_submitted_it() {
-        let mut event_loop = EventLoop::new();
+        let mut event_loop = test_event_loop();
         let pending = Rc::new(Cell::new(false));
         let processed = Rc::new(Cell::new(false));
         let passive = Rc::new(PassiveWork {
@@ -569,9 +603,62 @@ mod tests {
         assert!(processed.get());
     }
 
+    struct WaitableParticipant {
+        waited: Cell<bool>,
+    }
+
+    impl EventLoopParticipant for WaitableParticipant {
+        fn is_closed(&self) -> bool {
+            false
+        }
+
+        fn keeps_alive(&self) -> bool {
+            true
+        }
+
+        fn is_idle(&self) -> bool {
+            false
+        }
+
+        fn process_ready_work(&self, _: Instant) -> Result<()> {
+            Ok(())
+        }
+
+        fn has_waitable_work(&self) -> bool {
+            true
+        }
+
+        fn advance_waitable_work(&self, wait: Duration) -> Result<()> {
+            self.waited.set(!wait.is_zero());
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn wait_time_rotates_without_exposing_a_participants_internal_work_items() {
+        let mut event_loop = test_event_loop();
+        let first = Rc::new(WaitableParticipant {
+            waited: Cell::new(false),
+        });
+        let second = Rc::new(WaitableParticipant {
+            waited: Cell::new(false),
+        });
+        let handle = event_loop.handle();
+        handle.register(&first).unwrap();
+        handle.register(&second).unwrap();
+
+        assert_eq!(event_loop.step().unwrap(), EventLoopStatus::Active);
+        assert!(first.waited.get());
+        assert!(!second.waited.get());
+
+        assert_eq!(event_loop.step().unwrap(), EventLoopStatus::Active);
+        assert!(!first.waited.get());
+        assert!(second.waited.get());
+    }
+
     #[test]
     fn registration_does_not_keep_a_participant_alive() {
-        let event_loop = EventLoop::new();
+        let event_loop = test_event_loop();
         let handle = event_loop.handle();
         let participant = Rc::new(FinishedParticipant);
         let weak = Rc::downgrade(&participant);
@@ -584,7 +671,7 @@ mod tests {
 
     #[test]
     fn a_handle_does_not_keep_its_event_loop_alive() {
-        let event_loop = EventLoop::new();
+        let event_loop = test_event_loop();
         let handle = event_loop.handle();
         drop(event_loop);
 
@@ -603,7 +690,7 @@ mod tests {
 
     #[test]
     fn a_waker_does_not_keep_its_event_loop_available() {
-        let event_loop = EventLoop::new();
+        let event_loop = test_event_loop();
         let waker = event_loop.waker();
         drop(event_loop);
 
