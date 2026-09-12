@@ -12,6 +12,10 @@ use crate::windows::message_pump::{
     MessagePumpEvent, MessagePumpWaker, ThreadMessage, WindowsMessagePump,
 };
 
+mod bridge;
+
+pub use self::bridge::{EventLoopBridge, EventLoopBridgeSendError, EventLoopBridgeSender};
+
 /// Time an otherwise idle iteration may lend to presentation progress.
 const PRESENTATION_WAIT_SLICE: Duration = Duration::from_millis(1);
 
@@ -42,6 +46,7 @@ impl EventLoop {
     pub fn handle(&self) -> EventLoopHandle {
         EventLoopHandle {
             registrations: Rc::downgrade(&self.registrations),
+            message_pump: self.message_pump.waker(),
         }
     }
 
@@ -182,6 +187,7 @@ impl fmt::Debug for EventLoop {
 #[derive(Clone)]
 pub struct EventLoopHandle {
     registrations: Weak<Registrations>,
+    message_pump: MessagePumpWaker,
 }
 
 impl EventLoopHandle {
@@ -201,6 +207,27 @@ impl EventLoopHandle {
             .borrow_mut()
             .push(Rc::downgrade(&participant));
         Ok(())
+    }
+
+    /// Creates a cross-thread event Bridge driven by this EventLoop.
+    ///
+    /// The returned Bridge owns the receiving side and exposes its local Source.
+    /// Its Sender makes an event available before waking this loop. Neither
+    /// capability keeps the EventLoop alive.
+    pub fn bridge<E>(
+        &self,
+    ) -> std::result::Result<(EventLoopBridge<E>, EventLoopBridgeSender<E>), EventLoopClosed>
+    where
+        E: Send + 'static,
+    {
+        bridge::create(self)
+    }
+
+    /// Returns a thread-safe, non-owning capability for interrupting this loop.
+    pub fn waker(&self) -> EventLoopWaker {
+        EventLoopWaker {
+            message_pump: self.message_pump.clone(),
+        }
     }
 }
 
@@ -244,8 +271,9 @@ struct Registrations {
     participants: RefCell<Vec<Weak<dyn EventLoopParticipant>>>,
 }
 
+/// Registration failed because its EventLoop has already been dropped.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct EventLoopClosed;
+pub struct EventLoopClosed;
 
 impl fmt::Display for EventLoopClosed {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -257,13 +285,23 @@ impl Error for EventLoopClosed {}
 
 pub(crate) trait EventLoopParticipant {
     fn is_finished(&self) -> bool;
-    fn prepare(&self, now: Instant);
-    fn next_deadline(&self) -> Option<Instant>;
-    fn is_idle(&self) -> bool;
+    fn prepare(&self, _now: Instant) {}
+    fn next_deadline(&self) -> Option<Instant> {
+        None
+    }
+    fn is_idle(&self) -> bool {
+        true
+    }
     fn process_ready_work(&self, now: Instant) -> Result<()>;
-    fn presentation_count(&self) -> usize;
-    fn presentation_pending(&self, index: usize) -> bool;
-    fn advance_presentation(&self, index: usize, wait: Duration) -> Result<()>;
+    fn presentation_count(&self) -> usize {
+        0
+    }
+    fn presentation_pending(&self, _index: usize) -> bool {
+        false
+    }
+    fn advance_presentation(&self, _index: usize, _wait: Duration) -> Result<()> {
+        Ok(())
+    }
 }
 
 fn next_deadline(participants: &[Rc<dyn EventLoopParticipant>]) -> Option<Instant> {
@@ -298,29 +336,7 @@ mod tests {
             true
         }
 
-        fn prepare(&self, _: Instant) {}
-
-        fn next_deadline(&self) -> Option<Instant> {
-            None
-        }
-
-        fn is_idle(&self) -> bool {
-            true
-        }
-
         fn process_ready_work(&self, _: Instant) -> Result<()> {
-            Ok(())
-        }
-
-        fn presentation_count(&self) -> usize {
-            0
-        }
-
-        fn presentation_pending(&self, _: usize) -> bool {
-            false
-        }
-
-        fn advance_presentation(&self, _: usize, _: Duration) -> Result<()> {
             Ok(())
         }
     }
