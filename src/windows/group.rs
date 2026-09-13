@@ -13,7 +13,7 @@ use crate::{
 use crate::windows::{
     Result,
     capabilities::WindowCapabilities,
-    component_tree::{WindowChildren, WindowComponentTree},
+    composition::{WindowChildren, WindowComposition},
 };
 
 /// Convenience ownership for one Component root with multiple Window children.
@@ -23,7 +23,7 @@ use crate::windows::{
 /// Window children. Component ownership then keeps those parent values alive for
 /// every dependent child. Native presentation remains independent per Window.
 pub struct WindowGroup {
-    tree: Rc<WindowComponentTree>,
+    composition: Rc<WindowComposition>,
 }
 
 impl WindowGroup {
@@ -35,20 +35,20 @@ impl WindowGroup {
         build: impl FnOnce(&mut WindowGroupContext<'_, '_>) -> Result<()>,
     ) -> Result<Self> {
         let mut build = Some(build);
-        let tree = WindowComponentTree::mount(|context, windows| {
+        let composition = WindowComposition::mount(|context, windows| {
             let mut context = WindowGroupContext {
                 mount: context,
                 windows,
             };
             build.take().expect("WindowGroup build runs once")(&mut context)
         })?;
-        tree.register(event_loop)?;
-        Ok(Self { tree })
+        composition.register(event_loop)?;
+        Ok(Self { composition })
     }
 
     /// Makes every currently mounted Window in this group visible.
     pub fn show(&self) {
-        self.tree.show();
+        self.composition.show();
     }
 }
 

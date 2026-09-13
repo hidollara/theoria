@@ -1,4 +1,4 @@
-//! One Component tree and the native Windows owned by its children.
+//! Composition of one Component execution boundary and its native Windows.
 
 use std::{
     cell::{Cell, RefCell},
@@ -15,13 +15,13 @@ use crate::{
 
 use crate::windows::{Result, capabilities::WindowCapabilities, host::WindowHost};
 
-/// Owns one Component tree together with the Window producers built beneath it.
-pub(super) struct WindowComponentTree {
+/// Owns one Component execution boundary and its mounted Window producers.
+pub(super) struct WindowComposition {
     components: Rc<ComponentParticipant>,
     windows: Rc<WindowHosts>,
 }
 
-impl WindowComponentTree {
+impl WindowComposition {
     pub(super) fn mount(
         build: impl FnOnce(&mut MountContext<'_>, &mut WindowChildren) -> Result<()>,
     ) -> Result<Rc<Self>> {

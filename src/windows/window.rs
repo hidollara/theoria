@@ -7,7 +7,7 @@ use crate::{
     event_loop::EventLoopHandle,
     reactive::Computed,
     surface::SurfaceContent,
-    windows::{Result, capabilities::WindowCapabilities, component_tree::WindowComponentTree},
+    windows::{Result, capabilities::WindowCapabilities, composition::WindowComposition},
 };
 
 /// One Win32 Window with an independent Component update boundary.
@@ -16,7 +16,7 @@ use crate::{
 /// vocabulary before entering the Component tree. Windows-specific integrations
 /// may expose additional event sources beside those projections.
 pub struct Window {
-    tree: Rc<WindowComponentTree>,
+    composition: Rc<WindowComposition>,
 }
 
 impl Window {
@@ -33,7 +33,7 @@ impl Window {
         build: impl FnOnce(&mut MountContext<'_>, &WindowCapabilities) -> Computed<SurfaceContent>,
     ) -> Result<Self> {
         let mut build = Some(build);
-        let tree = WindowComponentTree::mount(|context, windows| {
+        let composition = WindowComposition::mount(|context, windows| {
             windows.mount_window(
                 context,
                 title,
@@ -42,12 +42,12 @@ impl Window {
                 build.take().expect("Window build runs once"),
             )
         })?;
-        tree.register(event_loop)?;
-        Ok(Self { tree })
+        composition.register(event_loop)?;
+        Ok(Self { composition })
     }
 
     /// Makes this Window visible after its Component tree has been mounted.
     pub fn show(&self) {
-        self.tree.show();
+        self.composition.show();
     }
 }

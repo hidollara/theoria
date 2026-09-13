@@ -5,7 +5,7 @@ use std::error::Error;
 use crate::event_loop::EventLoop;
 
 mod capabilities;
-mod component_tree;
+mod composition;
 mod event_buffer;
 mod group;
 mod host;
