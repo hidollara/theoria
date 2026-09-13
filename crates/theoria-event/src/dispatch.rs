@@ -5,7 +5,7 @@ use std::{
     rc::Rc,
 };
 
-use crate::sink::{EventSink, SinkOutcome};
+use crate::sink::EventSink;
 
 type CompletionFn = Box<dyn FnOnce(DispatchOutcome)>;
 
@@ -43,15 +43,6 @@ pub enum DispatchStatus {
     Finished(DispatchOutcome),
 }
 
-impl From<SinkOutcome> for DispatchOutcome {
-    fn from(outcome: SinkOutcome) -> Self {
-        match outcome {
-            SinkOutcome::Delivered => Self::Delivered,
-            SinkOutcome::Unavailable => Self::SinkUnavailable,
-        }
-    }
-}
-
 /// Accepts type-erased event Dispatches for execution or scheduling.
 ///
 /// A successful return reports whether the accepted Dispatch completed during
@@ -64,18 +55,39 @@ pub trait EventDispatcher: 'static {
     fn submit(&self, dispatch: EventDispatch) -> Result<SubmissionOutcome, EventDispatch>;
 }
 
-/// A cloneable route by which an event Dispatch executes.
-///
-/// The inline route invokes the Sink directly without type erasure. A
-/// Dispatcher route prepares an [`EventDispatch`] for that Dispatcher.
-#[derive(Clone)]
-pub enum DispatchRoute {
-    Inline,
-    Dispatcher(Rc<dyn EventDispatcher>),
+impl<T> EventDispatcher for Rc<T>
+where
+    T: EventDispatcher + ?Sized,
+{
+    fn submit(&self, dispatch: EventDispatch) -> Result<SubmissionOutcome, EventDispatch> {
+        self.as_ref().submit(dispatch)
+    }
 }
 
-impl DispatchRoute {
-    /// Sends one event to `sink` through this route.
+/// A cloneable capability for submitting owned event Dispatches.
+#[derive(Clone)]
+pub struct Dispatcher {
+    endpoint: Rc<dyn EventDispatcher>,
+}
+
+impl Dispatcher {
+    /// Wraps an event Dispatcher as a cloneable submission capability.
+    pub fn new(dispatcher: impl EventDispatcher) -> Self {
+        Self {
+            endpoint: Rc::new(dispatcher),
+        }
+    }
+
+    /// Creates a Dispatcher that executes accepted Dispatches immediately.
+    ///
+    /// This preserves Dispatcher semantics, including owned type-erased events
+    /// and tracked Receipts. Use [`EventSink::send`] when direct delivery
+    /// without the `E: 'static` dispatch boundary is intended.
+    pub fn immediate() -> Self {
+        Self::new(ImmediateDispatcher)
+    }
+
+    /// Submits one owned event to this Dispatcher.
     ///
     /// A rejecting Dispatcher returns ownership of the original event. A
     /// successful submission reports whether its Dispatch completed on this
@@ -84,16 +96,12 @@ impl DispatchRoute {
     where
         E: 'static,
     {
-        let sink = sink.into();
-        match self {
-            Self::Inline => Ok(SubmissionOutcome::Completed(sink.receive(event).into())),
-            Self::Dispatcher(dispatcher) => dispatcher
-                .submit(EventDispatch::new(sink, event))
-                .map_err(EventDispatch::into_event),
-        }
+        self.endpoint
+            .submit(EventDispatch::new(sink.into(), event))
+            .map_err(EventDispatch::into_event)
     }
 
-    /// Sends one tracked event to `sink` through this route.
+    /// Submits one tracked event to this Dispatcher.
     ///
     /// A rejecting Dispatcher returns ownership of the original event and no
     /// Receipt. Otherwise the returned Receipt observes execution, Sink
@@ -112,30 +120,30 @@ impl DispatchRoute {
             control: Rc::clone(&control),
         };
 
-        match self {
-            Self::Inline => {
-                let started = control.start();
-                debug_assert!(started, "a new tracked Dispatch starts pending");
-                let outcome = sink.receive(event).into();
-                control.complete(outcome);
-                Ok(receipt)
-            }
-            Self::Dispatcher(dispatcher) => dispatcher
-                .submit(EventDispatch::tracked(sink, event, control))
-                .map(|_| receipt)
-                .map_err(EventDispatch::into_event),
-        }
+        self.endpoint
+            .submit(EventDispatch::tracked(sink, event, control))
+            .map(|_| receipt)
+            .map_err(EventDispatch::into_event)
     }
 }
 
-impl fmt::Debug for DispatchRoute {
+impl AsRef<Dispatcher> for Dispatcher {
+    fn as_ref(&self) -> &Dispatcher {
+        self
+    }
+}
+
+impl fmt::Debug for Dispatcher {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Inline => formatter.write_str("DispatchRoute::Inline"),
-            Self::Dispatcher(_) => formatter
-                .debug_tuple("DispatchRoute::Dispatcher")
-                .finish_non_exhaustive(),
-        }
+        formatter.debug_struct("Dispatcher").finish_non_exhaustive()
+    }
+}
+
+struct ImmediateDispatcher;
+
+impl EventDispatcher for ImmediateDispatcher {
+    fn submit(&self, dispatch: EventDispatch) -> Result<SubmissionOutcome, EventDispatch> {
+        Ok(SubmissionOutcome::Completed(dispatch.execute()))
     }
 }
 
@@ -337,12 +345,20 @@ impl<E: 'static> ErasedDispatch for TypedDispatch<E> {
             control,
         } = *self;
         let Some(control) = control.disarm() else {
-            return sink.receive(event).into();
+            return if sink.send(event).is_ok() {
+                DispatchOutcome::Delivered
+            } else {
+                DispatchOutcome::SinkUnavailable
+            };
         };
         if !control.start() {
             return DispatchOutcome::Cancelled;
         }
-        let outcome = sink.receive(event).into();
+        let outcome = if sink.send(event).is_ok() {
+            DispatchOutcome::Delivered
+        } else {
+            DispatchOutcome::SinkUnavailable
+        };
         control.complete(outcome);
         outcome
     }

@@ -9,7 +9,7 @@ use std::{
 use crate::{
     animation::FrameScheduler,
     component::MountContext,
-    event::{DispatchOutcome, DispatchRoute, EventSink, SubmissionOutcome},
+    event::EventSink,
     input::{
         pointer::{MovementThreshold, PointerEvent},
         scroll::ScrollEvent,
@@ -85,7 +85,7 @@ impl WindowHost {
             presentation.bind(context, content);
 
             // Closing is ordinary Component behavior. User subscriptions made
-            // by `build` are registered first on the default route; this final
+            // by `build` are registered first on the default Dispatcher; this final
             // subscription supplies the default non-cancellable close action.
             let close_window = context.receive(|_: CloseRequested, context| context.unmount());
             assert!(context.connect_cloned(capabilities.close_requested(), close_window));
@@ -185,10 +185,6 @@ impl WindowInputs {
     }
 
     fn publish_to<E: 'static>(sink: &EventSink<E>, event: E) {
-        let outcome = DispatchRoute::Inline.send(sink, event);
-        debug_assert!(matches!(
-            outcome,
-            Ok(SubmissionOutcome::Completed(DispatchOutcome::Delivered))
-        ));
+        debug_assert!(sink.send(event).is_ok());
     }
 }

@@ -286,7 +286,7 @@ mod tests {
     impl TestDriver {
         fn new(build: impl FnOnce(&mut MountContext<'_>)) -> Self {
             let dispatcher = FifoDispatcher::new();
-            let components = ComponentInstance::new(dispatcher.route(), build);
+            let components = ComponentInstance::new(&dispatcher, build);
             Self {
                 dispatcher,
                 components,

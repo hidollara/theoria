@@ -5,7 +5,7 @@ use std::{
 
 use super::drain;
 use theoria_event::{
-    DispatchOutcome, DispatchRoute, EventDispatch, EventDispatcher, EventHandler, EventSink,
+    DispatchOutcome, Dispatcher, EventDispatch, EventDispatcher, EventHandler, EventSink,
     FifoDispatcher, SubmissionOutcome, channel,
 };
 
@@ -23,7 +23,7 @@ impl EventDispatcher for TestDispatcher {
 #[test]
 fn a_sink_alive_at_dispatch_start_finishes_that_dispatch() {
     let mut dispatcher = FifoDispatcher::new();
-    let route = dispatcher.route();
+    let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
@@ -32,19 +32,19 @@ fn a_sink_alive_at_dispatch_start_finishes_that_dispatch() {
     let callback_handler = Rc::clone(&handler);
     let (provider, source) = channel::<u32>();
     source
-        .subscribe_map(&sink, &route, move |event| {
+        .subscribe_map_via(&event_dispatcher, &sink, move |event| {
             callback_handler.borrow_mut().take();
             *event
         })
         .expect("live provider")
         .detach();
 
-    assert!(route.send(&provider, 1_u32).is_ok());
+    assert!(event_dispatcher.send(&provider, 1_u32).is_ok());
     assert!(dispatcher.deliver_next());
     assert!(dispatcher.deliver_next());
     assert!(!dispatcher.deliver_next());
     assert_eq!(&*values.borrow(), &[1]);
-    assert!(route.send(&sink, 2_u32).is_ok());
+    assert!(event_dispatcher.send(&sink, 2_u32).is_ok());
     drain(&mut dispatcher);
     assert_eq!(&*values.borrow(), &[1]);
 }
@@ -63,7 +63,7 @@ fn an_accepting_sink_converts_its_input_during_dispatch_execution() {
     }
 
     let mut dispatcher = FifoDispatcher::new();
-    let route = dispatcher.route();
+    let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: Output| {
@@ -72,7 +72,7 @@ fn an_accepting_sink_converts_its_input_during_dispatch_execution() {
     let sink = EventSink::from(&handler);
     let accepting = sink.accepting::<Input>();
 
-    assert!(route.send(&accepting, Input(7)).is_ok());
+    assert!(event_dispatcher.send(&accepting, Input(7)).is_ok());
     assert!(values.borrow().is_empty());
     drain(&mut dispatcher);
 
@@ -82,13 +82,13 @@ fn an_accepting_sink_converts_its_input_during_dispatch_execution() {
 #[test]
 fn a_contramap_sink_converts_its_input_during_dispatch_execution() {
     let mut dispatcher = FifoDispatcher::new();
-    let route = dispatcher.route();
+    let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: usize| output.borrow_mut().push(value));
     let sink = EventSink::from(&handler).contramap(|value: String| value.len());
 
-    assert!(route.send(&sink, String::from("letter")).is_ok());
+    assert!(event_dispatcher.send(&sink, String::from("letter")).is_ok());
     assert!(values.borrow().is_empty());
     drain(&mut dispatcher);
 
@@ -100,7 +100,7 @@ fn a_filtered_sink_discards_selected_inputs_during_dispatch_execution() {
     let dispatcher = Rc::new(TestDispatcher {
         pending: RefCell::new(Vec::new()),
     });
-    let route = DispatchRoute::Dispatcher(dispatcher.clone());
+    let event_dispatcher = Dispatcher::new(dispatcher.clone());
     let mappings = Rc::new(Cell::new(0));
     let mapped = Rc::clone(&mappings);
     let values = Rc::new(RefCell::new(Vec::new()));
@@ -111,8 +111,8 @@ fn a_filtered_sink_discards_selected_inputs_during_dispatch_execution() {
         value % 2 == 0
     });
 
-    assert!(route.send(&sink, 1_u32).is_ok());
-    assert!(route.send(&sink, 2_u32).is_ok());
+    assert!(event_dispatcher.send(&sink, 1_u32).is_ok());
+    assert!(event_dispatcher.send(&sink, 2_u32).is_ok());
     assert_eq!(
         mappings.get(),
         0,
@@ -138,27 +138,26 @@ fn an_expired_filtered_sink_is_unavailable_without_running_its_predicate() {
     });
     drop(handler);
 
-    assert_eq!(
-        DispatchRoute::Inline.send(&sink, 7_u32),
-        Ok(SubmissionOutcome::Completed(
-            DispatchOutcome::SinkUnavailable
-        ))
-    );
+    assert_eq!(sink.send(7_u32), Err(7_u32));
     assert_eq!(predicate_calls.get(), 0);
 }
 
 #[test]
 fn a_contramap_filter_sink_converts_only_selected_input_values() {
     let mut dispatcher = FifoDispatcher::new();
-    let route = dispatcher.route();
+    let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
     let sink =
         EventSink::from(&handler).contramap_filter(|value: String| value.parse::<u32>().ok());
 
-    assert!(route.send(&sink, String::from("not a number")).is_ok());
-    assert!(route.send(&sink, String::from("42")).is_ok());
+    assert!(
+        event_dispatcher
+            .send(&sink, String::from("not a number"))
+            .is_ok()
+    );
+    assert!(event_dispatcher.send(&sink, String::from("42")).is_ok());
     drain(&mut dispatcher);
 
     assert_eq!(&*values.borrow(), &[42]);

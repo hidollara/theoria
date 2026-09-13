@@ -1,69 +1,84 @@
 use std::{fmt, rc::Rc};
 
-use theoria_event::{DispatchReceipt, DispatchRoute, EventSink, SubmissionOutcome};
+use theoria_event::{DispatchReceipt, Dispatcher, EventSink, SubmissionOutcome};
 use theoria_reactive::{Reactive, ReactiveError};
 
 use crate::{component::MountContext, tree::ComponentTree};
 
-/// One live, mounted Component tree with a default event dispatch route.
+/// One live, mounted Component tree with a default event Dispatcher.
 ///
 /// An Instance owns its Component tree, Reactive evaluation context, and Effect
-/// scheduling state, but does not own or drive the Dispatcher behind its route.
+/// scheduling state, but does not own or drive the underlying Dispatcher.
 /// Callers decide when to execute deferred Dispatches and when to flush Effects.
-/// The default route serves ordinary sends and connections; the `*_via` methods
-/// may select other routes without dividing the Component tree or its Reactive
-/// context.
+/// The default Dispatcher serves ordinary sends and connections; the `*_via`
+/// methods may select another Dispatcher, while `*_inline` methods explicitly
+/// execute on the current call stack.
 pub struct ComponentInstance {
     tree: Rc<ComponentTree>,
 }
 
 impl ComponentInstance {
-    /// Mounts one root Component tree using `default_route` for ordinary
+    /// Mounts one root Component tree using `default_dispatcher` for ordinary
     /// Component event sends and connections.
-    pub fn new(default_route: DispatchRoute, build: impl FnOnce(&mut MountContext<'_>)) -> Self {
-        let tree = ComponentTree::new(Reactive::new(), default_route, |tree, root| {
-            let mut context = MountContext::new(tree, root);
-            build(&mut context);
-        });
+    pub fn new(
+        default_dispatcher: impl AsRef<Dispatcher>,
+        build: impl FnOnce(&mut MountContext<'_>),
+    ) -> Self {
+        let tree = ComponentTree::new(
+            Reactive::new(),
+            default_dispatcher.as_ref().clone(),
+            |tree, root| {
+                let mut context = MountContext::new(tree, root);
+                build(&mut context);
+            },
+        );
         Self { tree }
     }
 
-    /// Sends one event through this Instance's default dispatch route.
+    /// Sends one event through this Instance's default Dispatcher.
     pub fn send<E: 'static>(
         &self,
         sink: impl Into<EventSink<E>>,
         event: E,
     ) -> Result<SubmissionOutcome, E> {
-        self.tree.default_route().send(sink, event)
+        self.tree.default_dispatcher().send(sink, event)
     }
 
-    /// Sends one event through an explicitly selected dispatch route.
+    /// Sends one event directly on the current call stack.
+    ///
+    /// This bypasses the default Dispatcher and may synchronously enter the
+    /// target Component.
+    pub fn send_inline<E>(&self, sink: impl Into<EventSink<E>>, event: E) -> Result<(), E> {
+        sink.into().send(event)
+    }
+
+    /// Sends one event through an explicitly selected Dispatcher.
     pub fn send_via<E: 'static>(
         &self,
-        route: &DispatchRoute,
+        dispatcher: impl AsRef<Dispatcher>,
         sink: impl Into<EventSink<E>>,
         event: E,
     ) -> Result<SubmissionOutcome, E> {
-        route.send(sink, event)
+        dispatcher.as_ref().send(sink, event)
     }
 
-    /// Sends one tracked event through this Instance's default dispatch route.
+    /// Sends one tracked event through this Instance's default Dispatcher.
     pub fn send_tracked<E: 'static>(
         &self,
         sink: impl Into<EventSink<E>>,
         event: E,
     ) -> Result<DispatchReceipt, E> {
-        self.tree.default_route().send_tracked(sink, event)
+        self.tree.default_dispatcher().send_tracked(sink, event)
     }
 
-    /// Sends one tracked event through an explicitly selected dispatch route.
+    /// Sends one tracked event through an explicitly selected Dispatcher.
     pub fn send_tracked_via<E: 'static>(
         &self,
-        route: &DispatchRoute,
+        dispatcher: impl AsRef<Dispatcher>,
         sink: impl Into<EventSink<E>>,
         event: E,
     ) -> Result<DispatchReceipt, E> {
-        route.send_tracked(sink, event)
+        dispatcher.as_ref().send_tracked(sink, event)
     }
 
     /// Runs pending and stale Effects at a caller-selected synchronization boundary.

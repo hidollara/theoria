@@ -4,13 +4,7 @@ use std::{
     rc::{Rc, Weak},
 };
 
-type ReceiveFn<E> = dyn Fn(&dyn Any, E) -> SinkOutcome;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum SinkOutcome {
-    Delivered,
-    Unavailable,
-}
+type ReceiveFn<E> = dyn Fn(&dyn Any, E);
 
 pub(crate) trait SinkEndpoint: 'static {
     type Event;
@@ -18,12 +12,13 @@ pub(crate) trait SinkEndpoint: 'static {
     fn receive(&self, event: Self::Event);
 }
 
-/// A cloneable typed destination independent of any dispatch route.
+/// A cloneable typed destination independent of any Dispatcher.
 ///
-/// A Sink does not keep its endpoint alive. Send an event through a
-/// [`crate::DispatchRoute`] or a higher-level context that supplies one. If
-/// the endpoint has already been dropped when execution starts, dispatch
-/// completes with [`crate::DispatchOutcome::SinkUnavailable`].
+/// A Sink does not keep its endpoint alive. Send directly on the current call
+/// stack with [`Self::send`], or submit an owned event through a
+/// [`crate::Dispatcher`]. If the endpoint has already been dropped when a
+/// Dispatch starts, it completes with
+/// [`crate::DispatchOutcome::SinkUnavailable`].
 pub struct EventSink<E> {
     endpoint: Weak<dyn Any>,
     receive: Rc<ReceiveFn<E>>,
@@ -41,7 +36,6 @@ impl<E> EventSink<E> {
                     .downcast_ref::<T>()
                     .expect("an EventSink endpoint must retain its original type");
                 endpoint.receive(event);
-                SinkOutcome::Delivered
             }),
         }
     }
@@ -83,9 +77,7 @@ impl<E> EventSink<E> {
             endpoint: Weak::clone(&self.endpoint),
             receive: Rc::new(move |endpoint, event| {
                 if let Some(event) = map(event) {
-                    receive(endpoint, event)
-                } else {
-                    SinkOutcome::Delivered
+                    receive(endpoint, event);
                 }
             }),
         }
@@ -100,11 +92,19 @@ impl<E> EventSink<E> {
         self.contramap(Into::into)
     }
 
-    pub(crate) fn receive(&self, event: E) -> SinkOutcome {
+    /// Sends one event directly to this Sink on the current call stack.
+    ///
+    /// Direct delivery does not erase or retain the event and therefore adds
+    /// no `E: 'static` requirement. If the endpoint has already been dropped,
+    /// ownership of the unconsumed event is returned. Sending from a handler
+    /// may synchronously enter another handler; use a Dispatcher when such
+    /// work must be serialized.
+    pub fn send(&self, event: E) -> Result<(), E> {
         let Some(endpoint) = self.endpoint.upgrade() else {
-            return SinkOutcome::Unavailable;
+            return Err(event);
         };
-        (self.receive)(endpoint.as_ref(), event)
+        (self.receive)(endpoint.as_ref(), event);
+        Ok(())
     }
 
     pub(crate) fn is_reachable(&self) -> bool {

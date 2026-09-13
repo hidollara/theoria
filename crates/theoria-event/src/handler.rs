@@ -6,9 +6,9 @@ use crate::sink::{EventSink, SinkEndpoint};
 ///
 /// Borrowing a Handler as an [`EventSink`] creates a non-owning input
 /// capability. Dropping the Handler prevents pending Dispatches for any
-/// derived Sink from invoking its callback. Recursively dispatching to the
-/// same Handler while its callback is running is a contract violation and
-/// panics; use a deferred dispatch route when serialization is required.
+/// derived Sink from invoking its callback. Recursively sending to the same
+/// Handler while its callback is running is a contract violation and panics;
+/// use a serializing Dispatcher when re-entry must be deferred.
 pub struct EventHandler<E: 'static> {
     state: Rc<HandlerState<E>>,
 }

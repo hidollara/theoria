@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    dispatch::{DispatchOutcome, DispatchRoute},
+    dispatch::{DispatchOutcome, Dispatcher},
     sink::{EventSink, SinkEndpoint},
 };
 
@@ -61,10 +61,10 @@ impl<E: 'static> fmt::Debug for EventProvider<E> {
 
 /// A non-owning subscription interface for a typed event channel.
 ///
-/// Every subscription retains its own dispatch route. For each event,
-/// the channel captures the current subscriptions and submits their Dispatches
-/// in subscription creation order. Subscription changes made by inline
-/// execution take effect with the next event.
+/// Every subscription independently chooses direct inline delivery or an event
+/// Dispatcher. For each event, the channel captures the current subscriptions
+/// and processes them in subscription creation order. Subscription changes
+/// made by inline execution take effect with the next event.
 pub struct EventSource<E: 'static> {
     state: Weak<ChannelState<E>>,
 }
@@ -81,42 +81,79 @@ impl<E: 'static> EventSource<E> {
     /// Subscribes a Sink using `T::from(&E)` for each event.
     ///
     /// Returns `None` when the EventProvider has already been dropped.
-    pub fn subscribe<T>(
+    pub fn subscribe_inline<T>(&self, sink: impl Into<EventSink<T>>) -> Option<EventSubscription<E>>
+    where
+        T: 'static,
+        for<'event> T: From<&'event E>,
+    {
+        self.subscribe_map_inline(sink, |event| T::from(event))
+    }
+
+    /// Subscribes a Sink through `dispatcher` using `T::from(&E)`.
+    pub fn subscribe_via<T>(
         &self,
+        dispatcher: impl AsRef<Dispatcher>,
         sink: impl Into<EventSink<T>>,
-        route: &DispatchRoute,
     ) -> Option<EventSubscription<E>>
     where
         T: 'static,
         for<'event> T: From<&'event E>,
     {
-        self.subscribe_map(sink, route, |event| T::from(event))
+        self.subscribe_map_via(dispatcher, sink, |event| T::from(event))
     }
 
     /// Subscribes by explicitly cloning each event before conversion.
     ///
     /// Returns `None` when the EventProvider has already been dropped.
-    pub fn subscribe_cloned<T>(
+    pub fn subscribe_cloned_inline<T>(
         &self,
         sink: impl Into<EventSink<T>>,
-        route: &DispatchRoute,
     ) -> Option<EventSubscription<E>>
     where
         E: Clone,
         T: From<E> + 'static,
     {
-        self.subscribe_map(sink, route, |event| T::from(event.clone()))
+        self.subscribe_map_inline(sink, |event| T::from(event.clone()))
+    }
+
+    /// Subscribes through `dispatcher`, cloning each event before conversion.
+    pub fn subscribe_cloned_via<T>(
+        &self,
+        dispatcher: impl AsRef<Dispatcher>,
+        sink: impl Into<EventSink<T>>,
+    ) -> Option<EventSubscription<E>>
+    where
+        E: Clone,
+        T: From<E> + 'static,
+    {
+        self.subscribe_map_via(dispatcher, sink, |event| T::from(event.clone()))
     }
 
     /// Subscribes with an explicit borrowed-value adapter.
     ///
-    /// The adapter runs when this subscription's Dispatch executes, not while
-    /// the channel expands the publication. If its route rejects submission,
-    /// only this subscription's copy of the current event is dropped.
-    pub fn subscribe_map<T, F>(
+    /// The adapter and Sink run directly while the channel expands each
+    /// publication.
+    pub fn subscribe_map_inline<T, F>(
         &self,
         sink: impl Into<EventSink<T>>,
-        route: &DispatchRoute,
+        map: F,
+    ) -> Option<EventSubscription<E>>
+    where
+        T: 'static,
+        F: Fn(&E) -> T + 'static,
+    {
+        Some(self.state.upgrade()?.subscribe(sink.into(), None, map))
+    }
+
+    /// Subscribes with an explicit borrowed-value adapter and Dispatcher.
+    ///
+    /// The adapter runs when this subscription's Dispatch executes. If the
+    /// Dispatcher rejects submission, only this subscription's copy of the
+    /// current event is dropped.
+    pub fn subscribe_map_via<T, F>(
+        &self,
+        dispatcher: impl AsRef<Dispatcher>,
+        sink: impl Into<EventSink<T>>,
         map: F,
     ) -> Option<EventSubscription<E>>
     where
@@ -126,7 +163,7 @@ impl<E: 'static> EventSource<E> {
         Some(
             self.state
                 .upgrade()?
-                .subscribe(sink.into(), route.clone(), map),
+                .subscribe(sink.into(), Some(dispatcher.as_ref().clone()), map),
         )
     }
 }
@@ -146,7 +183,7 @@ struct ChannelState<E: 'static> {
 
 struct Subscription<E: 'static> {
     sink: EventSink<Rc<E>>,
-    route: DispatchRoute,
+    dispatcher: Option<Dispatcher>,
     removal: SubscriptionRemoval<E>,
 }
 
@@ -176,7 +213,7 @@ impl<E: 'static> ChannelState<E> {
     fn subscribe<T, F>(
         self: &Rc<Self>,
         sink: EventSink<T>,
-        route: DispatchRoute,
+        dispatcher: Option<Dispatcher>,
         map: F,
     ) -> EventSubscription<E>
     where
@@ -197,7 +234,7 @@ impl<E: 'static> ChannelState<E> {
             id,
             Subscription {
                 sink,
-                route,
+                dispatcher,
                 removal,
             },
         );
@@ -217,19 +254,23 @@ impl<E: 'static> ChannelState<E> {
                 .map(|subscription| {
                     (
                         subscription.sink.clone(),
-                        subscription.route.clone(),
+                        subscription.dispatcher.clone(),
                         subscription.removal.clone(),
                     )
                 })
                 .collect::<Vec<_>>()
         };
-        for (sink, route, removal) in subscriptions {
-            if let Ok(receipt) = route.send_tracked(sink, Rc::clone(&event)) {
-                receipt.on_complete(move |outcome| {
-                    if outcome == DispatchOutcome::SinkUnavailable {
-                        removal.remove();
-                    }
-                });
+        for (sink, dispatcher, removal) in subscriptions {
+            if let Some(dispatcher) = dispatcher {
+                if let Ok(receipt) = dispatcher.send_tracked(sink, Rc::clone(&event)) {
+                    receipt.on_complete(move |outcome| {
+                        if outcome == DispatchOutcome::SinkUnavailable {
+                            removal.remove();
+                        }
+                    });
+                }
+            } else if sink.send(Rc::clone(&event)).is_err() {
+                removal.remove();
             }
         }
     }
@@ -307,7 +348,7 @@ impl<E: 'static> Drop for EventSubscription<E> {
 mod tests {
     use super::channel;
     use crate::{
-        dispatch::DispatchRoute, dispatcher::FifoDispatcher, handler::EventHandler, sink::EventSink,
+        dispatch::Dispatcher, dispatcher::FifoDispatcher, handler::EventHandler, sink::EventSink,
     };
 
     #[test]
@@ -315,15 +356,15 @@ mod tests {
         let (provider, source) = channel::<u32>();
         let channel = provider.state.clone();
         let mut dispatcher = FifoDispatcher::new();
-        let route = dispatcher.route();
+        let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
         let handler = EventHandler::new(|_: u32| {});
         source
-            .subscribe_cloned(EventSink::from(&handler), &route)
+            .subscribe_cloned_via(&event_dispatcher, EventSink::from(&handler))
             .expect("live channel")
             .detach();
 
         assert_eq!(channel.subscriptions.borrow().len(), 1);
-        assert!(DispatchRoute::Inline.send(&provider, 7).is_ok());
+        assert!(EventSink::from(&provider).send(7).is_ok());
         drop(handler);
 
         assert!(dispatcher.deliver_next());

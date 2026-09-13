@@ -1,6 +1,6 @@
 use std::{cell::RefCell, rc::Rc};
 
-use theoria_event::DispatchRoute;
+use theoria_event::Dispatcher;
 use theoria_reactive::{Effect, Reactive, ReactiveError, WriteContext};
 
 use crate::{
@@ -13,20 +13,20 @@ pub(crate) struct ComponentTree {
     root: RefCell<Option<MountedComponent>>,
     effects: RefCell<EffectScheduler>,
     reactive: Reactive,
-    default_route: DispatchRoute,
+    default_dispatcher: Dispatcher,
 }
 
 impl ComponentTree {
     pub(crate) fn new(
         reactive: Reactive,
-        default_route: DispatchRoute,
+        default_dispatcher: Dispatcher,
         build: impl FnOnce(&Rc<Self>, &mut ConstructingComponent),
     ) -> Rc<Self> {
         let tree = Rc::new(Self {
             root: RefCell::new(None),
             effects: RefCell::new(EffectScheduler::new()),
             reactive,
-            default_route,
+            default_dispatcher,
         });
         let mut root = ConstructingComponent::new();
         build(&tree, &mut root);
@@ -36,8 +36,8 @@ impl ComponentTree {
         tree
     }
 
-    pub(crate) fn default_route(&self) -> &DispatchRoute {
-        &self.default_route
+    pub(crate) fn default_dispatcher(&self) -> &Dispatcher {
+        &self.default_dispatcher
     }
 
     pub(crate) fn reactive(&self) -> &Reactive {

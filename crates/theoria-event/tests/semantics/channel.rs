@@ -5,7 +5,7 @@ use std::{
 
 use super::drain;
 use theoria_event::{
-    DispatchRoute, EventDispatch, EventDispatcher, EventHandler, EventSink, EventSubscription,
+    Dispatcher, EventDispatch, EventDispatcher, EventHandler, EventSink, EventSubscription,
     FifoDispatcher, SubmissionOutcome, channel,
 };
 
@@ -19,7 +19,7 @@ fn subscription_mapping_runs_when_its_dispatch_executes() {
     struct MoveOnly(String);
 
     let mut dispatcher = FifoDispatcher::new();
-    let route = dispatcher.route();
+    let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
     let mappings = Rc::new(Cell::new(0));
     let mapped = Rc::clone(&mappings);
     let values = Rc::new(RefCell::new(Vec::new()));
@@ -28,14 +28,18 @@ fn subscription_mapping_runs_when_its_dispatch_executes() {
     let sink = EventSink::from(&handler);
     let (provider, source) = channel::<MoveOnly>();
     source
-        .subscribe_map(&sink, &route, move |event| {
+        .subscribe_map_via(&event_dispatcher, &sink, move |event| {
             mapped.set(mapped.get() + 1);
             event.0.len()
         })
         .expect("live provider")
         .detach();
 
-    assert!(route.send(&provider, MoveOnly("letter".into())).is_ok());
+    assert!(
+        event_dispatcher
+            .send(&provider, MoveOnly("letter".into()))
+            .is_ok()
+    );
     assert!(dispatcher.deliver_next());
     assert_eq!(
         mappings.get(),
@@ -58,7 +62,7 @@ impl EventDispatcher for RejectOnceDispatcher {
 }
 
 #[test]
-fn an_inline_subscription_dispatch_can_unsubscribe_during_publication() {
+fn an_inline_subscription_can_unsubscribe_during_publication() {
     let (provider, source) = channel::<u32>();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
@@ -68,7 +72,7 @@ fn an_inline_subscription_dispatch_can_unsubscribe_during_publication() {
     let callback_subscription = Rc::clone(&subscription);
     subscription.replace(Some(
         source
-            .subscribe_map(&sink, &DispatchRoute::Inline, move |event| {
+            .subscribe_map_inline(&sink, move |event| {
                 callback_subscription
                     .borrow_mut()
                     .take()
@@ -79,15 +83,15 @@ fn an_inline_subscription_dispatch_can_unsubscribe_during_publication() {
             .expect("live provider"),
     ));
 
-    assert!(DispatchRoute::Inline.send(&provider, 1_u32).is_ok());
-    assert!(DispatchRoute::Inline.send(&provider, 2_u32).is_ok());
+    assert!(EventSink::from(&provider).send(1_u32).is_ok());
+    assert!(EventSink::from(&provider).send(2_u32).is_ok());
     assert_eq!(&*values.borrow(), &[1]);
 }
 
 #[test]
 fn source_and_input_do_not_keep_their_provider_alive() {
     let mut dispatcher = FifoDispatcher::new();
-    let route = dispatcher.route();
+    let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
     let (provider, source) = channel::<u32>();
     let input = EventSink::from(&provider);
     let values = Rc::new(RefCell::new(Vec::new()));
@@ -95,16 +99,20 @@ fn source_and_input_do_not_keep_their_provider_alive() {
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
     let sink = EventSink::from(&handler);
     source
-        .subscribe_cloned(&sink, &route)
+        .subscribe_cloned_via(&event_dispatcher, &sink)
         .expect("live provider")
         .detach();
 
-    assert!(route.send(&input, 1_u32).is_ok());
+    assert!(event_dispatcher.send(&input, 1_u32).is_ok());
     drain(&mut dispatcher);
     assert_eq!(&*values.borrow(), &[1]);
     drop(provider);
-    assert!(source.subscribe_cloned(&sink, &route).is_none());
-    assert!(route.send(&input, 2_u32).is_ok());
+    assert!(
+        source
+            .subscribe_cloned_via(&event_dispatcher, &sink)
+            .is_none()
+    );
+    assert!(event_dispatcher.send(&input, 2_u32).is_ok());
     drain(&mut dispatcher);
     assert_eq!(&*values.borrow(), &[1]);
 }
@@ -123,15 +131,15 @@ fn cloned_source_views_observe_the_same_channel() {
         second_values.borrow_mut().push(("second", value));
     });
     first_source
-        .subscribe_cloned(EventSink::from(&first_handler), &DispatchRoute::Inline)
+        .subscribe_cloned_inline(EventSink::from(&first_handler))
         .expect("live provider")
         .detach();
     second_source
-        .subscribe_cloned(EventSink::from(&second_handler), &DispatchRoute::Inline)
+        .subscribe_cloned_inline(EventSink::from(&second_handler))
         .expect("live provider")
         .detach();
 
-    assert!(DispatchRoute::Inline.send(&provider, 7_u32).is_ok());
+    assert!(EventSink::from(&provider).send(7_u32).is_ok());
     assert_eq!(&*values.borrow(), &[("first", 7), ("second", 7)]);
 }
 
@@ -161,34 +169,30 @@ fn subscription_changes_during_inline_fan_out_apply_to_the_next_event() {
     let changed_source = Rc::clone(&source);
     let third_sink = EventSink::from(&third_handler);
     source
-        .subscribe_map(
-            EventSink::from(&first_handler),
-            &DispatchRoute::Inline,
-            move |event| {
-                if changed_third.borrow().is_none() {
-                    changed_second
-                        .borrow_mut()
-                        .take()
-                        .expect("second subscription installed")
-                        .unsubscribe();
-                    let subscription = changed_source
-                        .subscribe_cloned(&third_sink, &DispatchRoute::Inline)
-                        .expect("live provider");
-                    changed_third.replace(Some(subscription));
-                }
-                *event
-            },
-        )
+        .subscribe_map_inline(EventSink::from(&first_handler), move |event| {
+            if changed_third.borrow().is_none() {
+                changed_second
+                    .borrow_mut()
+                    .take()
+                    .expect("second subscription installed")
+                    .unsubscribe();
+                let subscription = changed_source
+                    .subscribe_cloned_inline(&third_sink)
+                    .expect("live provider");
+                changed_third.replace(Some(subscription));
+            }
+            *event
+        })
         .expect("live provider")
         .detach();
     second_subscription.replace(Some(
         source
-            .subscribe_cloned(EventSink::from(&second_handler), &DispatchRoute::Inline)
+            .subscribe_cloned_inline(EventSink::from(&second_handler))
             .expect("live provider"),
     ));
 
-    assert!(DispatchRoute::Inline.send(&provider, 1_u32).is_ok());
-    assert!(DispatchRoute::Inline.send(&provider, 2_u32).is_ok());
+    assert!(EventSink::from(&provider).send(1_u32).is_ok());
+    assert!(EventSink::from(&provider).send(2_u32).is_ok());
     assert_eq!(
         &*order.borrow(),
         &[("first", 1), ("second", 1), ("first", 2), ("third", 2)]
@@ -198,18 +202,18 @@ fn subscription_changes_during_inline_fan_out_apply_to_the_next_event() {
 #[test]
 fn dropping_a_subscription_stops_future_publications() {
     let mut dispatcher = FifoDispatcher::new();
-    let route = dispatcher.route();
+    let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
     let sink = EventSink::from(&handler);
     let (provider, source) = channel::<u32>();
     let subscription = source
-        .subscribe_cloned(&sink, &route)
+        .subscribe_cloned_via(&event_dispatcher, &sink)
         .expect("live provider");
     drop(subscription);
 
-    assert!(route.send(&provider, 1_u32).is_ok());
+    assert!(event_dispatcher.send(&provider, 1_u32).is_ok());
     drain(&mut dispatcher);
     assert!(values.borrow().is_empty());
 }
@@ -217,18 +221,18 @@ fn dropping_a_subscription_stops_future_publications() {
 #[test]
 fn explicitly_unsubscribing_stops_future_publications() {
     let mut dispatcher = FifoDispatcher::new();
-    let route = dispatcher.route();
+    let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
     let sink = EventSink::from(&handler);
     let (provider, source) = channel::<u32>();
     let subscription = source
-        .subscribe_cloned(&sink, &route)
+        .subscribe_cloned_via(&event_dispatcher, &sink)
         .expect("live provider");
 
     subscription.unsubscribe();
-    assert!(route.send(&provider, 1_u32).is_ok());
+    assert!(event_dispatcher.send(&provider, 1_u32).is_ok());
     drain(&mut dispatcher);
 
     assert!(values.borrow().is_empty());
@@ -242,29 +246,29 @@ fn detaching_keeps_a_subscription_until_its_provider_is_dropped() {
     let (provider, source) = theoria_event::channel::<u32>();
     let input = EventSink::from(&provider);
     source
-        .subscribe_cloned(EventSink::from(&handler), &DispatchRoute::Inline)
+        .subscribe_cloned_inline(EventSink::from(&handler))
         .expect("live provider")
         .detach();
 
-    assert!(DispatchRoute::Inline.send(&input, 1_u32).is_ok());
+    assert!(input.send(1_u32).is_ok());
     assert_eq!(&*values.borrow(), &[1]);
 
     drop(provider);
-    assert!(DispatchRoute::Inline.send(&input, 2_u32).is_ok());
+    assert!(input.send(2_u32).is_err());
     assert_eq!(&*values.borrow(), &[1]);
 }
 
 #[test]
 fn publication_removes_subscriptions_with_expired_sinks() {
     let mut dispatcher = FifoDispatcher::new();
-    let route = dispatcher.route();
+    let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
     let mappings = Rc::new(Cell::new(0));
     let mapped = Rc::clone(&mappings);
     let handler = EventHandler::new(|_: u32| {});
     let sink = EventSink::from(&handler);
     let (provider, source) = channel::<u32>();
     source
-        .subscribe_map(&sink, &route, move |event| {
+        .subscribe_map_via(&event_dispatcher, &sink, move |event| {
             mapped.set(mapped.get() + 1);
             *event
         })
@@ -272,11 +276,11 @@ fn publication_removes_subscriptions_with_expired_sinks() {
         .detach();
     drop(handler);
 
-    assert!(route.send(&provider, 1_u32).is_ok());
+    assert!(event_dispatcher.send(&provider, 1_u32).is_ok());
     assert!(dispatcher.deliver_next());
     assert!(!dispatcher.deliver_next());
 
-    assert!(route.send(&provider, 2_u32).is_ok());
+    assert!(event_dispatcher.send(&provider, 2_u32).is_ok());
     assert!(dispatcher.deliver_next());
     assert!(!dispatcher.deliver_next());
     assert_eq!(mappings.get(), 0);
@@ -288,21 +292,21 @@ fn a_rejected_subscriber_submission_does_not_remove_the_subscription() {
         rejected: Cell::new(false),
         pending: RefCell::new(Vec::new()),
     });
-    let route = DispatchRoute::Dispatcher(dispatcher.clone());
+    let event_dispatcher = Dispatcher::new(dispatcher.clone());
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
     let sink = EventSink::from(&handler);
     let (provider, source) = channel::<u32>();
     source
-        .subscribe_cloned(&sink, &route)
+        .subscribe_cloned_via(&event_dispatcher, &sink)
         .expect("live provider")
         .detach();
 
-    assert!(DispatchRoute::Inline.send(&provider, 1_u32).is_ok());
+    assert!(EventSink::from(&provider).send(1_u32).is_ok());
     assert!(dispatcher.pending.borrow().is_empty());
 
-    assert!(DispatchRoute::Inline.send(&provider, 2_u32).is_ok());
+    assert!(EventSink::from(&provider).send(2_u32).is_ok());
     dispatcher
         .pending
         .borrow_mut()
@@ -315,7 +319,7 @@ fn a_rejected_subscriber_submission_does_not_remove_the_subscription() {
 #[test]
 fn dropping_a_provider_before_a_queued_publication_executes_prevents_fan_out() {
     let mut dispatcher = FifoDispatcher::new();
-    let route = dispatcher.route();
+    let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
@@ -323,17 +327,17 @@ fn dropping_a_provider_before_a_queued_publication_executes_prevents_fan_out() {
     let (provider, source) = channel::<u32>();
     let input = EventSink::from(&provider);
     source
-        .subscribe_cloned(&sink, &route)
+        .subscribe_cloned_via(&event_dispatcher, &sink)
         .expect("live provider")
         .detach();
     let trigger_input = input.clone();
-    let trigger_route = route.clone();
+    let trigger_dispatcher = event_dispatcher.clone();
     let trigger_handler = EventHandler::new(move |value: u32| {
-        assert!(trigger_route.send(&trigger_input, value).is_ok());
+        assert!(trigger_dispatcher.send(&trigger_input, value).is_ok());
     });
     let trigger = EventSink::from(&trigger_handler);
 
-    assert!(route.send(&trigger, 7_u32).is_ok());
+    assert!(event_dispatcher.send(&trigger, 7_u32).is_ok());
     assert!(dispatcher.deliver_next());
     drop(provider);
     drain(&mut dispatcher);
@@ -343,7 +347,7 @@ fn dropping_a_provider_before_a_queued_publication_executes_prevents_fan_out() {
 #[test]
 fn source_input_submits_subscriptions_in_creation_order() {
     let mut dispatcher = FifoDispatcher::new();
-    let route = dispatcher.route();
+    let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
     let order = Rc::new(RefCell::new(Vec::new()));
     let first_order = Rc::clone(&order);
     let second_order = Rc::clone(&order);
@@ -357,15 +361,15 @@ fn source_input_submits_subscriptions_in_creation_order() {
     let second = EventSink::from(&second_handler);
     let (provider, source) = channel::<()>();
     source
-        .subscribe_cloned(&first, &route)
+        .subscribe_cloned_via(&event_dispatcher, &first)
         .expect("live provider")
         .detach();
     source
-        .subscribe_cloned(&second, &route)
+        .subscribe_cloned_via(&event_dispatcher, &second)
         .expect("live provider")
         .detach();
 
-    assert!(route.send(&provider, ()).is_ok());
+    assert!(event_dispatcher.send(&provider, ()).is_ok());
     drain(&mut dispatcher);
     assert_eq!(&*order.borrow(), &[1, 2]);
 }
@@ -373,17 +377,17 @@ fn source_input_submits_subscriptions_in_creation_order() {
 #[test]
 fn unsubscribing_does_not_cancel_an_already_queued_subscription_dispatch() {
     let mut dispatcher = FifoDispatcher::new();
-    let route = dispatcher.route();
+    let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
     let sink = EventSink::from(&handler);
     let (provider, source) = channel::<u32>();
     let subscription = source
-        .subscribe_cloned(&sink, &route)
+        .subscribe_cloned_via(&event_dispatcher, &sink)
         .expect("live provider");
 
-    assert!(route.send(&provider, 1_u32).is_ok());
+    assert!(event_dispatcher.send(&provider, 1_u32).is_ok());
     assert!(dispatcher.deliver_next());
     subscription.unsubscribe();
     drain(&mut dispatcher);
@@ -391,11 +395,11 @@ fn unsubscribing_does_not_cancel_an_already_queued_subscription_dispatch() {
 }
 
 #[test]
-fn source_inputs_and_subscribers_keep_their_own_dispatch_routes() {
+fn source_inputs_and_subscribers_can_use_distinct_dispatchers() {
     let mut first_dispatcher = FifoDispatcher::new();
-    let first_route = first_dispatcher.route();
+    let first_input: Dispatcher = first_dispatcher.as_ref().clone();
     let mut second_dispatcher = FifoDispatcher::new();
-    let second_route = second_dispatcher.route();
+    let second_input: Dispatcher = second_dispatcher.as_ref().clone();
     let (provider, source) = channel::<u32>();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
@@ -404,11 +408,11 @@ fn source_inputs_and_subscribers_keep_their_own_dispatch_routes() {
     });
     let sink = EventSink::from(&handler);
     source
-        .subscribe_cloned(&sink, &second_route)
+        .subscribe_cloned_via(&second_input, &sink)
         .expect("live provider")
         .detach();
 
-    assert!(first_route.send(&provider, 7_u32).is_ok());
+    assert!(first_input.send(&provider, 7_u32).is_ok());
     drain(&mut second_dispatcher);
     assert!(values.borrow().is_empty());
     drain(&mut first_dispatcher);
@@ -431,7 +435,7 @@ fn subscribe_converts_from_a_borrowed_event() {
     }
 
     let mut dispatcher = FifoDispatcher::new();
-    let route = dispatcher.route();
+    let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: SubscriptionEvent| {
@@ -440,12 +444,12 @@ fn subscribe_converts_from_a_borrowed_event() {
     let sink = EventSink::from(&handler);
     let (provider, source) = channel::<Publication>();
     source
-        .subscribe(&sink, &route)
+        .subscribe_via(&event_dispatcher, &sink)
         .expect("live provider")
         .detach();
 
     assert!(
-        route
+        event_dispatcher
             .send(&provider, Publication(String::from("event")))
             .is_ok()
     );
@@ -457,7 +461,7 @@ fn subscribe_converts_from_a_borrowed_event() {
 #[test]
 fn dropping_a_provider_after_publication_executes_keeps_queued_subscription_dispatch() {
     let mut dispatcher = FifoDispatcher::new();
-    let route = dispatcher.route();
+    let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: u32| {
@@ -466,11 +470,11 @@ fn dropping_a_provider_after_publication_executes_keeps_queued_subscription_disp
     let sink = EventSink::from(&handler);
     let (provider, source) = channel::<u32>();
     source
-        .subscribe_cloned(&sink, &route)
+        .subscribe_cloned_via(&event_dispatcher, &sink)
         .expect("live provider")
         .detach();
 
-    assert!(route.send(&provider, 3_u32).is_ok());
+    assert!(event_dispatcher.send(&provider, 3_u32).is_ok());
     assert!(dispatcher.deliver_next());
     drop(provider);
     drain(&mut dispatcher);

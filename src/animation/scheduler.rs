@@ -8,9 +8,7 @@ use std::{
 
 use crate::{
     component::MountContext,
-    event::{
-        DispatchOutcome, DispatchRoute, EventProvider, EventSource, SubmissionOutcome, channel,
-    },
+    event::{EventProvider, EventSink, EventSource, channel},
     reactive::Value,
 };
 
@@ -118,12 +116,10 @@ impl FrameScheduler {
         if !self.take_due(now) {
             return false;
         }
-        let result = DispatchRoute::Inline.send(&self.provider, FrameOpportunity);
         debug_assert!(
-            matches!(
-                result,
-                Ok(SubmissionOutcome::Completed(DispatchOutcome::Delivered))
-            ),
+            EventSink::from(&self.provider)
+                .send(FrameOpportunity)
+                .is_ok(),
             "the FrameScheduler owns its live Provider and publishes inline"
         );
         true
@@ -286,7 +282,7 @@ mod tests {
         let first_output = Rc::clone(&first_observer);
         let second_output = Rc::clone(&second_observer);
         let mut clock = None;
-        let mut components = ComponentInstance::new(dispatcher.route(), |context| {
+        let mut components = ComponentInstance::new(&dispatcher, |context| {
             let mounted_clock = scheduler.mount(context);
             let frame = mounted_clock.frame();
             let first_frame = frame.clone();

@@ -79,7 +79,7 @@ impl EventLoopParticipant for ComponentParticipant {
 mod tests {
     use std::{cell::Cell, rc::Rc};
 
-    use crate::event::DispatchRoute;
+    use crate::event::EventSink;
 
     use super::*;
 
@@ -92,7 +92,7 @@ mod tests {
             let handler = context.receive(move |(): (), _| handler_output.set(true));
             assert!(context.connect_cloned(&source, handler));
             let effect = context.create_effect(move |_| {
-                assert!(DispatchRoute::Inline.send(&source_input, ()).is_ok());
+                assert!(EventSink::from(&source_input).send(()).is_ok());
             });
             context.sync(&effect);
         });

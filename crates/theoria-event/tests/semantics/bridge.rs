@@ -1,8 +1,6 @@
 use std::{cell::RefCell, rc::Rc, thread};
 
-use theoria_event::{
-    BridgeProgress, DispatchRoute, EventHandler, EventSink, FifoDispatcher, bridge,
-};
+use theoria_event::{BridgeProgress, Dispatcher, EventHandler, EventSink, FifoDispatcher, bridge};
 
 #[test]
 fn a_value_crosses_a_thread_boundary_into_a_local_source() {
@@ -13,7 +11,7 @@ fn a_value_crosses_a_thread_boundary_into_a_local_source() {
     let sink = EventSink::from(&handler);
     bridge
         .source()
-        .subscribe_cloned(&sink, &DispatchRoute::Inline)
+        .subscribe_cloned_inline(&sink)
         .expect("live bridge")
         .detach();
 
@@ -61,7 +59,7 @@ fn a_bridge_forwards_events_in_receive_order() {
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
     bridge
         .source()
-        .subscribe_cloned(EventSink::from(&handler), &DispatchRoute::Inline)
+        .subscribe_cloned_inline(EventSink::from(&handler))
         .expect("live bridge")
         .detach();
 
@@ -83,17 +81,17 @@ fn a_failed_send_returns_ownership_of_the_event() {
 }
 
 #[test]
-fn each_subscriber_retains_its_own_dispatch_route() {
+fn each_subscriber_selects_its_own_dispatcher() {
     let (bridge, sender) = bridge();
     let mut dispatcher = FifoDispatcher::new();
-    let route = dispatcher.route();
+    let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
     let sink = EventSink::from(&handler);
     bridge
         .source()
-        .subscribe_cloned(&sink, &route)
+        .subscribe_cloned_via(&event_dispatcher, &sink)
         .expect("live bridge")
         .detach();
 

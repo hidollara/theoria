@@ -1,8 +1,7 @@
 use std::rc::Rc;
 
 use theoria_event::{
-    DispatchReceipt, DispatchRoute, EventHandler, EventSink, EventSource, SubmissionOutcome,
-    channel,
+    DispatchReceipt, Dispatcher, EventHandler, EventSink, EventSource, SubmissionOutcome, channel,
 };
 use theoria_reactive::{
     Computed, Effect, ReadContext, SnapshotState, State, StateSetter, WriteContext,
@@ -88,10 +87,10 @@ impl<'mount> MountContext<'mount> {
         self.connect_map(source, sink, |event| T::from(event))
     }
 
-    /// Connects one Source to a Sink through an explicitly selected route.
+    /// Connects one Source to a Sink through an explicitly selected Dispatcher.
     pub fn connect_via<S, T>(
         &mut self,
-        route: &DispatchRoute,
+        dispatcher: impl AsRef<Dispatcher>,
         source: &EventSource<S>,
         sink: impl Into<EventSink<T>>,
     ) -> bool
@@ -100,7 +99,23 @@ impl<'mount> MountContext<'mount> {
         T: 'static,
         for<'event> T: From<&'event S>,
     {
-        self.connect_map_via(route, source, sink, |event| T::from(event))
+        self.connect_map_via(dispatcher, source, sink, |event| T::from(event))
+    }
+
+    /// Connects one Source to a Sink with direct inline delivery.
+    ///
+    /// Publication may synchronously enter the target Component.
+    pub fn connect_inline<S, T>(
+        &mut self,
+        source: &EventSource<S>,
+        sink: impl Into<EventSink<T>>,
+    ) -> bool
+    where
+        S: 'static,
+        T: 'static,
+        for<'event> T: From<&'event S>,
+    {
+        self.connect_map_inline(source, sink, |event| T::from(event))
     }
 
     /// Connects one Source by cloning each published value for this Sink.
@@ -116,11 +131,11 @@ impl<'mount> MountContext<'mount> {
         self.connect_map(source, sink, |event| T::from(event.clone()))
     }
 
-    /// Connects one Source through an explicitly selected route, cloning each
+    /// Connects one Source through an explicitly selected Dispatcher, cloning each
     /// published value for this Sink.
     pub fn connect_cloned_via<S, T>(
         &mut self,
-        route: &DispatchRoute,
+        dispatcher: impl AsRef<Dispatcher>,
         source: &EventSource<S>,
         sink: impl Into<EventSink<T>>,
     ) -> bool
@@ -128,7 +143,20 @@ impl<'mount> MountContext<'mount> {
         S: Clone + 'static,
         T: From<S> + 'static,
     {
-        self.connect_map_via(route, source, sink, |event| T::from(event.clone()))
+        self.connect_map_via(dispatcher, source, sink, |event| T::from(event.clone()))
+    }
+
+    /// Connects one Source by cloning each event for direct inline delivery.
+    pub fn connect_cloned_inline<S, T>(
+        &mut self,
+        source: &EventSource<S>,
+        sink: impl Into<EventSink<T>>,
+    ) -> bool
+    where
+        S: Clone + 'static,
+        T: From<S> + 'static,
+    {
+        self.connect_map_inline(source, sink, |event| T::from(event.clone()))
     }
 
     /// Connects one Source using an explicit adapter into the Sink's event
@@ -144,13 +172,13 @@ impl<'mount> MountContext<'mount> {
         T: 'static,
         F: Fn(&S) -> T + 'static,
     {
-        self.connect_map_via(self.tree.default_route(), source, sink, map)
+        self.connect_map_via(self.tree.default_dispatcher(), source, sink, map)
     }
 
-    /// Connects one Source using an explicit adapter and dispatch route.
+    /// Connects one Source using an explicit adapter and Dispatcher.
     pub fn connect_map_via<S, T, F>(
         &mut self,
-        route: &DispatchRoute,
+        dispatcher: impl AsRef<Dispatcher>,
         source: &EventSource<S>,
         sink: impl Into<EventSink<T>>,
         map: F,
@@ -160,7 +188,26 @@ impl<'mount> MountContext<'mount> {
         T: 'static,
         F: Fn(&S) -> T + 'static,
     {
-        let Some(subscription) = source.subscribe_map(sink, route, map) else {
+        let Some(subscription) = source.subscribe_map_via(dispatcher, sink, map) else {
+            return false;
+        };
+        self.current.retain(subscription);
+        true
+    }
+
+    /// Connects one Source using an explicit adapter and direct inline delivery.
+    pub fn connect_map_inline<S, T, F>(
+        &mut self,
+        source: &EventSource<S>,
+        sink: impl Into<EventSink<T>>,
+        map: F,
+    ) -> bool
+    where
+        S: 'static,
+        T: 'static,
+        F: Fn(&S) -> T + 'static,
+    {
+        let Some(subscription) = source.subscribe_map_inline(sink, map) else {
             return false;
         };
         self.current.retain(subscription);
@@ -302,42 +349,50 @@ impl<'delivery> UpdateContext<'delivery> {
         self.tree.request_unmount(&self.current);
     }
 
-    /// Sends one event to `sink` through this Component tree's default route.
+    /// Sends one event to `sink` through this Component tree's default Dispatcher.
     pub fn send<E: 'static>(
         &mut self,
         sink: impl Into<EventSink<E>>,
         event: E,
     ) -> Result<SubmissionOutcome, E> {
-        self.tree.default_route().send(sink, event)
+        self.tree.default_dispatcher().send(sink, event)
     }
 
-    /// Sends one event to `sink` through an explicitly selected route.
+    /// Sends one event directly on the current call stack.
+    ///
+    /// This bypasses the default Dispatcher and may synchronously enter the
+    /// target Component.
+    pub fn send_inline<E>(&mut self, sink: impl Into<EventSink<E>>, event: E) -> Result<(), E> {
+        sink.into().send(event)
+    }
+
+    /// Sends one event to `sink` through an explicitly selected Dispatcher.
     pub fn send_via<E: 'static>(
         &mut self,
-        route: &DispatchRoute,
+        dispatcher: impl AsRef<Dispatcher>,
         sink: impl Into<EventSink<E>>,
         event: E,
     ) -> Result<SubmissionOutcome, E> {
-        route.send(sink, event)
+        dispatcher.as_ref().send(sink, event)
     }
 
-    /// Sends one tracked event through this Component tree's default route.
+    /// Sends one tracked event through this Component tree's default Dispatcher.
     pub fn send_tracked<E: 'static>(
         &mut self,
         sink: impl Into<EventSink<E>>,
         event: E,
     ) -> Result<DispatchReceipt, E> {
-        self.tree.default_route().send_tracked(sink, event)
+        self.tree.default_dispatcher().send_tracked(sink, event)
     }
 
-    /// Sends one tracked event through an explicitly selected route.
+    /// Sends one tracked event through an explicitly selected Dispatcher.
     pub fn send_tracked_via<E: 'static>(
         &mut self,
-        route: &DispatchRoute,
+        dispatcher: impl AsRef<Dispatcher>,
         sink: impl Into<EventSink<E>>,
         event: E,
     ) -> Result<DispatchReceipt, E> {
-        route.send_tracked(sink, event)
+        dispatcher.as_ref().send_tracked(sink, event)
     }
 
     /// Replaces State or SnapshotState while handling the current event.

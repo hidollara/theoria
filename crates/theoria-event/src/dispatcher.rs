@@ -5,7 +5,7 @@ use std::{
     rc::{Rc, Weak},
 };
 
-use crate::dispatch::{DispatchRoute, EventDispatch, EventDispatcher, SubmissionOutcome};
+use crate::dispatch::{Dispatcher, EventDispatch, EventDispatcher, SubmissionOutcome};
 
 struct EventQueue {
     pending: RefCell<VecDeque<EventDispatch>>,
@@ -38,7 +38,7 @@ impl EventQueue {
 /// Uniquely owns a serialized FIFO Dispatch queue.
 pub struct FifoDispatcher {
     queue: Rc<EventQueue>,
-    route: DispatchRoute,
+    dispatcher: Dispatcher,
 }
 
 impl FifoDispatcher {
@@ -46,16 +46,11 @@ impl FifoDispatcher {
     pub fn new() -> Self {
         let queue = Rc::new(EventQueue::new());
         Self {
-            route: DispatchRoute::Dispatcher(Rc::new(QueuedDispatcher {
+            dispatcher: Dispatcher::new(QueuedDispatcher {
                 queue: Rc::downgrade(&queue),
-            })),
+            }),
             queue,
         }
-    }
-
-    /// Returns a route through this Dispatcher.
-    pub fn route(&self) -> DispatchRoute {
-        self.route.clone()
     }
 
     /// Returns whether at least one Dispatch is waiting to execute.
@@ -74,6 +69,12 @@ impl FifoDispatcher {
     #[must_use]
     pub fn deliver_next(&mut self) -> bool {
         self.queue.deliver_next()
+    }
+}
+
+impl AsRef<Dispatcher> for FifoDispatcher {
+    fn as_ref(&self) -> &Dispatcher {
+        &self.dispatcher
     }
 }
 
