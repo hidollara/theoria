@@ -49,8 +49,8 @@ impl WindowPresentation {
         self.pending = true;
     }
 
-    pub(super) fn resize(&mut self, size: SurfaceSize) -> Result<()> {
-        self.presenter.resize(size)
+    pub(super) fn resize(&mut self, size: SurfaceSize) {
+        self.presenter.resize(size);
     }
 
     pub(super) fn has_pending(&self) -> bool {

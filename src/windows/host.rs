@@ -113,9 +113,9 @@ impl WindowHost {
         self.native.show();
     }
 
-    pub(super) fn process_native_event(&mut self) -> Result<()> {
+    pub(super) fn process_native_event(&mut self) {
         let Some(event) = self.events.pop() else {
-            return Ok(());
+            return;
         };
         if matches!(
             event,
@@ -124,10 +124,9 @@ impl WindowHost {
             self.presentation.mark_pending();
         }
         if let Win32WindowEvent::Surface(SurfaceEvent::Resized(size)) = event {
-            self.presentation.resize(size)?;
+            self.presentation.resize(size);
         }
         self.inputs.publish(event);
-        Ok(())
     }
 
     pub(super) fn prepare_scheduled_work(&mut self, now: Instant) {

@@ -133,7 +133,7 @@ impl EventLoopParticipant for WindowHosts {
             let hosts = self.hosts.borrow();
             for window in hosts.iter().filter_map(Weak::upgrade) {
                 let mut window = window.borrow_mut();
-                window.process_native_event()?;
+                window.process_native_event();
                 window.process_scheduled_work(now);
             }
         }

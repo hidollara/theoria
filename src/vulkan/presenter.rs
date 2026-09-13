@@ -73,12 +73,15 @@ impl Win32Presenter {
         self.device.render.clone()
     }
 
-    pub fn resize(&mut self, size: SurfaceSize) -> Result<()> {
+    /// Records the latest requested presentation extent.
+    ///
+    /// Swapchain replacement remains deferred until [`Self::begin_frame`],
+    /// where any Vulkan failure is reported.
+    pub fn resize(&mut self, size: SurfaceSize) {
         if self.requested_size != size {
             self.requested_size = size;
             self.swapchain_needs_recreation = true;
         }
-        Ok(())
     }
 
     /// Attempts to acquire a renderable Swapchain image within `timeout`.
