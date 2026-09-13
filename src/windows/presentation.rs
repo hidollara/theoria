@@ -10,13 +10,13 @@ use crate::{
     component::MountContext,
     reactive::Computed,
     surface::{SurfaceContent, SurfaceSize, Viewport},
-    vulkan::{CanvasRenderer, PresentOutcome, Presenter},
+    vulkan::{CanvasRenderer, PresentOutcome, Win32Presenter},
 };
 
 use crate::windows::{Result, presentation_target::Win32PresentationTarget};
 
 pub(super) struct WindowPresentation {
-    presenter: Presenter,
+    presenter: Win32Presenter,
     canvas_renderer: CanvasRenderer,
     output: Rc<RenderOutput>,
     pending: bool,
@@ -24,7 +24,7 @@ pub(super) struct WindowPresentation {
 
 impl WindowPresentation {
     pub(super) fn new(target: Win32PresentationTarget) -> Result<Self> {
-        let presenter = Presenter::new(target)?;
+        let presenter = Win32Presenter::new(target)?;
         let canvas_renderer = CanvasRenderer::new(presenter.device());
         Ok(Self {
             presenter,

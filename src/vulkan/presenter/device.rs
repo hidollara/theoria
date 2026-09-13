@@ -90,7 +90,7 @@ impl Drop for PresentationDeviceConstruction {
     }
 }
 
-/// Owns the Vulkan device capabilities and Surface used by one Presenter.
+/// Owns the Vulkan device capabilities and Surface used by one Win32Presenter.
 ///
 /// The Surface is destroyed before the shared instance held by [`RenderDevice`].
 pub(super) struct PresentationDevice {

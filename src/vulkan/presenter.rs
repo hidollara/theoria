@@ -20,8 +20,8 @@ use swapchain::SwapchainResources;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-/// Owns swapchain acquisition, synchronization, and final presentation.
-pub struct Presenter {
+/// Owns Win32 swapchain acquisition, synchronization, and final presentation.
+pub struct Win32Presenter {
     device: PresentationDevice,
     command_pool: vk::CommandPool,
     frame_synchronization: FrameSynchronization,
@@ -34,7 +34,7 @@ pub struct Presenter {
     retired_swapchain: Option<SwapchainResources>,
 }
 
-impl Presenter {
+impl Win32Presenter {
     pub fn new(target: Win32PresentationTarget) -> Result<Self> {
         unsafe {
             let size = target.size();
@@ -254,7 +254,7 @@ fn timeout_nanoseconds(timeout: Duration) -> u64 {
     timeout.as_nanos().min(u128::from(u64::MAX - 1)) as u64
 }
 
-impl Drop for Presenter {
+impl Drop for Win32Presenter {
     fn drop(&mut self) {
         unsafe {
             let _ = self.device.render.raw().device_wait_idle();

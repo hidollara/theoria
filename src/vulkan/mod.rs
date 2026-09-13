@@ -6,4 +6,4 @@ mod presenter;
 mod scratch_image;
 
 pub use canvas_renderer::CanvasRenderer;
-pub use presenter::{PresentFrame, PresentOutcome, Presenter, RenderDevice, RenderTarget};
+pub use presenter::{PresentFrame, PresentOutcome, RenderDevice, RenderTarget, Win32Presenter};
