@@ -1,8 +1,8 @@
 use std::{cell::RefCell, rc::Rc, thread};
 
 use theoria_event::{
-    BridgeDispatch, BridgeProgress, BridgeSink, Dispatch, DispatchOutcome, EventHandler, EventSink,
-    EventSource, EventTarget, FifoDispatcher, OwningSink, bridge,
+    BridgeDispatch, BridgeProgress, BridgeSink, Dispatch, DispatchOutcome, DispatchQueue,
+    EventHandler, EventSink, EventSource, EventTarget, OwningSink, bridge,
 };
 
 fn assert_send_sync<T: Send + Sync>() {}
@@ -109,8 +109,8 @@ fn a_bridge_dispatch_can_return_an_event_when_its_sink_is_gone() {
 #[test]
 fn each_subscriber_selects_its_own_dispatcher() {
     let (bridge, sender) = bridge();
-    let mut dispatcher = FifoDispatcher::new();
-    let event_dispatcher = dispatcher.sender();
+    let mut queue = DispatchQueue::new();
+    let event_dispatcher = queue.dispatcher();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
@@ -126,6 +126,6 @@ fn each_subscriber_selects_its_own_dispatcher() {
     assert_eq!(bridge.forward_next(), BridgeProgress::Forwarded);
     assert!(values.borrow().is_empty());
 
-    assert!(dispatcher.deliver_next());
+    assert!(queue.run_next().is_some());
     assert_eq!(&*values.borrow(), &[7]);
 }

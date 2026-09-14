@@ -5,8 +5,8 @@ use std::{
 
 use theoria_component::ComponentInstance;
 use theoria_event::{
-    BridgeProgress, Dispatch, DispatchOutcome, DispatchStatus, Dispatcher, EventTarget,
-    FifoDispatcher, OwningSink, SubmissionOutcome, bridge,
+    BridgeProgress, Dispatch, DispatchOutcome, DispatchQueue, DispatchStatus, Dispatcher,
+    EventTarget, OwningSink, SubmissionOutcome, bridge,
 };
 
 #[derive(Clone, Copy)]
@@ -101,12 +101,12 @@ fn child_handlers_remain_inactive_until_root_construction_finishes() {
 
 #[test]
 fn an_instance_can_use_a_caller_owned_dispatcher_and_flush_boundary() {
-    let mut dispatcher = FifoDispatcher::new();
+    let mut queue = DispatchQueue::new();
     let input = Rc::new(RefCell::new(None));
     let mounted_input = Rc::clone(&input);
     let observed = Rc::new(RefCell::new(Vec::new()));
     let effect_output = Rc::clone(&observed);
-    let mut instance = ComponentInstance::new(dispatcher.sender(), move |context| {
+    let mut instance = ComponentInstance::new(queue.dispatcher(), move |context| {
         let state = context.create_state(0_u32);
         let effect_state = state.clone();
         let effect = context.create_effect(move |context| {
@@ -129,10 +129,10 @@ fn an_instance_can_use_a_caller_owned_dispatcher_and_flush_boundary() {
     assert_eq!(
         instance
             .send(&input, 7)
-            .expect("the FIFO dispatcher accepts the event"),
+            .expect("the default dispatcher accepts the event"),
         SubmissionOutcome::Deferred
     );
-    assert!(dispatcher.deliver_next());
+    assert!(queue.run_next().is_some());
     assert_eq!(&*observed.borrow(), &[0]);
 
     instance.flush_effects().expect("valid updated Effect");
@@ -142,12 +142,12 @@ fn an_instance_can_use_a_caller_owned_dispatcher_and_flush_boundary() {
 
 #[test]
 fn inline_send_bypasses_the_default_dispatcher() {
-    let mut dispatcher = FifoDispatcher::new();
+    let mut queue = DispatchQueue::new();
     let input = Rc::new(RefCell::new(None));
     let mounted_input = Rc::clone(&input);
     let observed = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&observed);
-    let instance = ComponentInstance::new(dispatcher.sender(), move |context| {
+    let instance = ComponentInstance::new(queue.dispatcher(), move |context| {
         mounted_input.replace(Some(context.receive(move |value, _context| {
             output.borrow_mut().push(value);
         })));
@@ -160,7 +160,7 @@ fn inline_send_bypasses_the_default_dispatcher() {
     assert_eq!(
         instance
             .send(&input, "deferred")
-            .expect("the FIFO dispatcher accepts the event"),
+            .expect("the default dispatcher accepts the event"),
         SubmissionOutcome::Deferred
     );
     assert!(observed.borrow().is_empty());
@@ -171,18 +171,18 @@ fn inline_send_bypasses_the_default_dispatcher() {
     );
     assert_eq!(&*observed.borrow(), &["inline"]);
 
-    assert!(dispatcher.deliver_next());
+    assert!(queue.run_next().is_some());
     assert_eq!(&*observed.borrow(), &["inline", "deferred"]);
 }
 
 #[test]
 fn an_inline_connection_handles_a_publication_on_the_publishing_stack() {
-    let dispatcher = FifoDispatcher::new();
+    let queue = DispatchQueue::new();
     let input = Rc::new(RefCell::new(None));
     let mounted_input = Rc::clone(&input);
     let observed = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&observed);
-    let instance = ComponentInstance::new(dispatcher.sender(), move |context| {
+    let instance = ComponentInstance::new(queue.dispatcher(), move |context| {
         let (source, source_input) = context.event_source::<u32>();
         let sink = context.receive(move |value: u32, _context| {
             output.borrow_mut().push(value);
@@ -200,17 +200,17 @@ fn an_inline_connection_handles_a_publication_on_the_publishing_stack() {
         DispatchOutcome::Completed
     );
     assert_eq!(&*observed.borrow(), &[7]);
-    assert!(!dispatcher.has_pending());
+    assert!(queue.is_empty());
 }
 
 #[test]
 fn a_connection_accepts_a_dispatcher_without_erasing_it() {
-    let dispatcher = FifoDispatcher::new();
+    let queue = DispatchQueue::new();
     let input = Rc::new(RefCell::new(None));
     let mounted_input = Rc::clone(&input);
     let observed = Rc::new(Cell::new(0));
     let output = Rc::clone(&observed);
-    let instance = ComponentInstance::new(dispatcher.sender(), move |context| {
+    let instance = ComponentInstance::new(queue.dispatcher(), move |context| {
         let (source, source_input) = context.event_source::<u32>();
         let sink = context.receive(move |value, _context| output.set(value));
         assert!(context.connect_via(TestImmediateDispatcher, source, OwningSink::new(sink)));
@@ -226,13 +226,13 @@ fn a_connection_accepts_a_dispatcher_without_erasing_it() {
         DispatchOutcome::Completed
     );
     assert_eq!(observed.get(), 7);
-    assert!(!dispatcher.has_pending());
+    assert!(queue.is_empty());
 }
 
 #[test]
 fn an_instance_can_send_to_a_sink_with_its_own_dispatch_type() {
-    let mut dispatcher = FifoDispatcher::new();
-    let instance = ComponentInstance::new(dispatcher.sender(), |_| {});
+    let mut queue = DispatchQueue::new();
+    let instance = ComponentInstance::new(queue.dispatcher(), |_| {});
     let (bridge, sink) = bridge();
 
     assert_eq!(
@@ -241,7 +241,7 @@ fn an_instance_can_send_to_a_sink_with_its_own_dispatch_type() {
             .expect("the default Dispatcher accepts the Bridge Dispatch"),
         SubmissionOutcome::Deferred
     );
-    assert!(dispatcher.deliver_next());
+    assert!(queue.run_next().is_some());
     assert_eq!(bridge.forward_next(), BridgeProgress::Forwarded);
 }
 
@@ -259,15 +259,15 @@ fn default_rejection_returns_an_executable_erased_dispatch() {
 
 #[test]
 fn an_instance_can_track_a_sink_specific_dispatch() {
-    let mut dispatcher = FifoDispatcher::new();
-    let instance = ComponentInstance::new(dispatcher.sender(), |_| {});
+    let mut queue = DispatchQueue::new();
+    let instance = ComponentInstance::new(queue.dispatcher(), |_| {});
     let (bridge, sink) = bridge();
 
     let handle = instance
         .send_tracked(&sink, 7_u32)
         .expect("the default Dispatcher accepts the tracked Bridge Dispatch");
     assert_eq!(handle.status(), DispatchStatus::Unstarted);
-    assert!(dispatcher.deliver_next());
+    assert!(queue.run_next().is_some());
     assert_eq!(
         handle.status(),
         DispatchStatus::Finished(DispatchOutcome::Completed)
@@ -277,14 +277,14 @@ fn an_instance_can_track_a_sink_specific_dispatch() {
 
 #[test]
 fn an_instance_can_send_through_default_and_explicit_dispatchers() {
-    let mut default_dispatcher = FifoDispatcher::new();
-    let mut priority_dispatcher = FifoDispatcher::new();
-    let priority_input = priority_dispatcher.sender();
+    let mut default_queue = DispatchQueue::new();
+    let mut priority_queue = DispatchQueue::new();
+    let priority_dispatcher = priority_queue.dispatcher();
     let input = Rc::new(RefCell::new(None));
     let mounted_input = Rc::clone(&input);
     let observed = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&observed);
-    let instance = ComponentInstance::new(default_dispatcher.sender(), move |context| {
+    let instance = ComponentInstance::new(default_queue.dispatcher(), move |context| {
         mounted_input.replace(Some(context.receive(move |value, _context| {
             output.borrow_mut().push(value);
         })));
@@ -302,29 +302,29 @@ fn an_instance_can_send_through_default_and_explicit_dispatchers() {
     );
     assert_eq!(
         instance
-            .send_via(&priority_input, &input, "priority")
+            .send_via(&priority_dispatcher, &input, "priority")
             .expect("the priority dispatcher accepts the event"),
         SubmissionOutcome::Deferred
     );
 
-    assert!(priority_dispatcher.deliver_next());
+    assert!(priority_queue.run_next().is_some());
     assert_eq!(&*observed.borrow(), &["priority"]);
-    assert!(default_dispatcher.deliver_next());
+    assert!(default_queue.run_next().is_some());
     assert_eq!(&*observed.borrow(), &["priority", "default"]);
 }
 
 #[test]
 fn one_source_can_connect_through_default_and_explicit_dispatchers() {
-    let mut default_dispatcher = FifoDispatcher::new();
-    let mut priority_dispatcher = FifoDispatcher::new();
-    let priority_input = priority_dispatcher.sender();
-    let mounted_priority_input = priority_input.clone();
+    let mut default_queue = DispatchQueue::new();
+    let mut priority_queue = DispatchQueue::new();
+    let priority_dispatcher = priority_queue.dispatcher();
+    let mounted_priority_dispatcher = priority_dispatcher.clone();
     let input = Rc::new(RefCell::new(None));
     let mounted_input = Rc::clone(&input);
     let observed = Rc::new(RefCell::new(Vec::new()));
     let default_output = Rc::clone(&observed);
     let priority_output = Rc::clone(&observed);
-    let instance = ComponentInstance::new(default_dispatcher.sender(), move |context| {
+    let instance = ComponentInstance::new(default_queue.dispatcher(), move |context| {
         let (source, source_input) = context.event_source::<u32>();
         let default_sink = context.receive(move |value, _context| {
             default_output.borrow_mut().push(("default", value));
@@ -335,7 +335,7 @@ fn one_source_can_connect_through_default_and_explicit_dispatchers() {
 
         assert!(context.connect(source.clone(), OwningSink::new(default_sink)));
         assert!(context.connect_via(
-            mounted_priority_input.clone(),
+            mounted_priority_dispatcher.clone(),
             source,
             OwningSink::new(priority_sink),
         ));
@@ -349,14 +349,14 @@ fn one_source_can_connect_through_default_and_explicit_dispatchers() {
     assert_eq!(
         instance
             .send(&input, 7)
-            .expect("the FIFO dispatcher accepts the event"),
+            .expect("the default dispatcher accepts the event"),
         SubmissionOutcome::Deferred
     );
-    assert!(default_dispatcher.deliver_next());
+    assert!(default_queue.run_next().is_some());
 
-    assert!(priority_dispatcher.deliver_next());
+    assert!(priority_queue.run_next().is_some());
     assert_eq!(&*observed.borrow(), &[("priority", 7)]);
-    assert!(default_dispatcher.deliver_next());
+    assert!(default_queue.run_next().is_some());
     assert_eq!(&*observed.borrow(), &[("priority", 7), ("default", 7)]);
 }
 

@@ -1,6 +1,9 @@
 use std::fmt;
 
-use crate::{dispatch::Dispatch, dispatcher::Dispatcher, sink::EventSink};
+use crate::{
+    dispatch::{Dispatch, Dispatcher},
+    sink::EventSink,
+};
 
 /// A stream-like capability whose event type may vary with each publication's
 /// lifetime.

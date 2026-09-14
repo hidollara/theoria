@@ -37,7 +37,7 @@ impl ComponentParticipant {
             if execution.is_finished() {
                 return Ok(());
             }
-            if !execution.deliver_next() {
+            if !execution.run_next() {
                 execution.flush_effects()?;
                 return Ok(());
             }

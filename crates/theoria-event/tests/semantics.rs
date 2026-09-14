@@ -1,16 +1,16 @@
 mod semantics {
-    use theoria_event::FifoDispatcher;
+    use theoria_event::DispatchQueue;
 
     mod bridge;
     mod channel;
     mod dispatch;
-    mod dispatcher;
     mod handler;
+    mod queue;
     mod sink;
     mod sink_adapter;
     mod source;
 
-    fn drain(dispatcher: &mut FifoDispatcher) {
-        while dispatcher.deliver_next() {}
+    fn drain(queue: &mut DispatchQueue) {
+        while queue.run_next().is_some() {}
     }
 }

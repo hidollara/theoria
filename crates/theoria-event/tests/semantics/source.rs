@@ -1,7 +1,7 @@
 use std::{cell::Cell, rc::Rc};
 
 use theoria_event::{
-    Dispatch, DispatchOutcome, EventHandler, EventSink, EventSource, EventTarget, FifoDispatcher,
+    Dispatch, DispatchOutcome, DispatchQueue, EventHandler, EventSink, EventSource, EventTarget,
     OwningSink, Subscription, channel,
 };
 
@@ -110,7 +110,7 @@ fn an_inline_source_accepts_a_sink_specific_borrowed_dispatch() {
 
 #[test]
 fn a_dispatcher_accepts_a_sink_specific_dispatch_type() {
-    let mut dispatcher = FifoDispatcher::new();
+    let mut queue = DispatchQueue::new();
     let output = Rc::new(Cell::new(0));
     let (provider, source) = channel::<u32>();
 
@@ -118,12 +118,12 @@ fn a_dispatcher_accepts_a_sink_specific_dispatch_type() {
         .connect(OwningSink::new(OwnedSink {
             output: Rc::clone(&output),
         }))
-        .via(dispatcher.sender())
+        .via(queue.dispatcher())
         .expect("the Source is available");
 
     assert!(EventTarget::from(&provider).send_inline(7).is_ok());
     assert_eq!(output.get(), 0);
-    assert!(dispatcher.deliver_next());
+    assert!(queue.run_next().is_some());
     assert_eq!(output.get(), 7);
     drop(subscription);
 }

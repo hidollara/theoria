@@ -4,6 +4,10 @@ use std::{
     rc::Rc,
 };
 
+mod queue;
+
+pub use queue::{DispatchQueue, QueueDispatcher};
+
 /// One executable event operation.
 ///
 /// A Dispatch retains its concrete lifetime and auto traits until a
@@ -33,15 +37,29 @@ pub enum DispatchOutcome {
     Cancelled,
 }
 
-/// The observable execution state of an accepted tracked Dispatch.
+/// Accepts one family of Dispatches for execution or scheduling.
+///
+/// Implementations express their requirements through `D`: an inline
+/// Dispatcher may accept borrowed work, a local queue may require `'static`,
+/// and a cross-thread Dispatcher may additionally require [`Send`].
+pub trait Dispatcher<D>
+where
+    D: Dispatch,
+{
+    /// Submits one Dispatch for immediate or deferred execution.
+    ///
+    /// Rejection returns the original Dispatch without running or retaining
+    /// it, so another Dispatcher may accept it.
+    fn submit(&self, dispatch: D) -> Result<SubmissionOutcome, D>;
+}
+
+/// How far an accepted Dispatch submission progressed before returning.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DispatchStatus {
-    /// Execution has not started and no terminal outcome has been recorded.
-    Unstarted,
-    /// Execution started but has not produced a terminal outcome.
-    Executing,
-    /// Execution ended with the reported result.
-    Finished(DispatchOutcome),
+pub enum SubmissionOutcome {
+    /// The Dispatch ran synchronously with the reported result.
+    Executed(DispatchOutcome),
+    /// A Dispatcher accepted the Dispatch for later execution.
+    Deferred,
 }
 
 /// A type-erased Dispatch for heterogeneous storage.
@@ -163,6 +181,17 @@ impl fmt::Debug for DispatchHandle {
             .debug_struct("DispatchHandle")
             .finish_non_exhaustive()
     }
+}
+
+/// The observable execution state of an accepted tracked Dispatch.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DispatchStatus {
+    /// Execution has not started and no terminal outcome has been recorded.
+    Unstarted,
+    /// Execution started but has not produced a terminal outcome.
+    Executing,
+    /// Execution ended with the reported result.
+    Finished(DispatchOutcome),
 }
 
 struct DispatchControl {

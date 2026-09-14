@@ -1,22 +1,19 @@
 use std::{cell::RefCell, rc::Rc};
 
 use theoria_component::{ComponentInstance, MountContext, UpdateContext};
-use theoria_event::{DynDispatch, EventTarget, FifoDispatcher, SubmissionOutcome};
+use theoria_event::{DispatchQueue, DynDispatch, EventTarget, SubmissionOutcome};
 use theoria_reactive::ReactiveError;
 
 pub(super) struct TestDriver {
-    dispatcher: FifoDispatcher,
+    queue: DispatchQueue,
     instance: ComponentInstance,
 }
 
 impl TestDriver {
     pub(super) fn new(build: impl FnOnce(&mut MountContext<'_>)) -> Self {
-        let dispatcher = FifoDispatcher::new();
-        let instance = ComponentInstance::new(dispatcher.sender(), build);
-        Self {
-            dispatcher,
-            instance,
-        }
+        let queue = DispatchQueue::new();
+        let instance = ComponentInstance::new(queue.dispatcher(), build);
+        Self { queue, instance }
     }
 
     pub(super) fn send<E: 'static>(
@@ -37,7 +34,7 @@ impl TestDriver {
                 self.instance.flush_effects()?;
                 return Ok(DrainOutcome::Paused);
             }
-            if !self.dispatcher.deliver_next() {
+            if self.queue.run_next().is_none() {
                 self.instance.flush_effects()?;
                 return Ok(DrainOutcome::Idle);
             }

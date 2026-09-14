@@ -5,8 +5,8 @@ use std::{
 
 use super::drain;
 use theoria_event::{
-    Dispatch, DispatchOutcome, Dispatcher, DynDispatch, EventHandler, EventSink, EventSource,
-    EventTarget, FifoDispatcher, OwningSink, SubmissionOutcome, channel,
+    Dispatch, DispatchOutcome, DispatchQueue, Dispatcher, DynDispatch, EventHandler, EventSink,
+    EventSource, EventTarget, OwningSink, SubmissionOutcome, channel,
 };
 
 #[derive(Clone)]
@@ -38,8 +38,8 @@ where
 
 #[test]
 fn dropping_a_target_during_generic_contramap_prevents_delivery() {
-    let mut dispatcher = FifoDispatcher::new();
-    let event_dispatcher = dispatcher.sender();
+    let mut queue = DispatchQueue::new();
+    let event_dispatcher = queue.dispatcher();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
@@ -57,12 +57,12 @@ fn dropping_a_target_during_generic_contramap_prevents_delivery() {
         .detach();
 
     assert!(submit_event(&event_dispatcher, EventTarget::from(&provider), 1_u32).is_ok());
-    assert!(dispatcher.deliver_next());
-    assert!(dispatcher.deliver_next());
-    assert!(!dispatcher.deliver_next());
+    assert!(queue.run_next().is_some());
+    assert!(queue.run_next().is_some());
+    assert!(queue.run_next().is_none());
     assert!(values.borrow().is_empty());
     assert!(submit_event(&event_dispatcher, &sink, 2_u32).is_ok());
-    drain(&mut dispatcher);
+    drain(&mut queue);
     assert!(values.borrow().is_empty());
 }
 
@@ -79,8 +79,8 @@ fn an_accepting_sink_converts_its_input_during_dispatch_execution() {
         }
     }
 
-    let mut dispatcher = FifoDispatcher::new();
-    let event_dispatcher = dispatcher.sender();
+    let mut queue = DispatchQueue::new();
+    let event_dispatcher = queue.dispatcher();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: Output| {
@@ -91,15 +91,15 @@ fn an_accepting_sink_converts_its_input_during_dispatch_execution() {
 
     assert!(submit_event(&event_dispatcher, &accepting, Input(7)).is_ok());
     assert!(values.borrow().is_empty());
-    drain(&mut dispatcher);
+    drain(&mut queue);
 
     assert_eq!(&*values.borrow(), &[Output(7)]);
 }
 
 #[test]
 fn a_contramap_sink_converts_its_input_during_dispatch_execution() {
-    let mut dispatcher = FifoDispatcher::new();
-    let event_dispatcher = dispatcher.sender();
+    let mut queue = DispatchQueue::new();
+    let event_dispatcher = queue.dispatcher();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: usize| output.borrow_mut().push(value));
@@ -107,7 +107,7 @@ fn a_contramap_sink_converts_its_input_during_dispatch_execution() {
 
     assert!(submit_event(&event_dispatcher, &sink, String::from("letter")).is_ok());
     assert!(values.borrow().is_empty());
-    drain(&mut dispatcher);
+    drain(&mut queue);
 
     assert_eq!(&*values.borrow(), &[6]);
 }
@@ -203,8 +203,8 @@ fn a_filtered_out_event_does_not_observe_underlying_target_liveness() {
 
 #[test]
 fn a_contramap_filter_sink_converts_only_selected_input_values() {
-    let mut dispatcher = FifoDispatcher::new();
-    let event_dispatcher = dispatcher.sender();
+    let mut queue = DispatchQueue::new();
+    let event_dispatcher = queue.dispatcher();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
@@ -213,7 +213,7 @@ fn a_contramap_filter_sink_converts_only_selected_input_values() {
 
     assert!(submit_event(&event_dispatcher, &sink, String::from("not a number")).is_ok());
     assert!(submit_event(&event_dispatcher, &sink, String::from("42")).is_ok());
-    drain(&mut dispatcher);
+    drain(&mut queue);
 
     assert_eq!(&*values.borrow(), &[42]);
 }

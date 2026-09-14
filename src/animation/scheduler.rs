@@ -137,7 +137,7 @@ impl FrameScheduler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{component::ComponentInstance, event::FifoDispatcher, reactive::Reactive};
+    use crate::{component::ComponentInstance, event::DispatchQueue, reactive::Reactive};
 
     const INTERVAL: Duration = Duration::from_millis(10);
 
@@ -276,13 +276,13 @@ mod tests {
     fn a_mounted_scheduler_publishes_one_shared_reactive_frame() {
         let origin = Instant::now();
         let mut scheduler = FrameScheduler::with_timing(origin, INTERVAL);
-        let mut dispatcher = FifoDispatcher::new();
+        let mut queue = DispatchQueue::new();
         let first_observer = Rc::new(Cell::new(None));
         let second_observer = Rc::new(Cell::new(None));
         let first_output = Rc::clone(&first_observer);
         let second_output = Rc::clone(&second_observer);
         let mut clock = None;
-        let mut components = ComponentInstance::new(dispatcher.sender(), |context| {
+        let mut components = ComponentInstance::new(queue.dispatcher(), |context| {
             let mounted_clock = scheduler.mount(context);
             let frame = mounted_clock.frame();
             let first_frame = frame.clone();
@@ -303,9 +303,9 @@ mod tests {
         assert!(scheduler.publish_due(origin));
         assert!(scheduler.timing.previous.get().is_none());
 
-        assert!(dispatcher.deliver_next());
+        assert!(queue.run_next().is_some());
         assert!(scheduler.timing.previous.get().is_some());
-        assert!(!dispatcher.deliver_next());
+        assert!(queue.run_next().is_none());
         components
             .flush_effects()
             .expect("the frame observers are valid Effects");

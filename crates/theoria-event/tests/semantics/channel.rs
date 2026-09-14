@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 use super::drain;
 use theoria_event::{
-    Dispatch, DispatchOutcome, EventHandler, EventSink, EventSource, EventTarget, FifoDispatcher,
+    Dispatch, DispatchOutcome, DispatchQueue, EventHandler, EventSink, EventSource, EventTarget,
     OwningSink, Subscription, channel,
 };
 
@@ -30,8 +30,8 @@ fn a_borrowed_source_runs_without_owning_its_publication() {
 
 #[test]
 fn an_owning_sink_can_defer_a_borrowed_publication() {
-    let mut fifo = FifoDispatcher::new();
-    let dispatcher = fifo.sender();
+    let mut queue = DispatchQueue::new();
+    let dispatcher = queue.dispatcher();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
@@ -44,7 +44,7 @@ fn an_owning_sink_can_defer_a_borrowed_publication() {
 
     EventTarget::from(&provider).send(7).run();
     assert!(values.borrow().is_empty());
-    assert!(fifo.deliver_next());
+    assert!(queue.run_next().is_some());
     assert_eq!(&*values.borrow(), &[7]);
 }
 
@@ -52,8 +52,8 @@ fn an_owning_sink_can_defer_a_borrowed_publication() {
 fn an_rc_channel_defers_move_only_values_without_cloning_the_value() {
     struct MoveOnly(String);
 
-    let mut fifo = FifoDispatcher::new();
-    let dispatcher = fifo.sender();
+    let mut queue = DispatchQueue::new();
+    let dispatcher = queue.dispatcher();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: usize| output.borrow_mut().push(value));
@@ -68,7 +68,7 @@ fn an_rc_channel_defers_move_only_values_without_cloning_the_value() {
     EventTarget::from(&provider)
         .send(Rc::new(MoveOnly(String::from("shared"))))
         .run();
-    assert!(fifo.deliver_next());
+    assert!(queue.run_next().is_some());
     assert_eq!(&*values.borrow(), &[6]);
 }
 
@@ -76,8 +76,8 @@ fn an_rc_channel_defers_move_only_values_without_cloning_the_value() {
 fn an_arc_channel_uses_the_same_deferred_source_contract() {
     struct MoveOnly(String);
 
-    let mut fifo = FifoDispatcher::new();
-    let dispatcher = fifo.sender();
+    let mut queue = DispatchQueue::new();
+    let dispatcher = queue.dispatcher();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: usize| output.borrow_mut().push(value));
@@ -92,7 +92,7 @@ fn an_arc_channel_uses_the_same_deferred_source_contract() {
     EventTarget::from(&provider)
         .send(Arc::new(MoveOnly(String::from("shared"))))
         .run();
-    assert!(fifo.deliver_next());
+    assert!(queue.run_next().is_some());
     assert_eq!(&*values.borrow(), &[6]);
 }
 
@@ -216,8 +216,8 @@ fn subscribers_are_invoked_in_registration_order() {
 
 #[test]
 fn unsubscribing_does_not_cancel_an_already_deferred_dispatch() {
-    let mut fifo = FifoDispatcher::new();
-    let dispatcher = fifo.sender();
+    let mut queue = DispatchQueue::new();
+    let dispatcher = queue.dispatcher();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
@@ -229,7 +229,7 @@ fn unsubscribing_does_not_cancel_an_already_deferred_dispatch() {
 
     EventTarget::from(&provider).send(1).run();
     subscription.unsubscribe();
-    drain(&mut fifo);
+    drain(&mut queue);
 
     assert_eq!(&*values.borrow(), &[1]);
 }

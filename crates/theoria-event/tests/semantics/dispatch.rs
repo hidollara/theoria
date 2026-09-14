@@ -6,8 +6,8 @@ use std::{
 
 use super::drain;
 use theoria_event::{
-    Dispatch, DispatchHandle, DispatchOutcome, DispatchStatus, Dispatcher, DynDispatch,
-    EventHandler, EventSource, EventTarget, FifoDispatcher, OwningSink, SubmissionOutcome,
+    Dispatch, DispatchHandle, DispatchOutcome, DispatchQueue, DispatchStatus, Dispatcher,
+    DynDispatch, EventHandler, EventSource, EventTarget, OwningSink, SubmissionOutcome,
     TargetDispatch, TrackedDispatch, channel,
 };
 
@@ -214,8 +214,8 @@ fn execution_reports_when_its_sink_was_dropped() {
 
 #[test]
 fn dropping_a_handle_does_not_cancel_its_dispatch() {
-    let mut dispatcher = FifoDispatcher::new();
-    let event_dispatcher = dispatcher.sender();
+    let mut queue = DispatchQueue::new();
+    let event_dispatcher = queue.dispatcher();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
@@ -224,7 +224,7 @@ fn dropping_a_handle_does_not_cancel_its_dispatch() {
     let handle =
         submit_tracked(&event_dispatcher, &sink, 7_u32).expect("the Dispatcher accepts work");
     drop(handle);
-    assert!(dispatcher.deliver_next());
+    assert!(queue.run_next().is_some());
     assert_eq!(&*values.borrow(), &[7]);
 }
 
@@ -245,15 +245,15 @@ fn running_a_tracked_dispatch_finishes_its_handle() {
 
 #[test]
 fn a_tracked_deferred_submission_records_its_execution_outcome() {
-    let mut dispatcher = FifoDispatcher::new();
-    let event_dispatcher = dispatcher.sender();
+    let mut queue = DispatchQueue::new();
+    let event_dispatcher = queue.dispatcher();
     let handler = EventHandler::new(|_: u32| {});
     let sink = EventTarget::from(&handler);
     let handle =
         submit_tracked(&event_dispatcher, &sink, 7_u32).expect("the Dispatcher accepts work");
 
     assert_eq!(handle.status(), DispatchStatus::Unstarted);
-    assert!(dispatcher.deliver_next());
+    assert!(queue.run_next().is_some());
     assert_eq!(
         handle.status(),
         DispatchStatus::Finished(DispatchOutcome::Completed)
@@ -262,8 +262,8 @@ fn a_tracked_deferred_submission_records_its_execution_outcome() {
 
 #[test]
 fn a_handler_observes_its_tracked_dispatch_as_executing() {
-    let mut dispatcher = FifoDispatcher::new();
-    let event_dispatcher = dispatcher.sender();
+    let mut queue = DispatchQueue::new();
+    let event_dispatcher = queue.dispatcher();
     let handle_slot = Rc::new(RefCell::new(None::<DispatchHandle>));
     let handle_from_handler = Rc::clone(&handle_slot);
     let observed = Rc::new(RefCell::new(Vec::new()));
@@ -286,7 +286,7 @@ fn a_handler_observes_its_tracked_dispatch_as_executing() {
         submit_tracked(&event_dispatcher, &sink, ()).expect("the Dispatcher accepts the Dispatch");
     handle_slot.replace(Some(handle.clone()));
 
-    assert!(dispatcher.deliver_next());
+    assert!(queue.run_next().is_some());
 
     assert_eq!(&*observed.borrow(), &[DispatchStatus::Executing]);
     assert_eq!(&*cancellations.borrow(), &[false]);
@@ -298,8 +298,8 @@ fn a_handler_observes_its_tracked_dispatch_as_executing() {
 
 #[test]
 fn a_finish_callback_panic_prevents_later_callbacks() {
-    let mut dispatcher = FifoDispatcher::new();
-    let event_dispatcher = dispatcher.sender();
+    let mut queue = DispatchQueue::new();
+    let event_dispatcher = queue.dispatcher();
     let handler = EventHandler::new(|_: u32| {});
     let sink = EventTarget::from(&handler);
     let handle = submit_tracked(&event_dispatcher, &sink, 7_u32)
@@ -310,7 +310,7 @@ fn a_finish_callback_panic_prevents_later_callbacks() {
     handle.on_finish(move |_| observed.set(true));
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let _ = dispatcher.deliver_next();
+        let _ = queue.run_next();
     }));
 
     assert!(result.is_err());
@@ -323,8 +323,8 @@ fn a_finish_callback_panic_prevents_later_callbacks() {
 
 #[test]
 fn dropping_a_dispatcher_leaves_discarded_tracked_dispatches_unstarted() {
-    let dispatcher = FifoDispatcher::new();
-    let event_dispatcher = dispatcher.sender();
+    let queue = DispatchQueue::new();
+    let event_dispatcher = queue.dispatcher();
     let handler = EventHandler::new(|_: u32| {});
     let sink = EventTarget::from(&handler);
     let handle = submit_tracked(&event_dispatcher, &sink, 7_u32)
@@ -333,7 +333,7 @@ fn dropping_a_dispatcher_leaves_discarded_tracked_dispatches_unstarted() {
     let observed = Rc::clone(&outcomes);
     handle.on_finish(move |outcome| observed.borrow_mut().push(outcome));
 
-    drop(dispatcher);
+    drop(queue);
 
     assert_eq!(handle.status(), DispatchStatus::Unstarted);
     assert!(outcomes.borrow().is_empty());
@@ -341,8 +341,8 @@ fn dropping_a_dispatcher_leaves_discarded_tracked_dispatches_unstarted() {
 
 #[test]
 fn a_panicking_sink_leaves_its_tracked_dispatch_executing() {
-    let mut dispatcher = FifoDispatcher::new();
-    let event_dispatcher = dispatcher.sender();
+    let mut queue = DispatchQueue::new();
+    let event_dispatcher = queue.dispatcher();
     let handler = EventHandler::new(|(): ()| panic!("sink panic"));
     let sink = EventTarget::from(&handler);
     let handle =
@@ -352,7 +352,7 @@ fn a_panicking_sink_leaves_its_tracked_dispatch_executing() {
     handle.on_finish(move |outcome| observed.borrow_mut().push(outcome));
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let _ = dispatcher.deliver_next();
+        let _ = queue.run_next();
     }));
 
     assert!(result.is_err());
@@ -362,8 +362,8 @@ fn a_panicking_sink_leaves_its_tracked_dispatch_executing() {
 
 #[test]
 fn a_handle_notifies_finish_after_deferred_execution() {
-    let mut dispatcher = FifoDispatcher::new();
-    let event_dispatcher = dispatcher.sender();
+    let mut queue = DispatchQueue::new();
+    let event_dispatcher = queue.dispatcher();
     let handler = EventHandler::new(|_: u32| {});
     let sink = EventTarget::from(&handler);
     let handle =
@@ -374,14 +374,14 @@ fn a_handle_notifies_finish_after_deferred_execution() {
     handle.on_finish(move |outcome| observed.borrow_mut().push(outcome));
     assert!(outcomes.borrow().is_empty());
 
-    assert!(dispatcher.deliver_next());
+    assert!(queue.run_next().is_some());
     assert_eq!(&*outcomes.borrow(), &[DispatchOutcome::Completed]);
 }
 
 #[test]
 fn finish_callbacks_survive_handle_drop_and_keep_registration_order() {
-    let mut dispatcher = FifoDispatcher::new();
-    let event_dispatcher = dispatcher.sender();
+    let mut queue = DispatchQueue::new();
+    let event_dispatcher = queue.dispatcher();
     let handler = EventHandler::new(|_: u32| {});
     let sink = EventTarget::from(&handler);
     let handle =
@@ -393,7 +393,7 @@ fn finish_callbacks_survive_handle_drop_and_keep_registration_order() {
     handle.on_finish(move |outcome| second.borrow_mut().push((2, outcome)));
     drop(handle);
 
-    assert!(dispatcher.deliver_next());
+    assert!(queue.run_next().is_some());
     assert_eq!(
         &*notifications.borrow(),
         &[
@@ -442,8 +442,8 @@ fn cancelling_a_dispatch_notifies_its_finish() {
 
 #[test]
 fn one_sink_can_run_inline_or_be_submitted_to_a_dispatcher() {
-    let mut dispatcher = FifoDispatcher::new();
-    let queued = dispatcher.sender();
+    let mut queue = DispatchQueue::new();
+    let queued = queue.dispatcher();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
@@ -455,14 +455,14 @@ fn one_sink_can_run_inline_or_be_submitted_to_a_dispatcher() {
     );
     assert_eq!(sink.send(2_u32).run(), DispatchOutcome::Completed);
     assert_eq!(&*values.borrow(), &[2]);
-    assert!(dispatcher.deliver_next());
+    assert!(queue.run_next().is_some());
     assert_eq!(&*values.borrow(), &[2, 1]);
 }
 
 #[test]
 fn a_handler_can_build_and_use_a_source_while_handling_one_dispatch() {
-    let mut dispatcher = FifoDispatcher::new();
-    let event_dispatcher = dispatcher.sender();
+    let mut queue = DispatchQueue::new();
+    let event_dispatcher = queue.dispatcher();
     let values = Rc::new(RefCell::new(Vec::new()));
     let dynamic = Rc::new(RefCell::new(None));
     let dynamic_from_handler = Rc::clone(&dynamic);
@@ -487,77 +487,7 @@ fn a_handler_can_build_and_use_a_source_while_handling_one_dispatch() {
     let trigger = EventTarget::from(&trigger_handler);
 
     assert!(submit_event(&event_dispatcher, &trigger, ()).is_ok());
-    drain(&mut dispatcher);
+    drain(&mut queue);
     assert!(dynamic.borrow().is_some());
     assert_eq!(&*values.borrow(), &[9]);
-}
-
-#[test]
-fn dropping_a_fifo_dispatcher_makes_its_capability_reject_submissions() {
-    let dispatcher = FifoDispatcher::new();
-    let event_dispatcher = dispatcher.sender();
-    let (provider, _source) = channel::<u32>();
-    let handler = EventHandler::new(|_: u32| {});
-    let independent_sink = EventTarget::from(&handler);
-    drop(dispatcher);
-
-    assert!(submit_event(&event_dispatcher, &provider, 1_u32).is_err());
-    assert_eq!(
-        independent_sink.send(1_u32).run(),
-        DispatchOutcome::Completed
-    );
-}
-
-#[test]
-fn heterogeneous_event_types_share_one_fifo() {
-    let mut dispatcher = FifoDispatcher::new();
-    let event_dispatcher = dispatcher.sender();
-    let order = Rc::new(RefCell::new(Vec::new()));
-    let number_order = Rc::clone(&order);
-    let text_order = Rc::clone(&order);
-    let number_handler = EventHandler::new(move |value: u32| {
-        number_order.borrow_mut().push(value.to_string());
-    });
-    let number_sink = EventTarget::from(&number_handler);
-    let text_handler = EventHandler::new(move |value: String| {
-        text_order.borrow_mut().push(value);
-    });
-    let text_sink = EventTarget::from(&text_handler);
-
-    assert!(submit_event(&event_dispatcher, &number_sink, 1_u32).is_ok());
-    assert!(submit_event(&event_dispatcher, &text_sink, String::from("two")).is_ok());
-    drain(&mut dispatcher);
-
-    assert_eq!(&*order.borrow(), &["1", "two"]);
-}
-
-#[test]
-fn work_submitted_while_a_dispatch_executes_joins_the_fifo_tail() {
-    let mut dispatcher = FifoDispatcher::new();
-    let event_dispatcher = dispatcher.sender();
-    let order = Rc::new(RefCell::new(Vec::new()));
-
-    let last_order = Rc::clone(&order);
-    let last_handler = EventHandler::new(move |(): ()| {
-        last_order.borrow_mut().push("last");
-    });
-    let last_sink = EventTarget::from(&last_handler);
-    let nested_dispatcher = event_dispatcher.clone();
-    let first_order = Rc::clone(&order);
-    let first_handler = EventHandler::new(move |(): ()| {
-        first_order.borrow_mut().push("first");
-        assert!(submit_event(&nested_dispatcher, &last_sink, ()).is_ok());
-    });
-    let first_sink = EventTarget::from(&first_handler);
-    let second_order = Rc::clone(&order);
-    let second_handler = EventHandler::new(move |(): ()| {
-        second_order.borrow_mut().push("second");
-    });
-    let second_sink = EventTarget::from(&second_handler);
-
-    assert!(submit_event(&event_dispatcher, &first_sink, ()).is_ok());
-    assert!(submit_event(&event_dispatcher, &second_sink, ()).is_ok());
-    drain(&mut dispatcher);
-
-    assert_eq!(&*order.borrow(), &["first", "second", "last"]);
 }

@@ -4,8 +4,8 @@ use std::{
 };
 
 use theoria_event::{
-    ContramapSink, Dispatch, DispatchOutcome, Dispatcher, EventHandler, EventSink, EventTarget,
-    FifoDispatcher, OwningSink,
+    ContramapSink, Dispatch, DispatchOutcome, DispatchQueue, Dispatcher, EventHandler, EventSink,
+    EventTarget, OwningSink,
 };
 
 #[test]
@@ -44,19 +44,20 @@ fn contramap_dispatch_retains_a_borrowed_input_until_inline_execution() {
 
 #[test]
 fn owning_a_borrowed_input_happens_before_deferred_execution() {
-    let mut dispatcher = FifoDispatcher::new();
+    let mut queue = DispatchQueue::new();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: String| output.borrow_mut().push(value));
     let sink = OwningSink::new(EventTarget::from(&handler));
     let input = String::from("temporary");
 
-    dispatcher
+    queue
+        .dispatcher()
         .submit(sink.send(input.as_str()))
         .expect("an owned Dispatch can be deferred");
     drop(input);
     assert!(values.borrow().is_empty());
 
-    assert!(dispatcher.deliver_next());
+    assert!(queue.run_next().is_some());
     assert_eq!(&*values.borrow(), &[String::from("temporary")]);
 }

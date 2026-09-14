@@ -258,7 +258,7 @@ mod tests {
     };
     use theoria::{
         component::{ComponentInstance, MountContext},
-        event::{EventTarget, FifoDispatcher},
+        event::{DispatchQueue, EventTarget},
     };
 
     use super::*;
@@ -279,22 +279,19 @@ mod tests {
     }
 
     struct TestDriver {
-        dispatcher: FifoDispatcher,
+        queue: DispatchQueue,
         components: ComponentInstance,
     }
 
     impl TestDriver {
         fn new(build: impl FnOnce(&mut MountContext<'_>)) -> Self {
-            let dispatcher = FifoDispatcher::new();
-            let components = ComponentInstance::new(dispatcher.sender(), build);
-            Self {
-                dispatcher,
-                components,
-            }
+            let queue = DispatchQueue::new();
+            let components = ComponentInstance::new(queue.dispatcher(), build);
+            Self { queue, components }
         }
 
         fn run_until_idle(&mut self) {
-            while self.dispatcher.deliver_next() {}
+            while self.queue.run_next().is_some() {}
             self.components.flush_effects().expect("valid Effects");
         }
     }

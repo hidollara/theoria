@@ -6,7 +6,7 @@ use std::{
 
 use super::drain;
 use theoria_event::{
-    Dispatch, DispatchOutcome, Dispatcher, EventHandler, EventTarget, FifoDispatcher,
+    Dispatch, DispatchOutcome, DispatchQueue, Dispatcher, EventHandler, EventTarget,
 };
 
 #[test]
@@ -28,8 +28,8 @@ fn direct_delivery_returns_events_after_handler_drop() {
 
 #[test]
 fn a_panicking_handler_is_restored_for_a_later_dispatch() {
-    let mut dispatcher = FifoDispatcher::new();
-    let event_dispatcher = dispatcher.sender();
+    let mut queue = DispatchQueue::new();
+    let event_dispatcher = queue.dispatcher();
     let calls = Rc::new(Cell::new(0));
     let handler_calls = Rc::clone(&calls);
     let handler = EventHandler::new(move |(): ()| {
@@ -42,11 +42,11 @@ fn a_panicking_handler_is_restored_for_a_later_dispatch() {
 
     assert!(event_dispatcher.submit(sink.send(())).is_ok());
     let first = catch_unwind(AssertUnwindSafe(|| {
-        drain(&mut dispatcher);
+        drain(&mut queue);
     }));
     assert!(first.is_err());
     assert!(event_dispatcher.submit(sink.send(())).is_ok());
-    drain(&mut dispatcher);
+    drain(&mut queue);
     assert_eq!(calls.get(), 2);
 }
 
@@ -83,8 +83,8 @@ fn recursively_dispatching_to_the_same_handler_panics() {
 
 #[test]
 fn dropping_a_handler_prevents_a_queued_dispatch_from_invoking_it() {
-    let mut dispatcher = FifoDispatcher::new();
-    let event_dispatcher = dispatcher.sender();
+    let mut queue = DispatchQueue::new();
+    let event_dispatcher = queue.dispatcher();
     let calls = Rc::new(Cell::new(0));
     let handler_calls = Rc::clone(&calls);
     let handler = EventHandler::new(move |(): ()| {
@@ -94,11 +94,11 @@ fn dropping_a_handler_prevents_a_queued_dispatch_from_invoking_it() {
 
     assert!(event_dispatcher.submit(sink.send(())).is_ok());
     drop(handler);
-    assert!(dispatcher.deliver_next());
-    assert!(!dispatcher.deliver_next());
+    assert!(queue.run_next().is_some());
+    assert!(queue.run_next().is_none());
 
     assert_eq!(calls.get(), 0);
     assert!(event_dispatcher.submit(sink.send(())).is_ok());
-    assert!(dispatcher.deliver_next());
+    assert!(queue.run_next().is_some());
     assert_eq!(calls.get(), 0);
 }
