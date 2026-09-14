@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    sink::{EventSink, SinkEndpoint},
+    sink::{EventEndpoint, EventTarget},
     source::{EventSource, Subscription},
 };
 
@@ -42,7 +42,7 @@ impl<E: 'static> EventProvider<E> {
     }
 }
 
-impl<E: 'static> From<&EventProvider<E>> for EventSink<E> {
+impl<E: 'static> From<&EventProvider<E>> for EventTarget<E> {
     fn from(provider: &EventProvider<E>) -> Self {
         Self::from_endpoint(Rc::downgrade(&provider.state))
     }
@@ -127,7 +127,7 @@ impl<E: 'static> ChannelState<E> {
     }
 }
 
-impl<E: 'static> SinkEndpoint for ChannelState<E> {
+impl<E: 'static> EventEndpoint for ChannelState<E> {
     type Event = E;
 
     fn receive(&self, event: E) {

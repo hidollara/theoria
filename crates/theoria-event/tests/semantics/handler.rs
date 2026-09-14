@@ -5,15 +5,15 @@ use std::{
 };
 
 use super::drain;
-use theoria_event::{DispatchOutcome, Dispatcher, EventHandler, EventSink, FifoDispatcher};
+use theoria_event::{DispatchOutcome, Dispatcher, EventHandler, EventTarget, FifoDispatcher};
 
 #[test]
 fn direct_delivery_returns_events_after_handler_drop() {
     let calls = Rc::new(Cell::new(0));
     let handler_calls = Rc::clone(&calls);
     let handler = EventHandler::new(move |_: u32| handler_calls.set(handler_calls.get() + 1));
-    let first = EventSink::from(&handler);
-    let second = EventSink::from(&handler);
+    let first = EventTarget::from(&handler);
+    let second = EventTarget::from(&handler);
 
     assert_eq!(first.send(1_u32).run(), DispatchOutcome::Delivered);
     assert_eq!(second.send(2_u32).run(), DispatchOutcome::Delivered);
@@ -36,7 +36,7 @@ fn a_panicking_handler_is_restored_for_a_later_dispatch() {
             panic!("first Dispatch");
         }
     });
-    let sink = EventSink::from(&handler);
+    let sink = EventTarget::from(&handler);
 
     assert!(event_dispatcher.submit(sink.send(())).is_ok());
     let first = catch_unwind(AssertUnwindSafe(|| {
@@ -52,7 +52,7 @@ fn a_panicking_handler_is_restored_for_a_later_dispatch() {
 fn recursively_dispatching_to_the_same_handler_panics() {
     let recurse = Rc::new(Cell::new(true));
     let should_recurse = Rc::clone(&recurse);
-    let sink_slot = Rc::new(std::cell::RefCell::new(None::<EventSink<()>>));
+    let sink_slot = Rc::new(std::cell::RefCell::new(None::<EventTarget<()>>));
     let nested_sink = Rc::clone(&sink_slot);
     let calls = Rc::new(Cell::new(0));
     let observed_calls = Rc::clone(&calls);
@@ -62,12 +62,12 @@ fn recursively_dispatching_to_the_same_handler_panics() {
             let sink = nested_sink
                 .borrow()
                 .as_ref()
-                .expect("the recursive Sink is installed")
+                .expect("the recursive event target is installed")
                 .clone();
             let _ = sink.send(()).run();
         }
     });
-    let sink = EventSink::from(&handler);
+    let sink = EventTarget::from(&handler);
     sink_slot.replace(Some(sink.clone()));
 
     let result = catch_unwind(AssertUnwindSafe(|| {
@@ -88,7 +88,7 @@ fn dropping_a_handler_prevents_a_queued_dispatch_from_invoking_it() {
     let handler = EventHandler::new(move |(): ()| {
         handler_calls.set(handler_calls.get() + 1);
     });
-    let sink = EventSink::from(&handler);
+    let sink = EventTarget::from(&handler);
 
     assert!(event_dispatcher.submit(sink.send(())).is_ok());
     drop(handler);

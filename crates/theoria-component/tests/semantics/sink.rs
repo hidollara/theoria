@@ -4,7 +4,7 @@ use std::{
 };
 
 use theoria_component::UpdateContext;
-use theoria_event::EventSink;
+use theoria_event::EventTarget;
 
 use super::support::{DrainOutcome, HandlesEvent, TestRuntime, receive};
 
@@ -65,7 +65,7 @@ impl HandlesEvent for RightRecorder {
 }
 
 struct ValueRouter {
-    targets: Vec<EventSink<RoutedValue>>,
+    targets: Vec<EventTarget<RoutedValue>>,
 }
 
 impl HandlesEvent for ValueRouter {
@@ -79,7 +79,7 @@ impl HandlesEvent for ValueRouter {
 }
 
 #[test]
-fn event_sinks_store_heterogeneous_handlers_for_one_input_type() {
+fn event_targets_store_heterogeneous_handlers_for_one_input_type() {
     let values = Rc::new(RefCell::new(Vec::new()));
     let mounted_values = Rc::clone(&values);
     let mut runtime = TestRuntime::new(move |context| {
@@ -100,7 +100,7 @@ fn event_sinks_store_heterogeneous_handlers_for_one_input_type() {
 }
 
 struct TargetProbe {
-    target: EventSink<RoutedValue>,
+    target: EventTarget<RoutedValue>,
     result: Rc<Cell<Option<bool>>>,
 }
 
@@ -114,7 +114,7 @@ impl HandlesEvent for TargetProbe {
 }
 
 #[test]
-fn event_sink_does_not_keep_an_unmounted_component_alive() {
+fn an_event_target_does_not_keep_an_unmounted_component_alive() {
     let result = Rc::new(Cell::new(None));
     let probe_result = Rc::clone(&result);
     let target_events = Rc::new(RefCell::new(Vec::new()));

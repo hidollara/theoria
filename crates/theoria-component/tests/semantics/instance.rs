@@ -5,7 +5,7 @@ use std::{
 
 use theoria_component::ComponentInstance;
 use theoria_event::{
-    BridgeProgress, DispatchOutcome, DispatchStatus, Dispatcher, EventSink, FifoDispatcher,
+    BridgeProgress, DispatchOutcome, DispatchStatus, Dispatcher, EventTarget, FifoDispatcher,
     ImmediateDispatcher, OwningSink, SubmissionOutcome, bridge,
 };
 
@@ -20,7 +20,7 @@ fn handlers_do_not_run_until_root_construction_finishes() {
             handler_runs.set(handler_runs.get() + 1);
         });
 
-        assert!(EventSink::from(&input).send_inline(()).is_ok());
+        assert!(EventTarget::from(&input).send_inline(()).is_ok());
         mounted_input.replace(Some(input));
     });
     let input = input
@@ -49,7 +49,7 @@ fn child_handlers_remain_inactive_until_root_construction_finishes() {
             let input = child.receive(move |(), _context| {
                 child_runs.set(child_runs.get() + 1);
             });
-            assert!(EventSink::from(&input).send_inline(()).is_ok());
+            assert!(EventTarget::from(&input).send_inline(()).is_ok());
             mounted_input.replace(Some(input));
         });
 

@@ -183,7 +183,7 @@ impl<E: Send + 'static> EventLoopParticipant for BridgeState<E> {
 mod tests {
     use std::{cell::Cell, rc::Rc};
 
-    use crate::event::{EventHandler, EventSink, EventSource, OwningSink};
+    use crate::event::{EventHandler, EventSource, EventTarget, OwningSink};
 
     use super::*;
     use crate::windows;
@@ -197,7 +197,7 @@ mod tests {
         let handler = EventHandler::new(move |event: u32| output.set(Some(event)));
         let _subscription = bridge
             .source()
-            .connect(OwningSink::new(EventSink::from(&handler)))
+            .connect(OwningSink::new(EventTarget::from(&handler)))
             .inline()
             .expect("the Bridge owns its live Source");
 

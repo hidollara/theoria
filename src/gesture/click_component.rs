@@ -1,6 +1,6 @@
 use crate::{
     component::{Component, MountContext},
-    event::{ChannelSource, EventSink, OwningSink},
+    event::{ChannelSource, EventTarget, OwningSink},
     input::pointer::PointerEvent,
 };
 
@@ -8,20 +8,20 @@ use super::{Click, ClickRecognizer};
 
 /// Component adapter that publishes clicks recognized from pointer input.
 ///
-/// The output Sink is supplied by the component that composes the input
+/// The output Target is supplied by the component that composes the input
 /// pipeline. It may publish through an Event Source or deliver directly to
 /// another Component, keeping routing separate from the recognition algorithm.
 pub struct ClickGesture {
     recognizer: ClickRecognizer,
     pointers: ChannelSource<PointerEvent>,
-    clicks: EventSink<Click>,
+    clicks: EventTarget<Click>,
 }
 
 impl ClickGesture {
     pub fn new(
         recognizer: ClickRecognizer,
         pointers: ChannelSource<PointerEvent>,
-        clicks: impl Into<EventSink<Click>>,
+        clicks: impl Into<EventTarget<Click>>,
     ) -> Self {
         Self {
             recognizer,
@@ -52,7 +52,7 @@ mod tests {
     use std::{cell::RefCell, rc::Rc};
 
     use crate::{
-        event::EventSink,
+        event::EventTarget,
         geometry::Point,
         input::pointer::{
             MovementThreshold, PointerButton, PointerButtonChange, PointerButtons, PointerEvent,
@@ -64,7 +64,7 @@ mod tests {
     use super::*;
 
     struct InputPipeline {
-        input: EventSink<PointerEvent>,
+        input: EventTarget<PointerEvent>,
     }
 
     fn mouse_event(change: PointerButtonChange, position: Point) -> PointerEvent {

@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use theoria_event::{
     ChannelSource, Dispatch, DispatchOutcome, DispatchReceipt, Dispatcher, EventDispatcher,
-    EventHandler, EventSink, EventSource, Sink, SubmissionOutcome, TrackedDispatch, channel,
+    EventHandler, EventSink, EventSource, EventTarget, SubmissionOutcome, TrackedDispatch, channel,
 };
 use theoria_reactive::{
     Computed, Effect, ReadContext, SnapshotState, State, StateSetter, WriteContext,
@@ -36,25 +36,25 @@ impl<'mount> MountContext<'mount> {
         Self { tree, current }
     }
 
-    /// Creates a typed [`EventSource`] and its input [`EventSink`].
+    /// Creates a typed [`EventSource`] and its input [`EventTarget`].
     ///
     /// The current Component owns the EventProvider. The returned Source and
-    /// input Sink do not keep that Component alive. After it is unmounted, the
+    /// input target do not keep that Component alive. After it is unmounted, the
     /// Source rejects new subscriptions and input deliveries produce no events.
-    pub fn event_source<E: 'static>(&mut self) -> (ChannelSource<E>, EventSink<E>) {
+    pub fn event_source<E: 'static>(&mut self) -> (ChannelSource<E>, EventTarget<E>) {
         let (provider, source) = channel();
-        let input = EventSink::from(&provider);
+        let input = EventTarget::from(&provider);
         self.current.retain(provider);
         (source, input)
     }
 
     /// Retains one typed event handler in the current Component boundary.
     ///
-    /// The returned Sink is a non-owning input capability. Dropping the
+    /// The returned target is a non-owning input capability. Dropping the
     /// Component boundary closes the handler without extending its lifetime.
-    /// During construction, a Dispatch can reach the Sink but does not invoke
+    /// During construction, a Dispatch can reach the target but does not invoke
     /// `handler` until the complete Component tree has mounted.
-    pub fn receive<E, F>(&mut self, handler: F) -> EventSink<E>
+    pub fn receive<E, F>(&mut self, handler: F) -> EventTarget<E>
     where
         E: 'static,
         F: FnMut(E, &mut UpdateContext<'_>) + 'static,
@@ -70,14 +70,14 @@ impl<'mount> MountContext<'mount> {
                 });
             }
         });
-        let sink = EventSink::from(&handler);
+        let sink = EventTarget::from(&handler);
         self.current.retain(handler);
         sink
     }
 
-    /// Connects one Source to a Sink through the tree's default Dispatcher.
+    /// Connects one event source to a sink through the tree's default Dispatcher.
     ///
-    /// The Sink must turn every publication into a self-contained Dispatch
+    /// The sink must turn every publication into a self-contained Dispatch
     /// accepted by the default Dispatcher. The current Component owns the
     /// resulting Subscription. Returns `false` when the Source is no longer
     /// available.
@@ -85,8 +85,8 @@ impl<'mount> MountContext<'mount> {
     where
         S: EventSource,
         K: 'static,
-        for<'event> K: Sink<S::Event<'event>>,
-        for<'event> Dispatcher: EventDispatcher<<K as Sink<S::Event<'event>>>::Dispatch>,
+        for<'event> K: EventSink<S::Event<'event>>,
+        for<'event> Dispatcher: EventDispatcher<<K as EventSink<S::Event<'event>>>::Dispatch>,
     {
         self.connect_via(self.tree.default_dispatcher().clone(), source, sink)
     }
@@ -97,8 +97,8 @@ impl<'mount> MountContext<'mount> {
         S: EventSource,
         K: 'static,
         D: 'static,
-        for<'event> K: Sink<S::Event<'event>>,
-        for<'event> D: EventDispatcher<<K as Sink<S::Event<'event>>>::Dispatch>,
+        for<'event> K: EventSink<S::Event<'event>>,
+        for<'event> D: EventDispatcher<<K as EventSink<S::Event<'event>>>::Dispatch>,
     {
         let Some(subscription) = source.connect(sink).via(dispatcher) else {
             return false;
@@ -107,7 +107,7 @@ impl<'mount> MountContext<'mount> {
         true
     }
 
-    /// Connects one Source to a Sink on the publishing call stack.
+    /// Connects one event source to a sink on the publishing call stack.
     ///
     /// Inline connections may borrow an event whose lifetime is shorter than
     /// the Component and may synchronously enter the target Component.
@@ -115,7 +115,7 @@ impl<'mount> MountContext<'mount> {
     where
         S: EventSource,
         K: 'static,
-        for<'event> K: Sink<S::Event<'event>>,
+        for<'event> K: EventSink<S::Event<'event>>,
     {
         let Some(subscription) = source.connect(sink).inline() else {
             return false;
@@ -262,7 +262,7 @@ impl<'delivery> UpdateContext<'delivery> {
     /// Sends one event to `sink` through this Component tree's default Dispatcher.
     pub fn send<E, S>(&mut self, sink: S, event: E) -> Result<SubmissionOutcome, S::Dispatch>
     where
-        S: Sink<E>,
+        S: EventSink<E>,
         S::Dispatch: 'static,
     {
         self.tree.default_dispatcher().submit(sink.send(event))
@@ -274,7 +274,7 @@ impl<'delivery> UpdateContext<'delivery> {
     /// target Component.
     pub fn send_inline<E, S>(&mut self, sink: S, event: E) -> DispatchOutcome
     where
-        S: Sink<E>,
+        S: EventSink<E>,
     {
         sink.send(event).run()
     }
@@ -287,7 +287,7 @@ impl<'delivery> UpdateContext<'delivery> {
         event: E,
     ) -> Result<SubmissionOutcome, S::Dispatch>
     where
-        S: Sink<E>,
+        S: EventSink<E>,
         D: EventDispatcher<S::Dispatch>,
     {
         dispatcher.submit(sink.send(event))
@@ -300,7 +300,7 @@ impl<'delivery> UpdateContext<'delivery> {
         event: E,
     ) -> Result<DispatchReceipt, TrackedDispatch<S::Dispatch>>
     where
-        S: Sink<E>,
+        S: EventSink<E>,
         S::Dispatch: 'static,
     {
         let (dispatch, receipt) = sink.send(event).tracked();
@@ -318,7 +318,7 @@ impl<'delivery> UpdateContext<'delivery> {
         event: E,
     ) -> Result<DispatchReceipt, TrackedDispatch<S::Dispatch>>
     where
-        S: Sink<E>,
+        S: EventSink<E>,
         D: EventDispatcher<TrackedDispatch<S::Dispatch>>,
     {
         let (dispatch, receipt) = sink.send(event).tracked();

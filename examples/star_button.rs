@@ -258,7 +258,7 @@ mod tests {
     };
     use theoria::{
         component::{ComponentInstance, MountContext},
-        event::{EventSink, FifoDispatcher},
+        event::{EventTarget, FifoDispatcher},
     };
 
     use super::*;
@@ -299,7 +299,7 @@ mod tests {
         }
     }
 
-    fn click(runtime: &mut TestDriver, input: &EventSink<PointerEvent>, point: Point) {
+    fn click(runtime: &mut TestDriver, input: &EventTarget<PointerEvent>, point: Point) {
         assert!(
             runtime
                 .components

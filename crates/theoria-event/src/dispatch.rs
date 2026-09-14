@@ -25,9 +25,9 @@ pub trait Dispatch: Sized {
 /// The result of running one accepted event Dispatch.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DispatchOutcome {
-    /// The Dispatch reached a live Sink and completed there.
+    /// The Dispatch reached a live event sink and completed there.
     Delivered,
-    /// The Sink's endpoint had been dropped before execution.
+    /// The event sink's endpoint had been dropped before execution.
     SinkUnavailable,
     /// A tracked Dispatch was cancelled before execution began.
     Cancelled,
@@ -181,10 +181,10 @@ impl fmt::Debug for DispatchReceipt {
     }
 }
 
-/// One invocation of an event Sink.
+/// One invocation of an event sink.
 ///
 /// The Dispatch owns its event and every reusable operation copied from its
-/// Sink. Its lifetime is bounded by the shortest-lived value captured by that
+/// sink. Its lifetime is bounded by the shortest-lived value captured by that
 /// invocation. Any Dispatch may run immediately; only a `'static` Dispatch may
 /// be submitted to a [`Dispatcher`].
 #[must_use = "an EventDispatch must be run, submitted, or intentionally discarded"]
@@ -199,7 +199,7 @@ impl<'event> EventDispatch<'event> {
         }
     }
 
-    /// Runs this Sink invocation exactly once.
+    /// Runs this event-sink invocation exactly once.
     pub fn run(self) -> DispatchOutcome {
         self.operation.run()
     }

@@ -5,7 +5,7 @@ use std::{
 
 use theoria_event::{
     ContramapSink, Dispatch, DispatchOutcome, EventDispatcher, EventHandler, EventSink,
-    FifoDispatcher, OwningSink, Sink,
+    EventTarget, FifoDispatcher, OwningSink,
 };
 
 #[test]
@@ -15,7 +15,7 @@ fn contramap_runs_when_its_dispatch_runs() {
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: usize| output.borrow_mut().push(value));
-    let sink = ContramapSink::new(EventSink::from(&handler), move |value: String| {
+    let sink = ContramapSink::new(EventTarget::from(&handler), move |value: String| {
         observed_map.set(true);
         value.len()
     });
@@ -34,7 +34,7 @@ fn contramap_dispatch_retains_a_borrowed_input_until_inline_execution() {
     let length = Rc::new(Cell::new(0));
     let output = Rc::clone(&length);
     let handler = EventHandler::new(move |value: usize| output.set(value));
-    let sink = ContramapSink::new(EventSink::from(&handler), str::len);
+    let sink = ContramapSink::new(EventTarget::from(&handler), str::len);
     let owned = String::from("temporary");
     let dispatch = sink.send(owned.as_str());
 
@@ -48,7 +48,7 @@ fn owning_a_borrowed_input_happens_before_deferred_execution() {
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: String| output.borrow_mut().push(value));
-    let sink = OwningSink::new(EventSink::from(&handler));
+    let sink = OwningSink::new(EventTarget::from(&handler));
     let input = String::from("temporary");
 
     dispatcher

@@ -1,6 +1,6 @@
 use std::{cell::RefCell, rc::Rc};
 
-use theoria_event::{EventSink, OwningSink};
+use theoria_event::{EventTarget, OwningSink};
 
 use super::support::{DrainOutcome, TestDriver, TestRuntime};
 
@@ -36,7 +36,7 @@ fn a_component_can_create_a_source_while_handling_an_event() {
     let values = Rc::new(RefCell::new(Vec::new()));
     let mounted_values = Rc::clone(&values);
     let mut runtime = TestRuntime::new(move |context| {
-        let input = Rc::new(RefCell::new(None::<EventSink<u32>>));
+        let input = Rc::new(RefCell::new(None::<EventTarget<u32>>));
         let handler_input = Rc::clone(&input);
         context.receive(
             move |command: DynamicSourceCommand, context| match command {
@@ -254,8 +254,8 @@ fn source_cycles_can_be_paused_by_the_caller() {
 #[test]
 fn one_component_can_retain_multiple_typed_inputs() {
     struct Inputs {
-        number: EventSink<u32>,
-        text: EventSink<String>,
+        number: EventTarget<u32>,
+        text: EventTarget<String>,
     }
 
     let numbers = Rc::new(RefCell::new(Vec::new()));

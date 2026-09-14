@@ -4,7 +4,7 @@
 //! subscriptions, arbitrary resources, and child Components inside one
 //! structural lifetime boundary. Components do not have a distinguished event
 //! type: each retained handler exposes its own typed
-//! [`theoria_event::EventSink`]. Event delivery comes from [`theoria_event`],
+//! [`theoria_event::EventTarget`]. Event delivery comes from [`theoria_event`],
 //! while reactive storage and evaluation come from [`theoria_reactive`]. This
 //! crate coordinates those independent primitives without merging them.
 //!

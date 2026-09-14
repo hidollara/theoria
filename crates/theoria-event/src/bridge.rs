@@ -6,7 +6,7 @@ use std::{
 use crate::{
     channel::{ChannelSource, EventProvider, channel},
     dispatch::{Dispatch, DispatchOutcome},
-    sink::Sink,
+    sink::EventSink,
 };
 
 /// Receives events from another execution domain and publishes them locally.
@@ -21,7 +21,7 @@ pub struct EventBridge<E: Send + 'static> {
     source: ChannelSource<E>,
 }
 
-/// Creates a local event Bridge and its thread-safe Sink.
+/// Creates a local event bridge and its thread-safe sink.
 pub fn bridge<E: Send + 'static>() -> (EventBridge<E>, BridgeSink<E>) {
     let (sender, receiver) = mpsc::channel();
     let (provider, source) = channel();
@@ -62,7 +62,7 @@ impl<E: Send + 'static> fmt::Debug for EventBridge<E> {
     }
 }
 
-/// A cloneable Sink for sending values into an [`EventBridge`].
+/// A cloneable event sink for sending values into an [`EventBridge`].
 pub struct BridgeSink<E: Send + 'static> {
     sender: Sender<E>,
 }
@@ -77,7 +77,7 @@ impl<E: Send + 'static> BridgeSink<E> {
     }
 }
 
-impl<E: Send + 'static> Sink<E> for BridgeSink<E> {
+impl<E: Send + 'static> EventSink<E> for BridgeSink<E> {
     type Dispatch = BridgeDispatch<E>;
 
     fn send(&self, event: E) -> Self::Dispatch {

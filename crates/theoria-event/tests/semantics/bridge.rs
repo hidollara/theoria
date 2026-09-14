@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc, thread};
 
 use theoria_event::{
     BridgeDispatch, BridgeProgress, BridgeSink, Dispatch, DispatchOutcome, Dispatcher,
-    EventHandler, EventSink, EventSource, FifoDispatcher, OwningSink, Sink, bridge,
+    EventHandler, EventSink, EventSource, EventTarget, FifoDispatcher, OwningSink, bridge,
 };
 
 fn assert_send_sync<T: Send + Sync>() {}
@@ -13,7 +13,7 @@ fn assert_send<T: Send>() {}
 fn a_bridge_sink_preserves_cross_thread_dispatch_capabilities() {
     fn send<S>(sink: &S, event: u32) -> S::Dispatch
     where
-        S: Sink<u32>,
+        S: EventSink<u32>,
     {
         sink.send(event)
     }
@@ -32,7 +32,7 @@ fn a_value_crosses_a_thread_boundary_into_a_local_source() {
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
-    let sink = EventSink::from(&handler);
+    let sink = EventTarget::from(&handler);
     bridge
         .source()
         .connect(OwningSink::new(sink))
@@ -84,7 +84,7 @@ fn a_bridge_forwards_events_in_receive_order() {
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
     bridge
         .source()
-        .connect(OwningSink::new(EventSink::from(&handler)))
+        .connect(OwningSink::new(EventTarget::from(&handler)))
         .inline()
         .expect("live bridge")
         .detach();
@@ -114,7 +114,7 @@ fn each_subscriber_selects_its_own_dispatcher() {
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
-    let sink = EventSink::from(&handler);
+    let sink = EventTarget::from(&handler);
     bridge
         .source()
         .connect(OwningSink::new(sink))

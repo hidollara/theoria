@@ -1,5 +1,5 @@
 use crate::{
-    component::UpdateContext, event::EventSink, geometry::Point, interaction::HitRegion,
+    component::UpdateContext, event::EventTarget, geometry::Point, interaction::HitRegion,
     transform::Projective2,
 };
 
@@ -14,7 +14,7 @@ use super::{Click, area::GestureArea};
 pub struct ClickArea(GestureArea<Click>);
 
 impl ClickArea {
-    pub fn new(sink: impl Into<EventSink<Click>>, region: HitRegion) -> Self {
+    pub fn new(sink: impl Into<EventTarget<Click>>, region: HitRegion) -> Self {
         Self(GestureArea::new(sink.into(), region))
     }
 

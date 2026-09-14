@@ -1,17 +1,17 @@
 use crate::{
-    component::UpdateContext, event::EventSink, geometry::Point, interaction::HitRegion,
+    component::UpdateContext, event::EventTarget, geometry::Point, interaction::HitRegion,
     transform::Projective2,
 };
 
 #[derive(Clone, Debug)]
 pub(super) struct GestureArea<E: 'static> {
-    sink: EventSink<E>,
+    sink: EventTarget<E>,
     region: HitRegion,
     local_to_parent: Projective2,
 }
 
 impl<E: 'static> GestureArea<E> {
-    pub(super) fn new(sink: EventSink<E>, region: HitRegion) -> Self {
+    pub(super) fn new(sink: EventTarget<E>, region: HitRegion) -> Self {
         Self {
             sink,
             region,

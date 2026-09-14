@@ -12,59 +12,59 @@ type ReceiveFn<E> = dyn Fn(&dyn Any, E);
 ///
 /// The associated Dispatch preserves its concrete lifetime and auto traits so
 /// the selected Dispatcher can decide whether it can execute or retain it.
-pub trait Sink<E> {
+pub trait EventSink<E> {
     type Dispatch: Dispatch;
 
-    /// Turns `event` into one unexecuted invocation of this Sink.
+    /// Turns `event` into one unexecuted invocation of this event sink.
     fn send(&self, event: E) -> Self::Dispatch;
 }
 
-/// A Sink adapter that turns a borrowed input into an owned event.
+/// An event-sink adapter that turns a borrowed input into an owned event.
 ///
-/// This is the borrowing counterpart of [`EventSink::contramap`]. The
+/// This is the borrowing counterpart of [`EventTarget::contramap`]. The
 /// conversion runs only when the resulting Dispatch runs, while the borrowed
 /// input is still valid.
 pub struct BorrowingEventSink<T: ?Sized, E> {
-    sink: EventSink<E>,
+    sink: EventTarget<E>,
     map: Rc<dyn for<'event> Fn(&'event T) -> E>,
 }
 
-pub(crate) trait SinkEndpoint: 'static {
+pub(crate) trait EventEndpoint: 'static {
     type Event;
 
     fn receive(&self, event: Self::Event);
 }
 
-/// A cloneable typed destination independent of any Dispatcher.
+/// A cloneable, type-erased event target independent of any Dispatcher.
 ///
-/// An EventSink does not keep its endpoint alive. [`Self::send`] creates an
+/// An [`EventTarget`] does not keep its endpoint alive. [`Self::send`] creates an
 /// [`EventDispatch`], which may be run on the current call stack or submitted
 /// through a compatible Dispatcher. If the endpoint has already been dropped
 /// when a Dispatch starts, it completes with
 /// [`crate::dispatch::DispatchOutcome::SinkUnavailable`].
-pub struct EventSink<E> {
+pub struct EventTarget<E> {
     endpoint: Weak<dyn Any>,
     receive: Rc<ReceiveFn<E>>,
 }
 
-impl<E> EventSink<E> {
+impl<E> EventTarget<E> {
     pub(crate) fn from_endpoint<T>(endpoint: Weak<T>) -> Self
     where
-        T: SinkEndpoint<Event = E>,
+        T: EventEndpoint<Event = E>,
     {
         Self {
             endpoint,
             receive: Rc::new(move |endpoint, event| {
                 let endpoint = endpoint
                     .downcast_ref::<T>()
-                    .expect("an EventSink endpoint must retain its original type");
+                    .expect("an EventTarget endpoint must retain its original type");
                 endpoint.receive(event);
             }),
         }
     }
 
-    /// Creates a Sink accepting `U` by converting it into this Sink's `E`.
-    pub fn contramap<U>(&self, map: impl Fn(U) -> E + 'static) -> EventSink<U>
+    /// Creates a target accepting `U` by converting it into this target's `E`.
+    pub fn contramap<U>(&self, map: impl Fn(U) -> E + 'static) -> EventTarget<U>
     where
         E: 'static,
         U: 'static,
@@ -72,7 +72,7 @@ impl<E> EventSink<E> {
         self.contramap_filter(move |event| Some(map(event)))
     }
 
-    /// Creates a Sink accepting a borrowed `T` by converting it into `E`.
+    /// Creates an event sink accepting a borrowed `T` by converting it into `E`.
     pub fn contramap_borrow<T: ?Sized>(
         &self,
         map: impl for<'event> Fn(&'event T) -> E + 'static,
@@ -86,31 +86,31 @@ impl<E> EventSink<E> {
         }
     }
 
-    /// Creates a Sink that accepts only values satisfying `predicate`.
+    /// Creates a target that accepts only values satisfying `predicate`.
     ///
     /// For a live endpoint, a filtered-out value completes its Dispatch as
     /// delivered without invoking the endpoint callback. Endpoint liveness is
     /// checked before the predicate runs.
-    pub fn filter(&self, predicate: impl Fn(&E) -> bool + 'static) -> EventSink<E>
+    pub fn filter(&self, predicate: impl Fn(&E) -> bool + 'static) -> EventTarget<E>
     where
         E: 'static,
     {
         self.contramap_filter(move |event| predicate(&event).then_some(event))
     }
 
-    /// Creates a Sink accepting `U` by optionally converting it into this
-    /// Sink's `E`.
+    /// Creates a target accepting `U` by optionally converting it into this
+    /// target's `E`.
     ///
     /// For a live endpoint, returning `None` completes that Dispatch as
     /// delivered without invoking the endpoint callback. Endpoint liveness is
     /// checked before `map` runs.
-    pub fn contramap_filter<U>(&self, map: impl Fn(U) -> Option<E> + 'static) -> EventSink<U>
+    pub fn contramap_filter<U>(&self, map: impl Fn(U) -> Option<E> + 'static) -> EventTarget<U>
     where
         E: 'static,
         U: 'static,
     {
         let receive = Rc::clone(&self.receive);
-        EventSink {
+        EventTarget {
             endpoint: Weak::clone(&self.endpoint),
             receive: Rc::new(move |endpoint, event| {
                 if let Some(event) = map(event) {
@@ -120,8 +120,8 @@ impl<E> EventSink<E> {
         }
     }
 
-    /// Creates a Sink accepting every `U: Into<E>`.
-    pub fn accepting<U>(&self) -> EventSink<U>
+    /// Creates a target accepting every `U: Into<E>`.
+    pub fn accepting<U>(&self) -> EventTarget<U>
     where
         E: 'static,
         U: Into<E> + 'static,
@@ -129,7 +129,7 @@ impl<E> EventSink<E> {
         self.contramap(Into::into)
     }
 
-    /// Builds one invocation carrying `event` to this Sink.
+    /// Builds one invocation carrying `event` to this target.
     ///
     /// Building a Dispatch does not invoke the endpoint. The Dispatch owns the
     /// event and may run on the current call stack. When `E: 'static`, it may
@@ -160,18 +160,18 @@ impl<E> EventSink<E> {
     }
 }
 
-impl<E> Sink<E> for EventSink<E>
+impl<E> EventSink<E> for EventTarget<E>
 where
     E: 'static,
 {
     type Dispatch = EventDispatch<'static>;
 
     fn send(&self, event: E) -> Self::Dispatch {
-        EventSink::send(self, event)
+        EventTarget::send(self, event)
     }
 }
 
-impl<'input, T: ?Sized, E> Sink<&'input T> for BorrowingEventSink<T, E>
+impl<'input, T: ?Sized, E> EventSink<&'input T> for BorrowingEventSink<T, E>
 where
     E: 'static,
 {
@@ -184,14 +184,14 @@ where
     }
 }
 
-impl<E, S> Sink<E> for &S
+impl<E, S> EventSink<E> for &S
 where
-    S: Sink<E> + ?Sized,
+    S: EventSink<E> + ?Sized,
 {
     type Dispatch = S::Dispatch;
 
     fn send(&self, event: E) -> Self::Dispatch {
-        S::send(self, event)
+        EventSink::send(*self, event)
     }
 }
 
@@ -212,7 +212,7 @@ impl<T: ?Sized, E> fmt::Debug for BorrowingEventSink<T, E> {
     }
 }
 
-impl<E> Clone for EventSink<E> {
+impl<E> Clone for EventTarget<E> {
     fn clone(&self) -> Self {
         Self {
             endpoint: Weak::clone(&self.endpoint),
@@ -221,14 +221,16 @@ impl<E> Clone for EventSink<E> {
     }
 }
 
-impl<E> From<&EventSink<E>> for EventSink<E> {
-    fn from(sink: &EventSink<E>) -> Self {
+impl<E> From<&EventTarget<E>> for EventTarget<E> {
+    fn from(sink: &EventTarget<E>) -> Self {
         sink.clone()
     }
 }
 
-impl<E> fmt::Debug for EventSink<E> {
+impl<E> fmt::Debug for EventTarget<E> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.debug_struct("EventSink").finish_non_exhaustive()
+        formatter
+            .debug_struct("EventTarget")
+            .finish_non_exhaustive()
     }
 }

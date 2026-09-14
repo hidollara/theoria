@@ -1,7 +1,7 @@
 use std::{fmt, rc::Rc};
 
 use theoria_event::{
-    Dispatch, DispatchOutcome, DispatchReceipt, Dispatcher, EventDispatcher, Sink,
+    Dispatch, DispatchOutcome, DispatchReceipt, Dispatcher, EventDispatcher, EventSink,
     SubmissionOutcome, TrackedDispatch,
 };
 use theoria_reactive::{Reactive, ReactiveError};
@@ -41,7 +41,7 @@ impl ComponentInstance {
     /// Sends one event through this Instance's default Dispatcher.
     pub fn send<E, S>(&self, sink: S, event: E) -> Result<SubmissionOutcome, S::Dispatch>
     where
-        S: Sink<E>,
+        S: EventSink<E>,
         S::Dispatch: 'static,
     {
         self.tree.default_dispatcher().submit(sink.send(event))
@@ -53,7 +53,7 @@ impl ComponentInstance {
     /// target Component.
     pub fn send_inline<E, S>(&self, sink: S, event: E) -> DispatchOutcome
     where
-        S: Sink<E>,
+        S: EventSink<E>,
     {
         sink.send(event).run()
     }
@@ -66,7 +66,7 @@ impl ComponentInstance {
         event: E,
     ) -> Result<SubmissionOutcome, S::Dispatch>
     where
-        S: Sink<E>,
+        S: EventSink<E>,
         D: EventDispatcher<S::Dispatch>,
     {
         dispatcher.submit(sink.send(event))
@@ -79,7 +79,7 @@ impl ComponentInstance {
         event: E,
     ) -> Result<DispatchReceipt, TrackedDispatch<S::Dispatch>>
     where
-        S: Sink<E>,
+        S: EventSink<E>,
         S::Dispatch: 'static,
     {
         let (dispatch, receipt) = sink.send(event).tracked();
@@ -97,7 +97,7 @@ impl ComponentInstance {
         event: E,
     ) -> Result<DispatchReceipt, TrackedDispatch<S::Dispatch>>
     where
-        S: Sink<E>,
+        S: EventSink<E>,
         D: EventDispatcher<TrackedDispatch<S::Dispatch>>,
     {
         let (dispatch, receipt) = sink.send(event).tracked();

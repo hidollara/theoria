@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use theoria_component::{ComponentInstance, MountContext, UpdateContext};
-use theoria_event::{EventDispatch, EventSink, FifoDispatcher, SubmissionOutcome};
+use theoria_event::{EventDispatch, EventTarget, FifoDispatcher, SubmissionOutcome};
 use theoria_reactive::ReactiveError;
 
 pub(super) struct TestDriver {
@@ -21,7 +21,7 @@ impl TestDriver {
 
     pub(super) fn send<E: 'static>(
         &self,
-        sink: impl Into<EventSink<E>>,
+        sink: impl Into<EventTarget<E>>,
         event: E,
     ) -> Result<SubmissionOutcome, EventDispatch<'static>> {
         self.instance.send(sink.into(), event)
@@ -56,7 +56,7 @@ impl TestDriver {
 
 pub(super) struct TestRuntime<E: 'static> {
     driver: TestDriver,
-    event_sink: EventSink<E>,
+    event_target: EventTarget<E>,
 }
 
 pub(super) trait HandlesEvent: 'static {
@@ -68,22 +68,25 @@ pub(super) trait HandlesEvent: 'static {
 pub(super) fn receive<H: HandlesEvent>(
     context: &mut MountContext<'_>,
     mut handler: H,
-) -> EventSink<H::Event> {
+) -> EventTarget<H::Event> {
     context.receive(move |event, context| handler.handle(event, context))
 }
 
 impl<E: 'static> TestRuntime<E> {
-    pub(super) fn new(build: impl FnOnce(&mut MountContext<'_>) -> EventSink<E>) -> Self {
+    pub(super) fn new(build: impl FnOnce(&mut MountContext<'_>) -> EventTarget<E>) -> Self {
         let output = Rc::new(RefCell::new(None));
         let mounted_output = Rc::clone(&output);
         let driver = TestDriver::new(move |context| {
             mounted_output.replace(Some(build(context)));
         });
-        let event_sink = output
+        let event_target = output
             .borrow_mut()
             .take()
             .expect("root construction produces its test input");
-        Self { driver, event_sink }
+        Self {
+            driver,
+            event_target,
+        }
     }
 
     pub(super) fn new_handler<F>(builder: impl FnOnce(&mut MountContext<'_>) -> F) -> Self
@@ -96,15 +99,15 @@ impl<E: 'static> TestRuntime<E> {
         })
     }
 
-    pub(super) const fn event_sink(&self) -> &EventSink<E> {
-        &self.event_sink
+    pub(super) const fn event_target(&self) -> &EventTarget<E> {
+        &self.event_target
     }
 
     pub(super) fn send(&self, event: E) -> bool {
-        self.driver.send(&self.event_sink, event).is_ok()
+        self.driver.send(&self.event_target, event).is_ok()
     }
 
-    pub(super) fn send_to<T: 'static>(&self, sink: &EventSink<T>, event: T) -> bool {
+    pub(super) fn send_to<T: 'static>(&self, sink: &EventTarget<T>, event: T) -> bool {
         self.driver.send(sink, event).is_ok()
     }
 

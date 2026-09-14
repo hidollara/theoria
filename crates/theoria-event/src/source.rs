@@ -2,7 +2,7 @@ use std::fmt;
 
 use crate::{
     dispatch::{EventDispatcher, ImmediateDispatcher},
-    sink::Sink,
+    sink::EventSink,
 };
 
 /// A stream-like capability whose event type may vary with each publication's
@@ -18,14 +18,14 @@ pub trait EventSource: Sized {
     where
         F: for<'event> Fn(Self::Event<'event>) + 'static;
 
-    /// Pairs this Source with a Sink before selecting how generated Dispatches
+    /// Pairs this source with an event sink before selecting how generated Dispatches
     /// are executed.
     fn connect<S>(self, sink: S) -> EventConnection<Self, S> {
         EventConnection { source: self, sink }
     }
 }
 
-/// A Source and Sink pair awaiting an execution choice.
+/// An event source and sink pair awaiting an execution choice.
 pub struct EventConnection<S, K> {
     source: S,
     sink: K,
@@ -39,8 +39,9 @@ where
     /// Runs every generated Dispatch inline while its event remains valid.
     pub fn inline(self) -> Option<Subscription>
     where
-        for<'event> K: Sink<S::Event<'event>>,
-        for<'event> ImmediateDispatcher: EventDispatcher<<K as Sink<S::Event<'event>>>::Dispatch>,
+        for<'event> K: EventSink<S::Event<'event>>,
+        for<'event> ImmediateDispatcher:
+            EventDispatcher<<K as EventSink<S::Event<'event>>>::Dispatch>,
     {
         self.via(ImmediateDispatcher)
     }
@@ -52,8 +53,8 @@ where
     pub fn via<D>(self, dispatcher: D) -> Option<Subscription>
     where
         D: 'static,
-        for<'event> K: Sink<S::Event<'event>>,
-        for<'event> D: EventDispatcher<<K as Sink<S::Event<'event>>>::Dispatch>,
+        for<'event> K: EventSink<S::Event<'event>>,
+        for<'event> D: EventDispatcher<<K as EventSink<S::Event<'event>>>::Dispatch>,
     {
         let Self { source, sink } = self;
         source.subscribe(move |event| {

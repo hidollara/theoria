@@ -1,8 +1,8 @@
 use std::{cell::Cell, rc::Rc};
 
 use theoria_event::{
-    Dispatch, DispatchOutcome, EventHandler, EventSink, EventSource, FifoDispatcher,
-    ImmediateDispatcher, OwningSink, Sink, Subscription, channel,
+    Dispatch, DispatchOutcome, EventHandler, EventSink, EventSource, EventTarget, FifoDispatcher,
+    ImmediateDispatcher, OwningSink, Subscription, channel,
 };
 
 struct BorrowingSource<'value> {
@@ -25,7 +25,7 @@ impl Dispatch for BorrowedLengthDispatch<'_> {
     }
 }
 
-impl<'event> Sink<&'event str> for BorrowedLengthSink {
+impl<'event> EventSink<&'event str> for BorrowedLengthSink {
     type Dispatch = BorrowedLengthDispatch<'event>;
 
     fn send(&self, event: &'event str) -> Self::Dispatch {
@@ -52,7 +52,7 @@ impl Dispatch for OwnedDispatch {
     }
 }
 
-impl Sink<u32> for OwnedSink {
+impl EventSink<u32> for OwnedSink {
     type Dispatch = OwnedDispatch;
 
     fn send(&self, event: u32) -> Self::Dispatch {
@@ -80,7 +80,7 @@ fn a_user_defined_source_can_lend_a_non_static_event_inline() {
     let length = Rc::new(Cell::new(0));
     let output = Rc::clone(&length);
     let handler = EventHandler::new(move |value: usize| output.set(value));
-    let sink = EventSink::from(&handler).contramap_borrow(str::len);
+    let sink = EventTarget::from(&handler).contramap_borrow(str::len);
     let owned = String::from("temporary");
 
     let subscription = BorrowingSource { value: &owned }
@@ -121,7 +121,7 @@ fn a_dispatcher_accepts_a_sink_specific_dispatch_type() {
         .via(dispatcher.as_ref().clone())
         .expect("the Source is available");
 
-    assert!(EventSink::from(&provider).send_inline(7).is_ok());
+    assert!(EventTarget::from(&provider).send_inline(7).is_ok());
     assert_eq!(output.get(), 0);
     assert!(dispatcher.deliver_next());
     assert_eq!(output.get(), 7);

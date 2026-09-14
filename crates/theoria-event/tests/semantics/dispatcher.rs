@@ -4,7 +4,7 @@ use std::{
 };
 
 use theoria_event::{
-    Dispatch, DispatchOutcome, Dispatcher, EventDispatcher, EventHandler, EventSink, EventSource,
+    Dispatch, DispatchOutcome, Dispatcher, EventDispatcher, EventHandler, EventSource, EventTarget,
     FifoDispatcher, ImmediateDispatcher, OwningSink, SubmissionOutcome, channel,
 };
 
@@ -71,7 +71,7 @@ fn source_input_and_subscription_use_separate_dispatch_steps() {
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
-    let sink = EventSink::from(&handler);
+    let sink = EventTarget::from(&handler);
     let (provider, source) = channel::<u32>();
     source
         .connect(OwningSink::new(sink))
@@ -81,7 +81,7 @@ fn source_input_and_subscription_use_separate_dispatch_steps() {
 
     assert!(
         dispatcher_input
-            .submit(EventSink::from(&provider).send(7_u32))
+            .submit(EventTarget::from(&provider).send(7_u32))
             .is_ok()
     );
     assert!(dispatcher.deliver_next());
@@ -98,7 +98,7 @@ fn an_idle_dispatcher_reports_idle_without_delivering() {
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |event: u32| output.borrow_mut().push(event));
-    let sink = EventSink::from(&handler);
+    let sink = EventTarget::from(&handler);
 
     assert!(!dispatcher.has_pending());
     assert!(!dispatcher.deliver_next());
@@ -117,17 +117,17 @@ fn the_caller_can_stop_between_dispatches_in_a_cyclic_event_chain() {
     let (left_provider, left_source) = channel::<u32>();
     let (right_provider, right_source) = channel::<u32>();
     let _left_to_right = left_source
-        .connect(OwningSink::new(EventSink::from(&right_provider)))
+        .connect(OwningSink::new(EventTarget::from(&right_provider)))
         .via(dispatcher_input.clone())
         .expect("live provider");
     let _right_to_left = right_source
-        .connect(OwningSink::new(EventSink::from(&left_provider)))
+        .connect(OwningSink::new(EventTarget::from(&left_provider)))
         .via(dispatcher_input.clone())
         .expect("live provider");
 
     assert!(
         dispatcher_input
-            .submit(EventSink::from(&left_provider).send(1_u32))
+            .submit(EventTarget::from(&left_provider).send(1_u32))
             .is_ok()
     );
     for _ in 0..8 {

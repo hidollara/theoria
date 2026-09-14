@@ -5,7 +5,7 @@ use std::{
 };
 
 use theoria_component::UpdateContext;
-use theoria_event::EventSink;
+use theoria_event::EventTarget;
 
 use super::support::{DrainOutcome, HandlesEvent, TestDriver, TestRuntime, receive};
 
@@ -102,7 +102,7 @@ fn mount_context_mounts_a_child_that_can_read_its_owners_value() {
 
 struct DynamicOwner {
     child_events: Rc<RefCell<Vec<u32>>>,
-    exported_child: Rc<RefCell<Option<EventSink<u32>>>>,
+    exported_child: Rc<RefCell<Option<EventTarget<u32>>>>,
 }
 
 impl HandlesEvent for DynamicOwner {
@@ -220,7 +220,7 @@ impl Drop for DropLog {
 }
 
 #[test]
-fn dropping_a_root_sink_does_not_unmount_the_instance_owned_root() {
+fn dropping_a_root_target_does_not_unmount_the_instance_owned_root() {
     let order = Rc::new(RefCell::new(Vec::new()));
     let parent_order = Rc::clone(&order);
     let runtime = TestRuntime::new(|context| {
@@ -238,8 +238,8 @@ fn dropping_a_root_sink_does_not_unmount_the_instance_owned_root() {
         context.receive(|(): (), _context| {})
     });
 
-    let root_sink = runtime.event_sink().clone();
-    drop(root_sink);
+    let root_target = runtime.event_target().clone();
+    drop(root_target);
     assert!(order.borrow().is_empty());
     drop(runtime);
     assert_eq!(&*order.borrow(), &["child", "parent"]);
@@ -269,7 +269,7 @@ fn dropping_the_instance_destroys_owned_components_child_first() {
 }
 
 #[test]
-fn an_instance_without_a_root_sink_still_owns_its_component_tree() {
+fn an_instance_without_a_root_target_still_owns_its_component_tree() {
     let order = Rc::new(RefCell::new(Vec::new()));
     let root_order = Rc::clone(&order);
     let runtime = TestDriver::new(move |context| {
@@ -285,9 +285,9 @@ fn an_instance_without_a_root_sink_still_owns_its_component_tree() {
 }
 
 #[test]
-fn dropping_the_instance_invalidates_a_root_while_its_sink_remains() {
+fn dropping_the_instance_invalidates_a_root_while_its_target_remains() {
     let order = Rc::new(RefCell::new(Vec::new()));
-    let sink = {
+    let target = {
         let component_order = Rc::clone(&order);
         let output = Rc::new(RefCell::new(None));
         let mounted_output = Rc::clone(&output);
@@ -298,13 +298,13 @@ fn dropping_the_instance_invalidates_a_root_while_its_sink_remains() {
             });
             mounted_output.replace(Some(context.receive(|(): (), _context| {})));
         });
-        let sink = output.borrow_mut().take().expect("root input");
+        let target = output.borrow_mut().take().expect("root input");
         drop(runtime);
         assert_eq!(&*order.borrow(), &["root"]);
-        sink
+        target
     };
 
-    drop(sink);
+    drop(target);
     assert_eq!(&*order.borrow(), &["root"]);
 }
 

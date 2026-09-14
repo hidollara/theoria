@@ -2,13 +2,13 @@ use std::{fmt, marker::PhantomData};
 
 use crate::{
     dispatch::{Dispatch, DispatchOutcome},
-    sink::Sink,
+    sink::EventSink,
 };
 
-/// Adapts a Sink by converting its input when the resulting Dispatch runs.
+/// Adapts an event sink by converting its input when the resulting Dispatch runs.
 ///
 /// Sending `T` does not run `map`. The returned [`ContramapDispatch`] retains
-/// `T`, the conversion, and the underlying Sink until execution, so their
+/// `T`, the conversion, and the underlying event sink until execution, so their
 /// lifetimes and auto traits remain visible to a prospective Dispatcher.
 pub struct ContramapSink<S, M, E> {
     sink: S,
@@ -27,9 +27,9 @@ impl<S, M, E> ContramapSink<S, M, E> {
     }
 }
 
-impl<T, E, S, M> Sink<T> for ContramapSink<S, M, E>
+impl<T, E, S, M> EventSink<T> for ContramapSink<S, M, E>
 where
-    S: Sink<E> + Clone,
+    S: EventSink<E> + Clone,
     M: Fn(T) -> E + Clone,
 {
     type Dispatch = ContramapDispatch<S, M, T, E>;
@@ -62,7 +62,7 @@ impl<S, M, E> fmt::Debug for ContramapSink<S, M, E> {
     }
 }
 
-/// A Dispatch that converts `T` before invoking an underlying `Sink<E>`.
+/// A Dispatch that converts `T` before invoking an underlying [`EventSink<E>`].
 #[must_use = "a ContramapDispatch must be run, submitted, or intentionally discarded"]
 pub struct ContramapDispatch<S, M, T, E> {
     sink: S,
@@ -73,7 +73,7 @@ pub struct ContramapDispatch<S, M, T, E> {
 
 impl<S, M, T, E> Dispatch for ContramapDispatch<S, M, T, E>
 where
-    S: Sink<E>,
+    S: EventSink<E>,
     M: FnOnce(T) -> E,
 {
     fn run(self) -> DispatchOutcome {
@@ -92,10 +92,10 @@ impl<S, M, T, E> fmt::Debug for ContramapDispatch<S, M, T, E> {
     }
 }
 
-/// Adapts a Sink to own borrowed inputs before its Dispatch is built.
+/// Adapts an event sink to own borrowed inputs before its Dispatch is built.
 ///
-/// Unlike [`ContramapSink`], this conversion runs in [`Sink::send`]. The
-/// resulting Dispatch is exactly the underlying Sink's Dispatch and therefore
+/// Unlike [`ContramapSink`], this conversion runs in [`EventSink::send`]. The
+/// resulting Dispatch is exactly the underlying event sink's Dispatch and therefore
 /// does not retain the input borrow.
 pub struct OwningSink<S> {
     sink: S,
@@ -108,10 +108,10 @@ impl<S> OwningSink<S> {
     }
 }
 
-impl<'input, T, S> Sink<&'input T> for OwningSink<S>
+impl<'input, T, S> EventSink<&'input T> for OwningSink<S>
 where
     T: ToOwned + ?Sized,
-    S: Sink<T::Owned>,
+    S: EventSink<T::Owned>,
 {
     type Dispatch = S::Dispatch;
 

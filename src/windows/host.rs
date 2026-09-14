@@ -9,7 +9,7 @@ use std::{
 use crate::{
     animation::FrameScheduler,
     component::MountContext,
-    event::{EventSink, OwningSink},
+    event::{EventTarget, OwningSink},
     input::{
         pointer::{MovementThreshold, PointerEvent},
         scroll::ScrollEvent,
@@ -169,10 +169,10 @@ impl WindowHost {
 
 /// Component event inputs associated with one live native Window.
 struct WindowInputs {
-    surface: EventSink<SurfaceEvent>,
-    pointer: EventSink<PointerEvent>,
-    scroll: EventSink<ScrollEvent>,
-    close_requested: EventSink<CloseRequested>,
+    surface: EventTarget<SurfaceEvent>,
+    pointer: EventTarget<PointerEvent>,
+    scroll: EventTarget<ScrollEvent>,
+    close_requested: EventTarget<CloseRequested>,
 }
 
 impl WindowInputs {
@@ -187,7 +187,7 @@ impl WindowInputs {
         }
     }
 
-    fn publish_to<E: 'static>(sink: &EventSink<E>, event: E) {
+    fn publish_to<E: 'static>(sink: &EventTarget<E>, event: E) {
         debug_assert!(sink.send_inline(event).is_ok());
     }
 }

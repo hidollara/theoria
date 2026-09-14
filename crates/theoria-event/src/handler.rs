@@ -1,12 +1,12 @@
 use std::{cell::RefCell, fmt, rc::Rc};
 
-use crate::sink::{EventSink, SinkEndpoint};
+use crate::sink::{EventEndpoint, EventTarget};
 
 /// Uniquely owns a terminal event handler and acts as its endpoint.
 ///
-/// Borrowing a Handler as an [`EventSink`] creates a non-owning input
+/// Borrowing a Handler as an [`EventTarget`] creates a non-owning input
 /// capability. Dropping the Handler prevents pending Dispatches for any
-/// derived Sink from invoking its callback. Recursively sending to the same
+/// derived Target from invoking its callback. Recursively sending to the same
 /// Handler while its callback is running is a contract violation and panics;
 /// use a serializing Dispatcher when re-entry must be deferred.
 pub struct EventHandler<E: 'static> {
@@ -23,7 +23,7 @@ impl<E: 'static> EventHandler<E> {
     }
 }
 
-impl<E: 'static> From<&EventHandler<E>> for EventSink<E> {
+impl<E: 'static> From<&EventHandler<E>> for EventTarget<E> {
     fn from(handler: &EventHandler<E>) -> Self {
         Self::from_endpoint(Rc::downgrade(&handler.state))
     }
@@ -53,7 +53,7 @@ impl<E: 'static> HandlerState<E> {
     }
 }
 
-impl<E: 'static> SinkEndpoint for HandlerState<E> {
+impl<E: 'static> EventEndpoint for HandlerState<E> {
     type Event = E;
 
     fn receive(&self, event: E) {

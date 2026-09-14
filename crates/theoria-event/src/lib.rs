@@ -1,6 +1,6 @@
 //! Typed event sources, sinks, and dispatchers.
 //!
-//! A [`Sink`] turns one event into a concrete [`Dispatch`] without choosing
+//! An [`EventSink`] turns one event into a concrete [`Dispatch`] without choosing
 //! where or when it runs. An [`EventDispatcher`] states which Dispatch family
 //! it accepts; [`ImmediateDispatcher`] runs any Dispatch synchronously, while
 //! [`Dispatcher`] is a cloneable local capability for self-contained work and
@@ -29,6 +29,6 @@ pub use dispatch::{
 };
 pub use dispatcher::FifoDispatcher;
 pub use handler::EventHandler;
-pub use sink::{BorrowingEventSink, EventSink, Sink};
+pub use sink::{BorrowingEventSink, EventSink, EventTarget};
 pub use sink_adapter::{ContramapDispatch, ContramapSink, OwningSink};
 pub use source::{EventConnection, EventSource, Subscription};
