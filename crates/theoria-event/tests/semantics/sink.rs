@@ -5,9 +5,8 @@ use std::{
 
 use super::drain;
 use theoria_event::{
-    Dispatch, DispatchOutcome, Dispatcher, ErasedEventSink, EventDispatch, EventDispatcher,
-    EventHandler, EventSink, EventSource, EventTarget, FifoDispatcher, OwningSink,
-    SubmissionOutcome, channel,
+    Dispatch, DispatchOutcome, Dispatcher, EventDispatch, EventDispatcher, EventHandler, EventSink,
+    EventSource, EventTarget, FifoDispatcher, OwningSink, SubmissionOutcome, channel,
 };
 
 struct TestDispatcher {
@@ -48,7 +47,7 @@ fn dropping_a_target_during_generic_contramap_prevents_delivery() {
     let callback_handler = Rc::clone(&handler);
     let (provider, source) = channel::<u32>();
     source
-        .connect(OwningSink::new(sink.contramap(move |event| {
+        .connect(OwningSink::new(sink.clone().contramap(move |event| {
             callback_handler.borrow_mut().take();
             event
         })))
@@ -113,26 +112,45 @@ fn a_contramap_sink_converts_its_input_during_dispatch_execution() {
 }
 
 #[test]
-fn an_erased_event_sink_preserves_a_concrete_sinks_dispatch() {
+fn event_dispatch_erases_different_concrete_dispatch_types_at_a_storage_boundary() {
+    let values = Rc::new(RefCell::new(Vec::new()));
+    let first_output = Rc::clone(&values);
+    let first = EventHandler::new(move |value: u32| first_output.borrow_mut().push(value));
+    let second_output = Rc::clone(&values);
+    let second =
+        EventHandler::new(move |value: usize| second_output.borrow_mut().push(value as u32));
+
+    let dispatches = vec![
+        EventDispatch::erase(EventTarget::from(&first).send(3_u32)),
+        EventDispatch::erase(
+            EventTarget::from(&second)
+                .contramap(|value: String| value.len())
+                .send(String::from("seven")),
+        ),
+    ];
+    for dispatch in dispatches {
+        assert_eq!(dispatch.run(), DispatchOutcome::Delivered);
+    }
+
+    assert_eq!(&*values.borrow(), &[3, 5]);
+}
+
+#[test]
+fn an_adapted_sink_is_cloneable_when_its_sink_and_mapping_are_cloneable() {
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: usize| output.borrow_mut().push(value));
     let sink = EventTarget::from(&handler).contramap(|value: String| value.len());
-    let erased = ErasedEventSink::new(sink);
 
-    let dispatch = erased.send(String::from("erased"));
-    assert!(values.borrow().is_empty());
-    assert_eq!(dispatch.run(), DispatchOutcome::Delivered);
-    assert_eq!(&*values.borrow(), &[6]);
-}
-
-#[test]
-fn erasing_an_event_target_does_not_keep_its_endpoint_alive() {
-    let handler = EventHandler::new(|_: u32| {});
-    let erased = ErasedEventSink::new(EventTarget::from(&handler));
-    drop(handler);
-
-    assert_eq!(erased.send(7).run(), DispatchOutcome::SinkUnavailable);
+    assert_eq!(
+        sink.clone().send(String::from("first")).run(),
+        DispatchOutcome::Delivered
+    );
+    assert_eq!(
+        sink.send(String::from("second")).run(),
+        DispatchOutcome::Delivered
+    );
+    assert_eq!(&*values.borrow(), &[5, 6]);
 }
 
 #[test]

@@ -1,10 +1,10 @@
 use crate::{
     component::{Component, MountContext},
-    event::{ChannelSource, ErasedEventSink, EventSink, OwningSink},
+    event::{ChannelSource, EventSink, OwningSink},
     input::pointer::PointerEvent,
 };
 
-use super::{Click, ClickRecognizer};
+use super::{Click, ClickRecognizer, area::GestureSink};
 
 /// Component adapter that publishes clicks recognized from pointer input.
 ///
@@ -14,7 +14,7 @@ use super::{Click, ClickRecognizer};
 pub struct ClickGesture {
     recognizer: ClickRecognizer,
     pointers: ChannelSource<PointerEvent>,
-    clicks: ErasedEventSink<Click>,
+    clicks: GestureSink<Click>,
 }
 
 impl ClickGesture {
@@ -30,7 +30,7 @@ impl ClickGesture {
         Self {
             recognizer,
             pointers,
-            clicks: ErasedEventSink::new(clicks),
+            clicks: GestureSink::new(clicks),
         }
     }
 }

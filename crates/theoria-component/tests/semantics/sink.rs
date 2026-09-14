@@ -4,7 +4,7 @@ use std::{
 };
 
 use theoria_component::UpdateContext;
-use theoria_event::{ErasedEventSink, EventSink};
+use theoria_event::EventSink;
 
 use super::support::{DrainOutcome, HandlesEvent, TestRuntime, receive};
 
@@ -18,6 +18,8 @@ fn enqueue_root<E: 'static>(runtime: &TestRuntime<E>, event: E) -> bool {
 
 #[derive(Clone, Copy)]
 struct RoutedValue(u32);
+
+type RoutedTarget = dyn Fn(RoutedValue, &mut UpdateContext<'_>) -> bool;
 
 enum LeftEvent {
     Routed(RoutedValue),
@@ -65,7 +67,7 @@ impl HandlesEvent for RightRecorder {
 }
 
 struct ValueRouter {
-    targets: Vec<ErasedEventSink<RoutedValue>>,
+    targets: Vec<Box<RoutedTarget>>,
 }
 
 impl HandlesEvent for ValueRouter {
@@ -73,25 +75,25 @@ impl HandlesEvent for ValueRouter {
 
     fn handle(&mut self, event: Self::Event, context: &mut UpdateContext<'_>) {
         for target in &self.targets {
-            assert!(context.send(target, RoutedValue(event)).is_ok());
+            assert!(target(RoutedValue(event), context));
         }
     }
 }
 
 #[test]
-fn erased_event_sinks_store_heterogeneous_adapted_sinks() {
+fn heterogeneous_sink_operations_can_be_erased_at_their_storage_boundary() {
     let values = Rc::new(RefCell::new(Vec::new()));
     let mounted_values = Rc::clone(&values);
     let mut runtime = TestRuntime::new(move |context| {
         let left_values = Rc::clone(&mounted_values);
-        let left = receive(context, LeftRecorder(left_values));
-        let right = receive(context, RightRecorder(mounted_values));
+        let left = receive(context, LeftRecorder(left_values)).accepting();
+        let right = receive(context, RightRecorder(mounted_values)).accepting();
         receive(
             context,
             ValueRouter {
                 targets: vec![
-                    ErasedEventSink::new(left.accepting()),
-                    ErasedEventSink::new(right.accepting()),
+                    Box::new(move |event, context| context.send(&left, event).is_ok()),
+                    Box::new(move |event, context| context.send(&right, event).is_ok()),
                 ],
             },
         )
@@ -103,7 +105,7 @@ fn erased_event_sinks_store_heterogeneous_adapted_sinks() {
 }
 
 struct TargetProbe {
-    target: ErasedEventSink<RoutedValue>,
+    target: Box<RoutedTarget>,
     result: Rc<Cell<Option<bool>>>,
 }
 
@@ -112,7 +114,7 @@ impl HandlesEvent for TargetProbe {
 
     fn handle(&mut self, (): (), context: &mut UpdateContext<'_>) {
         self.result
-            .set(Some(context.send(&self.target, RoutedValue(1)).is_ok()));
+            .set(Some((self.target)(RoutedValue(1), context)));
     }
 }
 
@@ -130,17 +132,16 @@ fn an_adapted_event_sink_does_not_keep_an_unmounted_component_alive() {
             let target = receive(context, RightRecorder(mounted_target_events));
             child_target.replace(Some(target));
         });
-        let erased = ErasedEventSink::new(
-            mounted_target
-                .borrow()
-                .as_ref()
-                .expect("child construction exports its test input")
-                .accepting(),
-        );
+        let target = mounted_target
+            .borrow()
+            .as_ref()
+            .expect("child construction exports its test input")
+            .clone()
+            .accepting();
         receive(
             context,
             TargetProbe {
-                target: erased,
+                target: Box::new(move |event, context| context.send(&target, event).is_ok()),
                 result: probe_result,
             },
         )

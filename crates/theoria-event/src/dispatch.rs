@@ -204,7 +204,11 @@ impl<'event> EventDispatch<'event> {
         self.operation.run()
     }
 
-    pub(crate) fn erase<D>(dispatch: D) -> Self
+    /// Erases the concrete type of `dispatch` while preserving its lifetime.
+    ///
+    /// This is useful at heterogeneous storage boundaries. Code that can keep
+    /// a concrete Dispatch type should retain it instead.
+    pub fn erase<D>(dispatch: D) -> Self
     where
         D: Dispatch + 'event,
     {

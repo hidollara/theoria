@@ -1,16 +1,16 @@
 use crate::{
     component::{Component, MountContext},
-    event::{ChannelSource, ErasedEventSink, EventSink, OwningSink},
+    event::{ChannelSource, EventSink, OwningSink},
     input::pointer::PointerEvent,
 };
 
-use super::{Drag, DragRecognizer};
+use super::{Drag, DragRecognizer, area::GestureSink};
 
 /// Component adapter that sends recognized drags to a composed output Sink.
 pub struct DragGesture {
     recognizer: DragRecognizer,
     pointers: ChannelSource<PointerEvent>,
-    drags: ErasedEventSink<Drag>,
+    drags: GestureSink<Drag>,
 }
 
 impl DragGesture {
@@ -26,7 +26,7 @@ impl DragGesture {
         Self {
             recognizer,
             pointers,
-            drags: ErasedEventSink::new(drags),
+            drags: GestureSink::new(drags),
         }
     }
 }

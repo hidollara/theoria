@@ -5,9 +5,8 @@
 //! it accepts; [`ImmediateDispatcher`] runs any Dispatch synchronously, while
 //! [`Dispatcher`] is a cloneable local capability for self-contained work and
 //! [`FifoDispatcher`] provides serialized FIFO execution.
-//! Concrete sinks retain their Dispatch type and capabilities. Use
-//! [`ErasedEventSink`] only where different concrete sinks must be stored behind
-//! one type.
+//! Concrete sinks retain their Dispatch type and capabilities. Code that must
+//! store heterogeneous sinks chooses and owns its type-erasure boundary.
 //!
 //! [`channel`] creates an owning [`EventProvider`] and its non-owning
 //! [`ChannelSource`]. A Channel Source lends each publication; an
@@ -33,8 +32,8 @@ pub use dispatch::{
 pub use dispatcher::FifoDispatcher;
 pub use handler::EventHandler;
 pub use sink::{
-    ContramapDispatch, ContramapFilterDispatch, ContramapFilterSink, ContramapSink,
-    ErasedEventSink, EventSink, FilterDispatch, FilterSink, OwningSink,
+    ContramapDispatch, ContramapFilterDispatch, ContramapFilterSink, ContramapSink, EventSink,
+    FilterDispatch, FilterSink, OwningSink,
 };
 pub use source::{EventConnection, EventSource, Subscription};
 pub use target::EventTarget;

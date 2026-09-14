@@ -1,14 +1,52 @@
+use std::{fmt, rc::Rc};
+
 use crate::{
     component::UpdateContext,
-    event::{ErasedEventSink, EventSink},
+    event::{EventDispatch, EventSink},
     geometry::Point,
     interaction::HitRegion,
     transform::Projective2,
 };
 
+type StoredSend<E> = dyn Fn(E) -> EventDispatch<'static>;
+
+/// The gesture layer's shared storage form for heterogeneous event sinks.
+#[derive(Clone)]
+pub(super) struct GestureSink<E> {
+    send: Rc<StoredSend<E>>,
+}
+
+impl<E> GestureSink<E> {
+    pub(super) fn new<S>(sink: S) -> Self
+    where
+        S: EventSink<E> + 'static,
+        S::Dispatch: 'static,
+    {
+        Self {
+            send: Rc::new(move |event| EventDispatch::erase(sink.send(event))),
+        }
+    }
+}
+
+impl<E> EventSink<E> for GestureSink<E> {
+    type Dispatch = EventDispatch<'static>;
+
+    fn send(&self, event: E) -> Self::Dispatch {
+        (self.send)(event)
+    }
+}
+
+impl<E> fmt::Debug for GestureSink<E> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("GestureSink")
+            .finish_non_exhaustive()
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(super) struct GestureArea<E: 'static> {
-    sink: ErasedEventSink<E>,
+    sink: GestureSink<E>,
     region: HitRegion,
     local_to_parent: Projective2,
 }
@@ -20,7 +58,7 @@ impl<E: 'static> GestureArea<E> {
         S::Dispatch: 'static,
     {
         Self {
-            sink: ErasedEventSink::new(sink),
+            sink: GestureSink::new(sink),
             region,
             local_to_parent: Projective2::IDENTITY,
         }

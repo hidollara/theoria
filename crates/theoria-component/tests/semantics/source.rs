@@ -135,7 +135,7 @@ fn sources_with_the_same_event_type_keep_distinct_identities() {
         let (right_source, right) = context.event_source::<u32>();
         context.connect(
             left_source,
-            OwningSink::new(target.contramap(|value| format!("left:{value}"))),
+            OwningSink::new(target.clone().contramap(|value| format!("left:{value}"))),
         );
         context.connect(
             right_source,

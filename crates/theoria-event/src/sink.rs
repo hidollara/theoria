@@ -1,6 +1,6 @@
-use std::{fmt, marker::PhantomData, rc::Rc};
+use std::{fmt, marker::PhantomData};
 
-use crate::dispatch::{Dispatch, DispatchOutcome, EventDispatch};
+use crate::dispatch::{Dispatch, DispatchOutcome};
 
 /// A typed event destination that turns each send into one Dispatch.
 ///
@@ -13,12 +13,12 @@ pub trait EventSink<E> {
     fn send(&self, event: E) -> Self::Dispatch;
 
     /// Accepts `T` by converting it into this sink's `E` during execution.
-    fn contramap<T, M>(&self, map: M) -> ContramapSink<Self, M, E>
+    fn contramap<T, M>(self, map: M) -> ContramapSink<Self, M, E>
     where
         Self: Clone + Sized,
         M: Fn(T) -> E + Clone,
     {
-        ContramapSink::new(self.clone(), map)
+        ContramapSink::new(self, map)
     }
 
     /// Accepts a borrowed `T` by converting it into this sink's `E` during
@@ -26,12 +26,12 @@ pub trait EventSink<E> {
     ///
     /// This is the higher-ranked counterpart of [`Self::contramap`], allowing
     /// one adapter to accept every lifetime of `&T`.
-    fn contramap_borrow<T: ?Sized, M>(&self, map: M) -> ContramapSink<Self, M, E>
+    fn contramap_borrow<T: ?Sized, M>(self, map: M) -> ContramapSink<Self, M, E>
     where
         Self: Clone + Sized,
         M: for<'event> Fn(&'event T) -> E + Clone,
     {
-        ContramapSink::new(self.clone(), map)
+        ContramapSink::new(self, map)
     }
 
     /// Accepts `T` by optionally converting it into this sink's `E` during
@@ -39,33 +39,33 @@ pub trait EventSink<E> {
     ///
     /// Returning `None` completes the Dispatch as delivered without invoking
     /// the underlying sink.
-    fn contramap_filter<T, M>(&self, map: M) -> ContramapFilterSink<Self, M, E>
+    fn contramap_filter<T, M>(self, map: M) -> ContramapFilterSink<Self, M, E>
     where
         Self: Clone + Sized,
         M: Fn(T) -> Option<E> + Clone,
     {
-        ContramapFilterSink::new(self.clone(), map)
+        ContramapFilterSink::new(self, map)
     }
 
     /// Accepts only values satisfying `predicate`.
     ///
     /// A rejected value completes the Dispatch as delivered without invoking
     /// the underlying sink.
-    fn filter<P>(&self, predicate: P) -> FilterSink<Self, P>
+    fn filter<P>(self, predicate: P) -> FilterSink<Self, P>
     where
         Self: Clone + Sized,
         P: Fn(&E) -> bool + Clone,
     {
-        FilterSink::new(self.clone(), predicate)
+        FilterSink::new(self, predicate)
     }
 
     /// Accepts every `T: Into<E>`.
-    fn accepting<T>(&self) -> ContramapSink<Self, fn(T) -> E, E>
+    fn accepting<T>(self) -> ContramapSink<Self, fn(T) -> E, E>
     where
         Self: Clone + Sized,
         T: Into<E>,
     {
-        ContramapSink::new(self.clone(), into_event::<T, E>)
+        ContramapSink::new(self, into_event::<T, E>)
     }
 }
 
@@ -81,59 +81,6 @@ where
 
     fn send(&self, event: E) -> Self::Dispatch {
         EventSink::send(*self, event)
-    }
-}
-
-type ErasedSend<E> = dyn Fn(E) -> EventDispatch<'static>;
-
-/// A cloneable, type-erased event sink.
-///
-/// Unlike an endpoint [`EventTarget`], this type owns the concrete sink it
-/// erases. Use it where concrete sink types must share one stored type; APIs
-/// that only send an event should accept an `impl EventSink<E>` directly.
-///
-/// [`EventTarget`]: crate::target::EventTarget
-pub struct ErasedEventSink<E> {
-    send: Rc<ErasedSend<E>>,
-}
-
-impl<E> ErasedEventSink<E> {
-    /// Erases `sink` and its self-contained Dispatch type.
-    pub fn new<S>(sink: S) -> Self
-    where
-        S: EventSink<E> + 'static,
-        S::Dispatch: 'static,
-    {
-        Self {
-            send: Rc::new(move |event| {
-                let dispatch = sink.send(event);
-                EventDispatch::new(move || dispatch.run())
-            }),
-        }
-    }
-}
-
-impl<E> EventSink<E> for ErasedEventSink<E> {
-    type Dispatch = EventDispatch<'static>;
-
-    fn send(&self, event: E) -> Self::Dispatch {
-        (self.send)(event)
-    }
-}
-
-impl<E> Clone for ErasedEventSink<E> {
-    fn clone(&self) -> Self {
-        Self {
-            send: Rc::clone(&self.send),
-        }
-    }
-}
-
-impl<E> fmt::Debug for ErasedEventSink<E> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("ErasedEventSink")
-            .finish_non_exhaustive()
     }
 }
 
