@@ -15,6 +15,11 @@ type CompletionFn = Box<dyn FnOnce(DispatchOutcome)>;
 pub trait Dispatch: Sized {
     /// Runs this operation exactly once.
     fn run(self) -> DispatchOutcome;
+
+    /// Attaches local cancellation and completion observation to this Dispatch.
+    fn tracked(self) -> (TrackedDispatch<Self>, DispatchReceipt) {
+        TrackedDispatch::new(self)
+    }
 }
 
 /// The result of running one accepted event Dispatch.
@@ -185,37 +190,18 @@ impl fmt::Debug for DispatchReceipt {
 #[must_use = "an EventDispatch must be run, submitted, or intentionally discarded"]
 pub struct EventDispatch<'event> {
     operation: DispatchOperation<'event>,
-    control: DispatchControlGuard,
 }
 
 impl<'event> EventDispatch<'event> {
     pub(crate) fn new(operation: impl FnOnce() -> DispatchOutcome + 'event) -> Self {
         Self {
             operation: DispatchOperation::Scoped(Box::new(operation)),
-            control: DispatchControlGuard::untracked(),
         }
-    }
-
-    /// Attaches observable cancellation and completion state.
-    pub fn tracked(mut self) -> (Self, DispatchReceipt) {
-        debug_assert!(self.control.0.is_none());
-        let control = Rc::new(DispatchControl::new());
-        self.control = DispatchControlGuard::tracked(Rc::clone(&control));
-        (self, DispatchReceipt { control })
     }
 
     /// Runs this Sink invocation exactly once.
     pub fn run(self) -> DispatchOutcome {
-        let EventDispatch { operation, control } = self;
-        let Some(control) = control.disarm() else {
-            return operation.run();
-        };
-        if !control.start() {
-            return DispatchOutcome::Cancelled;
-        }
-        let outcome = operation.run();
-        control.complete(outcome);
-        outcome
+        self.operation.run()
     }
 
     pub(crate) fn erase<D>(dispatch: D) -> Self
@@ -231,7 +217,6 @@ impl<'event> EventDispatch<'event> {
     {
         EventDispatch {
             operation: DispatchOperation::Recoverable(Box::new(ConcreteDispatch(dispatch))),
-            control: DispatchControlGuard::untracked(),
         }
     }
 }
@@ -241,8 +226,7 @@ impl EventDispatch<'static> {
     where
         D: Dispatch + 'static,
     {
-        let EventDispatch { operation, control } = self;
-        drop(control.disarm());
+        let EventDispatch { operation } = self;
         let DispatchOperation::Recoverable(operation) = operation else {
             panic!("a rejecting Dispatcher must return its original Dispatch");
         };
@@ -263,6 +247,51 @@ impl fmt::Debug for EventDispatch<'_> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("EventDispatch")
+            .finish_non_exhaustive()
+    }
+}
+
+/// A Dispatch with locally observable cancellation and completion state.
+///
+/// Tracking uses local shared state and therefore does not make a Dispatch
+/// suitable for crossing threads. The wrapped Dispatch otherwise retains its
+/// concrete type and lifetime.
+#[must_use = "a TrackedDispatch must be run, submitted, or intentionally discarded"]
+pub struct TrackedDispatch<D: Dispatch> {
+    dispatch: D,
+    control: DispatchControlGuard,
+}
+
+impl<D: Dispatch> TrackedDispatch<D> {
+    fn new(dispatch: D) -> (Self, DispatchReceipt) {
+        let control = Rc::new(DispatchControl::new());
+        (
+            Self {
+                dispatch,
+                control: DispatchControlGuard::new(Rc::clone(&control)),
+            },
+            DispatchReceipt { control },
+        )
+    }
+}
+
+impl<D: Dispatch> Dispatch for TrackedDispatch<D> {
+    fn run(self) -> DispatchOutcome {
+        let Self { dispatch, control } = self;
+        let control = control.disarm();
+        if !control.start() {
+            return DispatchOutcome::Cancelled;
+        }
+        let outcome = dispatch.run();
+        control.complete(outcome);
+        outcome
+    }
+}
+
+impl<D: Dispatch> fmt::Debug for TrackedDispatch<D> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TrackedDispatch")
             .finish_non_exhaustive()
     }
 }
@@ -373,16 +402,14 @@ impl From<DispatchState> for DispatchStatus {
 struct DispatchControlGuard(Option<Rc<DispatchControl>>);
 
 impl DispatchControlGuard {
-    fn untracked() -> Self {
-        Self(None)
-    }
-
-    fn tracked(control: Rc<DispatchControl>) -> Self {
+    fn new(control: Rc<DispatchControl>) -> Self {
         Self(Some(control))
     }
 
-    fn disarm(mut self) -> Option<Rc<DispatchControl>> {
-        self.0.take()
+    fn disarm(mut self) -> Rc<DispatchControl> {
+        self.0
+            .take()
+            .expect("a tracked Dispatch retains its control until execution")
     }
 }
 

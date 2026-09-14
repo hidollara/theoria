@@ -8,7 +8,7 @@ use super::drain;
 use theoria_event::{
     Dispatch, DispatchOutcome, DispatchReceipt, DispatchStatus, Dispatcher, EventDispatch,
     EventDispatcher, EventHandler, EventSink, EventSource, FifoDispatcher, SubmissionOutcome,
-    channel,
+    TrackedDispatch, channel,
 };
 
 struct TestDispatcher {
@@ -51,7 +51,7 @@ fn submit_tracked<E: 'static>(
     dispatcher: &Dispatcher,
     sink: impl Into<EventSink<E>>,
     event: E,
-) -> Result<DispatchReceipt, EventDispatch<'static>> {
+) -> Result<DispatchReceipt, TrackedDispatch<EventDispatch<'static>>> {
     let (dispatch, receipt) = sink.into().send(event).tracked();
     dispatcher.submit(dispatch).map(|_| receipt)
 }

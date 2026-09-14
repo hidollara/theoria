@@ -5,8 +5,8 @@ use std::{
 
 use theoria_component::ComponentInstance;
 use theoria_event::{
-    BridgeProgress, DispatchOutcome, Dispatcher, EventSink, FifoDispatcher, ImmediateDispatcher,
-    SubmissionOutcome, bridge,
+    BridgeProgress, DispatchOutcome, DispatchStatus, Dispatcher, EventSink, FifoDispatcher,
+    ImmediateDispatcher, SubmissionOutcome, bridge,
 };
 
 #[test]
@@ -220,6 +220,24 @@ fn an_instance_can_send_to_a_sink_with_its_own_dispatch_type() {
         SubmissionOutcome::Deferred
     );
     assert!(dispatcher.deliver_next());
+    assert_eq!(bridge.forward_next(), BridgeProgress::Forwarded);
+}
+
+#[test]
+fn an_instance_can_track_a_sink_specific_dispatch() {
+    let mut dispatcher = FifoDispatcher::new();
+    let instance = ComponentInstance::new(&dispatcher, |_| {});
+    let (bridge, sink) = bridge();
+
+    let receipt = instance
+        .send_tracked(&sink, 7_u32)
+        .expect("the default Dispatcher accepts the tracked Bridge Dispatch");
+    assert_eq!(receipt.status(), DispatchStatus::Pending);
+    assert!(dispatcher.deliver_next());
+    assert_eq!(
+        receipt.status(),
+        DispatchStatus::Finished(DispatchOutcome::Delivered)
+    );
     assert_eq!(bridge.forward_next(), BridgeProgress::Forwarded);
 }
 

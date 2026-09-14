@@ -25,7 +25,7 @@ pub use channel::{
 };
 pub use dispatch::{
     Dispatch, DispatchOutcome, DispatchReceipt, DispatchStatus, Dispatcher, EventDispatch,
-    EventDispatcher, ImmediateDispatcher, SubmissionOutcome,
+    EventDispatcher, ImmediateDispatcher, SubmissionOutcome, TrackedDispatch,
 };
 pub use dispatcher::FifoDispatcher;
 pub use handler::EventHandler;

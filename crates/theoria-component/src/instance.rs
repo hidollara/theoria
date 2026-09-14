@@ -1,8 +1,8 @@
 use std::{fmt, rc::Rc};
 
 use theoria_event::{
-    Dispatch, DispatchOutcome, DispatchReceipt, Dispatcher, EventDispatch, EventDispatcher,
-    EventSink, Sink, SubmissionOutcome,
+    Dispatch, DispatchOutcome, DispatchReceipt, Dispatcher, EventDispatcher, Sink,
+    SubmissionOutcome, TrackedDispatch,
 };
 use theoria_reactive::{Reactive, ReactiveError};
 
@@ -73,12 +73,16 @@ impl ComponentInstance {
     }
 
     /// Sends one tracked event through this Instance's default Dispatcher.
-    pub fn send_tracked<E: 'static>(
+    pub fn send_tracked<E, S>(
         &self,
-        sink: impl Into<EventSink<E>>,
+        sink: S,
         event: E,
-    ) -> Result<DispatchReceipt, EventDispatch<'static>> {
-        let (dispatch, receipt) = sink.into().send(event).tracked();
+    ) -> Result<DispatchReceipt, TrackedDispatch<S::Dispatch>>
+    where
+        S: Sink<E>,
+        S::Dispatch: 'static,
+    {
+        let (dispatch, receipt) = sink.send(event).tracked();
         self.tree
             .default_dispatcher()
             .submit(dispatch)
@@ -86,14 +90,18 @@ impl ComponentInstance {
     }
 
     /// Sends one tracked event through an explicitly selected Dispatcher.
-    pub fn send_tracked_via<E: 'static>(
+    pub fn send_tracked_via<E, S, D>(
         &self,
-        dispatcher: impl AsRef<Dispatcher>,
-        sink: impl Into<EventSink<E>>,
+        dispatcher: &D,
+        sink: S,
         event: E,
-    ) -> Result<DispatchReceipt, EventDispatch<'static>> {
-        let (dispatch, receipt) = sink.into().send(event).tracked();
-        dispatcher.as_ref().submit(dispatch).map(|_| receipt)
+    ) -> Result<DispatchReceipt, TrackedDispatch<S::Dispatch>>
+    where
+        S: Sink<E>,
+        D: EventDispatcher<TrackedDispatch<S::Dispatch>>,
+    {
+        let (dispatch, receipt) = sink.send(event).tracked();
+        dispatcher.submit(dispatch).map(|_| receipt)
     }
 
     /// Runs pending and stale Effects at a caller-selected synchronization boundary.

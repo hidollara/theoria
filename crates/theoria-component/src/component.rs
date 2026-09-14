@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use theoria_event::{
-    ChannelSource, Dispatch, DispatchOutcome, DispatchReceipt, Dispatcher, EventDispatch,
-    EventDispatcher, EventHandler, EventSink, EventSource, Sink, SubmissionOutcome, channel,
+    ChannelSource, Dispatch, DispatchOutcome, DispatchReceipt, Dispatcher, EventDispatcher,
+    EventHandler, EventSink, EventSource, Sink, SubmissionOutcome, TrackedDispatch, channel,
 };
 use theoria_reactive::{
     Computed, Effect, ReadContext, SnapshotState, State, StateSetter, WriteContext,
@@ -293,12 +293,16 @@ impl<'delivery> UpdateContext<'delivery> {
     }
 
     /// Sends one tracked event through this Component tree's default Dispatcher.
-    pub fn send_tracked<E: 'static>(
+    pub fn send_tracked<E, S>(
         &mut self,
-        sink: impl Into<EventSink<E>>,
+        sink: S,
         event: E,
-    ) -> Result<DispatchReceipt, EventDispatch<'static>> {
-        let (dispatch, receipt) = sink.into().send(event).tracked();
+    ) -> Result<DispatchReceipt, TrackedDispatch<S::Dispatch>>
+    where
+        S: Sink<E>,
+        S::Dispatch: 'static,
+    {
+        let (dispatch, receipt) = sink.send(event).tracked();
         self.tree
             .default_dispatcher()
             .submit(dispatch)
@@ -306,14 +310,18 @@ impl<'delivery> UpdateContext<'delivery> {
     }
 
     /// Sends one tracked event through an explicitly selected Dispatcher.
-    pub fn send_tracked_via<E: 'static>(
+    pub fn send_tracked_via<E, S, D>(
         &mut self,
-        dispatcher: impl AsRef<Dispatcher>,
-        sink: impl Into<EventSink<E>>,
+        dispatcher: &D,
+        sink: S,
         event: E,
-    ) -> Result<DispatchReceipt, EventDispatch<'static>> {
-        let (dispatch, receipt) = sink.into().send(event).tracked();
-        dispatcher.as_ref().submit(dispatch).map(|_| receipt)
+    ) -> Result<DispatchReceipt, TrackedDispatch<S::Dispatch>>
+    where
+        S: Sink<E>,
+        D: EventDispatcher<TrackedDispatch<S::Dispatch>>,
+    {
+        let (dispatch, receipt) = sink.send(event).tracked();
+        dispatcher.submit(dispatch).map(|_| receipt)
     }
 
     /// Replaces State or SnapshotState while handling the current event.
