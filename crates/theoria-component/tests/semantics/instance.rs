@@ -18,13 +18,17 @@ impl<D: Dispatch> EventDispatcher<D> for TestImmediateDispatcher {
     }
 }
 
+fn immediate_dispatcher() -> Dispatcher {
+    Dispatcher::new(TestImmediateDispatcher)
+}
+
 #[test]
 fn handlers_do_not_run_until_root_construction_finishes() {
     let input = Rc::new(RefCell::new(None));
     let mounted_input = Rc::clone(&input);
     let runs = Rc::new(Cell::new(0));
     let handler_runs = Rc::clone(&runs);
-    let instance = ComponentInstance::new(Dispatcher::immediate(), move |context| {
+    let instance = ComponentInstance::new(immediate_dispatcher(), move |context| {
         let input = context.receive(move |(), _context| {
             handler_runs.set(handler_runs.get() + 1);
         });
@@ -53,7 +57,7 @@ fn child_handlers_remain_inactive_until_root_construction_finishes() {
     let mounted_input = Rc::clone(&input);
     let runs = Rc::new(Cell::new(0));
     let child_runs = Rc::clone(&runs);
-    let instance = ComponentInstance::new(Dispatcher::immediate(), move |context| {
+    let instance = ComponentInstance::new(immediate_dispatcher(), move |context| {
         context.mount_with(|child| {
             let input = child.receive(move |(), _context| {
                 child_runs.set(child_runs.get() + 1);
@@ -238,13 +242,13 @@ fn an_instance_can_track_a_sink_specific_dispatch() {
     let instance = ComponentInstance::new(&dispatcher, |_| {});
     let (bridge, sink) = bridge();
 
-    let receipt = instance
+    let handle = instance
         .send_tracked(&sink, 7_u32)
         .expect("the default Dispatcher accepts the tracked Bridge Dispatch");
-    assert_eq!(receipt.status(), DispatchStatus::Pending);
+    assert_eq!(handle.status(), DispatchStatus::Pending);
     assert!(dispatcher.deliver_next());
     assert_eq!(
-        receipt.status(),
+        handle.status(),
         DispatchStatus::Finished(DispatchOutcome::Delivered)
     );
     assert_eq!(bridge.forward_next(), BridgeProgress::Forwarded);
@@ -341,7 +345,7 @@ fn unmount_deactivates_descendants_before_the_current_handler_returns() {
     let mounted_root_input = Rc::clone(&root_input);
     let child_runs = Rc::new(Cell::new(0));
     let child_output = Rc::clone(&child_runs);
-    let instance = ComponentInstance::new(Dispatcher::immediate(), move |context| {
+    let instance = ComponentInstance::new(immediate_dispatcher(), move |context| {
         let mut child_input = None;
         context.mount_with(|context| {
             child_input = Some(context.receive(move |(), _context| {

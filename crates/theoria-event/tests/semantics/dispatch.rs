@@ -6,7 +6,7 @@ use std::{
 
 use super::drain;
 use theoria_event::{
-    Dispatch, DispatchOutcome, DispatchReceipt, DispatchStatus, Dispatcher, EventDispatch,
+    Dispatch, DispatchHandle, DispatchOutcome, DispatchStatus, Dispatcher, EventDispatch,
     EventDispatcher, EventHandler, EventSource, EventTarget, FifoDispatcher, OwningSink,
     SubmissionOutcome, TrackedDispatch, channel,
 };
@@ -52,9 +52,10 @@ fn submit_tracked<E: 'static>(
     dispatcher: &Dispatcher,
     sink: impl Into<EventTarget<E>>,
     event: E,
-) -> Result<DispatchReceipt, TrackedDispatch<EventDispatch<'static>>> {
-    let (dispatch, receipt) = sink.into().send(event).tracked();
-    dispatcher.submit(dispatch).map(|_| receipt)
+) -> Result<DispatchHandle, TrackedDispatch<EventDispatch<'static>>> {
+    let dispatch = sink.into().send(event).tracked();
+    let handle = dispatch.handle();
+    dispatcher.submit(dispatch).map(|_| handle)
 }
 
 impl EventDispatcher<EventDispatch<'static>> for RejectingDispatcher {
@@ -131,7 +132,13 @@ fn tracked_rejection_returns_the_original_dispatch() {
 
     let dispatch =
         submit_tracked(&event_dispatcher, &sink, 7_u32).expect_err("the Dispatcher rejects work");
+    let handle = dispatch.handle();
+    assert_eq!(handle.status(), DispatchStatus::Pending);
     assert_eq!(dispatch.run(), DispatchOutcome::Delivered);
+    assert_eq!(
+        handle.status(),
+        DispatchStatus::Finished(DispatchOutcome::Delivered)
+    );
 }
 
 #[test]
@@ -158,15 +165,15 @@ fn a_tracked_dispatch_can_be_cancelled_before_execution() {
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
     let sink = EventTarget::from(&handler);
 
-    let receipt =
+    let handle =
         submit_tracked(&event_dispatcher, &sink, 7_u32).expect("the Dispatcher accepts work");
-    assert_eq!(receipt.status(), DispatchStatus::Pending);
-    assert!(receipt.cancel());
+    assert_eq!(handle.status(), DispatchStatus::Pending);
+    assert!(handle.cancel());
     assert_eq!(
-        receipt.status(),
+        handle.status(),
         DispatchStatus::Finished(DispatchOutcome::Cancelled)
     );
-    assert!(!receipt.cancel());
+    assert!(!handle.cancel());
     let outcome = dispatcher
         .pending
         .borrow_mut()
@@ -175,7 +182,7 @@ fn a_tracked_dispatch_can_be_cancelled_before_execution() {
         .run();
     assert_eq!(outcome, DispatchOutcome::Cancelled);
     assert_eq!(
-        receipt.status(),
+        handle.status(),
         DispatchStatus::Finished(DispatchOutcome::Cancelled)
     );
     assert!(values.borrow().is_empty());
@@ -203,7 +210,7 @@ fn execution_reports_when_its_sink_was_dropped() {
 }
 
 #[test]
-fn dropping_a_receipt_does_not_cancel_its_dispatch() {
+fn dropping_a_handle_does_not_cancel_its_dispatch() {
     let mut dispatcher = FifoDispatcher::new();
     let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
     let values = Rc::new(RefCell::new(Vec::new()));
@@ -211,25 +218,26 @@ fn dropping_a_receipt_does_not_cancel_its_dispatch() {
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
     let sink = EventTarget::from(&handler);
 
-    let receipt =
+    let handle =
         submit_tracked(&event_dispatcher, &sink, 7_u32).expect("the Dispatcher accepts work");
-    drop(receipt);
+    drop(handle);
     assert!(dispatcher.deliver_next());
     assert_eq!(&*values.borrow(), &[7]);
 }
 
 #[test]
-fn an_immediate_dispatcher_returns_a_finished_receipt() {
+fn running_a_tracked_dispatch_finishes_its_handle() {
     let handler = EventHandler::new(|_: u32| {});
+    let dispatch = EventTarget::from(&handler).send(7_u32).tracked();
+    let handle = dispatch.handle();
 
-    let receipt = submit_tracked(&Dispatcher::immediate(), &handler, 7_u32)
-        .expect("the immediate Dispatcher accepts the Dispatch");
+    assert_eq!(dispatch.run(), DispatchOutcome::Delivered);
 
     assert_eq!(
-        receipt.status(),
+        handle.status(),
         DispatchStatus::Finished(DispatchOutcome::Delivered)
     );
-    assert!(!receipt.cancel());
+    assert!(!handle.cancel());
 }
 
 #[test]
@@ -238,13 +246,13 @@ fn a_tracked_deferred_submission_records_its_execution_outcome() {
     let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
     let handler = EventHandler::new(|_: u32| {});
     let sink = EventTarget::from(&handler);
-    let receipt =
+    let handle =
         submit_tracked(&event_dispatcher, &sink, 7_u32).expect("the Dispatcher accepts work");
 
-    assert_eq!(receipt.status(), DispatchStatus::Pending);
+    assert_eq!(handle.status(), DispatchStatus::Pending);
     assert!(dispatcher.deliver_next());
     assert_eq!(
-        receipt.status(),
+        handle.status(),
         DispatchStatus::Finished(DispatchOutcome::Delivered)
     );
 }
@@ -253,34 +261,34 @@ fn a_tracked_deferred_submission_records_its_execution_outcome() {
 fn a_handler_observes_its_tracked_dispatch_as_executing() {
     let mut dispatcher = FifoDispatcher::new();
     let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
-    let receipt_slot = Rc::new(RefCell::new(None::<DispatchReceipt>));
-    let receipt_from_handler = Rc::clone(&receipt_slot);
+    let handle_slot = Rc::new(RefCell::new(None::<DispatchHandle>));
+    let handle_from_handler = Rc::clone(&handle_slot);
     let observed = Rc::new(RefCell::new(Vec::new()));
     let observed_from_handler = Rc::clone(&observed);
     let cancellations = Rc::new(RefCell::new(Vec::new()));
     let cancellations_from_handler = Rc::clone(&cancellations);
     let handler = EventHandler::new(move |(): ()| {
-        let receipt = receipt_from_handler.borrow();
-        let receipt = receipt
+        let handle = handle_from_handler.borrow();
+        let handle = handle
             .as_ref()
-            .expect("the Receipt is installed before deferred execution");
-        let status = receipt.status();
+            .expect("the Handle is installed before deferred execution");
+        let status = handle.status();
         observed_from_handler.borrow_mut().push(status);
         cancellations_from_handler
             .borrow_mut()
-            .push(receipt.cancel());
+            .push(handle.cancel());
     });
     let sink = EventTarget::from(&handler);
-    let receipt =
+    let handle =
         submit_tracked(&event_dispatcher, &sink, ()).expect("the Dispatcher accepts the Dispatch");
-    receipt_slot.replace(Some(receipt.clone()));
+    handle_slot.replace(Some(handle.clone()));
 
     assert!(dispatcher.deliver_next());
 
     assert_eq!(&*observed.borrow(), &[DispatchStatus::Executing]);
     assert_eq!(&*cancellations.borrow(), &[false]);
     assert_eq!(
-        receipt.status(),
+        handle.status(),
         DispatchStatus::Finished(DispatchOutcome::Delivered)
     );
 }
@@ -291,12 +299,12 @@ fn a_completion_callback_panic_prevents_later_callbacks() {
     let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
     let handler = EventHandler::new(|_: u32| {});
     let sink = EventTarget::from(&handler);
-    let receipt = submit_tracked(&event_dispatcher, &sink, 7_u32)
+    let handle = submit_tracked(&event_dispatcher, &sink, 7_u32)
         .expect("the Dispatcher accepts the Dispatch");
     let later_callback_ran = Rc::new(Cell::new(false));
-    receipt.on_complete(|_| panic!("completion panic"));
+    handle.on_complete(|_| panic!("completion panic"));
     let observed = Rc::clone(&later_callback_ran);
-    receipt.on_complete(move |_| observed.set(true));
+    handle.on_complete(move |_| observed.set(true));
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let _ = dispatcher.deliver_next();
@@ -305,7 +313,7 @@ fn a_completion_callback_panic_prevents_later_callbacks() {
     assert!(result.is_err());
     assert!(!later_callback_ran.get());
     assert_eq!(
-        receipt.status(),
+        handle.status(),
         DispatchStatus::Finished(DispatchOutcome::Delivered)
     );
 }
@@ -316,16 +324,16 @@ fn dropping_a_dispatcher_cancels_its_pending_tracked_dispatches() {
     let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
     let handler = EventHandler::new(|_: u32| {});
     let sink = EventTarget::from(&handler);
-    let receipt = submit_tracked(&event_dispatcher, &sink, 7_u32)
+    let handle = submit_tracked(&event_dispatcher, &sink, 7_u32)
         .expect("the Dispatcher accepts the Dispatch");
     let outcomes = Rc::new(RefCell::new(Vec::new()));
     let observed = Rc::clone(&outcomes);
-    receipt.on_complete(move |outcome| observed.borrow_mut().push(outcome));
+    handle.on_complete(move |outcome| observed.borrow_mut().push(outcome));
 
     drop(dispatcher);
 
     assert_eq!(
-        receipt.status(),
+        handle.status(),
         DispatchStatus::Finished(DispatchOutcome::Cancelled)
     );
     assert_eq!(&*outcomes.borrow(), &[DispatchOutcome::Cancelled]);
@@ -337,33 +345,33 @@ fn a_panicking_sink_leaves_its_tracked_dispatch_executing() {
     let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
     let handler = EventHandler::new(|(): ()| panic!("sink panic"));
     let sink = EventTarget::from(&handler);
-    let receipt =
+    let handle =
         submit_tracked(&event_dispatcher, &sink, ()).expect("the Dispatcher accepts the Dispatch");
     let callbacks = Rc::new(RefCell::new(Vec::new()));
     let observed = Rc::clone(&callbacks);
-    receipt.on_complete(move |outcome| observed.borrow_mut().push(outcome));
+    handle.on_complete(move |outcome| observed.borrow_mut().push(outcome));
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let _ = dispatcher.deliver_next();
     }));
 
     assert!(result.is_err());
-    assert_eq!(receipt.status(), DispatchStatus::Executing);
+    assert_eq!(handle.status(), DispatchStatus::Executing);
     assert!(callbacks.borrow().is_empty());
 }
 
 #[test]
-fn a_receipt_notifies_completion_after_deferred_execution() {
+fn a_handle_notifies_completion_after_deferred_execution() {
     let mut dispatcher = FifoDispatcher::new();
     let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
     let handler = EventHandler::new(|_: u32| {});
     let sink = EventTarget::from(&handler);
-    let receipt =
+    let handle =
         submit_tracked(&event_dispatcher, &sink, 7_u32).expect("the Dispatcher accepts work");
     let outcomes = Rc::new(RefCell::new(Vec::new()));
     let observed = Rc::clone(&outcomes);
 
-    receipt.on_complete(move |outcome| observed.borrow_mut().push(outcome));
+    handle.on_complete(move |outcome| observed.borrow_mut().push(outcome));
     assert!(outcomes.borrow().is_empty());
 
     assert!(dispatcher.deliver_next());
@@ -371,19 +379,19 @@ fn a_receipt_notifies_completion_after_deferred_execution() {
 }
 
 #[test]
-fn completion_callbacks_survive_receipt_drop_and_keep_registration_order() {
+fn completion_callbacks_survive_handle_drop_and_keep_registration_order() {
     let mut dispatcher = FifoDispatcher::new();
     let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
     let handler = EventHandler::new(|_: u32| {});
     let sink = EventTarget::from(&handler);
-    let receipt =
+    let handle =
         submit_tracked(&event_dispatcher, &sink, 7_u32).expect("the Dispatcher accepts work");
     let notifications = Rc::new(RefCell::new(Vec::new()));
     let first = Rc::clone(&notifications);
-    receipt.on_complete(move |outcome| first.borrow_mut().push((1, outcome)));
+    handle.on_complete(move |outcome| first.borrow_mut().push((1, outcome)));
     let second = Rc::clone(&notifications);
-    receipt.on_complete(move |outcome| second.borrow_mut().push((2, outcome)));
-    drop(receipt);
+    handle.on_complete(move |outcome| second.borrow_mut().push((2, outcome)));
+    drop(handle);
 
     assert!(dispatcher.deliver_next());
     assert_eq!(
@@ -396,15 +404,16 @@ fn completion_callbacks_survive_receipt_drop_and_keep_registration_order() {
 }
 
 #[test]
-fn a_receipt_notifies_immediately_when_already_completed() {
+fn a_handle_notifies_immediately_when_its_dispatch_already_completed() {
     let handler = EventHandler::new(|_: u32| {});
     let sink = EventTarget::from(&handler);
-    let receipt = submit_tracked(&Dispatcher::immediate(), &sink, 7_u32)
-        .expect("the immediate Dispatcher accepts the Dispatch");
+    let dispatch = sink.send(7_u32).tracked();
+    let handle = dispatch.handle();
+    assert_eq!(dispatch.run(), DispatchOutcome::Delivered);
     let outcome = Rc::new(RefCell::new(None));
     let observed = Rc::clone(&outcome);
 
-    receipt.on_complete(move |completed| {
+    handle.on_complete(move |completed| {
         observed.replace(Some(completed));
     });
 
@@ -419,20 +428,20 @@ fn cancelling_a_dispatch_notifies_its_completion() {
     let event_dispatcher = Dispatcher::new(dispatcher);
     let handler = EventHandler::new(|_: u32| {});
     let sink = EventTarget::from(&handler);
-    let receipt =
+    let handle =
         submit_tracked(&event_dispatcher, &sink, 7_u32).expect("the Dispatcher accepts work");
     let outcome = Rc::new(RefCell::new(None));
     let observed = Rc::clone(&outcome);
-    receipt.on_complete(move |completed| {
+    handle.on_complete(move |completed| {
         observed.replace(Some(completed));
     });
 
-    assert!(receipt.cancel());
+    assert!(handle.cancel());
     assert_eq!(*outcome.borrow(), Some(DispatchOutcome::Cancelled));
 }
 
 #[test]
-fn one_sink_can_be_submitted_to_distinct_dispatchers() {
+fn one_sink_can_run_inline_or_be_submitted_to_a_dispatcher() {
     let mut dispatcher = FifoDispatcher::new();
     let queued: Dispatcher = dispatcher.as_ref().clone();
     let values = Rc::new(RefCell::new(Vec::new()));
@@ -444,10 +453,7 @@ fn one_sink_can_be_submitted_to_distinct_dispatchers() {
         submit_event(&queued, &sink, 1_u32).expect("Dispatcher accepts work"),
         SubmissionOutcome::Deferred
     );
-    assert_eq!(
-        submit_event(&Dispatcher::immediate(), &sink, 2_u32).expect("Dispatcher accepts work"),
-        SubmissionOutcome::Completed(DispatchOutcome::Delivered)
-    );
+    assert_eq!(sink.send(2_u32).run(), DispatchOutcome::Delivered);
     assert_eq!(&*values.borrow(), &[2]);
     assert!(dispatcher.deliver_next());
     assert_eq!(&*values.borrow(), &[2, 1]);

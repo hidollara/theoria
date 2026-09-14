@@ -17,7 +17,7 @@ pub trait Dispatch: Sized {
     fn run(self) -> DispatchOutcome;
 
     /// Attaches local cancellation and completion observation to this Dispatch.
-    fn tracked(self) -> (TrackedDispatch<Self>, DispatchReceipt) {
+    fn tracked(self) -> TrackedDispatch<Self> {
         TrackedDispatch::new(self)
     }
 }
@@ -83,11 +83,6 @@ impl Dispatcher {
         }
     }
 
-    /// Creates a Dispatcher that runs accepted Dispatches immediately.
-    pub fn immediate() -> Self {
-        Self::new(ImmediateEndpoint)
-    }
-
     /// Submits one self-contained local Dispatch.
     pub fn submit<D>(&self, dispatch: D) -> Result<SubmissionOutcome, D>
     where
@@ -123,28 +118,17 @@ impl fmt::Debug for Dispatcher {
     }
 }
 
-struct ImmediateEndpoint;
-
-impl EventDispatcher<EventDispatch<'static>> for ImmediateEndpoint {
-    fn submit(
-        &self,
-        dispatch: EventDispatch<'static>,
-    ) -> Result<SubmissionOutcome, EventDispatch<'static>> {
-        Ok(SubmissionOutcome::Completed(dispatch.run()))
-    }
-}
-
 /// Observes a tracked Dispatch and allows pre-execution cancellation.
 ///
-/// Dropping the Receipt does not cancel its Dispatch. Dropping a tracked
+/// Dropping the Handle does not cancel its Dispatch. Dropping a tracked
 /// Dispatch before execution does cancel it.
 #[derive(Clone)]
-#[must_use = "dropping a DispatchReceipt does not cancel its Dispatch"]
-pub struct DispatchReceipt {
+#[must_use = "dropping a DispatchHandle does not cancel its Dispatch"]
+pub struct DispatchHandle {
     control: Rc<DispatchControl>,
 }
 
-impl DispatchReceipt {
+impl DispatchHandle {
     /// Returns the current execution state.
     pub fn status(&self) -> DispatchStatus {
         self.control.state.get().into()
@@ -161,10 +145,10 @@ impl DispatchReceipt {
     }
 }
 
-impl fmt::Debug for DispatchReceipt {
+impl fmt::Debug for DispatchHandle {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
-            .debug_struct("DispatchReceipt")
+            .debug_struct("DispatchHandle")
             .finish_non_exhaustive()
     }
 }
@@ -255,15 +239,19 @@ pub struct TrackedDispatch<D: Dispatch> {
 }
 
 impl<D: Dispatch> TrackedDispatch<D> {
-    fn new(dispatch: D) -> (Self, DispatchReceipt) {
+    fn new(dispatch: D) -> Self {
         let control = Rc::new(DispatchControl::new());
-        (
-            Self {
-                dispatch,
-                control: DispatchControlGuard::new(Rc::clone(&control)),
-            },
-            DispatchReceipt { control },
-        )
+        Self {
+            dispatch,
+            control: DispatchControlGuard::new(control),
+        }
+    }
+
+    /// Returns a cloneable capability for observing and cancelling this Dispatch.
+    pub fn handle(&self) -> DispatchHandle {
+        DispatchHandle {
+            control: self.control.shared(),
+        }
     }
 }
 
@@ -396,6 +384,14 @@ struct DispatchControlGuard(Option<Rc<DispatchControl>>);
 impl DispatchControlGuard {
     fn new(control: Rc<DispatchControl>) -> Self {
         Self(Some(control))
+    }
+
+    fn shared(&self) -> Rc<DispatchControl> {
+        Rc::clone(
+            self.0
+                .as_ref()
+                .expect("an armed Dispatch control retains its shared state"),
+        )
     }
 
     fn disarm(mut self) -> Rc<DispatchControl> {

@@ -1,7 +1,7 @@
 use std::{fmt, rc::Rc};
 
 use theoria_event::{
-    Dispatch, DispatchOutcome, DispatchReceipt, Dispatcher, EventDispatcher, EventSink,
+    Dispatch, DispatchHandle, DispatchOutcome, Dispatcher, EventDispatcher, EventSink,
     SubmissionOutcome, TrackedDispatch,
 };
 use theoria_reactive::{Reactive, ReactiveError};
@@ -77,16 +77,17 @@ impl ComponentInstance {
         &self,
         sink: S,
         event: E,
-    ) -> Result<DispatchReceipt, TrackedDispatch<S::Dispatch>>
+    ) -> Result<DispatchHandle, TrackedDispatch<S::Dispatch>>
     where
         S: EventSink<E>,
         S::Dispatch: 'static,
     {
-        let (dispatch, receipt) = sink.send(event).tracked();
+        let dispatch = sink.send(event).tracked();
+        let handle = dispatch.handle();
         self.tree
             .default_dispatcher()
             .submit(dispatch)
-            .map(|_| receipt)
+            .map(|_| handle)
     }
 
     /// Sends one tracked event through an explicitly selected Dispatcher.
@@ -95,13 +96,14 @@ impl ComponentInstance {
         dispatcher: &D,
         sink: S,
         event: E,
-    ) -> Result<DispatchReceipt, TrackedDispatch<S::Dispatch>>
+    ) -> Result<DispatchHandle, TrackedDispatch<S::Dispatch>>
     where
         S: EventSink<E>,
         D: EventDispatcher<TrackedDispatch<S::Dispatch>>,
     {
-        let (dispatch, receipt) = sink.send(event).tracked();
-        dispatcher.submit(dispatch).map(|_| receipt)
+        let dispatch = sink.send(event).tracked();
+        let handle = dispatch.handle();
+        dispatcher.submit(dispatch).map(|_| handle)
     }
 
     /// Runs pending and stale Effects at a caller-selected synchronization boundary.

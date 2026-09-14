@@ -26,7 +26,7 @@ mod target;
 pub use bridge::{BridgeDispatch, BridgeProgress, BridgeSink, EventBridge, bridge};
 pub use channel::{ChannelSource, EventProvider, channel};
 pub use dispatch::{
-    Dispatch, DispatchOutcome, DispatchReceipt, DispatchStatus, Dispatcher, EventDispatch,
+    Dispatch, DispatchHandle, DispatchOutcome, DispatchStatus, Dispatcher, EventDispatch,
     EventDispatcher, SubmissionOutcome, TrackedDispatch,
 };
 pub use dispatcher::FifoDispatcher;
