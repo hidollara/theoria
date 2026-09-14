@@ -6,7 +6,7 @@ use std::{
 use theoria_component::ComponentInstance;
 use theoria_event::{
     BridgeProgress, Dispatch, DispatchOutcome, DispatchQueue, DispatchStatus, Dispatcher,
-    EventSink, OwningSink, SubmissionOutcome, bridge,
+    EventBridge, EventSink, OwningSink, SubmissionOutcome,
 };
 
 #[derive(Clone, Copy)]
@@ -234,7 +234,8 @@ fn a_connection_accepts_a_dispatcher_without_erasing_it() {
 fn an_instance_can_send_to_a_sink_with_its_own_dispatch_type() {
     let mut queue = DispatchQueue::new();
     let instance = ComponentInstance::new(queue.dispatcher(), |_| {});
-    let (bridge, sink) = bridge();
+    let bridge = EventBridge::new();
+    let sink = bridge.sink();
 
     assert_eq!(
         instance
@@ -249,7 +250,8 @@ fn an_instance_can_send_to_a_sink_with_its_own_dispatch_type() {
 #[test]
 fn default_rejection_returns_an_executable_erased_dispatch() {
     let instance = ComponentInstance::new(RejectingDispatcher, |_| {});
-    let (bridge, sink) = bridge();
+    let bridge = EventBridge::new();
+    let sink = bridge.sink();
 
     let dispatch = instance
         .send(&sink, 7_u32)
@@ -262,7 +264,8 @@ fn default_rejection_returns_an_executable_erased_dispatch() {
 fn an_instance_can_track_a_sink_specific_dispatch() {
     let mut queue = DispatchQueue::new();
     let instance = ComponentInstance::new(queue.dispatcher(), |_| {});
-    let (bridge, sink) = bridge();
+    let bridge = EventBridge::new();
+    let sink = bridge.sink();
 
     let handle = instance
         .send_tracked(&sink, 7_u32)

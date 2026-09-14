@@ -1,10 +1,18 @@
 //! Cross-thread event production attached to a local EventLoop.
 
-use std::{cell::Cell, error::Error, fmt, io, rc::Rc, sync::Arc, time::Instant};
-
-use crate::event::{
-    BridgeProgress, BridgeSink, ChannelSource, EventBridge, EventSink, bridge as event_bridge,
+use std::{
+    cell::Cell,
+    error::Error,
+    fmt, io,
+    rc::Rc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Instant,
 };
+
+use crate::event::{BridgeProgress, BridgeSink, ChannelSource, EventBridge, EventSink};
 
 use super::{EventLoopClosed, EventLoopHandle, EventLoopParticipant, EventLoopWaker, Result};
 
@@ -43,11 +51,7 @@ pub struct EventLoopBridgeSender<E: Send + 'static> {
 impl<E: Send + 'static> EventLoopBridgeSender<E> {
     /// Sends one event and wakes the receiving EventLoop.
     pub fn send(&self, event: E) -> std::result::Result<(), EventLoopBridgeSendError<E>> {
-        self.state
-            .sender
-            .as_ref()
-            .expect("an EventLoopBridgeSender retains its input capability")
-            .send(event)
+        EventSink::send(&self.state.sender, event)
             .try_run()
             .map_err(EventLoopBridgeSendError::BridgeUnavailable)?;
         self.state
@@ -74,15 +78,14 @@ impl<E: Send + 'static> fmt::Debug for EventLoopBridgeSender<E> {
 }
 
 struct SenderState<E: Send + 'static> {
-    sender: Option<BridgeSink<E>>,
+    sender: BridgeSink<E>,
+    open: Arc<AtomicBool>,
     waker: EventLoopWaker,
 }
 
 impl<E: Send + 'static> Drop for SenderState<E> {
     fn drop(&mut self) {
-        // A final Sender disappearing changes the receiving side to Closed.
-        // Waking lets the EventLoop observe that transition without polling.
-        self.sender.take();
+        self.open.store(false, Ordering::Release);
         let _ = self.waker.wake();
     }
 }
@@ -136,9 +139,12 @@ pub(super) fn create<E>(
 where
     E: Send + 'static,
 {
-    let (bridge, sender) = event_bridge();
+    let bridge = EventBridge::new();
+    let sender = bridge.sink();
+    let input_open = Arc::new(AtomicBool::new(true));
     let state = Rc::new(BridgeState {
         bridge,
+        input_open: Arc::clone(&input_open),
         closed: Cell::new(false),
     });
     event_loop.register(&state)?;
@@ -146,7 +152,8 @@ where
         EventLoopBridge { state },
         EventLoopBridgeSender {
             state: Arc::new(SenderState {
-                sender: Some(sender),
+                sender,
+                open: input_open,
                 waker: event_loop.waker(),
             }),
         },
@@ -155,6 +162,7 @@ where
 
 struct BridgeState<E: Send + 'static> {
     bridge: EventBridge<E>,
+    input_open: Arc<AtomicBool>,
     closed: Cell<bool>,
 }
 
@@ -167,13 +175,19 @@ impl<E: Send + 'static> EventLoopParticipant for BridgeState<E> {
         true
     }
 
-    fn process_ready_work(
-        &self,
-        _now: Instant,
-        _available_time: std::time::Duration,
-    ) -> Result<()> {
-        if self.bridge.forward_next() == BridgeProgress::Closed {
-            self.closed.set(true);
+    fn process_ready_work(&self, _now: Instant, available_time: std::time::Duration) -> Result<()> {
+        let started = Instant::now();
+        loop {
+            match self.bridge.forward_next() {
+                BridgeProgress::Forwarded if started.elapsed() < available_time => {}
+                BridgeProgress::Forwarded => break,
+                BridgeProgress::Idle => {
+                    if !self.input_open.load(Ordering::Acquire) {
+                        self.closed.set(true);
+                    }
+                    break;
+                }
+            }
         }
         Ok(())
     }

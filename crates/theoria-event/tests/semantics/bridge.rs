@@ -3,7 +3,7 @@ use std::{cell::RefCell, rc::Rc, thread};
 use super::{TestSink, TestSinkOwner};
 use theoria_event::{
     BridgeDispatch, BridgeProgress, BridgeSink, Dispatch, DispatchOutcome, DispatchQueue,
-    EventSink, Subscription, bridge,
+    EventBridge, EventSink, EventSource, Subscription,
 };
 
 fn assert_send_sync<T: Send + Sync>() {}
@@ -22,14 +22,16 @@ fn a_bridge_sink_preserves_cross_thread_dispatch_capabilities() {
     assert_send_sync::<BridgeSink<u32>>();
     assert_send::<BridgeDispatch<u32>>();
 
-    let (bridge, sink) = bridge();
+    let bridge = EventBridge::new();
+    let sink = bridge.sink();
     assert_eq!(send(&sink, 7).run(), DispatchOutcome::Completed);
     assert_eq!(bridge.forward_next(), BridgeProgress::Forwarded);
 }
 
 #[test]
 fn a_value_crosses_a_thread_boundary_into_a_local_source() {
-    let (bridge, sender) = bridge();
+    let bridge = EventBridge::new();
+    let sender = bridge.sink();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = TestSinkOwner::new(move |value: u32| output.borrow_mut().push(value));
@@ -46,12 +48,13 @@ fn a_value_crosses_a_thread_boundary_into_a_local_source() {
 
     assert_eq!(bridge.forward_next(), BridgeProgress::Forwarded);
     assert_eq!(&*values.borrow(), &[7]);
-    assert_eq!(bridge.forward_next(), BridgeProgress::Closed);
+    assert_eq!(bridge.forward_next(), BridgeProgress::Idle);
 }
 
 #[test]
-fn progress_distinguishes_idle_from_closed() {
-    let (bridge, sender) = bridge::<u32>();
+fn progress_distinguishes_forwarded_events_from_idle() {
+    let bridge = EventBridge::<u32>::new();
+    let sender = bridge.sink();
 
     assert_eq!(bridge.forward_next(), BridgeProgress::Idle);
     assert_eq!((&sender).send(1).run(), DispatchOutcome::Completed);
@@ -60,12 +63,13 @@ fn progress_distinguishes_idle_from_closed() {
 
     assert_eq!(bridge.forward_next(), BridgeProgress::Forwarded);
     assert_eq!(bridge.forward_next(), BridgeProgress::Forwarded);
-    assert_eq!(bridge.forward_next(), BridgeProgress::Closed);
+    assert_eq!(bridge.forward_next(), BridgeProgress::Idle);
 }
 
 #[test]
-fn cloned_senders_keep_the_bridge_input_open() {
-    let (bridge, first) = bridge::<u32>();
+fn cloned_sinks_can_send_independently() {
+    let bridge = EventBridge::<u32>::new();
+    let first = bridge.sink();
     let second = first.clone();
     drop(first);
 
@@ -73,12 +77,23 @@ fn cloned_senders_keep_the_bridge_input_open() {
     assert_eq!((&second).send(7).run(), DispatchOutcome::Completed);
     assert_eq!(bridge.forward_next(), BridgeProgress::Forwarded);
     drop(second);
-    assert_eq!(bridge.forward_next(), BridgeProgress::Closed);
+    assert_eq!(bridge.forward_next(), BridgeProgress::Idle);
+}
+
+#[test]
+fn a_bridge_can_issue_a_new_sink_after_previous_sinks_are_dropped() {
+    let bridge = EventBridge::<u32>::new();
+    drop(bridge.sink());
+
+    assert_eq!(bridge.forward_next(), BridgeProgress::Idle);
+    assert_eq!(bridge.sink().send(7).run(), DispatchOutcome::Completed);
+    assert_eq!(bridge.forward_next(), BridgeProgress::Forwarded);
 }
 
 #[test]
 fn a_bridge_forwards_events_in_receive_order() {
-    let (bridge, sender) = bridge::<u32>();
+    let bridge = EventBridge::<u32>::new();
+    let sender = bridge.sink();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = TestSinkOwner::new(move |value: u32| output.borrow_mut().push(value));
@@ -97,17 +112,21 @@ fn a_bridge_forwards_events_in_receive_order() {
 }
 
 #[test]
-fn a_bridge_dispatch_can_return_an_event_when_its_sink_is_gone() {
-    let (bridge, sender) = bridge();
+fn a_bridge_dispatch_can_return_an_event_when_its_bridge_is_gone() {
+    let bridge = EventBridge::new();
+    let sender = bridge.sink();
+    let source = bridge.source();
     drop(bridge);
 
     let event = String::from("event");
     assert_eq!(sender.send(event).try_run(), Err(String::from("event")));
+    assert!(source.register(|_| {}).is_none());
 }
 
 #[test]
 fn each_subscriber_selects_its_own_dispatcher() {
-    let (bridge, sender) = bridge();
+    let bridge = EventBridge::new();
+    let sender = bridge.sink();
     let mut queue = DispatchQueue::new();
     let event_dispatcher = queue.dispatcher();
     let values = Rc::new(RefCell::new(Vec::new()));

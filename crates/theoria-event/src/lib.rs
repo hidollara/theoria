@@ -13,7 +13,8 @@
 //! Channel Source lends each publication; an
 //! [`Subscription`] builder can own that publication before constructing
 //! a self-contained Dispatch.
-//! [`bridge`] pairs a local [`EventBridge`] with a thread-safe [`BridgeSink`].
+//! An [`EventBridge`] provides a local Source and a thread-safe, non-owning
+//! [`BridgeSink`] for crossing execution domains.
 
 mod bridge;
 mod channel;
@@ -21,7 +22,7 @@ mod dispatch;
 mod sink;
 mod source;
 
-pub use bridge::{BridgeDispatch, BridgeProgress, BridgeSink, EventBridge, bridge};
+pub use bridge::{BridgeDispatch, BridgeProgress, BridgeSink, EventBridge};
 pub use channel::{Channel, ChannelDispatch, ChannelSink, ChannelSource};
 pub use dispatch::{
     Dispatch, DispatchHandle, DispatchOutcome, DispatchQueue, DispatchStatus, Dispatcher,

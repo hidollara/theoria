@@ -1,6 +1,7 @@
 use std::{
+    collections::VecDeque,
     fmt,
-    sync::mpsc::{self, Receiver, Sender, TryRecvError},
+    sync::{Arc, Mutex, Weak},
 };
 
 use crate::{
@@ -16,38 +17,55 @@ use crate::{
 /// deliberately one event at a time so scheduling, yielding, and wake policy
 /// remain with the caller.
 pub struct EventBridge<E: Send + 'static> {
-    receiver: Receiver<E>,
+    input: Arc<Mutex<VecDeque<E>>>,
     channel: Channel<E>,
 }
 
-/// Creates a local event bridge and its thread-safe sink.
-pub fn bridge<E: Send + 'static>() -> (EventBridge<E>, BridgeSink<E>) {
-    let (sender, receiver) = mpsc::channel();
-    let channel = Channel::new();
-    (EventBridge { receiver, channel }, BridgeSink { sender })
-}
-
 impl<E: Send + 'static> EventBridge<E> {
+    /// Creates a local event Bridge.
+    pub fn new() -> Self {
+        Self {
+            input: Arc::new(Mutex::new(VecDeque::new())),
+            channel: Channel::new(),
+        }
+    }
+
     /// Returns the local Source published by this Bridge.
     pub fn source(&self) -> ChannelSource<E> {
         self.channel.source()
     }
 
+    /// Returns a non-owning, thread-safe input capability for this Bridge.
+    pub fn sink(&self) -> BridgeSink<E> {
+        BridgeSink {
+            input: Arc::downgrade(&self.input),
+        }
+    }
+
     /// Attempts to forward exactly one received event into the local Source.
     pub fn forward_next(&self) -> BridgeProgress {
-        match self.receiver.try_recv() {
-            Ok(event) => {
-                let outcome = self.channel.sink().send(event).run();
-                debug_assert_eq!(
-                    outcome,
-                    DispatchOutcome::Completed,
-                    "the EventBridge owns its live Channel"
-                );
-                BridgeProgress::Forwarded
-            }
-            Err(TryRecvError::Empty) => BridgeProgress::Idle,
-            Err(TryRecvError::Disconnected) => BridgeProgress::Closed,
+        let event = self
+            .input
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .pop_front();
+        if let Some(event) = event {
+            let outcome = self.channel.sink().send(event).run();
+            debug_assert_eq!(
+                outcome,
+                DispatchOutcome::Completed,
+                "the EventBridge owns its live Channel"
+            );
+            BridgeProgress::Forwarded
+        } else {
+            BridgeProgress::Idle
         }
+    }
+}
+
+impl<E: Send + 'static> Default for EventBridge<E> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -61,7 +79,7 @@ impl<E: Send + 'static> fmt::Debug for EventBridge<E> {
 
 /// A cloneable event sink for sending values into an [`EventBridge`].
 pub struct BridgeSink<E: Send + 'static> {
-    sender: Sender<E>,
+    input: Weak<Mutex<VecDeque<E>>>,
 }
 
 impl<E: Send + 'static> EventSink<E> for BridgeSink<E> {
@@ -69,7 +87,7 @@ impl<E: Send + 'static> EventSink<E> for BridgeSink<E> {
 
     fn send(self, event: E) -> Self::Dispatch {
         BridgeDispatch {
-            sender: self.sender,
+            input: self.input,
             event,
         }
     }
@@ -86,7 +104,7 @@ impl<E: Send + 'static> EventSink<E> for &BridgeSink<E> {
 impl<E: Send + 'static> Clone for BridgeSink<E> {
     fn clone(&self) -> Self {
         Self {
-            sender: self.sender.clone(),
+            input: self.input.clone(),
         }
     }
 }
@@ -100,14 +118,21 @@ impl<E: Send + 'static> fmt::Debug for BridgeSink<E> {
 /// One executable send across an [`EventBridge`] boundary.
 #[must_use = "a BridgeDispatch must be run, submitted, or intentionally discarded"]
 pub struct BridgeDispatch<E: Send + 'static> {
-    sender: Sender<E>,
+    input: Weak<Mutex<VecDeque<E>>>,
     event: E,
 }
 
 impl<E: Send + 'static> BridgeDispatch<E> {
     /// Runs this send and returns the event if the Bridge is unavailable.
     pub fn try_run(self) -> Result<(), E> {
-        self.sender.send(self.event).map_err(|error| error.0)
+        let Some(input) = self.input.upgrade() else {
+            return Err(self.event);
+        };
+        input
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push_back(self.event);
+        Ok(())
     }
 }
 
@@ -133,8 +158,6 @@ impl<E: Send + 'static> fmt::Debug for BridgeDispatch<E> {
 pub enum BridgeProgress {
     /// One event was published into the local event domain.
     Forwarded,
-    /// No event is currently available, but senders still exist.
+    /// No event is currently available.
     Idle,
-    /// No event remains and every sender has been dropped.
-    Closed,
 }
