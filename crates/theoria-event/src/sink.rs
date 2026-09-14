@@ -4,18 +4,18 @@ use std::{
     rc::{Rc, Weak},
 };
 
-use crate::dispatch::{DispatchOutcome, EventDispatch};
+use crate::dispatch::{Dispatch, DispatchOutcome, EventDispatch};
 
 type ReceiveFn<E> = dyn Fn(&dyn Any, E);
 
-/// Builds a Dispatch from one event value.
+/// A typed event destination that turns each send into one Dispatch.
 ///
-/// Implementing this trait for every lifetime in an event family lets one
-/// Sink accept scoped events such as native messages without retaining them.
-pub trait DispatchSink<E> {
-    fn dispatch<'event>(&self, event: E) -> EventDispatch<'event>
-    where
-        E: 'event;
+/// The associated Dispatch preserves its concrete lifetime and auto traits so
+/// the selected Dispatcher can decide whether it can execute or retain it.
+pub trait Sink<E> {
+    type Dispatch: Dispatch;
+
+    fn send(&self, event: E) -> Self::Dispatch;
 }
 
 /// A Sink adapter that turns a borrowed input into an owned event.
@@ -159,26 +159,38 @@ impl<E> EventSink<E> {
     }
 }
 
-impl<E> DispatchSink<E> for EventSink<E> {
-    fn dispatch<'event>(&self, event: E) -> EventDispatch<'event>
-    where
-        E: 'event,
-    {
-        self.send(event)
-    }
-}
-
-impl<'input, T: ?Sized, E> DispatchSink<&'input T> for BorrowingEventSink<T, E>
+impl<E> Sink<E> for EventSink<E>
 where
     E: 'static,
 {
-    fn dispatch<'event>(&self, event: &'input T) -> EventDispatch<'event>
-    where
-        &'input T: 'event,
-    {
+    type Dispatch = EventDispatch<'static>;
+
+    fn send(&self, event: E) -> Self::Dispatch {
+        EventSink::send(self, event)
+    }
+}
+
+impl<'input, T: ?Sized, E> Sink<&'input T> for BorrowingEventSink<T, E>
+where
+    E: 'static,
+{
+    type Dispatch = EventDispatch<'input>;
+
+    fn send(&self, event: &'input T) -> Self::Dispatch {
         let sink = self.sink.clone();
         let map = Rc::clone(&self.map);
         EventDispatch::new(move || sink.deliver(map(event)))
+    }
+}
+
+impl<E, S> Sink<E> for &S
+where
+    S: Sink<E> + ?Sized,
+{
+    type Dispatch = S::Dispatch;
+
+    fn send(&self, event: E) -> Self::Dispatch {
+        S::send(self, event)
     }
 }
 

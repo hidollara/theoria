@@ -25,5 +25,5 @@ pub use dispatch::{
 };
 pub use dispatcher::FifoDispatcher;
 pub use handler::EventHandler;
-pub use sink::{BorrowingEventSink, DispatchSink, EventSink};
+pub use sink::{BorrowingEventSink, EventSink, Sink};
 pub use source::{EventConnection, EventSource, Subscription};

@@ -1,6 +1,9 @@
 use std::fmt;
 
-use crate::{dispatch::Dispatcher, sink::DispatchSink};
+use crate::{
+    dispatch::{Dispatch, Dispatcher, EventDispatcher},
+    sink::Sink,
+};
 
 /// A stream-like capability whose event type may vary with each publication's
 /// lifetime.
@@ -36,24 +39,24 @@ where
     /// Runs every generated Dispatch inline while its event remains valid.
     pub fn inline(self) -> Option<Subscription>
     where
-        for<'event> K: DispatchSink<S::Event<'event>>,
+        for<'event> K: Sink<S::Event<'event>>,
     {
         let Self { source, sink } = self;
         source.subscribe(move |event| {
-            let _ = sink.dispatch(event).run();
+            let _ = sink.send(event).run();
         })
     }
 
     /// Submits every generated self-contained Dispatch to `dispatcher`.
     pub fn via(self, dispatcher: impl AsRef<Dispatcher>) -> Option<Subscription>
     where
-        for<'event> K: DispatchSink<S::Event<'event>>,
-        for<'event> S::Event<'event>: 'static,
+        for<'event> K: Sink<S::Event<'event>>,
+        for<'event> Dispatcher: EventDispatcher<<K as Sink<S::Event<'event>>>::Dispatch>,
     {
         let Self { source, sink } = self;
         let dispatcher = dispatcher.as_ref().clone();
         source.subscribe(move |event| {
-            let _ = dispatcher.submit(sink.dispatch(event));
+            let _ = EventDispatcher::submit(&dispatcher, sink.send(event));
         })
     }
 }

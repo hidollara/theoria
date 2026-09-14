@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use theoria_event::{
-    ChannelSource, DispatchReceipt, DispatchSink, Dispatcher, EventDispatch, EventHandler,
-    EventSink, EventSource, SubmissionOutcome, channel,
+    ChannelSource, DispatchReceipt, Dispatcher, EventDispatch, EventDispatcher, EventHandler,
+    EventSink, EventSource, Sink, SubmissionOutcome, channel,
 };
 use theoria_reactive::{
     Computed, Effect, ReadContext, SnapshotState, State, StateSetter, WriteContext,
@@ -84,8 +84,8 @@ impl<'mount> MountContext<'mount> {
     where
         S: EventSource,
         K: 'static,
-        for<'event> K: DispatchSink<S::Event<'event>>,
-        for<'event> S::Event<'event>: 'static,
+        for<'event> K: Sink<S::Event<'event>>,
+        for<'event> Dispatcher: EventDispatcher<<K as Sink<S::Event<'event>>>::Dispatch>,
     {
         self.connect_via(self.tree.default_dispatcher(), source, sink)
     }
@@ -100,8 +100,8 @@ impl<'mount> MountContext<'mount> {
     where
         S: EventSource,
         K: 'static,
-        for<'event> K: DispatchSink<S::Event<'event>>,
-        for<'event> S::Event<'event>: 'static,
+        for<'event> K: Sink<S::Event<'event>>,
+        for<'event> Dispatcher: EventDispatcher<<K as Sink<S::Event<'event>>>::Dispatch>,
     {
         let Some(subscription) = source.connect(sink).via(dispatcher) else {
             return false;
@@ -118,7 +118,7 @@ impl<'mount> MountContext<'mount> {
     where
         S: EventSource,
         K: 'static,
-        for<'event> K: DispatchSink<S::Event<'event>>,
+        for<'event> K: Sink<S::Event<'event>>,
     {
         let Some(subscription) = source.connect(sink).inline() else {
             return false;
