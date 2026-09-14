@@ -5,9 +5,18 @@ use std::{
 
 use theoria_component::ComponentInstance;
 use theoria_event::{
-    BridgeProgress, DispatchOutcome, DispatchStatus, Dispatcher, EventTarget, FifoDispatcher,
-    ImmediateDispatcher, OwningSink, SubmissionOutcome, bridge,
+    BridgeProgress, Dispatch, DispatchOutcome, DispatchStatus, Dispatcher, EventDispatcher,
+    EventTarget, FifoDispatcher, OwningSink, SubmissionOutcome, bridge,
 };
+
+#[derive(Clone, Copy)]
+struct TestImmediateDispatcher;
+
+impl<D: Dispatch> EventDispatcher<D> for TestImmediateDispatcher {
+    fn submit(&self, dispatch: D) -> Result<SubmissionOutcome, D> {
+        Ok(SubmissionOutcome::Completed(dispatch.run()))
+    }
+}
 
 #[test]
 fn handlers_do_not_run_until_root_construction_finishes() {
@@ -191,7 +200,7 @@ fn a_connection_accepts_a_dispatcher_without_erasing_it() {
     let instance = ComponentInstance::new(&dispatcher, move |context| {
         let (source, source_input) = context.event_source::<u32>();
         let sink = context.receive(move |value, _context| output.set(value));
-        assert!(context.connect_via(ImmediateDispatcher, source, OwningSink::new(sink)));
+        assert!(context.connect_via(TestImmediateDispatcher, source, OwningSink::new(sink)));
         mounted_input.replace(Some(source_input));
     });
     let input = input

@@ -11,8 +11,9 @@ use theoria_event::{
     SubmissionOutcome, TrackedDispatch, channel,
 };
 
+#[derive(Clone)]
 struct TestDispatcher {
-    pending: RefCell<VecDeque<EventDispatch<'static>>>,
+    pending: Rc<RefCell<VecDeque<EventDispatch<'static>>>>,
 }
 
 impl EventDispatcher<EventDispatch<'static>> for TestDispatcher {
@@ -67,9 +68,9 @@ impl EventDispatcher<EventDispatch<'static>> for RejectingDispatcher {
 
 #[test]
 fn a_custom_dispatcher_can_defer_an_opaque_dispatch() {
-    let dispatcher = Rc::new(TestDispatcher {
-        pending: RefCell::new(VecDeque::new()),
-    });
+    let dispatcher = TestDispatcher {
+        pending: Rc::new(RefCell::new(VecDeque::new())),
+    };
     let event_dispatcher = Dispatcher::new(dispatcher.clone());
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
@@ -148,9 +149,9 @@ fn direct_delivery_runs_on_the_sending_stack() {
 
 #[test]
 fn a_tracked_dispatch_can_be_cancelled_before_execution() {
-    let dispatcher = Rc::new(TestDispatcher {
-        pending: RefCell::new(VecDeque::new()),
-    });
+    let dispatcher = TestDispatcher {
+        pending: Rc::new(RefCell::new(VecDeque::new())),
+    };
     let event_dispatcher = Dispatcher::new(dispatcher.clone());
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
@@ -182,9 +183,9 @@ fn a_tracked_dispatch_can_be_cancelled_before_execution() {
 
 #[test]
 fn execution_reports_when_its_sink_was_dropped() {
-    let dispatcher = Rc::new(TestDispatcher {
-        pending: RefCell::new(VecDeque::new()),
-    });
+    let dispatcher = TestDispatcher {
+        pending: Rc::new(RefCell::new(VecDeque::new())),
+    };
     let event_dispatcher = Dispatcher::new(dispatcher.clone());
     let handler = EventHandler::new(|_: u32| {});
     let sink = EventTarget::from(&handler);
@@ -412,9 +413,9 @@ fn a_receipt_notifies_immediately_when_already_completed() {
 
 #[test]
 fn cancelling_a_dispatch_notifies_its_completion() {
-    let dispatcher = Rc::new(TestDispatcher {
-        pending: RefCell::new(VecDeque::new()),
-    });
+    let dispatcher = TestDispatcher {
+        pending: Rc::new(RefCell::new(VecDeque::new())),
+    };
     let event_dispatcher = Dispatcher::new(dispatcher);
     let handler = EventHandler::new(|_: u32| {});
     let sink = EventTarget::from(&handler);

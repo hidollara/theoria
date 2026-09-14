@@ -5,20 +5,8 @@ use std::{
 
 use theoria_event::{
     Dispatch, DispatchOutcome, Dispatcher, EventDispatcher, EventHandler, EventSource, EventTarget,
-    FifoDispatcher, ImmediateDispatcher, OwningSink, SubmissionOutcome, channel,
+    FifoDispatcher, OwningSink, SubmissionOutcome, channel,
 };
-
-#[derive(Debug)]
-struct BorrowedDispatch<'value> {
-    output: &'value Cell<bool>,
-}
-
-impl Dispatch for BorrowedDispatch<'_> {
-    fn run(self) -> DispatchOutcome {
-        self.output.set(true);
-        DispatchOutcome::Delivered
-    }
-}
 
 #[derive(Debug)]
 struct LocalDispatch {
@@ -30,21 +18,6 @@ impl Dispatch for LocalDispatch {
         self.output.set(true);
         DispatchOutcome::Delivered
     }
-}
-
-#[test]
-fn an_immediate_dispatcher_accepts_a_borrowed_dispatch() {
-    let output = Cell::new(false);
-
-    let outcome = ImmediateDispatcher
-        .submit(BorrowedDispatch { output: &output })
-        .expect("an immediate Dispatcher accepts borrowed work");
-
-    assert_eq!(
-        outcome,
-        SubmissionOutcome::Completed(DispatchOutcome::Delivered)
-    );
-    assert!(output.get());
 }
 
 #[test]

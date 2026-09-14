@@ -1,7 +1,7 @@
 use std::fmt;
 
 use crate::{
-    dispatch::{EventDispatcher, ImmediateDispatcher},
+    dispatch::{Dispatch, EventDispatcher},
     sink::EventSink,
 };
 
@@ -40,10 +40,11 @@ where
     pub fn inline(self) -> Option<Subscription>
     where
         for<'event> K: EventSink<S::Event<'event>>,
-        for<'event> ImmediateDispatcher:
-            EventDispatcher<<K as EventSink<S::Event<'event>>>::Dispatch>,
     {
-        self.via(ImmediateDispatcher)
+        let Self { source, sink } = self;
+        source.subscribe(move |event| {
+            let _ = sink.send(event).run();
+        })
     }
 
     /// Submits every generated Dispatch to `dispatcher`.

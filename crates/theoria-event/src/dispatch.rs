@@ -69,16 +69,6 @@ where
     fn submit(&self, dispatch: D) -> Result<SubmissionOutcome, D>;
 }
 
-impl<D, T> EventDispatcher<D> for Rc<T>
-where
-    D: Dispatch,
-    T: EventDispatcher<D> + ?Sized,
-{
-    fn submit(&self, dispatch: D) -> Result<SubmissionOutcome, D> {
-        self.as_ref().submit(dispatch)
-    }
-}
-
 /// A cloneable capability for submitting self-contained event Dispatches.
 #[derive(Clone)]
 pub struct Dispatcher {
@@ -95,7 +85,7 @@ impl Dispatcher {
 
     /// Creates a Dispatcher that runs accepted Dispatches immediately.
     pub fn immediate() -> Self {
-        Self::new(ImmediateDispatcher)
+        Self::new(ImmediateEndpoint)
     }
 
     /// Submits one self-contained local Dispatch.
@@ -133,15 +123,13 @@ impl fmt::Debug for Dispatcher {
     }
 }
 
-/// A Dispatcher that runs any accepted Dispatch before returning.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct ImmediateDispatcher;
+struct ImmediateEndpoint;
 
-impl<D> EventDispatcher<D> for ImmediateDispatcher
-where
-    D: Dispatch,
-{
-    fn submit(&self, dispatch: D) -> Result<SubmissionOutcome, D> {
+impl EventDispatcher<EventDispatch<'static>> for ImmediateEndpoint {
+    fn submit(
+        &self,
+        dispatch: EventDispatch<'static>,
+    ) -> Result<SubmissionOutcome, EventDispatch<'static>> {
         Ok(SubmissionOutcome::Completed(dispatch.run()))
     }
 }

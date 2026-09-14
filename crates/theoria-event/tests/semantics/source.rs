@@ -2,7 +2,7 @@ use std::{cell::Cell, rc::Rc};
 
 use theoria_event::{
     Dispatch, DispatchOutcome, EventHandler, EventSink, EventSource, EventTarget, FifoDispatcher,
-    ImmediateDispatcher, OwningSink, Subscription, channel,
+    OwningSink, Subscription, channel,
 };
 
 struct BorrowingSource<'value> {
@@ -93,7 +93,7 @@ fn a_user_defined_source_can_lend_a_non_static_event_inline() {
 }
 
 #[test]
-fn a_source_can_send_a_borrowed_dispatch_through_an_accepting_dispatcher() {
+fn an_inline_source_accepts_a_sink_specific_borrowed_dispatch() {
     let length = Rc::new(Cell::new(0));
     let owned = String::from("temporary");
 
@@ -101,7 +101,7 @@ fn a_source_can_send_a_borrowed_dispatch_through_an_accepting_dispatcher() {
         .connect(BorrowedLengthSink {
             output: Rc::clone(&length),
         })
-        .via(ImmediateDispatcher)
+        .inline()
         .expect("the Source is available");
 
     assert_eq!(length.get(), 9);

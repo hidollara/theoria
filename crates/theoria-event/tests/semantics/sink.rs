@@ -9,8 +9,9 @@ use theoria_event::{
     EventSource, EventTarget, FifoDispatcher, OwningSink, SubmissionOutcome, channel,
 };
 
+#[derive(Clone)]
 struct TestDispatcher {
-    pending: RefCell<Vec<EventDispatch<'static>>>,
+    pending: Rc<RefCell<Vec<EventDispatch<'static>>>>,
 }
 
 fn submit_event<E, S>(
@@ -155,9 +156,9 @@ fn an_adapted_sink_is_cloneable_when_its_sink_and_mapping_are_cloneable() {
 
 #[test]
 fn a_filtered_sink_discards_selected_inputs_during_dispatch_execution() {
-    let dispatcher = Rc::new(TestDispatcher {
-        pending: RefCell::new(Vec::new()),
-    });
+    let dispatcher = TestDispatcher {
+        pending: Rc::new(RefCell::new(Vec::new())),
+    };
     let event_dispatcher = Dispatcher::new(dispatcher.clone());
     let mappings = Rc::new(Cell::new(0));
     let mapped = Rc::clone(&mappings);
