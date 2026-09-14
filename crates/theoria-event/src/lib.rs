@@ -15,7 +15,7 @@ mod handler;
 mod sink;
 mod source;
 
-pub use bridge::{BridgeProgress, BridgeSender, EventBridge, bridge};
+pub use bridge::{BridgeDispatch, BridgeProgress, BridgeSink, EventBridge, bridge};
 pub use channel::{
     BorrowedChannelSource, ChannelSource, ClonedChannelSource, EventProvider, channel,
 };

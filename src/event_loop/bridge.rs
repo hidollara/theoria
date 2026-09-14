@@ -3,7 +3,7 @@
 use std::{cell::Cell, error::Error, fmt, io, rc::Rc, sync::Arc, time::Instant};
 
 use crate::event::{
-    BridgeProgress, BridgeSender, ChannelSource, EventBridge, bridge as event_bridge,
+    BridgeProgress, BridgeSink, ChannelSource, EventBridge, bridge as event_bridge,
 };
 
 use super::{EventLoopClosed, EventLoopHandle, EventLoopParticipant, EventLoopWaker, Result};
@@ -48,6 +48,7 @@ impl<E: Send + 'static> EventLoopBridgeSender<E> {
             .as_ref()
             .expect("an EventLoopBridgeSender retains its input capability")
             .send(event)
+            .try_run()
             .map_err(EventLoopBridgeSendError::BridgeUnavailable)?;
         self.state
             .waker
@@ -73,7 +74,7 @@ impl<E: Send + 'static> fmt::Debug for EventLoopBridgeSender<E> {
 }
 
 struct SenderState<E: Send + 'static> {
-    sender: Option<BridgeSender<E>>,
+    sender: Option<BridgeSink<E>>,
     waker: EventLoopWaker,
 }
 

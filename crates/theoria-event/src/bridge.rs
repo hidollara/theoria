@@ -3,21 +3,26 @@ use std::{
     sync::mpsc::{self, Receiver, Sender, TryRecvError},
 };
 
-use crate::channel::{ChannelSource, EventProvider, channel};
+use crate::{
+    channel::{ChannelSource, EventProvider, channel},
+    dispatch::{Dispatch, DispatchOutcome},
+    sink::Sink,
+};
 
 /// Receives events from another execution domain and publishes them locally.
 ///
-/// The Bridge itself belongs to the local event domain. Only its associated
-/// [`BridgeSender`] crosses threads. Forwarding is deliberately one event at a
-/// time so scheduling, yielding, and wake policy remain with the caller.
+/// The Bridge itself belongs to the local event domain. Its associated
+/// [`BridgeSink`] and [`BridgeDispatch`] can cross threads. Forwarding is
+/// deliberately one event at a time so scheduling, yielding, and wake policy
+/// remain with the caller.
 pub struct EventBridge<E: Send + 'static> {
     receiver: Receiver<E>,
     provider: EventProvider<E>,
     source: ChannelSource<E>,
 }
 
-/// Creates a local event Bridge and its thread-safe sending capability.
-pub fn bridge<E: Send + 'static>() -> (EventBridge<E>, BridgeSender<E>) {
+/// Creates a local event Bridge and its thread-safe Sink.
+pub fn bridge<E: Send + 'static>() -> (EventBridge<E>, BridgeSink<E>) {
     let (sender, receiver) = mpsc::channel();
     let (provider, source) = channel();
     (
@@ -26,7 +31,7 @@ pub fn bridge<E: Send + 'static>() -> (EventBridge<E>, BridgeSender<E>) {
             provider,
             source,
         },
-        BridgeSender { sender },
+        BridgeSink { sender },
     )
 }
 
@@ -57,22 +62,30 @@ impl<E: Send + 'static> fmt::Debug for EventBridge<E> {
     }
 }
 
-/// A cloneable capability for sending values into an [`EventBridge`].
-pub struct BridgeSender<E: Send + 'static> {
+/// A cloneable Sink for sending values into an [`EventBridge`].
+pub struct BridgeSink<E: Send + 'static> {
     sender: Sender<E>,
 }
 
-impl<E: Send + 'static> BridgeSender<E> {
-    /// Sends one value across the Bridge boundary.
-    ///
-    /// Failure returns the original value when the receiving Bridge has been
-    /// dropped.
-    pub fn send(&self, event: E) -> Result<(), E> {
-        self.sender.send(event).map_err(|error| error.0)
+impl<E: Send + 'static> BridgeSink<E> {
+    /// Creates one Dispatch that sends `event` across the Bridge boundary.
+    pub fn send(&self, event: E) -> BridgeDispatch<E> {
+        BridgeDispatch {
+            sender: self.sender.clone(),
+            event,
+        }
     }
 }
 
-impl<E: Send + 'static> Clone for BridgeSender<E> {
+impl<E: Send + 'static> Sink<E> for BridgeSink<E> {
+    type Dispatch = BridgeDispatch<E>;
+
+    fn send(&self, event: E) -> Self::Dispatch {
+        BridgeSink::send(self, event)
+    }
+}
+
+impl<E: Send + 'static> Clone for BridgeSink<E> {
     fn clone(&self) -> Self {
         Self {
             sender: self.sender.clone(),
@@ -80,10 +93,39 @@ impl<E: Send + 'static> Clone for BridgeSender<E> {
     }
 }
 
-impl<E: Send + 'static> fmt::Debug for BridgeSender<E> {
+impl<E: Send + 'static> fmt::Debug for BridgeSink<E> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.debug_struct("BridgeSink").finish_non_exhaustive()
+    }
+}
+
+/// One executable send across an [`EventBridge`] boundary.
+#[must_use = "a BridgeDispatch must be run, submitted, or intentionally discarded"]
+pub struct BridgeDispatch<E: Send + 'static> {
+    sender: Sender<E>,
+    event: E,
+}
+
+impl<E: Send + 'static> BridgeDispatch<E> {
+    /// Runs this send and returns the event if the Bridge is unavailable.
+    pub fn try_run(self) -> Result<(), E> {
+        self.sender.send(self.event).map_err(|error| error.0)
+    }
+}
+
+impl<E: Send + 'static> Dispatch for BridgeDispatch<E> {
+    fn run(self) -> DispatchOutcome {
+        match self.try_run() {
+            Ok(()) => DispatchOutcome::Delivered,
+            Err(_) => DispatchOutcome::SinkUnavailable,
+        }
+    }
+}
+
+impl<E: Send + 'static> fmt::Debug for BridgeDispatch<E> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
-            .debug_struct("BridgeSender")
+            .debug_struct("BridgeDispatch")
             .finish_non_exhaustive()
     }
 }
