@@ -5,7 +5,8 @@ use std::{
 
 use theoria_component::ComponentInstance;
 use theoria_event::{
-    DispatchOutcome, Dispatcher, EventSink, FifoDispatcher, ImmediateDispatcher, SubmissionOutcome,
+    BridgeProgress, DispatchOutcome, Dispatcher, EventSink, FifoDispatcher, ImmediateDispatcher,
+    SubmissionOutcome, bridge,
 };
 
 #[test]
@@ -142,7 +143,10 @@ fn inline_send_bypasses_the_default_dispatcher() {
     );
     assert!(observed.borrow().is_empty());
 
-    assert_eq!(instance.send_inline(&input, "inline"), Ok(()));
+    assert_eq!(
+        instance.send_inline(&input, "inline"),
+        DispatchOutcome::Delivered
+    );
     assert_eq!(&*observed.borrow(), &["inline"]);
 
     assert!(dispatcher.deliver_next());
@@ -169,7 +173,10 @@ fn an_inline_connection_handles_a_publication_on_the_publishing_stack() {
         .take()
         .expect("root construction creates its Source input");
 
-    assert_eq!(instance.send_inline(input, 7_u32), Ok(()));
+    assert_eq!(
+        instance.send_inline(input, 7_u32),
+        DispatchOutcome::Delivered
+    );
     assert_eq!(&*observed.borrow(), &[7]);
     assert!(!dispatcher.has_pending());
 }
@@ -192,9 +199,28 @@ fn a_connection_accepts_a_dispatcher_without_erasing_it() {
         .take()
         .expect("root construction creates its Source input");
 
-    assert_eq!(instance.send_inline(input, 7_u32), Ok(()));
+    assert_eq!(
+        instance.send_inline(input, 7_u32),
+        DispatchOutcome::Delivered
+    );
     assert_eq!(observed.get(), 7);
     assert!(!dispatcher.has_pending());
+}
+
+#[test]
+fn an_instance_can_send_to_a_sink_with_its_own_dispatch_type() {
+    let mut dispatcher = FifoDispatcher::new();
+    let instance = ComponentInstance::new(&dispatcher, |_| {});
+    let (bridge, sink) = bridge();
+
+    assert_eq!(
+        instance
+            .send(&sink, 7_u32)
+            .expect("the default Dispatcher accepts the Bridge Dispatch"),
+        SubmissionOutcome::Deferred
+    );
+    assert!(dispatcher.deliver_next());
+    assert_eq!(bridge.forward_next(), BridgeProgress::Forwarded);
 }
 
 #[test]

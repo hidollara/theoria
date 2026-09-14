@@ -1,6 +1,9 @@
 use std::{fmt, rc::Rc};
 
-use theoria_event::{DispatchReceipt, Dispatcher, EventDispatch, EventSink, SubmissionOutcome};
+use theoria_event::{
+    Dispatch, DispatchOutcome, DispatchReceipt, Dispatcher, EventDispatch, EventDispatcher,
+    EventSink, Sink, SubmissionOutcome,
+};
 use theoria_reactive::{Reactive, ReactiveError};
 
 use crate::{component::MountContext, tree::ComponentTree};
@@ -36,32 +39,37 @@ impl ComponentInstance {
     }
 
     /// Sends one event through this Instance's default Dispatcher.
-    pub fn send<E: 'static>(
-        &self,
-        sink: impl Into<EventSink<E>>,
-        event: E,
-    ) -> Result<SubmissionOutcome, EventDispatch<'static>> {
-        self.tree
-            .default_dispatcher()
-            .submit(sink.into().send(event))
+    pub fn send<E, S>(&self, sink: S, event: E) -> Result<SubmissionOutcome, S::Dispatch>
+    where
+        S: Sink<E>,
+        S::Dispatch: 'static,
+    {
+        self.tree.default_dispatcher().submit(sink.send(event))
     }
 
     /// Sends one event directly on the current call stack.
     ///
     /// This bypasses the default Dispatcher and may synchronously enter the
     /// target Component.
-    pub fn send_inline<E>(&self, sink: impl Into<EventSink<E>>, event: E) -> Result<(), E> {
-        sink.into().send_inline(event)
+    pub fn send_inline<E, S>(&self, sink: S, event: E) -> DispatchOutcome
+    where
+        S: Sink<E>,
+    {
+        sink.send(event).run()
     }
 
     /// Sends one event through an explicitly selected Dispatcher.
-    pub fn send_via<E: 'static>(
+    pub fn send_via<E, S, D>(
         &self,
-        dispatcher: impl AsRef<Dispatcher>,
-        sink: impl Into<EventSink<E>>,
+        dispatcher: &D,
+        sink: S,
         event: E,
-    ) -> Result<SubmissionOutcome, EventDispatch<'static>> {
-        dispatcher.as_ref().submit(sink.into().send(event))
+    ) -> Result<SubmissionOutcome, S::Dispatch>
+    where
+        S: Sink<E>,
+        D: EventDispatcher<S::Dispatch>,
+    {
+        dispatcher.submit(sink.send(event))
     }
 
     /// Sends one tracked event through this Instance's default Dispatcher.

@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use theoria_event::{
-    ChannelSource, DispatchReceipt, Dispatcher, EventDispatch, EventDispatcher, EventHandler,
-    EventSink, EventSource, Sink, SubmissionOutcome, channel,
+    ChannelSource, Dispatch, DispatchOutcome, DispatchReceipt, Dispatcher, EventDispatch,
+    EventDispatcher, EventHandler, EventSink, EventSource, Sink, SubmissionOutcome, channel,
 };
 use theoria_reactive::{
     Computed, Effect, ReadContext, SnapshotState, State, StateSetter, WriteContext,
@@ -259,32 +259,37 @@ impl<'delivery> UpdateContext<'delivery> {
     }
 
     /// Sends one event to `sink` through this Component tree's default Dispatcher.
-    pub fn send<E: 'static>(
-        &mut self,
-        sink: impl Into<EventSink<E>>,
-        event: E,
-    ) -> Result<SubmissionOutcome, EventDispatch<'static>> {
-        self.tree
-            .default_dispatcher()
-            .submit(sink.into().send(event))
+    pub fn send<E, S>(&mut self, sink: S, event: E) -> Result<SubmissionOutcome, S::Dispatch>
+    where
+        S: Sink<E>,
+        S::Dispatch: 'static,
+    {
+        self.tree.default_dispatcher().submit(sink.send(event))
     }
 
     /// Sends one event directly on the current call stack.
     ///
     /// This bypasses the default Dispatcher and may synchronously enter the
     /// target Component.
-    pub fn send_inline<E>(&mut self, sink: impl Into<EventSink<E>>, event: E) -> Result<(), E> {
-        sink.into().send_inline(event)
+    pub fn send_inline<E, S>(&mut self, sink: S, event: E) -> DispatchOutcome
+    where
+        S: Sink<E>,
+    {
+        sink.send(event).run()
     }
 
     /// Sends one event to `sink` through an explicitly selected Dispatcher.
-    pub fn send_via<E: 'static>(
+    pub fn send_via<E, S, D>(
         &mut self,
-        dispatcher: impl AsRef<Dispatcher>,
-        sink: impl Into<EventSink<E>>,
+        dispatcher: &D,
+        sink: S,
         event: E,
-    ) -> Result<SubmissionOutcome, EventDispatch<'static>> {
-        dispatcher.as_ref().submit(sink.into().send(event))
+    ) -> Result<SubmissionOutcome, S::Dispatch>
+    where
+        S: Sink<E>,
+        D: EventDispatcher<S::Dispatch>,
+    {
+        dispatcher.submit(sink.send(event))
     }
 
     /// Sends one tracked event through this Component tree's default Dispatcher.

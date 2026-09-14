@@ -26,7 +26,7 @@ impl TestDriver {
         sink: impl Into<EventSink<E>>,
         event: E,
     ) -> Result<SubmissionOutcome, EventDispatch<'static>> {
-        self.components.send(sink, event)
+        self.components.send(sink.into(), event)
     }
 
     pub(crate) fn run_until_idle(&mut self) -> Result<(), ReactiveError> {

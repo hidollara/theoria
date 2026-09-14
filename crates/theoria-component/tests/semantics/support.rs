@@ -24,7 +24,7 @@ impl TestDriver {
         sink: impl Into<EventSink<E>>,
         event: E,
     ) -> Result<SubmissionOutcome, EventDispatch<'static>> {
-        self.instance.send(sink, event)
+        self.instance.send(sink.into(), event)
     }
 
     fn drain(&mut self, maximum: Option<usize>) -> Result<DrainOutcome, ReactiveError> {

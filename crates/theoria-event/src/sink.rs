@@ -15,6 +15,7 @@ type ReceiveFn<E> = dyn Fn(&dyn Any, E);
 pub trait Sink<E> {
     type Dispatch: Dispatch;
 
+    /// Turns `event` into one unexecuted invocation of this Sink.
     fn send(&self, event: E) -> Self::Dispatch;
 }
 
@@ -36,10 +37,10 @@ pub(crate) trait SinkEndpoint: 'static {
 
 /// A cloneable typed destination independent of any Dispatcher.
 ///
-/// A Sink does not keep its endpoint alive. Send directly on the current call
-/// stack with [`Self::send`], or submit an owned event through a
-/// [`crate::dispatch::Dispatcher`]. If the endpoint has already been dropped when a
-/// Dispatch starts, it completes with
+/// An EventSink does not keep its endpoint alive. [`Self::send`] creates an
+/// [`EventDispatch`], which may be run on the current call stack or submitted
+/// through a compatible Dispatcher. If the endpoint has already been dropped
+/// when a Dispatch starts, it completes with
 /// [`crate::dispatch::DispatchOutcome::SinkUnavailable`].
 pub struct EventSink<E> {
     endpoint: Weak<dyn Any>,

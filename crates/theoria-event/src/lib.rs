@@ -1,11 +1,15 @@
 //! Typed event sources, sinks, and dispatchers.
 //!
-//! An [`EventSink`] is a typed destination and can be invoked directly.
-//! A [`Dispatcher`] submits owned [`EventDispatch`] values for immediate or
-//! deferred execution. [`FifoDispatcher`] provides serialized FIFO dispatch.
+//! A [`Sink`] turns one event into a concrete [`Dispatch`] without choosing
+//! where or when it runs. An [`EventDispatcher`] states which Dispatch family
+//! it accepts; [`ImmediateDispatcher`] runs any Dispatch synchronously, while
+//! [`Dispatcher`] is a cloneable local capability for self-contained work and
+//! [`FifoDispatcher`] provides serialized FIFO execution.
+//!
 //! [`channel`] creates an owning [`EventProvider`] and its non-owning
 //! [`ChannelSource`]. A Source connection selects whether publications are
-//! borrowed for immediate execution or cloned for deferred execution.
+//! borrowed for immediate execution or cloned into self-contained Dispatches.
+//! [`bridge`] pairs a local [`EventBridge`] with a thread-safe [`BridgeSink`].
 
 mod bridge;
 mod channel;
