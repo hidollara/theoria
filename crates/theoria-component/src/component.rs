@@ -87,23 +87,18 @@ impl<'mount> MountContext<'mount> {
         for<'event> K: Sink<S::Event<'event>>,
         for<'event> Dispatcher: EventDispatcher<<K as Sink<S::Event<'event>>>::Dispatch>,
     {
-        self.connect_via(self.tree.default_dispatcher(), source, sink)
+        self.connect_via(self.tree.default_dispatcher().clone(), source, sink)
     }
 
     /// Connects one deferrable Source through an explicitly selected Dispatcher.
-    pub fn connect_via<S, K>(
-        &mut self,
-        dispatcher: impl AsRef<Dispatcher>,
-        source: S,
-        sink: K,
-    ) -> bool
+    pub fn connect_via<S, K, D>(&mut self, dispatcher: D, source: S, sink: K) -> bool
     where
         S: EventSource,
         K: 'static,
+        D: 'static,
         for<'event> K: Sink<S::Event<'event>>,
-        for<'event> Dispatcher: EventDispatcher<<K as Sink<S::Event<'event>>>::Dispatch>,
+        for<'event> D: EventDispatcher<<K as Sink<S::Event<'event>>>::Dispatch>,
     {
-        let dispatcher = dispatcher.as_ref().clone();
         let Some(subscription) = source.connect(sink).via(dispatcher) else {
             return false;
         };
