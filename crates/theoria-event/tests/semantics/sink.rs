@@ -144,7 +144,7 @@ fn an_adapted_sink_is_cloneable_when_its_sink_and_mapping_are_cloneable() {
     let sink = EventTarget::from(&handler).contramap(|value: String| value.len());
 
     assert_eq!(
-        sink.clone().send(String::from("first")).run(),
+        (&sink).send(String::from("first")).run(),
         DispatchOutcome::Completed
     );
     assert_eq!(

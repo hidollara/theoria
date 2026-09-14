@@ -5,8 +5,8 @@ use std::{
 
 use super::drain;
 use theoria_event::{
-    Dispatch, DispatchOutcome, DispatchQueue, Dispatcher, EventHandler, EventSource, EventTarget,
-    OwningSink, SubmissionOutcome, channel,
+    Dispatch, DispatchOutcome, DispatchQueue, Dispatcher, EventHandler, EventSink, EventSource,
+    EventTarget, OwningSink, SubmissionOutcome, channel,
 };
 
 #[derive(Debug)]
@@ -172,7 +172,7 @@ fn work_submitted_during_a_dispatch_joins_the_queue_tail() {
     let first_order = Rc::clone(&order);
     let first_handler = EventHandler::new(move |(): ()| {
         first_order.borrow_mut().push("first");
-        assert!(nested_dispatcher.submit(last_sink.send(())).is_ok());
+        assert!(nested_dispatcher.submit((&last_sink).send(())).is_ok());
     });
     let first_sink = EventTarget::from(&first_handler);
     let second_order = Rc::clone(&order);

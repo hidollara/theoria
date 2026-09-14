@@ -7,7 +7,7 @@ use std::{
 use super::drain;
 use theoria_event::{
     Dispatch, DispatchHandle, DispatchOutcome, DispatchQueue, DispatchStatus, Dispatcher,
-    DynDispatch, EventHandler, EventSource, EventTarget, OwningSink, SubmissionOutcome,
+    DynDispatch, EventHandler, EventSink, EventSource, EventTarget, OwningSink, SubmissionOutcome,
     TargetDispatch, TrackedDispatch, channel,
 };
 

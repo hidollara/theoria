@@ -20,8 +20,9 @@ impl DragGesture {
         drags: S,
     ) -> Self
     where
-        S: EventSink<Drag> + 'static,
-        S::Dispatch: 'static,
+        S: 'static,
+        for<'sink> &'sink S: EventSink<Drag>,
+        for<'sink> <&'sink S as EventSink<Drag>>::Dispatch: 'static,
     {
         Self {
             recognizer,

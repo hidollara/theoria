@@ -19,11 +19,12 @@ pub(super) struct GestureSink<E> {
 impl<E> GestureSink<E> {
     pub(super) fn new<S>(sink: S) -> Self
     where
-        S: EventSink<E> + 'static,
-        S::Dispatch: 'static,
+        S: 'static,
+        for<'sink> &'sink S: EventSink<E>,
+        for<'sink> <&'sink S as EventSink<E>>::Dispatch: 'static,
     {
         Self {
-            send: Rc::new(move |event| DynDispatch::new(sink.send(event))),
+            send: Rc::new(move |event| DynDispatch::new(EventSink::send(&sink, event))),
         }
     }
 }
@@ -31,7 +32,15 @@ impl<E> GestureSink<E> {
 impl<E> EventSink<E> for GestureSink<E> {
     type Dispatch = DynDispatch<'static>;
 
-    fn send(&self, event: E) -> Self::Dispatch {
+    fn send(self, event: E) -> Self::Dispatch {
+        (self.send)(event)
+    }
+}
+
+impl<E> EventSink<E> for &GestureSink<E> {
+    type Dispatch = DynDispatch<'static>;
+
+    fn send(self, event: E) -> Self::Dispatch {
         (self.send)(event)
     }
 }
@@ -54,8 +63,9 @@ pub(super) struct GestureArea<E: 'static> {
 impl<E: 'static> GestureArea<E> {
     pub(super) fn new<S>(sink: S, region: HitRegion) -> Self
     where
-        S: EventSink<E> + 'static,
-        S::Dispatch: 'static,
+        S: 'static,
+        for<'sink> &'sink S: EventSink<E>,
+        for<'sink> <&'sink S as EventSink<E>>::Dispatch: 'static,
     {
         Self {
             sink: GestureSink::new(sink),

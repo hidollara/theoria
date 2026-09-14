@@ -67,21 +67,22 @@ pub struct BridgeSink<E: Send + 'static> {
     sender: Sender<E>,
 }
 
-impl<E: Send + 'static> BridgeSink<E> {
-    /// Creates one Dispatch that sends `event` across the Bridge boundary.
-    pub fn send(&self, event: E) -> BridgeDispatch<E> {
+impl<E: Send + 'static> EventSink<E> for BridgeSink<E> {
+    type Dispatch = BridgeDispatch<E>;
+
+    fn send(self, event: E) -> Self::Dispatch {
         BridgeDispatch {
-            sender: self.sender.clone(),
+            sender: self.sender,
             event,
         }
     }
 }
 
-impl<E: Send + 'static> EventSink<E> for BridgeSink<E> {
+impl<E: Send + 'static> EventSink<E> for &BridgeSink<E> {
     type Dispatch = BridgeDispatch<E>;
 
-    fn send(&self, event: E) -> Self::Dispatch {
-        BridgeSink::send(self, event)
+    fn send(self, event: E) -> Self::Dispatch {
+        EventSink::send(BridgeSink::clone(self), event)
     }
 }
 

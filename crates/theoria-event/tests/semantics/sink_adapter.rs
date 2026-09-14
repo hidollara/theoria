@@ -30,6 +30,25 @@ fn contramap_runs_when_its_dispatch_runs() {
 }
 
 #[test]
+fn an_owned_adapter_moves_a_non_clone_mapping_into_its_dispatch() {
+    struct NonClone(usize);
+
+    let value = Rc::new(Cell::new(0));
+    let output = Rc::clone(&value);
+    let handler = EventHandler::new(move |event: usize| output.set(event));
+    let offset = NonClone(2);
+    let sink = EventTarget::from(&handler).contramap(move |event: usize| {
+        let NonClone(offset) = offset;
+        event + offset
+    });
+
+    let dispatch = sink.send(5);
+
+    assert_eq!(dispatch.run(), DispatchOutcome::Completed);
+    assert_eq!(value.get(), 7);
+}
+
+#[test]
 fn contramap_dispatch_retains_a_borrowed_input_until_inline_execution() {
     let length = Rc::new(Cell::new(0));
     let output = Rc::clone(&length);

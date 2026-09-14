@@ -85,8 +85,8 @@ impl<'mount> MountContext<'mount> {
     where
         S: EventSource,
         K: 'static,
-        for<'event> K: EventSink<S::Event<'event>>,
-        for<'event> <K as EventSink<S::Event<'event>>>::Dispatch: 'static,
+        for<'sink, 'event> &'sink K: EventSink<S::Event<'event>>,
+        for<'sink, 'event> <&'sink K as EventSink<S::Event<'event>>>::Dispatch: 'static,
     {
         let Some(subscription) = self.tree.default_dispatcher().connect(source, sink) else {
             return false;
@@ -101,8 +101,8 @@ impl<'mount> MountContext<'mount> {
         S: EventSource,
         K: 'static,
         D: 'static,
-        for<'event> K: EventSink<S::Event<'event>>,
-        for<'event> D: Dispatcher<<K as EventSink<S::Event<'event>>>::Dispatch>,
+        for<'sink, 'event> &'sink K: EventSink<S::Event<'event>>,
+        for<'sink, 'event> D: Dispatcher<<&'sink K as EventSink<S::Event<'event>>>::Dispatch>,
     {
         let Some(subscription) = source.connect(sink).via(dispatcher) else {
             return false;
@@ -119,7 +119,7 @@ impl<'mount> MountContext<'mount> {
     where
         S: EventSource,
         K: 'static,
-        for<'event> K: EventSink<S::Event<'event>>,
+        for<'sink, 'event> &'sink K: EventSink<S::Event<'event>>,
     {
         let Some(subscription) = source.connect(sink).inline() else {
             return false;

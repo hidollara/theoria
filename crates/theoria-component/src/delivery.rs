@@ -28,10 +28,14 @@ impl DefaultDispatcher {
     where
         S: EventSource,
         K: 'static,
-        for<'event> K: EventSink<S::Event<'event>>,
-        for<'event> <K as EventSink<S::Event<'event>>>::Dispatch: 'static,
+        for<'sink, 'event> &'sink K: EventSink<S::Event<'event>>,
+        for<'sink, 'event> <&'sink K as EventSink<S::Event<'event>>>::Dispatch: 'static,
     {
-        source.connect(ErasingSink(sink)).via(self.clone())
+        let dispatcher = self.clone();
+        source.subscribe(move |event| {
+            let dispatch = EventSink::send(&sink, event);
+            let _ = dispatcher.submit(DynDispatch::new(dispatch));
+        })
     }
 }
 
@@ -41,19 +45,5 @@ impl Dispatcher<DynDispatch<'static>> for DefaultDispatcher {
         dispatch: DynDispatch<'static>,
     ) -> Result<SubmissionOutcome, DynDispatch<'static>> {
         self.dispatcher.submit(dispatch)
-    }
-}
-
-struct ErasingSink<S>(S);
-
-impl<E, S> EventSink<E> for ErasingSink<S>
-where
-    S: EventSink<E>,
-    S::Dispatch: 'static,
-{
-    type Dispatch = DynDispatch<'static>;
-
-    fn send(&self, event: E) -> Self::Dispatch {
-        DynDispatch::new(self.0.send(event))
     }
 }

@@ -25,10 +25,10 @@ impl Dispatch for BorrowedLengthDispatch<'_> {
     }
 }
 
-impl<'event> EventSink<&'event str> for BorrowedLengthSink {
+impl<'event> EventSink<&'event str> for &BorrowedLengthSink {
     type Dispatch = BorrowedLengthDispatch<'event>;
 
-    fn send(&self, event: &'event str) -> Self::Dispatch {
+    fn send(self, event: &'event str) -> Self::Dispatch {
         BorrowedLengthDispatch {
             event,
             output: Rc::clone(&self.output),
@@ -52,10 +52,10 @@ impl Dispatch for OwnedDispatch {
     }
 }
 
-impl EventSink<u32> for OwnedSink {
+impl EventSink<u32> for &OwnedSink {
     type Dispatch = OwnedDispatch;
 
-    fn send(&self, event: u32) -> Self::Dispatch {
+    fn send(self, event: u32) -> Self::Dispatch {
         OwnedDispatch {
             event,
             output: Rc::clone(&self.output),

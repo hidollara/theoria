@@ -11,11 +11,11 @@ fn assert_send<T: Send>() {}
 
 #[test]
 fn a_bridge_sink_preserves_cross_thread_dispatch_capabilities() {
-    fn send<S>(sink: &S, event: u32) -> S::Dispatch
+    fn send<'sink, S>(sink: &'sink S, event: u32) -> <&'sink S as EventSink<u32>>::Dispatch
     where
-        S: EventSink<u32>,
+        &'sink S: EventSink<u32>,
     {
-        sink.send(event)
+        EventSink::send(sink, event)
     }
 
     assert_send_sync::<BridgeSink<u32>>();
@@ -54,8 +54,8 @@ fn progress_distinguishes_idle_from_closed() {
     let (bridge, sender) = bridge::<u32>();
 
     assert_eq!(bridge.forward_next(), BridgeProgress::Idle);
-    assert_eq!(sender.send(1).run(), DispatchOutcome::Completed);
-    assert_eq!(sender.send(2).run(), DispatchOutcome::Completed);
+    assert_eq!((&sender).send(1).run(), DispatchOutcome::Completed);
+    assert_eq!((&sender).send(2).run(), DispatchOutcome::Completed);
     drop(sender);
 
     assert_eq!(bridge.forward_next(), BridgeProgress::Forwarded);
@@ -70,7 +70,7 @@ fn cloned_senders_keep_the_bridge_input_open() {
     drop(first);
 
     assert_eq!(bridge.forward_next(), BridgeProgress::Idle);
-    assert_eq!(second.send(7).run(), DispatchOutcome::Completed);
+    assert_eq!((&second).send(7).run(), DispatchOutcome::Completed);
     assert_eq!(bridge.forward_next(), BridgeProgress::Forwarded);
     drop(second);
     assert_eq!(bridge.forward_next(), BridgeProgress::Closed);
@@ -89,8 +89,8 @@ fn a_bridge_forwards_events_in_receive_order() {
         .expect("live bridge")
         .detach();
 
-    assert_eq!(sender.send(1).run(), DispatchOutcome::Completed);
-    assert_eq!(sender.send(2).run(), DispatchOutcome::Completed);
+    assert_eq!((&sender).send(1).run(), DispatchOutcome::Completed);
+    assert_eq!((&sender).send(2).run(), DispatchOutcome::Completed);
     assert_eq!(bridge.forward_next(), BridgeProgress::Forwarded);
     assert_eq!(bridge.forward_next(), BridgeProgress::Forwarded);
 

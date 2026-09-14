@@ -19,8 +19,8 @@ pub(crate) trait EventEndpoint: 'static {
 
 /// A cloneable, non-owning reference to an event endpoint.
 ///
-/// An [`EventTarget`] does not keep its endpoint alive. [`Self::send`] creates
-/// a [`TargetDispatch`], which checks the endpoint when it runs.
+/// An [`EventTarget`] does not keep its endpoint alive. [`EventSink::send`]
+/// creates a [`TargetDispatch`], which checks the endpoint when it runs.
 pub struct EventTarget<E> {
     endpoint: Weak<dyn Any>,
     receive: Rc<ReceiveFn<E>>,
@@ -39,14 +39,6 @@ impl<E> EventTarget<E> {
                     .expect("an EventTarget endpoint must retain its original type");
                 endpoint.receive(event);
             }),
-        }
-    }
-
-    /// Builds one invocation carrying `event` to this target.
-    pub fn send(&self, event: E) -> TargetDispatch<E> {
-        TargetDispatch {
-            target: self.clone(),
-            event,
         }
     }
 
@@ -71,8 +63,19 @@ impl<E> EventTarget<E> {
 impl<E> EventSink<E> for EventTarget<E> {
     type Dispatch = TargetDispatch<E>;
 
-    fn send(&self, event: E) -> Self::Dispatch {
-        EventTarget::send(self, event)
+    fn send(self, event: E) -> Self::Dispatch {
+        TargetDispatch {
+            target: self,
+            event,
+        }
+    }
+}
+
+impl<E> EventSink<E> for &EventTarget<E> {
+    type Dispatch = TargetDispatch<E>;
+
+    fn send(self, event: E) -> Self::Dispatch {
+        EventSink::send(EventTarget::clone(self), event)
     }
 }
 

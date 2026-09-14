@@ -13,7 +13,7 @@ fn a_borrowed_source_runs_without_owning_its_publication() {
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: usize| output.borrow_mut().push(value));
-    let sink = EventTarget::from(&handler).contramap_borrow(|event: &Publication| event.0.len());
+    let sink = EventTarget::from(&handler).contramap(|event: &Publication| event.0.len());
     let (provider, source) = channel::<Publication>();
     source
         .connect(sink)

@@ -4,33 +4,20 @@ use crate::dispatch::{Dispatch, DispatchOutcome};
 
 /// A typed event destination that turns each send into one Dispatch.
 ///
+/// Sending consumes the particular sink value. Implementing `EventSink<E>`
+/// for `&Sink` gives callers a reusable borrowed sending capability, while an
+/// owned implementation can move its resources directly into the Dispatch.
+///
 /// The associated Dispatch preserves its concrete lifetime and auto traits so
 /// the selected Dispatcher can decide whether it can execute or retain it.
-pub trait EventSink<E> {
+pub trait EventSink<E>: Sized {
     type Dispatch: Dispatch;
 
     /// Turns `event` into one unexecuted invocation of this event sink.
-    fn send(&self, event: E) -> Self::Dispatch;
+    fn send(self, event: E) -> Self::Dispatch;
 
     /// Accepts `T` by converting it into this sink's `E` during execution.
-    fn contramap<T, M>(self, map: M) -> ContramapSink<Self, M, E>
-    where
-        Self: Clone + Sized,
-        M: Fn(T) -> E + Clone,
-    {
-        ContramapSink::new(self, map)
-    }
-
-    /// Accepts a borrowed `T` by converting it into this sink's `E` during
-    /// execution.
-    ///
-    /// This is the higher-ranked counterpart of [`Self::contramap`], allowing
-    /// one adapter to accept every lifetime of `&T`.
-    fn contramap_borrow<T: ?Sized, M>(self, map: M) -> ContramapSink<Self, M, E>
-    where
-        Self: Clone + Sized,
-        M: for<'event> Fn(&'event T) -> E + Clone,
-    {
+    fn contramap<M>(self, map: M) -> ContramapSink<Self, M, E> {
         ContramapSink::new(self, map)
     }
 
@@ -41,8 +28,7 @@ pub trait EventSink<E> {
     /// the underlying sink.
     fn contramap_filter<T, M>(self, map: M) -> ContramapFilterSink<Self, M, E>
     where
-        Self: Clone + Sized,
-        M: Fn(T) -> Option<E> + Clone,
+        M: FnOnce(T) -> Option<E>,
     {
         ContramapFilterSink::new(self, map)
     }
@@ -53,8 +39,7 @@ pub trait EventSink<E> {
     /// the underlying sink.
     fn filter<P>(self, predicate: P) -> FilterSink<Self, P>
     where
-        Self: Clone + Sized,
-        P: Fn(&E) -> bool + Clone,
+        P: FnOnce(&E) -> bool,
     {
         FilterSink::new(self, predicate)
     }
@@ -62,7 +47,6 @@ pub trait EventSink<E> {
     /// Accepts every `T: Into<E>`.
     fn accepting<T>(self) -> ContramapSink<Self, fn(T) -> E, E>
     where
-        Self: Clone + Sized,
         T: Into<E>,
     {
         ContramapSink::new(self, into_event::<T, E>)
@@ -73,22 +57,13 @@ fn into_event<T: Into<E>, E>(event: T) -> E {
     event.into()
 }
 
-impl<E, S> EventSink<E> for &S
-where
-    S: EventSink<E> + ?Sized,
-{
-    type Dispatch = S::Dispatch;
-
-    fn send(&self, event: E) -> Self::Dispatch {
-        EventSink::send(*self, event)
-    }
-}
-
 /// Adapts an event sink by converting its input when the resulting Dispatch runs.
 ///
 /// Sending `T` does not run `map`. The returned [`ContramapDispatch`] retains
 /// `T`, the conversion, and the underlying event sink until execution, so their
-/// lifetimes and auto traits remain visible to a prospective Dispatcher.
+/// lifetimes and auto traits remain visible to a prospective Dispatcher. An
+/// owned adapter moves these values without cloning; a borrowed adapter is
+/// reusable when its sink and conversion are cloneable.
 pub struct ContramapSink<S, M, E> {
     sink: S,
     map: M,
@@ -108,18 +83,30 @@ impl<S, M, E> ContramapSink<S, M, E> {
 
 impl<T, E, S, M> EventSink<T> for ContramapSink<S, M, E>
 where
-    S: EventSink<E> + Clone,
-    M: Fn(T) -> E + Clone,
+    S: EventSink<E>,
+    M: FnOnce(T) -> E,
 {
     type Dispatch = ContramapDispatch<S, M, T, E>;
 
-    fn send(&self, event: T) -> Self::Dispatch {
+    fn send(self, event: T) -> Self::Dispatch {
         ContramapDispatch {
-            sink: self.sink.clone(),
-            map: self.map.clone(),
+            sink: self.sink,
+            map: self.map,
             input: event,
             event: PhantomData,
         }
+    }
+}
+
+impl<T, E, S, M> EventSink<T> for &ContramapSink<S, M, E>
+where
+    S: EventSink<E> + Clone,
+    M: FnOnce(T) -> E + Clone,
+{
+    type Dispatch = ContramapDispatch<S, M, T, E>;
+
+    fn send(self, event: T) -> Self::Dispatch {
+        ContramapSink::clone(self).send(event)
     }
 }
 
@@ -191,18 +178,30 @@ impl<S, M, E> ContramapFilterSink<S, M, E> {
 
 impl<T, E, S, M> EventSink<T> for ContramapFilterSink<S, M, E>
 where
-    S: EventSink<E> + Clone,
-    M: Fn(T) -> Option<E> + Clone,
+    S: EventSink<E>,
+    M: FnOnce(T) -> Option<E>,
 {
     type Dispatch = ContramapFilterDispatch<S, M, T, E>;
 
-    fn send(&self, event: T) -> Self::Dispatch {
+    fn send(self, event: T) -> Self::Dispatch {
         ContramapFilterDispatch {
-            sink: self.sink.clone(),
-            map: self.map.clone(),
+            sink: self.sink,
+            map: self.map,
             input: event,
             event: PhantomData,
         }
+    }
+}
+
+impl<T, E, S, M> EventSink<T> for &ContramapFilterSink<S, M, E>
+where
+    S: EventSink<E> + Clone,
+    M: FnOnce(T) -> Option<E> + Clone,
+{
+    type Dispatch = ContramapFilterDispatch<S, M, T, E>;
+
+    fn send(self, event: T) -> Self::Dispatch {
+        ContramapFilterSink::clone(self).send(event)
     }
 }
 
@@ -272,17 +271,29 @@ impl<S, P> FilterSink<S, P> {
 
 impl<E, S, P> EventSink<E> for FilterSink<S, P>
 where
-    S: EventSink<E> + Clone,
-    P: Fn(&E) -> bool + Clone,
+    S: EventSink<E>,
+    P: FnOnce(&E) -> bool,
 {
     type Dispatch = FilterDispatch<S, P, E>;
 
-    fn send(&self, event: E) -> Self::Dispatch {
+    fn send(self, event: E) -> Self::Dispatch {
         FilterDispatch {
-            sink: self.sink.clone(),
-            predicate: self.predicate.clone(),
+            sink: self.sink,
+            predicate: self.predicate,
             event,
         }
+    }
+}
+
+impl<E, S, P> EventSink<E> for &FilterSink<S, P>
+where
+    S: EventSink<E> + Clone,
+    P: FnOnce(&E) -> bool + Clone,
+{
+    type Dispatch = FilterDispatch<S, P, E>;
+
+    fn send(self, event: E) -> Self::Dispatch {
+        FilterSink::clone(self).send(event)
     }
 }
 
@@ -360,8 +371,20 @@ where
 {
     type Dispatch = S::Dispatch;
 
-    fn send(&self, event: &'input T) -> Self::Dispatch {
+    fn send(self, event: &'input T) -> Self::Dispatch {
         self.sink.send(event.to_owned())
+    }
+}
+
+impl<'sink, 'input, T, S> EventSink<&'input T> for &'sink OwningSink<S>
+where
+    T: ToOwned + ?Sized,
+    &'sink S: EventSink<T::Owned>,
+{
+    type Dispatch = <&'sink S as EventSink<T::Owned>>::Dispatch;
+
+    fn send(self, event: &'input T) -> Self::Dispatch {
+        EventSink::send(&self.sink, event.to_owned())
     }
 }
 

@@ -39,11 +39,11 @@ where
     /// Runs every generated Dispatch inline while its event remains valid.
     pub fn inline(self) -> Option<Subscription>
     where
-        for<'event> K: EventSink<S::Event<'event>>,
+        for<'sink, 'event> &'sink K: EventSink<S::Event<'event>>,
     {
         let Self { source, sink } = self;
         source.subscribe(move |event| {
-            let _ = sink.send(event).run();
+            let _ = EventSink::send(&sink, event).run();
         })
     }
 
@@ -54,12 +54,12 @@ where
     pub fn via<D>(self, dispatcher: D) -> Option<Subscription>
     where
         D: 'static,
-        for<'event> K: EventSink<S::Event<'event>>,
-        for<'event> D: Dispatcher<<K as EventSink<S::Event<'event>>>::Dispatch>,
+        for<'sink, 'event> &'sink K: EventSink<S::Event<'event>>,
+        for<'sink, 'event> D: Dispatcher<<&'sink K as EventSink<S::Event<'event>>>::Dispatch>,
     {
         let Self { source, sink } = self;
         source.subscribe(move |event| {
-            let _ = Dispatcher::submit(&dispatcher, sink.send(event));
+            let _ = Dispatcher::submit(&dispatcher, EventSink::send(&sink, event));
         })
     }
 }

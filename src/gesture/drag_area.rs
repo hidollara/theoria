@@ -15,8 +15,9 @@ pub struct DragArea(GestureArea<Drag>);
 impl DragArea {
     pub fn new<S>(sink: S, region: HitRegion) -> Self
     where
-        S: EventSink<Drag> + 'static,
-        S::Dispatch: 'static,
+        S: 'static,
+        for<'sink> &'sink S: EventSink<Drag>,
+        for<'sink> <&'sink S as EventSink<Drag>>::Dispatch: 'static,
     {
         Self(GestureArea::new(sink, region))
     }

@@ -3,7 +3,7 @@
 use std::{cell::Cell, error::Error, fmt, io, rc::Rc, sync::Arc, time::Instant};
 
 use crate::event::{
-    BridgeProgress, BridgeSink, ChannelSource, EventBridge, bridge as event_bridge,
+    BridgeProgress, BridgeSink, ChannelSource, EventBridge, EventSink, bridge as event_bridge,
 };
 
 use super::{EventLoopClosed, EventLoopHandle, EventLoopParticipant, EventLoopWaker, Result};

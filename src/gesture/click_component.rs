@@ -24,8 +24,9 @@ impl ClickGesture {
         clicks: S,
     ) -> Self
     where
-        S: EventSink<Click> + 'static,
-        S::Dispatch: 'static,
+        S: 'static,
+        for<'sink> &'sink S: EventSink<Click>,
+        for<'sink> <&'sink S as EventSink<Click>>::Dispatch: 'static,
     {
         Self {
             recognizer,

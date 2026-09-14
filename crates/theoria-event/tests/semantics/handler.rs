@@ -6,7 +6,7 @@ use std::{
 
 use super::drain;
 use theoria_event::{
-    Dispatch, DispatchOutcome, DispatchQueue, Dispatcher, EventHandler, EventTarget,
+    Dispatch, DispatchOutcome, DispatchQueue, Dispatcher, EventHandler, EventSink, EventTarget,
 };
 
 #[test]
@@ -17,12 +17,12 @@ fn direct_delivery_returns_events_after_handler_drop() {
     let first = EventTarget::from(&handler);
     let second = EventTarget::from(&handler);
 
-    assert_eq!(first.send(1_u32).run(), DispatchOutcome::Completed);
-    assert_eq!(second.send(2_u32).run(), DispatchOutcome::Completed);
+    assert_eq!((&first).send(1_u32).run(), DispatchOutcome::Completed);
+    assert_eq!((&second).send(2_u32).run(), DispatchOutcome::Completed);
     assert_eq!(calls.get(), 2);
     drop(handler);
-    assert_eq!(first.send(3_u32).run(), DispatchOutcome::SinkClosed);
-    assert_eq!(second.send(4_u32).run(), DispatchOutcome::SinkClosed);
+    assert_eq!((&first).send(3_u32).run(), DispatchOutcome::SinkClosed);
+    assert_eq!((&second).send(4_u32).run(), DispatchOutcome::SinkClosed);
     assert_eq!(calls.get(), 2);
 }
 
@@ -40,12 +40,12 @@ fn a_panicking_handler_is_restored_for_a_later_dispatch() {
     });
     let sink = EventTarget::from(&handler);
 
-    assert!(event_dispatcher.submit(sink.send(())).is_ok());
+    assert!(event_dispatcher.submit((&sink).send(())).is_ok());
     let first = catch_unwind(AssertUnwindSafe(|| {
         drain(&mut queue);
     }));
     assert!(first.is_err());
-    assert!(event_dispatcher.submit(sink.send(())).is_ok());
+    assert!(event_dispatcher.submit((&sink).send(())).is_ok());
     drain(&mut queue);
     assert_eq!(calls.get(), 2);
 }
@@ -73,11 +73,11 @@ fn recursively_dispatching_to_the_same_handler_panics() {
     sink_slot.replace(Some(sink.clone()));
 
     let result = catch_unwind(AssertUnwindSafe(|| {
-        let _ = sink.send(()).run();
+        let _ = (&sink).send(()).run();
     }));
     assert!(result.is_err());
 
-    assert_eq!(sink.send(()).run(), DispatchOutcome::Completed);
+    assert_eq!((&sink).send(()).run(), DispatchOutcome::Completed);
     assert_eq!(calls.get(), 2);
 }
 
@@ -92,13 +92,13 @@ fn dropping_a_handler_prevents_a_queued_dispatch_from_invoking_it() {
     });
     let sink = EventTarget::from(&handler);
 
-    assert!(event_dispatcher.submit(sink.send(())).is_ok());
+    assert!(event_dispatcher.submit((&sink).send(())).is_ok());
     drop(handler);
     assert!(queue.run_next().is_some());
     assert!(queue.run_next().is_none());
 
     assert_eq!(calls.get(), 0);
-    assert!(event_dispatcher.submit(sink.send(())).is_ok());
+    assert!(event_dispatcher.submit((&sink).send(())).is_ok());
     assert!(queue.run_next().is_some());
     assert_eq!(calls.get(), 0);
 }
