@@ -1,6 +1,6 @@
 use std::{cell::Cell, cell::RefCell, rc::Rc};
 
-use theoria_event::{EventTarget, OwningSink, channel};
+use theoria_event::{ChannelSink, OwningSink, channel};
 
 use super::support::{DrainOutcome, TestRuntime};
 
@@ -92,7 +92,7 @@ enum ProviderCommand {
 
 #[test]
 fn a_component_event_input_does_not_keep_its_provider_component_alive() {
-    let exported_input = Rc::new(RefCell::new(None::<EventTarget<u32>>));
+    let exported_input = Rc::new(RefCell::new(None::<ChannelSink<u32>>));
     let input_output = Rc::clone(&exported_input);
     let result = Rc::new(Cell::new(None));
     let probe_result = Rc::clone(&result);

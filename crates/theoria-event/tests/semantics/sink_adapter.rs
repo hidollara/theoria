@@ -3,9 +3,9 @@ use std::{
     rc::Rc,
 };
 
+use super::{TestSink, TestSinkOwner};
 use theoria_event::{
-    ContramapSink, Dispatch, DispatchOutcome, DispatchQueue, Dispatcher, EventHandler, EventSink,
-    EventTarget, OwningSink,
+    ContramapSink, Dispatch, DispatchOutcome, DispatchQueue, Dispatcher, EventSink, OwningSink,
 };
 
 #[test]
@@ -14,8 +14,8 @@ fn contramap_runs_when_its_dispatch_runs() {
     let observed_map = Rc::clone(&mapped);
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
-    let handler = EventHandler::new(move |value: usize| output.borrow_mut().push(value));
-    let sink = ContramapSink::new(EventTarget::from(&handler), move |value: String| {
+    let handler = TestSinkOwner::new(move |value: usize| output.borrow_mut().push(value));
+    let sink = ContramapSink::new(TestSink::from(&handler), move |value: String| {
         observed_map.set(true);
         value.len()
     });
@@ -35,9 +35,9 @@ fn an_owned_adapter_moves_a_non_clone_mapping_into_its_dispatch() {
 
     let value = Rc::new(Cell::new(0));
     let output = Rc::clone(&value);
-    let handler = EventHandler::new(move |event: usize| output.set(event));
+    let handler = TestSinkOwner::new(move |event: usize| output.set(event));
     let offset = NonClone(2);
-    let sink = EventTarget::from(&handler).contramap(move |event: usize| {
+    let sink = TestSink::from(&handler).contramap(move |event: usize| {
         let NonClone(offset) = offset;
         event + offset
     });
@@ -52,8 +52,8 @@ fn an_owned_adapter_moves_a_non_clone_mapping_into_its_dispatch() {
 fn contramap_dispatch_retains_a_borrowed_input_until_inline_execution() {
     let length = Rc::new(Cell::new(0));
     let output = Rc::clone(&length);
-    let handler = EventHandler::new(move |value: usize| output.set(value));
-    let sink = ContramapSink::new(EventTarget::from(&handler), str::len);
+    let handler = TestSinkOwner::new(move |value: usize| output.set(value));
+    let sink = ContramapSink::new(TestSink::from(&handler), str::len);
     let owned = String::from("temporary");
     let dispatch = sink.send(owned.as_str());
 
@@ -66,8 +66,8 @@ fn owning_a_borrowed_input_happens_before_deferred_execution() {
     let mut queue = DispatchQueue::new();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
-    let handler = EventHandler::new(move |value: String| output.borrow_mut().push(value));
-    let sink = OwningSink::new(EventTarget::from(&handler));
+    let handler = TestSinkOwner::new(move |value: String| output.borrow_mut().push(value));
+    let sink = OwningSink::new(TestSink::from(&handler));
     let input = String::from("temporary");
 
     queue

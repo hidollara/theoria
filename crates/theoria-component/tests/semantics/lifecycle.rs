@@ -4,8 +4,8 @@ use std::{
     rc::Rc,
 };
 
-use theoria_component::UpdateContext;
-use theoria_event::EventTarget;
+use theoria_component::{ComponentSink, UpdateContext};
+use theoria_event::{Dispatch, DispatchOutcome, EventSink};
 
 use super::support::{DrainOutcome, HandlesEvent, TestDriver, TestRuntime, receive};
 
@@ -102,7 +102,7 @@ fn mount_context_mounts_a_child_that_can_read_its_owners_value() {
 
 struct DynamicOwner {
     child_events: Rc<RefCell<Vec<u32>>>,
-    exported_child: Rc<RefCell<Option<EventTarget<u32>>>>,
+    exported_child: Rc<RefCell<Option<ComponentSink<u32>>>>,
 }
 
 impl HandlesEvent for DynamicOwner {
@@ -220,7 +220,7 @@ impl Drop for DropLog {
 }
 
 #[test]
-fn dropping_a_root_target_does_not_unmount_the_instance_owned_root() {
+fn dropping_a_root_input_does_not_unmount_the_instance_owned_root() {
     let order = Rc::new(RefCell::new(Vec::new()));
     let parent_order = Rc::clone(&order);
     let runtime = TestRuntime::new(|context| {
@@ -238,8 +238,8 @@ fn dropping_a_root_target_does_not_unmount_the_instance_owned_root() {
         context.receive(|(): (), _context| {})
     });
 
-    let root_target = runtime.event_target().clone();
-    drop(root_target);
+    let root_input = runtime.input().clone();
+    drop(root_input);
     assert!(order.borrow().is_empty());
     drop(runtime);
     assert_eq!(&*order.borrow(), &["child", "parent"]);
@@ -269,7 +269,7 @@ fn dropping_the_instance_destroys_owned_components_child_first() {
 }
 
 #[test]
-fn an_instance_without_a_root_target_still_owns_its_component_tree() {
+fn an_instance_without_a_root_input_still_owns_its_component_tree() {
     let order = Rc::new(RefCell::new(Vec::new()));
     let root_order = Rc::clone(&order);
     let runtime = TestDriver::new(move |context| {
@@ -285,7 +285,7 @@ fn an_instance_without_a_root_target_still_owns_its_component_tree() {
 }
 
 #[test]
-fn dropping_the_instance_invalidates_a_root_while_its_target_remains() {
+fn dropping_the_instance_invalidates_a_root_while_its_input_remains() {
     let order = Rc::new(RefCell::new(Vec::new()));
     let target = {
         let component_order = Rc::clone(&order);
@@ -323,7 +323,7 @@ fn an_instance_does_not_own_exported_typed_input_capabilities() {
     assert_eq!(&*events.borrow(), &[7]);
 
     drop(runtime);
-    assert_eq!(root.send_inline(8_u32), Err(8_u32));
+    assert_eq!(root.send(8_u32).run(), DispatchOutcome::SinkClosed);
 }
 
 #[test]
@@ -374,7 +374,7 @@ fn a_panicking_mount_rolls_back_children_created_by_its_builder() {
         .as_ref()
         .expect("child was constructed before the panic")
         .clone();
-    assert_eq!(child.send_inline(1_u32), Err(1_u32));
+    assert_eq!(child.send(1_u32).run(), DispatchOutcome::SinkClosed);
 }
 
 struct ReactiveDropCounter(Rc<Cell<u32>>);

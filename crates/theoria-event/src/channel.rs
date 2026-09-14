@@ -6,13 +6,14 @@ use std::{
 };
 
 use crate::{
+    dispatch::{Dispatch, DispatchOutcome},
+    sink::EventSink,
     source::EventSource,
-    target::{EventEndpoint, EventTarget},
 };
 
 type Subscriber<E> = Rc<dyn Fn(&E)>;
 
-/// Creates an owning publication endpoint and a non-owning Channel Source.
+/// Creates an owning event Provider and a non-owning Channel Source.
 pub fn channel<E: 'static>() -> (EventProvider<E>, ChannelSource<E>) {
     let state = Rc::new(ChannelState {
         next_subscription: Cell::new(0),
@@ -28,7 +29,7 @@ pub fn channel<E: 'static>() -> (EventProvider<E>, ChannelSource<E>) {
     )
 }
 
-/// Owns one typed event channel and accepts values published into it.
+/// Owns one typed event channel and creates publishing capabilities for it.
 ///
 /// Dropping the Provider closes the channel. Sinks and Source views derived
 /// from it do not extend its lifetime.
@@ -40,11 +41,12 @@ impl<E: 'static> EventProvider<E> {
     pub(crate) fn publish(&self, event: E) {
         self.state.publish(event);
     }
-}
 
-impl<E: 'static> From<&EventProvider<E>> for EventTarget<E> {
-    fn from(provider: &EventProvider<E>) -> Self {
-        Self::from_endpoint(Rc::downgrade(&provider.state))
+    /// Returns a non-owning capability for publishing into this channel.
+    pub fn sink(&self) -> ChannelSink<E> {
+        ChannelSink {
+            state: Rc::downgrade(&self.state),
+        }
     }
 }
 
@@ -52,6 +54,74 @@ impl<E: 'static> fmt::Debug for EventProvider<E> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("EventProvider")
+            .finish_non_exhaustive()
+    }
+}
+
+/// A cloneable, non-owning publishing capability for one typed channel.
+///
+/// Dropping the corresponding [`EventProvider`] closes this sink. Pending
+/// Dispatches then complete with [`DispatchOutcome::SinkClosed`].
+pub struct ChannelSink<E: 'static> {
+    state: Weak<ChannelState<E>>,
+}
+
+impl<E: 'static> EventSink<E> for ChannelSink<E> {
+    type Dispatch = ChannelDispatch<E>;
+
+    fn send(self, event: E) -> Self::Dispatch {
+        ChannelDispatch {
+            state: self.state,
+            event,
+        }
+    }
+}
+
+impl<E: 'static> EventSink<E> for &ChannelSink<E> {
+    type Dispatch = ChannelDispatch<E>;
+
+    fn send(self, event: E) -> Self::Dispatch {
+        self.clone().send(event)
+    }
+}
+
+impl<E: 'static> Clone for ChannelSink<E> {
+    fn clone(&self) -> Self {
+        Self {
+            state: self.state.clone(),
+        }
+    }
+}
+
+impl<E: 'static> fmt::Debug for ChannelSink<E> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ChannelSink")
+            .finish_non_exhaustive()
+    }
+}
+
+/// One concrete publication into a typed channel.
+#[must_use = "a ChannelDispatch must be run, submitted, or intentionally discarded"]
+pub struct ChannelDispatch<E: 'static> {
+    state: Weak<ChannelState<E>>,
+    event: E,
+}
+
+impl<E: 'static> Dispatch for ChannelDispatch<E> {
+    fn run(self) -> DispatchOutcome {
+        let Some(state) = self.state.upgrade() else {
+            return DispatchOutcome::SinkClosed;
+        };
+        state.publish(self.event);
+        DispatchOutcome::Completed
+    }
+}
+
+impl<E: 'static> fmt::Debug for ChannelDispatch<E> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ChannelDispatch")
             .finish_non_exhaustive()
     }
 }
@@ -127,13 +197,5 @@ impl<E: 'static> ChannelState<E> {
         for receive in subscribers {
             receive(&event);
         }
-    }
-}
-
-impl<E: 'static> EventEndpoint for ChannelState<E> {
-    type Event = E;
-
-    fn receive(&self, event: E) {
-        self.publish(event);
     }
 }

@@ -1,9 +1,10 @@
 use std::{
     cell::{Cell, RefCell},
+    panic::{AssertUnwindSafe, catch_unwind},
     rc::Rc,
 };
 
-use theoria_component::UpdateContext;
+use theoria_component::{ComponentSink, UpdateContext};
 use theoria_event::EventSink;
 
 use super::support::{DrainOutcome, HandlesEvent, TestRuntime, receive};
@@ -14,6 +15,40 @@ fn deliver_all<E: 'static>(runtime: &mut TestRuntime<E>) {
 
 fn enqueue_root<E: 'static>(runtime: &TestRuntime<E>, event: E) -> bool {
     runtime.send(event)
+}
+
+#[test]
+fn recursively_sending_to_the_same_component_sink_panics() {
+    let recurse = Rc::new(Cell::new(true));
+    let nested_recurse = Rc::clone(&recurse);
+    let sink = Rc::new(RefCell::new(None::<ComponentSink<()>>));
+    let nested_sink = Rc::clone(&sink);
+    let calls = Rc::new(Cell::new(0));
+    let callback_calls = Rc::clone(&calls);
+    let mut runtime = TestRuntime::new(move |context| {
+        let input = context.receive(move |(): (), context| {
+            callback_calls.set(callback_calls.get() + 1);
+            if nested_recurse.replace(false) {
+                let input = nested_sink
+                    .borrow()
+                    .as_ref()
+                    .expect("the Component input has been installed")
+                    .clone();
+                let _ = context.send_inline(input, ());
+            }
+        });
+        sink.replace(Some(input.clone()));
+        input
+    });
+
+    assert!(enqueue_root(&runtime, ()));
+    assert!(
+        catch_unwind(AssertUnwindSafe(|| runtime.run_until_idle())).is_err(),
+        "recursive delivery must not alias the callback mutably"
+    );
+    assert!(enqueue_root(&runtime, ()));
+    deliver_all(&mut runtime);
+    assert_eq!(calls.get(), 2);
 }
 
 #[derive(Clone, Copy)]

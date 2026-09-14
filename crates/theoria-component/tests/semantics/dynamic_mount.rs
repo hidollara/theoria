@@ -4,7 +4,7 @@ use std::{
 };
 
 use theoria_component::{Component, MountContext, UpdateContext};
-use theoria_event::{ChannelSource, EventTarget, OwningSink};
+use theoria_event::{ChannelSink, ChannelSource, OwningSink};
 
 use super::support::{DrainOutcome, HandlesEvent, TestRuntime, receive};
 
@@ -17,7 +17,7 @@ fn enqueue_root<E: 'static>(runtime: &TestRuntime<E>, event: E) -> bool {
 }
 
 struct OwnedU32Publisher {
-    input: EventTarget<u32>,
+    input: ChannelSink<u32>,
 }
 
 impl HandlesEvent for OwnedU32Publisher {
@@ -35,7 +35,7 @@ enum DynamicHandlerEvent {
 
 struct DynamicHandlerOwner {
     source: ChannelSource<u32>,
-    input: EventTarget<u32>,
+    input: ChannelSink<u32>,
     values: Rc<RefCell<Vec<u32>>>,
 }
 

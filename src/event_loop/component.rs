@@ -79,7 +79,7 @@ impl EventLoopParticipant for ComponentParticipant {
 mod tests {
     use std::{cell::Cell, rc::Rc};
 
-    use crate::event::{EventTarget, OwningSink};
+    use crate::event::{Dispatch, EventSink, OwningSink};
 
     use super::*;
 
@@ -92,7 +92,10 @@ mod tests {
             let handler = context.receive(move |(): (), _| handler_output.set(true));
             assert!(context.connect(source, OwningSink::new(handler)));
             let effect = context.create_effect(move |_| {
-                assert!(EventTarget::from(&source_input).send_inline(()).is_ok());
+                assert_eq!(
+                    (&source_input).send(()).run(),
+                    crate::event::DispatchOutcome::Completed
+                );
             });
             context.sync(&effect);
         });

@@ -1,8 +1,9 @@
 use std::{cell::RefCell, rc::Rc, thread};
 
+use super::{TestSink, TestSinkOwner};
 use theoria_event::{
     BridgeDispatch, BridgeProgress, BridgeSink, Dispatch, DispatchOutcome, DispatchQueue,
-    EventHandler, EventSink, EventTarget, Subscription, bridge,
+    EventSink, Subscription, bridge,
 };
 
 fn assert_send_sync<T: Send + Sync>() {}
@@ -31,8 +32,8 @@ fn a_value_crosses_a_thread_boundary_into_a_local_source() {
     let (bridge, sender) = bridge();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
-    let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
-    let sink = EventTarget::from(&handler);
+    let handler = TestSinkOwner::new(move |value: u32| output.borrow_mut().push(value));
+    let sink = TestSink::from(&handler);
     Subscription::builder(bridge.source(), sink)
         .owned()
         .inline()
@@ -80,8 +81,8 @@ fn a_bridge_forwards_events_in_receive_order() {
     let (bridge, sender) = bridge::<u32>();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
-    let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
-    Subscription::builder(bridge.source(), EventTarget::from(&handler))
+    let handler = TestSinkOwner::new(move |value: u32| output.borrow_mut().push(value));
+    Subscription::builder(bridge.source(), TestSink::from(&handler))
         .owned()
         .inline()
         .expect("live bridge")
@@ -111,8 +112,8 @@ fn each_subscriber_selects_its_own_dispatcher() {
     let event_dispatcher = queue.dispatcher();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
-    let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
-    let sink = EventTarget::from(&handler);
+    let handler = TestSinkOwner::new(move |value: u32| output.borrow_mut().push(value));
+    let sink = TestSink::from(&handler);
     Subscription::builder(bridge.source(), sink)
         .owned()
         .via(event_dispatcher.clone())

@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use crate::{
     component::{ComponentInstance, MountContext},
-    event::{DispatchQueue, DynDispatch, EventTarget, SubmissionOutcome},
+    event::{DispatchQueue, DynDispatch, EventSink, SubmissionOutcome},
     reactive::ReactiveError,
 };
 
@@ -18,12 +18,16 @@ impl TestDriver {
         Self { queue, components }
     }
 
-    pub(crate) fn send<E: 'static>(
+    pub(crate) fn send<E, S>(
         &self,
-        sink: impl Into<EventTarget<E>>,
+        sink: S,
         event: E,
-    ) -> Result<SubmissionOutcome, DynDispatch<'static>> {
-        self.components.send(sink.into(), event)
+    ) -> Result<SubmissionOutcome, DynDispatch<'static>>
+    where
+        S: EventSink<E>,
+        S::Dispatch: 'static,
+    {
+        self.components.send(sink, event)
     }
 
     pub(crate) fn run_until_idle(&mut self) -> Result<(), ReactiveError> {

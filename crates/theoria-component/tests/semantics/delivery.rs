@@ -4,8 +4,7 @@ use std::{
     rc::Rc,
 };
 
-use theoria_component::UpdateContext;
-use theoria_event::EventTarget;
+use theoria_component::{ComponentSink, UpdateContext};
 
 use super::support::{DrainOutcome, HandlesEvent, TestRuntime, receive};
 
@@ -62,7 +61,7 @@ impl HandlesEvent for AddHandler {
 }
 
 struct Forwarder {
-    target: EventTarget<AddEvent>,
+    target: ComponentSink<AddEvent>,
 }
 
 impl HandlesEvent for Forwarder {
@@ -227,13 +226,13 @@ fn queued_events_for_an_unmounted_component_are_cancelled() {
     let component_events = Rc::clone(&events);
     let mut runtime =
         TestRuntime::new(move |context| receive(context, RemovableRecorder(component_events)));
-    let component_target = runtime.event_target().clone();
+    let component_input = runtime.input().clone();
     enqueue_root(&runtime, RemovableRecorderEvent::Unmount);
     enqueue_root(&runtime, RemovableRecorderEvent::Record(1));
 
     deliver_all(&mut runtime);
     assert!(events.borrow().is_empty());
-    assert!(runtime.send_to(&component_target, RemovableRecorderEvent::Record(2)));
+    assert!(runtime.send_to(&component_input, RemovableRecorderEvent::Record(2)));
     deliver_all(&mut runtime);
     assert!(events.borrow().is_empty());
 }

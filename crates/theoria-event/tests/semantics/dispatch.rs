@@ -4,11 +4,10 @@ use std::{
     rc::Rc,
 };
 
-use super::drain;
+use super::{TestSink, TestSinkOwner, drain};
 use theoria_event::{
     Dispatch, DispatchHandle, DispatchOutcome, DispatchQueue, DispatchStatus, Dispatcher,
-    DynDispatch, EventHandler, EventSink, EventTarget, SubmissionOutcome, Subscription,
-    TargetDispatch, TrackedDispatch, channel,
+    DynDispatch, EventSink, SubmissionOutcome, Subscription, TrackedDispatch, channel,
 };
 
 #[derive(Clone)]
@@ -42,26 +41,28 @@ impl Dispatch for TestDispatch {
     }
 }
 
-fn submit_event<E, D>(
+fn submit_event<E, S, D>(
     dispatcher: &D,
-    sink: impl Into<EventTarget<E>>,
+    sink: S,
     event: E,
-) -> Result<SubmissionOutcome, TargetDispatch<E>>
+) -> Result<SubmissionOutcome, S::Dispatch>
 where
-    D: Dispatcher<TargetDispatch<E>>,
+    S: EventSink<E>,
+    D: Dispatcher<S::Dispatch>,
 {
-    dispatcher.submit(sink.into().send(event))
+    dispatcher.submit(sink.send(event))
 }
 
-fn submit_tracked<E, D>(
+fn submit_tracked<E, S, D>(
     dispatcher: &D,
-    sink: impl Into<EventTarget<E>>,
+    sink: S,
     event: E,
-) -> Result<DispatchHandle, TrackedDispatch<TargetDispatch<E>>>
+) -> Result<DispatchHandle, TrackedDispatch<S::Dispatch>>
 where
-    D: Dispatcher<TrackedDispatch<TargetDispatch<E>>>,
+    S: EventSink<E>,
+    D: Dispatcher<TrackedDispatch<S::Dispatch>>,
 {
-    let dispatch = sink.into().send(event).tracked();
+    let dispatch = sink.send(event).tracked();
     let handle = dispatch.handle();
     dispatcher.submit(dispatch).map(|_| handle)
 }
@@ -80,8 +81,8 @@ fn a_custom_dispatcher_can_defer_an_opaque_dispatch() {
     let event_dispatcher = dispatcher.clone();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
-    let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
-    let sink = EventTarget::from(&handler);
+    let handler = TestSinkOwner::new(move |value: u32| output.borrow_mut().push(value));
+    let sink = TestSink::from(&handler);
 
     assert_eq!(
         submit_event(&event_dispatcher, &sink, 7_u32).expect("Dispatcher accepts work"),
@@ -103,8 +104,8 @@ fn rejection_returns_the_original_dispatch() {
     let event_dispatcher = RejectingDispatcher;
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
-    let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
-    let sink = EventTarget::from(&handler);
+    let handler = TestSinkOwner::new(move |value: u32| output.borrow_mut().push(value));
+    let sink = TestSink::from(&handler);
 
     let dispatch =
         submit_event(&event_dispatcher, &sink, 7_u32).expect_err("the Dispatcher rejects work");
@@ -130,8 +131,8 @@ fn rejection_returns_an_executable_dyn_dispatch() {
 #[test]
 fn tracked_rejection_returns_the_original_dispatch() {
     let event_dispatcher = RejectingDispatcher;
-    let handler = EventHandler::new(|_: u32| {});
-    let sink = EventTarget::from(&handler);
+    let handler = TestSinkOwner::new(|_: u32| {});
+    let sink = TestSink::from(&handler);
 
     let dispatch =
         submit_tracked(&event_dispatcher, &sink, 7_u32).expect_err("the Dispatcher rejects work");
@@ -148,10 +149,10 @@ fn tracked_rejection_returns_the_original_dispatch() {
 fn direct_delivery_runs_on_the_sending_stack() {
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
-    let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
+    let handler = TestSinkOwner::new(move |value: u32| output.borrow_mut().push(value));
 
     assert_eq!(
-        EventTarget::from(&handler).send(7_u32).run(),
+        TestSink::from(&handler).send(7_u32).run(),
         DispatchOutcome::Completed
     );
     assert_eq!(&*values.borrow(), &[7]);
@@ -165,8 +166,8 @@ fn a_tracked_dispatch_can_be_cancelled_before_execution() {
     let event_dispatcher = dispatcher.clone();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
-    let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
-    let sink = EventTarget::from(&handler);
+    let handler = TestSinkOwner::new(move |value: u32| output.borrow_mut().push(value));
+    let sink = TestSink::from(&handler);
 
     let handle =
         submit_tracked(&event_dispatcher, &sink, 7_u32).expect("the Dispatcher accepts work");
@@ -197,8 +198,8 @@ fn execution_reports_when_its_sink_was_dropped() {
         pending: Rc::new(RefCell::new(VecDeque::new())),
     };
     let event_dispatcher = dispatcher.clone();
-    let handler = EventHandler::new(|_: u32| {});
-    let sink = EventTarget::from(&handler);
+    let handler = TestSinkOwner::new(|_: u32| {});
+    let sink = TestSink::from(&handler);
 
     assert!(submit_event(&event_dispatcher, &sink, 7_u32).is_ok());
     drop(handler);
@@ -218,8 +219,8 @@ fn dropping_a_handle_does_not_cancel_its_dispatch() {
     let event_dispatcher = queue.dispatcher();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
-    let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
-    let sink = EventTarget::from(&handler);
+    let handler = TestSinkOwner::new(move |value: u32| output.borrow_mut().push(value));
+    let sink = TestSink::from(&handler);
 
     let handle =
         submit_tracked(&event_dispatcher, &sink, 7_u32).expect("the Dispatcher accepts work");
@@ -230,8 +231,8 @@ fn dropping_a_handle_does_not_cancel_its_dispatch() {
 
 #[test]
 fn running_a_tracked_dispatch_finishes_its_handle() {
-    let handler = EventHandler::new(|_: u32| {});
-    let dispatch = EventTarget::from(&handler).send(7_u32).tracked();
+    let handler = TestSinkOwner::new(|_: u32| {});
+    let dispatch = TestSink::from(&handler).send(7_u32).tracked();
     let handle = dispatch.handle();
 
     assert_eq!(dispatch.run(), DispatchOutcome::Completed);
@@ -247,8 +248,8 @@ fn running_a_tracked_dispatch_finishes_its_handle() {
 fn a_tracked_deferred_submission_records_its_execution_outcome() {
     let mut queue = DispatchQueue::new();
     let event_dispatcher = queue.dispatcher();
-    let handler = EventHandler::new(|_: u32| {});
-    let sink = EventTarget::from(&handler);
+    let handler = TestSinkOwner::new(|_: u32| {});
+    let sink = TestSink::from(&handler);
     let handle =
         submit_tracked(&event_dispatcher, &sink, 7_u32).expect("the Dispatcher accepts work");
 
@@ -270,7 +271,7 @@ fn a_handler_observes_its_tracked_dispatch_as_executing() {
     let observed_from_handler = Rc::clone(&observed);
     let cancellations = Rc::new(RefCell::new(Vec::new()));
     let cancellations_from_handler = Rc::clone(&cancellations);
-    let handler = EventHandler::new(move |(): ()| {
+    let handler = TestSinkOwner::new(move |(): ()| {
         let handle = handle_from_handler.borrow();
         let handle = handle
             .as_ref()
@@ -281,7 +282,7 @@ fn a_handler_observes_its_tracked_dispatch_as_executing() {
             .borrow_mut()
             .push(handle.cancel());
     });
-    let sink = EventTarget::from(&handler);
+    let sink = TestSink::from(&handler);
     let handle =
         submit_tracked(&event_dispatcher, &sink, ()).expect("the Dispatcher accepts the Dispatch");
     handle_slot.replace(Some(handle.clone()));
@@ -300,8 +301,8 @@ fn a_handler_observes_its_tracked_dispatch_as_executing() {
 fn a_finish_callback_panic_prevents_later_callbacks() {
     let mut queue = DispatchQueue::new();
     let event_dispatcher = queue.dispatcher();
-    let handler = EventHandler::new(|_: u32| {});
-    let sink = EventTarget::from(&handler);
+    let handler = TestSinkOwner::new(|_: u32| {});
+    let sink = TestSink::from(&handler);
     let handle = submit_tracked(&event_dispatcher, &sink, 7_u32)
         .expect("the Dispatcher accepts the Dispatch");
     let later_callback_ran = Rc::new(Cell::new(false));
@@ -325,8 +326,8 @@ fn a_finish_callback_panic_prevents_later_callbacks() {
 fn dropping_a_dispatcher_leaves_discarded_tracked_dispatches_unstarted() {
     let queue = DispatchQueue::new();
     let event_dispatcher = queue.dispatcher();
-    let handler = EventHandler::new(|_: u32| {});
-    let sink = EventTarget::from(&handler);
+    let handler = TestSinkOwner::new(|_: u32| {});
+    let sink = TestSink::from(&handler);
     let handle = submit_tracked(&event_dispatcher, &sink, 7_u32)
         .expect("the Dispatcher accepts the Dispatch");
     let outcomes = Rc::new(RefCell::new(Vec::new()));
@@ -343,8 +344,8 @@ fn dropping_a_dispatcher_leaves_discarded_tracked_dispatches_unstarted() {
 fn a_panicking_sink_leaves_its_tracked_dispatch_executing() {
     let mut queue = DispatchQueue::new();
     let event_dispatcher = queue.dispatcher();
-    let handler = EventHandler::new(|(): ()| panic!("sink panic"));
-    let sink = EventTarget::from(&handler);
+    let handler = TestSinkOwner::new(|(): ()| panic!("sink panic"));
+    let sink = TestSink::from(&handler);
     let handle =
         submit_tracked(&event_dispatcher, &sink, ()).expect("the Dispatcher accepts the Dispatch");
     let callbacks = Rc::new(RefCell::new(Vec::new()));
@@ -364,8 +365,8 @@ fn a_panicking_sink_leaves_its_tracked_dispatch_executing() {
 fn a_handle_notifies_finish_after_deferred_execution() {
     let mut queue = DispatchQueue::new();
     let event_dispatcher = queue.dispatcher();
-    let handler = EventHandler::new(|_: u32| {});
-    let sink = EventTarget::from(&handler);
+    let handler = TestSinkOwner::new(|_: u32| {});
+    let sink = TestSink::from(&handler);
     let handle =
         submit_tracked(&event_dispatcher, &sink, 7_u32).expect("the Dispatcher accepts work");
     let outcomes = Rc::new(RefCell::new(Vec::new()));
@@ -382,8 +383,8 @@ fn a_handle_notifies_finish_after_deferred_execution() {
 fn finish_callbacks_survive_handle_drop_and_keep_registration_order() {
     let mut queue = DispatchQueue::new();
     let event_dispatcher = queue.dispatcher();
-    let handler = EventHandler::new(|_: u32| {});
-    let sink = EventTarget::from(&handler);
+    let handler = TestSinkOwner::new(|_: u32| {});
+    let sink = TestSink::from(&handler);
     let handle =
         submit_tracked(&event_dispatcher, &sink, 7_u32).expect("the Dispatcher accepts work");
     let notifications = Rc::new(RefCell::new(Vec::new()));
@@ -405,8 +406,8 @@ fn finish_callbacks_survive_handle_drop_and_keep_registration_order() {
 
 #[test]
 fn a_handle_notifies_immediately_when_its_dispatch_already_finished() {
-    let handler = EventHandler::new(|_: u32| {});
-    let sink = EventTarget::from(&handler);
+    let handler = TestSinkOwner::new(|_: u32| {});
+    let sink = TestSink::from(&handler);
     let dispatch = sink.send(7_u32).tracked();
     let handle = dispatch.handle();
     assert_eq!(dispatch.run(), DispatchOutcome::Completed);
@@ -426,8 +427,8 @@ fn cancelling_a_dispatch_notifies_its_finish() {
         pending: Rc::new(RefCell::new(VecDeque::new())),
     };
     let event_dispatcher = dispatcher;
-    let handler = EventHandler::new(|_: u32| {});
-    let sink = EventTarget::from(&handler);
+    let handler = TestSinkOwner::new(|_: u32| {});
+    let sink = TestSink::from(&handler);
     let handle =
         submit_tracked(&event_dispatcher, &sink, 7_u32).expect("the Dispatcher accepts work");
     let outcome = Rc::new(RefCell::new(None));
@@ -446,8 +447,8 @@ fn one_sink_can_run_inline_or_be_submitted_to_a_dispatcher() {
     let queued = queue.dispatcher();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
-    let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
-    let sink = EventTarget::from(&handler);
+    let handler = TestSinkOwner::new(move |value: u32| output.borrow_mut().push(value));
+    let sink = TestSink::from(&handler);
 
     assert_eq!(
         submit_event(&queued, &sink, 1_u32).expect("Dispatcher accepts work"),
@@ -468,14 +469,14 @@ fn a_handler_can_build_and_use_a_source_while_handling_one_dispatch() {
     let dynamic_from_handler = Rc::clone(&dynamic);
     let output = Rc::clone(&values);
     let nested_dispatcher = event_dispatcher.clone();
-    let trigger_handler = EventHandler::new(move |(): ()| {
+    let trigger_handler = TestSinkOwner::new(move |(): ()| {
         let handler_output = Rc::clone(&output);
-        let handler = EventHandler::new(move |value: u32| {
+        let handler = TestSinkOwner::new(move |value: u32| {
             handler_output.borrow_mut().push(value);
         });
-        let sink = EventTarget::from(&handler);
+        let sink = TestSink::from(&handler);
         let (provider, source) = channel::<u32>();
-        let input = EventTarget::from(&provider);
+        let input = provider.sink();
         let subscription = Subscription::builder(source.clone(), sink)
             .owned()
             .via(nested_dispatcher.clone())
@@ -483,7 +484,7 @@ fn a_handler_can_build_and_use_a_source_while_handling_one_dispatch() {
         dynamic_from_handler.replace(Some((provider, source, handler, subscription)));
         assert!(submit_event(&nested_dispatcher, &input, 9_u32).is_ok());
     });
-    let trigger = EventTarget::from(&trigger_handler);
+    let trigger = TestSink::from(&trigger_handler);
 
     assert!(submit_event(&event_dispatcher, &trigger, ()).is_ok());
     drain(&mut queue);

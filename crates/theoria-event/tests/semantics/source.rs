@@ -1,8 +1,8 @@
 use std::{cell::Cell, rc::Rc};
 
+use super::{TestSink, TestSinkOwner};
 use theoria_event::{
-    Dispatch, DispatchOutcome, DispatchQueue, EventHandler, EventSink, EventSource, EventTarget,
-    Subscription, channel,
+    Dispatch, DispatchOutcome, DispatchQueue, EventSink, EventSource, Subscription, channel,
 };
 
 struct BorrowingSource<'value> {
@@ -79,8 +79,8 @@ impl EventSource for BorrowingSource<'_> {
 fn a_user_defined_source_can_lend_a_non_static_event_inline() {
     let length = Rc::new(Cell::new(0));
     let output = Rc::clone(&length);
-    let handler = EventHandler::new(move |value: usize| output.set(value));
-    let sink = EventTarget::from(&handler).contramap(str::len);
+    let handler = TestSinkOwner::new(move |value: usize| output.set(value));
+    let sink = TestSink::from(&handler).contramap(str::len);
     let owned = String::from("temporary");
 
     let subscription = Subscription::builder(BorrowingSource { value: &owned }, sink)
@@ -125,7 +125,7 @@ fn an_owned_connection_preserves_a_sink_specific_dispatch_type() {
     .via(queue.dispatcher())
     .expect("the Source is available");
 
-    assert!(EventTarget::from(&provider).send_inline(7).is_ok());
+    assert_eq!(provider.sink().send(7).run(), DispatchOutcome::Completed);
     assert_eq!(output.get(), 0);
     assert!(queue.run_next().is_some());
     assert_eq!(output.get(), 7);

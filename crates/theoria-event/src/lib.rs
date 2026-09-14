@@ -17,21 +17,17 @@
 mod bridge;
 mod channel;
 mod dispatch;
-mod handler;
 mod sink;
 mod source;
-mod target;
 
 pub use bridge::{BridgeDispatch, BridgeProgress, BridgeSink, EventBridge, bridge};
-pub use channel::{ChannelSource, EventProvider, channel};
+pub use channel::{ChannelDispatch, ChannelSink, ChannelSource, EventProvider, channel};
 pub use dispatch::{
     Dispatch, DispatchHandle, DispatchOutcome, DispatchQueue, DispatchStatus, Dispatcher,
     DynDispatch, QueueDispatcher, SubmissionOutcome, TrackedDispatch,
 };
-pub use handler::EventHandler;
 pub use sink::{
     ContramapDispatch, ContramapFilterDispatch, ContramapFilterSink, ContramapSink, EventSink,
     FilterDispatch, FilterSink, OwningSink,
 };
 pub use source::{EventSource, OwnedSubscriptionBuilder, Subscription, SubscriptionBuilder};
-pub use target::{EventTarget, TargetDispatch};

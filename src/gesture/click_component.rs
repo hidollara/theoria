@@ -57,7 +57,7 @@ mod tests {
     use std::{cell::RefCell, rc::Rc};
 
     use crate::{
-        event::EventTarget,
+        component::ComponentSink,
         geometry::Point,
         input::pointer::{
             MovementThreshold, PointerButton, PointerButtonChange, PointerButtons, PointerEvent,
@@ -69,7 +69,7 @@ mod tests {
     use super::*;
 
     struct InputPipeline {
-        input: EventTarget<PointerEvent>,
+        input: ComponentSink<PointerEvent>,
     }
 
     fn mouse_event(change: PointerButtonChange, position: Point) -> PointerEvent {

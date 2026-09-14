@@ -3,8 +3,8 @@
 //! A Component retains zero or more event handlers, reactive values, Effects,
 //! subscriptions, arbitrary resources, and child Components inside one
 //! structural lifetime boundary. Components do not have a distinguished event
-//! type: each retained handler exposes its own typed
-//! [`theoria_event::EventTarget`]. Event delivery comes from [`theoria_event`],
+//! type: each retained handler exposes its own typed [`ComponentSink`]. Event
+//! delivery comes from [`theoria_event`],
 //! while reactive storage and evaluation come from [`theoria_reactive`]. This
 //! crate coordinates those independent primitives without merging them.
 //!
@@ -21,7 +21,9 @@ mod delivery;
 mod effect;
 mod instance;
 mod node;
+mod sink;
 mod tree;
 
 pub use component::{Component, MountContext, UpdateContext};
 pub use instance::ComponentInstance;
+pub use sink::{ComponentDispatch, ComponentSink};

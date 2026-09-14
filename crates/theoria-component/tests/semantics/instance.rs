@@ -6,7 +6,7 @@ use std::{
 use theoria_component::ComponentInstance;
 use theoria_event::{
     BridgeProgress, Dispatch, DispatchOutcome, DispatchQueue, DispatchStatus, Dispatcher,
-    EventTarget, OwningSink, SubmissionOutcome, bridge,
+    EventSink, OwningSink, SubmissionOutcome, bridge,
 };
 
 #[derive(Clone, Copy)]
@@ -42,7 +42,7 @@ fn handlers_do_not_run_until_root_construction_finishes() {
             handler_runs.set(handler_runs.get() + 1);
         });
 
-        assert!(EventTarget::from(&input).send_inline(()).is_ok());
+        assert_eq!((&input).send(()).run(), DispatchOutcome::Completed);
         mounted_input.replace(Some(input));
     });
     let input = input
@@ -71,7 +71,7 @@ fn child_handlers_remain_inactive_until_root_construction_finishes() {
             let input = child.receive(move |(), _context| {
                 child_runs.set(child_runs.get() + 1);
             });
-            assert!(EventTarget::from(&input).send_inline(()).is_ok());
+            assert_eq!((&input).send(()).run(), DispatchOutcome::Completed);
             mounted_input.replace(Some(input));
         });
 
@@ -80,8 +80,9 @@ fn child_handlers_remain_inactive_until_root_construction_finishes() {
             input
                 .as_ref()
                 .expect("child construction creates its event input")
-                .send_inline(())
-                .is_ok()
+                .send(())
+                .run()
+                == DispatchOutcome::Completed
         );
     });
     let input = input

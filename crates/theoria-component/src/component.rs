@@ -1,9 +1,8 @@
 use std::rc::Rc;
 
 use theoria_event::{
-    ChannelSource, Dispatch, DispatchHandle, DispatchOutcome, Dispatcher, DynDispatch,
-    EventHandler, EventSink, EventSource, EventTarget, SubmissionOutcome, Subscription,
-    TrackedDispatch, channel,
+    ChannelSink, ChannelSource, Dispatch, DispatchHandle, DispatchOutcome, Dispatcher, DynDispatch,
+    EventSink, EventSource, SubmissionOutcome, Subscription, TrackedDispatch, channel,
 };
 use theoria_reactive::{
     Computed, Effect, ReadContext, SnapshotState, State, StateSetter, WriteContext,
@@ -11,6 +10,7 @@ use theoria_reactive::{
 
 use crate::{
     node::{ConstructingComponent, MountedComponent},
+    sink::{ComponentReceiver, ComponentSink},
     tree::ComponentTree,
 };
 
@@ -37,25 +37,25 @@ impl<'mount> MountContext<'mount> {
         Self { tree, current }
     }
 
-    /// Creates a typed [`EventSource`] and its input [`EventTarget`].
+    /// Creates a typed [`EventSource`] and its input [`ChannelSink`].
     ///
     /// The current Component owns the EventProvider. The returned Source and
-    /// input target do not keep that Component alive. After it is unmounted, the
+    /// input sink do not keep that Component alive. After it is unmounted, the
     /// Source rejects new subscriptions and input deliveries produce no events.
-    pub fn event_source<E: 'static>(&mut self) -> (ChannelSource<E>, EventTarget<E>) {
+    pub fn event_source<E: 'static>(&mut self) -> (ChannelSource<E>, ChannelSink<E>) {
         let (provider, source) = channel();
-        let input = EventTarget::from(&provider);
+        let input = provider.sink();
         self.current.retain(provider);
         (source, input)
     }
 
     /// Retains one typed event handler in the current Component boundary.
     ///
-    /// The returned target is a non-owning input capability. Dropping the
+    /// The returned sink is a non-owning input capability. Dropping the
     /// Component boundary closes the handler without extending its lifetime.
-    /// During construction, a Dispatch can reach the target but does not invoke
+    /// During construction, a Dispatch can reach the sink but does not invoke
     /// `handler` until the complete Component tree has mounted.
-    pub fn receive<E, F>(&mut self, handler: F) -> EventTarget<E>
+    pub fn receive<E, F>(&mut self, handler: F) -> ComponentSink<E>
     where
         E: 'static,
         F: FnMut(E, &mut UpdateContext<'_>) + 'static,
@@ -63,7 +63,7 @@ impl<'mount> MountContext<'mount> {
         let tree = Rc::downgrade(self.tree);
         let owner = self.current.weak();
         let mut handler = handler;
-        let handler = EventHandler::new(move |event: E| {
+        let receiver = ComponentReceiver::new(move |event: E| {
             if let (Some(tree), Some(owner)) = (tree.upgrade(), owner.upgrade()) {
                 tree.update(owner, |mutation, owner| {
                     let mut context = UpdateContext::new(&tree, mutation, owner);
@@ -71,8 +71,8 @@ impl<'mount> MountContext<'mount> {
                 });
             }
         });
-        let sink = EventTarget::from(&handler);
-        self.current.retain(handler);
+        let sink = receiver.sink();
+        self.current.retain(receiver);
         sink
     }
 

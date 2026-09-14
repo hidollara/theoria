@@ -8,7 +8,7 @@ use std::{
 
 use crate::{
     component::MountContext,
-    event::{ChannelSource, EventProvider, EventTarget, OwningSink, channel},
+    event::{ChannelSource, Dispatch, EventProvider, EventSink, OwningSink, channel},
     reactive::Value,
 };
 
@@ -116,10 +116,9 @@ impl FrameScheduler {
         if !self.take_due(now) {
             return false;
         }
-        debug_assert!(
-            EventTarget::from(&self.provider)
-                .send_inline(FrameOpportunity)
-                .is_ok(),
+        debug_assert_eq!(
+            self.provider.sink().send(FrameOpportunity).run(),
+            crate::event::DispatchOutcome::Completed,
             "the FrameScheduler owns its live Provider and publishes inline"
         );
         true

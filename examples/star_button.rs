@@ -257,8 +257,8 @@ mod tests {
         PointerButtonChange, PointerButtons, PointerEvent, PointerId, PointerKind, PointerPhase,
     };
     use theoria::{
-        component::{ComponentInstance, MountContext},
-        event::{DispatchQueue, EventTarget},
+        component::{ComponentInstance, ComponentSink, MountContext},
+        event::DispatchQueue,
     };
 
     use super::*;
@@ -296,7 +296,7 @@ mod tests {
         }
     }
 
-    fn click(runtime: &mut TestDriver, input: &EventTarget<PointerEvent>, point: Point) {
+    fn click(runtime: &mut TestDriver, input: &ComponentSink<PointerEvent>, point: Point) {
         assert!(
             runtime
                 .components

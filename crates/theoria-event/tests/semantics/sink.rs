@@ -3,10 +3,10 @@ use std::{
     rc::Rc,
 };
 
-use super::drain;
+use super::{TestSink, TestSinkOwner, drain};
 use theoria_event::{
-    Dispatch, DispatchOutcome, DispatchQueue, Dispatcher, DynDispatch, EventHandler, EventSink,
-    EventTarget, SubmissionOutcome, Subscription, channel,
+    Dispatch, DispatchOutcome, DispatchQueue, Dispatcher, DynDispatch, EventSink,
+    SubmissionOutcome, Subscription, channel,
 };
 
 #[derive(Clone)]
@@ -37,13 +37,13 @@ where
 }
 
 #[test]
-fn dropping_a_target_during_generic_contramap_prevents_delivery() {
+fn dropping_a_sink_owner_during_generic_contramap_prevents_delivery() {
     let mut queue = DispatchQueue::new();
     let event_dispatcher = queue.dispatcher();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
-    let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
-    let sink = EventTarget::from(&handler);
+    let handler = TestSinkOwner::new(move |value: u32| output.borrow_mut().push(value));
+    let sink = TestSink::from(&handler);
     let handler = Rc::new(RefCell::new(Some(handler)));
     let callback_handler = Rc::clone(&handler);
     let (provider, source) = channel::<u32>();
@@ -59,7 +59,7 @@ fn dropping_a_target_during_generic_contramap_prevents_delivery() {
     .expect("live provider")
     .detach();
 
-    assert!(submit_event(&event_dispatcher, EventTarget::from(&provider), 1_u32).is_ok());
+    assert!(submit_event(&event_dispatcher, provider.sink(), 1_u32).is_ok());
     assert!(queue.run_next().is_some());
     assert!(queue.run_next().is_some());
     assert!(queue.run_next().is_none());
@@ -86,10 +86,10 @@ fn an_accepting_sink_converts_its_input_during_dispatch_execution() {
     let event_dispatcher = queue.dispatcher();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
-    let handler = EventHandler::new(move |value: Output| {
+    let handler = TestSinkOwner::new(move |value: Output| {
         output.borrow_mut().push(value);
     });
-    let sink = EventTarget::from(&handler);
+    let sink = TestSink::from(&handler);
     let accepting = sink.accepting::<Input>();
 
     assert!(submit_event(&event_dispatcher, &accepting, Input(7)).is_ok());
@@ -105,8 +105,8 @@ fn a_contramap_sink_converts_its_input_during_dispatch_execution() {
     let event_dispatcher = queue.dispatcher();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
-    let handler = EventHandler::new(move |value: usize| output.borrow_mut().push(value));
-    let sink = EventTarget::from(&handler).contramap(|value: String| value.len());
+    let handler = TestSinkOwner::new(move |value: usize| output.borrow_mut().push(value));
+    let sink = TestSink::from(&handler).contramap(|value: String| value.len());
 
     assert!(submit_event(&event_dispatcher, &sink, String::from("letter")).is_ok());
     assert!(values.borrow().is_empty());
@@ -119,15 +119,15 @@ fn a_contramap_sink_converts_its_input_during_dispatch_execution() {
 fn dyn_dispatch_erases_different_concrete_dispatch_types_at_a_storage_boundary() {
     let values = Rc::new(RefCell::new(Vec::new()));
     let first_output = Rc::clone(&values);
-    let first = EventHandler::new(move |value: u32| first_output.borrow_mut().push(value));
+    let first = TestSinkOwner::new(move |value: u32| first_output.borrow_mut().push(value));
     let second_output = Rc::clone(&values);
     let second =
-        EventHandler::new(move |value: usize| second_output.borrow_mut().push(value as u32));
+        TestSinkOwner::new(move |value: usize| second_output.borrow_mut().push(value as u32));
 
     let dispatches = vec![
-        DynDispatch::new(EventTarget::from(&first).send(3_u32)),
+        DynDispatch::new(TestSink::from(&first).send(3_u32)),
         DynDispatch::new(
-            EventTarget::from(&second)
+            TestSink::from(&second)
                 .contramap(|value: String| value.len())
                 .send(String::from("seven")),
         ),
@@ -143,8 +143,8 @@ fn dyn_dispatch_erases_different_concrete_dispatch_types_at_a_storage_boundary()
 fn an_adapted_sink_is_cloneable_when_its_sink_and_mapping_are_cloneable() {
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
-    let handler = EventHandler::new(move |value: usize| output.borrow_mut().push(value));
-    let sink = EventTarget::from(&handler).contramap(|value: String| value.len());
+    let handler = TestSinkOwner::new(move |value: usize| output.borrow_mut().push(value));
+    let sink = TestSink::from(&handler).contramap(|value: String| value.len());
 
     assert_eq!(
         (&sink).send(String::from("first")).run(),
@@ -167,8 +167,8 @@ fn a_filtered_sink_discards_selected_inputs_during_dispatch_execution() {
     let mapped = Rc::clone(&mappings);
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
-    let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
-    let sink = EventTarget::from(&handler).filter(move |value| {
+    let handler = TestSinkOwner::new(move |value: u32| output.borrow_mut().push(value));
+    let sink = TestSink::from(&handler).filter(move |value| {
         mapped.set(mapped.get() + 1);
         value % 2 == 0
     });
@@ -190,11 +190,11 @@ fn a_filtered_sink_discards_selected_inputs_during_dispatch_execution() {
 }
 
 #[test]
-fn a_filtered_out_event_does_not_observe_underlying_target_liveness() {
+fn a_filtered_out_event_does_not_observe_underlying_sink_liveness() {
     let predicate_calls = Rc::new(Cell::new(0));
     let observed_calls = Rc::clone(&predicate_calls);
-    let handler = EventHandler::new(|_: u32| {});
-    let sink = EventTarget::from(&handler).filter(move |_| {
+    let handler = TestSinkOwner::new(|_: u32| {});
+    let sink = TestSink::from(&handler).filter(move |_| {
         observed_calls.set(observed_calls.get() + 1);
         false
     });
@@ -210,9 +210,8 @@ fn a_contramap_filter_sink_converts_only_selected_input_values() {
     let event_dispatcher = queue.dispatcher();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
-    let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
-    let sink =
-        EventTarget::from(&handler).contramap_filter(|value: String| value.parse::<u32>().ok());
+    let handler = TestSinkOwner::new(move |value: u32| output.borrow_mut().push(value));
+    let sink = TestSink::from(&handler).contramap_filter(|value: String| value.parse::<u32>().ok());
 
     assert!(submit_event(&event_dispatcher, &sink, String::from("not a number")).is_ok());
     assert!(submit_event(&event_dispatcher, &sink, String::from("42")).is_ok());
