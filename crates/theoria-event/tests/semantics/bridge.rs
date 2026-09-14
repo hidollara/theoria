@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc, thread};
 
 use theoria_event::{
     BridgeDispatch, BridgeProgress, BridgeSink, Dispatch, DispatchOutcome, DispatchQueue,
-    EventHandler, EventSink, EventSource, EventTarget, OwningSink, bridge,
+    EventHandler, EventSink, EventTarget, Subscription, bridge,
 };
 
 fn assert_send_sync<T: Send + Sync>() {}
@@ -33,9 +33,8 @@ fn a_value_crosses_a_thread_boundary_into_a_local_source() {
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
     let sink = EventTarget::from(&handler);
-    bridge
-        .source()
-        .connect(OwningSink::new(sink))
+    Subscription::builder(bridge.source(), sink)
+        .owned()
         .inline()
         .expect("live bridge")
         .detach();
@@ -82,9 +81,8 @@ fn a_bridge_forwards_events_in_receive_order() {
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
-    bridge
-        .source()
-        .connect(OwningSink::new(EventTarget::from(&handler)))
+    Subscription::builder(bridge.source(), EventTarget::from(&handler))
+        .owned()
         .inline()
         .expect("live bridge")
         .detach();
@@ -115,9 +113,8 @@ fn each_subscriber_selects_its_own_dispatcher() {
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
     let sink = EventTarget::from(&handler);
-    bridge
-        .source()
-        .connect(OwningSink::new(sink))
+    Subscription::builder(bridge.source(), sink)
+        .owned()
         .via(event_dispatcher.clone())
         .expect("live bridge")
         .detach();

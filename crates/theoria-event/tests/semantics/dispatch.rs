@@ -7,7 +7,7 @@ use std::{
 use super::drain;
 use theoria_event::{
     Dispatch, DispatchHandle, DispatchOutcome, DispatchQueue, DispatchStatus, Dispatcher,
-    DynDispatch, EventHandler, EventSink, EventSource, EventTarget, OwningSink, SubmissionOutcome,
+    DynDispatch, EventHandler, EventSink, EventTarget, SubmissionOutcome, Subscription,
     TargetDispatch, TrackedDispatch, channel,
 };
 
@@ -476,9 +476,8 @@ fn a_handler_can_build_and_use_a_source_while_handling_one_dispatch() {
         let sink = EventTarget::from(&handler);
         let (provider, source) = channel::<u32>();
         let input = EventTarget::from(&provider);
-        let subscription = source
-            .clone()
-            .connect(OwningSink::new(sink))
+        let subscription = Subscription::builder(source.clone(), sink)
+            .owned()
             .via(nested_dispatcher.clone())
             .expect("live provider");
         dynamic_from_handler.replace(Some((provider, source, handler, subscription)));

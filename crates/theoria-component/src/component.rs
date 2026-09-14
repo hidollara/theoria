@@ -2,7 +2,8 @@ use std::rc::Rc;
 
 use theoria_event::{
     ChannelSource, Dispatch, DispatchHandle, DispatchOutcome, Dispatcher, DynDispatch,
-    EventHandler, EventSink, EventSource, EventTarget, SubmissionOutcome, TrackedDispatch, channel,
+    EventHandler, EventSink, EventSource, EventTarget, SubmissionOutcome, Subscription,
+    TrackedDispatch, channel,
 };
 use theoria_reactive::{
     Computed, Effect, ReadContext, SnapshotState, State, StateSetter, WriteContext,
@@ -104,7 +105,7 @@ impl<'mount> MountContext<'mount> {
         for<'sink, 'event> &'sink K: EventSink<S::Event<'event>>,
         for<'sink, 'event> D: Dispatcher<<&'sink K as EventSink<S::Event<'event>>>::Dispatch>,
     {
-        let Some(subscription) = source.connect(sink).via(dispatcher) else {
+        let Some(subscription) = Subscription::builder(source, sink).via(dispatcher) else {
             return false;
         };
         self.current.retain(subscription);
@@ -121,7 +122,7 @@ impl<'mount> MountContext<'mount> {
         K: 'static,
         for<'sink, 'event> &'sink K: EventSink<S::Event<'event>>,
     {
-        let Some(subscription) = source.connect(sink).inline() else {
+        let Some(subscription) = Subscription::builder(source, sink).inline() else {
             return false;
         };
         self.current.retain(subscription);

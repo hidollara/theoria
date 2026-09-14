@@ -6,7 +6,7 @@ use std::{
 use super::drain;
 use theoria_event::{
     Dispatch, DispatchOutcome, DispatchQueue, Dispatcher, DynDispatch, EventHandler, EventSink,
-    EventSource, EventTarget, OwningSink, SubmissionOutcome, channel,
+    EventTarget, SubmissionOutcome, Subscription, channel,
 };
 
 #[derive(Clone)]
@@ -47,14 +47,17 @@ fn dropping_a_target_during_generic_contramap_prevents_delivery() {
     let handler = Rc::new(RefCell::new(Some(handler)));
     let callback_handler = Rc::clone(&handler);
     let (provider, source) = channel::<u32>();
-    source
-        .connect(OwningSink::new(sink.clone().contramap(move |event| {
+    Subscription::builder(
+        source,
+        sink.clone().contramap(move |event| {
             callback_handler.borrow_mut().take();
             event
-        })))
-        .via(event_dispatcher.clone())
-        .expect("live provider")
-        .detach();
+        }),
+    )
+    .owned()
+    .via(event_dispatcher.clone())
+    .expect("live provider")
+    .detach();
 
     assert!(submit_event(&event_dispatcher, EventTarget::from(&provider), 1_u32).is_ok());
     assert!(queue.run_next().is_some());

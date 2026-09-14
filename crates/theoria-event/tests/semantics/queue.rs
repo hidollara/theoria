@@ -5,8 +5,8 @@ use std::{
 
 use super::drain;
 use theoria_event::{
-    Dispatch, DispatchOutcome, DispatchQueue, Dispatcher, EventHandler, EventSink, EventSource,
-    EventTarget, OwningSink, SubmissionOutcome, channel,
+    Dispatch, DispatchOutcome, DispatchQueue, Dispatcher, EventHandler, EventSink, EventTarget,
+    SubmissionOutcome, Subscription, channel,
 };
 
 #[derive(Debug)]
@@ -48,8 +48,8 @@ fn source_input_and_subscription_use_separate_dispatch_steps() {
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
     let sink = EventTarget::from(&handler);
     let (provider, source) = channel::<u32>();
-    source
-        .connect(OwningSink::new(sink))
+    Subscription::builder(source, sink)
+        .owned()
         .via(dispatcher.clone())
         .expect("live provider")
         .detach();
@@ -91,12 +91,12 @@ fn the_caller_can_stop_between_dispatches_in_a_cyclic_event_chain() {
     let dispatcher = queue.dispatcher();
     let (left_provider, left_source) = channel::<u32>();
     let (right_provider, right_source) = channel::<u32>();
-    let _left_to_right = left_source
-        .connect(OwningSink::new(EventTarget::from(&right_provider)))
+    let _left_to_right = Subscription::builder(left_source, EventTarget::from(&right_provider))
+        .owned()
         .via(dispatcher.clone())
         .expect("live provider");
-    let _right_to_left = right_source
-        .connect(OwningSink::new(EventTarget::from(&left_provider)))
+    let _right_to_left = Subscription::builder(right_source, EventTarget::from(&left_provider))
+        .owned()
         .via(dispatcher.clone())
         .expect("live provider");
 

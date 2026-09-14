@@ -2,7 +2,7 @@ use std::{cell::Cell, rc::Rc};
 
 use theoria_event::{
     Dispatch, DispatchOutcome, DispatchQueue, EventHandler, EventSink, EventSource, EventTarget,
-    OwningSink, Subscription, channel,
+    Subscription, channel,
 };
 
 struct BorrowingSource<'value> {
@@ -66,12 +66,12 @@ impl EventSink<u32> for &OwnedSink {
 impl EventSource for BorrowingSource<'_> {
     type Event<'event> = &'event str;
 
-    fn subscribe<F>(self, receive: F) -> Option<Subscription>
+    fn register<F>(self, receive: F) -> Option<impl FnOnce() + 'static>
     where
         F: for<'event> Fn(Self::Event<'event>) + 'static,
     {
         receive(self.value);
-        Some(Subscription::new(|| {}))
+        Some(|| {})
     }
 }
 
@@ -83,8 +83,7 @@ fn a_user_defined_source_can_lend_a_non_static_event_inline() {
     let sink = EventTarget::from(&handler).contramap(str::len);
     let owned = String::from("temporary");
 
-    let subscription = BorrowingSource { value: &owned }
-        .connect(sink)
+    let subscription = Subscription::builder(BorrowingSource { value: &owned }, sink)
         .inline()
         .expect("the Source is available");
 
@@ -97,29 +96,34 @@ fn an_inline_source_accepts_a_sink_specific_borrowed_dispatch() {
     let length = Rc::new(Cell::new(0));
     let owned = String::from("temporary");
 
-    let subscription = BorrowingSource { value: &owned }
-        .connect(BorrowedLengthSink {
+    let subscription = Subscription::builder(
+        BorrowingSource { value: &owned },
+        BorrowedLengthSink {
             output: Rc::clone(&length),
-        })
-        .inline()
-        .expect("the Source is available");
+        },
+    )
+    .inline()
+    .expect("the Source is available");
 
     assert_eq!(length.get(), 9);
     drop(subscription);
 }
 
 #[test]
-fn a_dispatcher_accepts_a_sink_specific_dispatch_type() {
+fn an_owned_connection_preserves_a_sink_specific_dispatch_type() {
     let mut queue = DispatchQueue::new();
     let output = Rc::new(Cell::new(0));
     let (provider, source) = channel::<u32>();
 
-    let subscription = source
-        .connect(OwningSink::new(OwnedSink {
+    let subscription = Subscription::builder(
+        source,
+        OwnedSink {
             output: Rc::clone(&output),
-        }))
-        .via(queue.dispatcher())
-        .expect("the Source is available");
+        },
+    )
+    .owned()
+    .via(queue.dispatcher())
+    .expect("the Source is available");
 
     assert!(EventTarget::from(&provider).send_inline(7).is_ok());
     assert_eq!(output.get(), 0);

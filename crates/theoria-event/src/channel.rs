@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    source::{EventSource, Subscription},
+    source::EventSource,
     target::{EventEndpoint, EventTarget},
 };
 
@@ -58,9 +58,9 @@ impl<E: 'static> fmt::Debug for EventProvider<E> {
 
 /// A cloneable, non-owning view of one typed channel.
 ///
-/// A Channel Source lends each publication to its subscribers. Connect it to
-/// an [`crate::sink::OwningSink`] when the resulting Dispatch must own
-/// the event and outlive the publication call.
+/// A Channel Source lends each publication to its subscribers. Use
+/// [`crate::source::SubscriptionBuilder::owned`] when the resulting Dispatch
+/// must own the event and outlive the publication call.
 pub struct ChannelSource<E: 'static> {
     state: Weak<ChannelState<E>>,
 }
@@ -84,11 +84,11 @@ impl<E: 'static> fmt::Debug for ChannelSource<E> {
 impl<E: 'static> EventSource for ChannelSource<E> {
     type Event<'event> = &'event E;
 
-    fn subscribe<F>(self, receive: F) -> Option<Subscription>
+    fn register<F>(self, receive: F) -> Option<impl FnOnce() + 'static>
     where
         F: for<'event> Fn(Self::Event<'event>) + 'static,
     {
-        Some(self.state.upgrade()?.subscribe(move |event| receive(event)))
+        Some(self.state.upgrade()?.register(move |event| receive(event)))
     }
 }
 
@@ -98,7 +98,10 @@ struct ChannelState<E: 'static> {
 }
 
 impl<E: 'static> ChannelState<E> {
-    fn subscribe(self: &Rc<Self>, receive: impl Fn(&E) + 'static) -> Subscription {
+    fn register<F>(self: &Rc<Self>, receive: F) -> impl FnOnce() + 'static + use<E, F>
+    where
+        F: Fn(&E) + 'static,
+    {
         let id = self.next_subscription.get();
         self.next_subscription.set(
             id.checked_add(1)
@@ -107,11 +110,11 @@ impl<E: 'static> ChannelState<E> {
         self.subscriptions.borrow_mut().insert(id, Rc::new(receive));
 
         let state = Rc::downgrade(self);
-        Subscription::new(move || {
+        move || {
             if let Some(state) = state.upgrade() {
                 state.subscriptions.borrow_mut().remove(&id);
             }
-        })
+        }
     }
 
     fn publish(&self, event: E) {

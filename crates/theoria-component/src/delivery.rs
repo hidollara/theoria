@@ -32,10 +32,11 @@ impl DefaultDispatcher {
         for<'sink, 'event> <&'sink K as EventSink<S::Event<'event>>>::Dispatch: 'static,
     {
         let dispatcher = self.clone();
-        source.subscribe(move |event| {
+        let unregister = source.register(move |event| {
             let dispatch = EventSink::send(&sink, event);
             let _ = dispatcher.submit(DynDispatch::new(dispatch));
-        })
+        })?;
+        Some(Subscription::new(unregister))
     }
 }
 

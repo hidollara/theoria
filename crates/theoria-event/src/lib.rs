@@ -10,8 +10,8 @@
 //!
 //! [`channel`] creates an owning [`EventProvider`] and its non-owning
 //! [`ChannelSource`]. A Channel Source lends each publication; an
-//! [`OwningSink`] can turn that borrow into a self-contained Dispatch at the
-//! send boundary.
+//! [`Subscription`] builder can own that publication before constructing
+//! a self-contained Dispatch.
 //! [`bridge`] pairs a local [`EventBridge`] with a thread-safe [`BridgeSink`].
 
 mod bridge;
@@ -33,5 +33,5 @@ pub use sink::{
     ContramapDispatch, ContramapFilterDispatch, ContramapFilterSink, ContramapSink, EventSink,
     FilterDispatch, FilterSink, OwningSink,
 };
-pub use source::{EventConnection, EventSource, Subscription};
+pub use source::{EventSource, OwnedSubscriptionBuilder, Subscription, SubscriptionBuilder};
 pub use target::{EventTarget, TargetDispatch};
