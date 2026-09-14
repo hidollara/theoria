@@ -5,7 +5,32 @@ use std::{
     rc::{Rc, Weak},
 };
 
-use crate::dispatch::{Dispatch, DynDispatch, EventDispatcher, SubmissionOutcome};
+use crate::dispatch::{Dispatch, DispatchOutcome, DynDispatch};
+
+/// How far an accepted event submission progressed before returning.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SubmissionOutcome {
+    /// The Dispatch ran synchronously with the reported result.
+    Executed(DispatchOutcome),
+    /// A Dispatcher accepted the Dispatch for later execution.
+    Deferred,
+}
+
+/// Accepts one family of event Dispatches for execution or scheduling.
+///
+/// Implementations express their requirements through `D`: an inline
+/// Dispatcher may accept borrowed work, a local queue may require `'static`,
+/// and a cross-thread Dispatcher may additionally require [`Send`].
+pub trait Dispatcher<D>
+where
+    D: Dispatch,
+{
+    /// Submits one Dispatch for immediate or deferred execution.
+    ///
+    /// Rejection returns the original Dispatch without running or retaining
+    /// it, so another Dispatcher may accept it.
+    fn submit(&self, dispatch: D) -> Result<SubmissionOutcome, D>;
+}
 
 struct EventQueue {
     pending: RefCell<VecDeque<DynDispatch<'static>>>,
@@ -67,15 +92,15 @@ impl FifoDispatcher {
     /// Returns `true` when exactly one queued entry was consumed, regardless
     /// of its terminal outcome. Returns `false` when the queue was empty. Work
     /// submitted during execution remains deferred until a later call, so this
-    /// Dispatcher never executes recursively. Dropping the Dispatcher cancels
-    /// every pending tracked Dispatch.
+    /// Dispatcher never executes recursively. Dropping the Dispatcher discards
+    /// its queued Dispatches without recording cancellation.
     #[must_use]
     pub fn deliver_next(&mut self) -> bool {
         self.queue.deliver_next()
     }
 }
 
-impl<D> EventDispatcher<D> for FifoDispatcher
+impl<D> Dispatcher<D> for FifoDispatcher
 where
     D: Dispatch + 'static,
 {
@@ -92,7 +117,7 @@ pub struct FifoSender {
     queue: Weak<EventQueue>,
 }
 
-impl<D> EventDispatcher<D> for FifoSender
+impl<D> Dispatcher<D> for FifoSender
 where
     D: Dispatch + 'static,
 {

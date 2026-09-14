@@ -6,7 +6,7 @@ use std::{
 
 use super::drain;
 use theoria_event::{
-    Dispatch, DispatchOutcome, EventDispatcher, EventHandler, EventTarget, FifoDispatcher,
+    Dispatch, DispatchOutcome, Dispatcher, EventHandler, EventTarget, FifoDispatcher,
 };
 
 #[test]
@@ -17,12 +17,12 @@ fn direct_delivery_returns_events_after_handler_drop() {
     let first = EventTarget::from(&handler);
     let second = EventTarget::from(&handler);
 
-    assert_eq!(first.send(1_u32).run(), DispatchOutcome::Delivered);
-    assert_eq!(second.send(2_u32).run(), DispatchOutcome::Delivered);
+    assert_eq!(first.send(1_u32).run(), DispatchOutcome::Completed);
+    assert_eq!(second.send(2_u32).run(), DispatchOutcome::Completed);
     assert_eq!(calls.get(), 2);
     drop(handler);
-    assert_eq!(first.send(3_u32).run(), DispatchOutcome::SinkUnavailable);
-    assert_eq!(second.send(4_u32).run(), DispatchOutcome::SinkUnavailable);
+    assert_eq!(first.send(3_u32).run(), DispatchOutcome::SinkClosed);
+    assert_eq!(second.send(4_u32).run(), DispatchOutcome::SinkClosed);
     assert_eq!(calls.get(), 2);
 }
 
@@ -77,7 +77,7 @@ fn recursively_dispatching_to_the_same_handler_panics() {
     }));
     assert!(result.is_err());
 
-    assert_eq!(sink.send(()).run(), DispatchOutcome::Delivered);
+    assert_eq!(sink.send(()).run(), DispatchOutcome::Completed);
     assert_eq!(calls.get(), 2);
 }
 

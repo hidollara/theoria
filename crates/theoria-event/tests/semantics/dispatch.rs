@@ -6,7 +6,7 @@ use std::{
 
 use super::drain;
 use theoria_event::{
-    Dispatch, DispatchHandle, DispatchOutcome, DispatchStatus, DynDispatch, EventDispatcher,
+    Dispatch, DispatchHandle, DispatchOutcome, DispatchStatus, Dispatcher, DynDispatch,
     EventHandler, EventSource, EventTarget, FifoDispatcher, OwningSink, SubmissionOutcome,
     TargetDispatch, TrackedDispatch, channel,
 };
@@ -16,7 +16,7 @@ struct TestDispatcher {
     pending: Rc<RefCell<VecDeque<DynDispatch<'static>>>>,
 }
 
-impl<D> EventDispatcher<D> for TestDispatcher
+impl<D> Dispatcher<D> for TestDispatcher
 where
     D: Dispatch + 'static,
 {
@@ -38,7 +38,7 @@ struct TestDispatch {
 impl Dispatch for TestDispatch {
     fn run(self) -> DispatchOutcome {
         self.output.set(true);
-        DispatchOutcome::Delivered
+        DispatchOutcome::Completed
     }
 }
 
@@ -48,7 +48,7 @@ fn submit_event<E, D>(
     event: E,
 ) -> Result<SubmissionOutcome, TargetDispatch<E>>
 where
-    D: EventDispatcher<TargetDispatch<E>>,
+    D: Dispatcher<TargetDispatch<E>>,
 {
     dispatcher.submit(sink.into().send(event))
 }
@@ -59,14 +59,14 @@ fn submit_tracked<E, D>(
     event: E,
 ) -> Result<DispatchHandle, TrackedDispatch<TargetDispatch<E>>>
 where
-    D: EventDispatcher<TrackedDispatch<TargetDispatch<E>>>,
+    D: Dispatcher<TrackedDispatch<TargetDispatch<E>>>,
 {
     let dispatch = sink.into().send(event).tracked();
     let handle = dispatch.handle();
     dispatcher.submit(dispatch).map(|_| handle)
 }
 
-impl<D: Dispatch> EventDispatcher<D> for RejectingDispatcher {
+impl<D: Dispatch> Dispatcher<D> for RejectingDispatcher {
     fn submit(&self, dispatch: D) -> Result<SubmissionOutcome, D> {
         Err(dispatch)
     }
@@ -94,7 +94,7 @@ fn a_custom_dispatcher_can_defer_an_opaque_dispatch() {
         .pop_front()
         .expect("the Dispatch was deferred")
         .run();
-    assert_eq!(outcome, DispatchOutcome::Delivered);
+    assert_eq!(outcome, DispatchOutcome::Completed);
     assert_eq!(&*values.borrow(), &[7]);
 }
 
@@ -109,38 +109,21 @@ fn rejection_returns_the_original_dispatch() {
     let dispatch =
         submit_event(&event_dispatcher, &sink, 7_u32).expect_err("the Dispatcher rejects work");
     assert!(values.borrow().is_empty());
-    assert_eq!(dispatch.run(), DispatchOutcome::Delivered);
+    assert_eq!(dispatch.run(), DispatchOutcome::Completed);
     assert_eq!(&*values.borrow(), &[7]);
 }
 
 #[test]
-fn a_recoverable_dyn_dispatch_restores_its_concrete_dispatch() {
+fn rejection_returns_an_executable_dyn_dispatch() {
     let output = Rc::new(Cell::new(false));
-
     let dispatch = RejectingDispatcher
-        .submit(DynDispatch::recoverable(TestDispatch {
+        .submit(DynDispatch::new(TestDispatch {
             output: Rc::clone(&output),
         }))
-        .expect_err("the Dispatcher rejects work")
-        .downcast::<TestDispatch>()
-        .expect("the recoverable erasure retains its concrete Dispatch");
+        .expect_err("the Dispatcher rejects work");
 
     assert!(!output.get());
-    assert_eq!(dispatch.run(), DispatchOutcome::Delivered);
-    assert!(output.get());
-}
-
-#[test]
-fn ordinary_dyn_dispatch_erasure_is_not_downcastable() {
-    let output = Rc::new(Cell::new(false));
-    let dispatch = DynDispatch::new(TestDispatch {
-        output: Rc::clone(&output),
-    });
-
-    let dispatch = dispatch
-        .downcast::<TestDispatch>()
-        .expect_err("ordinary erasure does not retain a recoverable concrete value");
-    assert_eq!(dispatch.run(), DispatchOutcome::Delivered);
+    assert_eq!(dispatch.run(), DispatchOutcome::Completed);
     assert!(output.get());
 }
 
@@ -153,11 +136,11 @@ fn tracked_rejection_returns_the_original_dispatch() {
     let dispatch =
         submit_tracked(&event_dispatcher, &sink, 7_u32).expect_err("the Dispatcher rejects work");
     let handle = dispatch.handle();
-    assert_eq!(handle.status(), DispatchStatus::Pending);
-    assert_eq!(dispatch.run(), DispatchOutcome::Delivered);
+    assert_eq!(handle.status(), DispatchStatus::Unstarted);
+    assert_eq!(dispatch.run(), DispatchOutcome::Completed);
     assert_eq!(
         handle.status(),
-        DispatchStatus::Finished(DispatchOutcome::Delivered)
+        DispatchStatus::Finished(DispatchOutcome::Completed)
     );
 }
 
@@ -169,7 +152,7 @@ fn direct_delivery_runs_on_the_sending_stack() {
 
     assert_eq!(
         EventTarget::from(&handler).send(7_u32).run(),
-        DispatchOutcome::Delivered
+        DispatchOutcome::Completed
     );
     assert_eq!(&*values.borrow(), &[7]);
 }
@@ -187,7 +170,7 @@ fn a_tracked_dispatch_can_be_cancelled_before_execution() {
 
     let handle =
         submit_tracked(&event_dispatcher, &sink, 7_u32).expect("the Dispatcher accepts work");
-    assert_eq!(handle.status(), DispatchStatus::Pending);
+    assert_eq!(handle.status(), DispatchStatus::Unstarted);
     assert!(handle.cancel());
     assert_eq!(
         handle.status(),
@@ -226,7 +209,7 @@ fn execution_reports_when_its_sink_was_dropped() {
         .expect("the Dispatch was deferred")
         .run();
 
-    assert_eq!(outcome, DispatchOutcome::SinkUnavailable);
+    assert_eq!(outcome, DispatchOutcome::SinkClosed);
 }
 
 #[test]
@@ -251,11 +234,11 @@ fn running_a_tracked_dispatch_finishes_its_handle() {
     let dispatch = EventTarget::from(&handler).send(7_u32).tracked();
     let handle = dispatch.handle();
 
-    assert_eq!(dispatch.run(), DispatchOutcome::Delivered);
+    assert_eq!(dispatch.run(), DispatchOutcome::Completed);
 
     assert_eq!(
         handle.status(),
-        DispatchStatus::Finished(DispatchOutcome::Delivered)
+        DispatchStatus::Finished(DispatchOutcome::Completed)
     );
     assert!(!handle.cancel());
 }
@@ -269,11 +252,11 @@ fn a_tracked_deferred_submission_records_its_execution_outcome() {
     let handle =
         submit_tracked(&event_dispatcher, &sink, 7_u32).expect("the Dispatcher accepts work");
 
-    assert_eq!(handle.status(), DispatchStatus::Pending);
+    assert_eq!(handle.status(), DispatchStatus::Unstarted);
     assert!(dispatcher.deliver_next());
     assert_eq!(
         handle.status(),
-        DispatchStatus::Finished(DispatchOutcome::Delivered)
+        DispatchStatus::Finished(DispatchOutcome::Completed)
     );
 }
 
@@ -309,12 +292,12 @@ fn a_handler_observes_its_tracked_dispatch_as_executing() {
     assert_eq!(&*cancellations.borrow(), &[false]);
     assert_eq!(
         handle.status(),
-        DispatchStatus::Finished(DispatchOutcome::Delivered)
+        DispatchStatus::Finished(DispatchOutcome::Completed)
     );
 }
 
 #[test]
-fn a_completion_callback_panic_prevents_later_callbacks() {
+fn a_finish_callback_panic_prevents_later_callbacks() {
     let mut dispatcher = FifoDispatcher::new();
     let event_dispatcher = dispatcher.sender();
     let handler = EventHandler::new(|_: u32| {});
@@ -322,9 +305,9 @@ fn a_completion_callback_panic_prevents_later_callbacks() {
     let handle = submit_tracked(&event_dispatcher, &sink, 7_u32)
         .expect("the Dispatcher accepts the Dispatch");
     let later_callback_ran = Rc::new(Cell::new(false));
-    handle.on_complete(|_| panic!("completion panic"));
+    handle.on_finish(|_| panic!("finish panic"));
     let observed = Rc::clone(&later_callback_ran);
-    handle.on_complete(move |_| observed.set(true));
+    handle.on_finish(move |_| observed.set(true));
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let _ = dispatcher.deliver_next();
@@ -334,12 +317,12 @@ fn a_completion_callback_panic_prevents_later_callbacks() {
     assert!(!later_callback_ran.get());
     assert_eq!(
         handle.status(),
-        DispatchStatus::Finished(DispatchOutcome::Delivered)
+        DispatchStatus::Finished(DispatchOutcome::Completed)
     );
 }
 
 #[test]
-fn dropping_a_dispatcher_cancels_its_pending_tracked_dispatches() {
+fn dropping_a_dispatcher_leaves_discarded_tracked_dispatches_unstarted() {
     let dispatcher = FifoDispatcher::new();
     let event_dispatcher = dispatcher.sender();
     let handler = EventHandler::new(|_: u32| {});
@@ -348,15 +331,12 @@ fn dropping_a_dispatcher_cancels_its_pending_tracked_dispatches() {
         .expect("the Dispatcher accepts the Dispatch");
     let outcomes = Rc::new(RefCell::new(Vec::new()));
     let observed = Rc::clone(&outcomes);
-    handle.on_complete(move |outcome| observed.borrow_mut().push(outcome));
+    handle.on_finish(move |outcome| observed.borrow_mut().push(outcome));
 
     drop(dispatcher);
 
-    assert_eq!(
-        handle.status(),
-        DispatchStatus::Finished(DispatchOutcome::Cancelled)
-    );
-    assert_eq!(&*outcomes.borrow(), &[DispatchOutcome::Cancelled]);
+    assert_eq!(handle.status(), DispatchStatus::Unstarted);
+    assert!(outcomes.borrow().is_empty());
 }
 
 #[test]
@@ -369,7 +349,7 @@ fn a_panicking_sink_leaves_its_tracked_dispatch_executing() {
         submit_tracked(&event_dispatcher, &sink, ()).expect("the Dispatcher accepts the Dispatch");
     let callbacks = Rc::new(RefCell::new(Vec::new()));
     let observed = Rc::clone(&callbacks);
-    handle.on_complete(move |outcome| observed.borrow_mut().push(outcome));
+    handle.on_finish(move |outcome| observed.borrow_mut().push(outcome));
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let _ = dispatcher.deliver_next();
@@ -381,7 +361,7 @@ fn a_panicking_sink_leaves_its_tracked_dispatch_executing() {
 }
 
 #[test]
-fn a_handle_notifies_completion_after_deferred_execution() {
+fn a_handle_notifies_finish_after_deferred_execution() {
     let mut dispatcher = FifoDispatcher::new();
     let event_dispatcher = dispatcher.sender();
     let handler = EventHandler::new(|_: u32| {});
@@ -391,15 +371,15 @@ fn a_handle_notifies_completion_after_deferred_execution() {
     let outcomes = Rc::new(RefCell::new(Vec::new()));
     let observed = Rc::clone(&outcomes);
 
-    handle.on_complete(move |outcome| observed.borrow_mut().push(outcome));
+    handle.on_finish(move |outcome| observed.borrow_mut().push(outcome));
     assert!(outcomes.borrow().is_empty());
 
     assert!(dispatcher.deliver_next());
-    assert_eq!(&*outcomes.borrow(), &[DispatchOutcome::Delivered]);
+    assert_eq!(&*outcomes.borrow(), &[DispatchOutcome::Completed]);
 }
 
 #[test]
-fn completion_callbacks_survive_handle_drop_and_keep_registration_order() {
+fn finish_callbacks_survive_handle_drop_and_keep_registration_order() {
     let mut dispatcher = FifoDispatcher::new();
     let event_dispatcher = dispatcher.sender();
     let handler = EventHandler::new(|_: u32| {});
@@ -408,40 +388,40 @@ fn completion_callbacks_survive_handle_drop_and_keep_registration_order() {
         submit_tracked(&event_dispatcher, &sink, 7_u32).expect("the Dispatcher accepts work");
     let notifications = Rc::new(RefCell::new(Vec::new()));
     let first = Rc::clone(&notifications);
-    handle.on_complete(move |outcome| first.borrow_mut().push((1, outcome)));
+    handle.on_finish(move |outcome| first.borrow_mut().push((1, outcome)));
     let second = Rc::clone(&notifications);
-    handle.on_complete(move |outcome| second.borrow_mut().push((2, outcome)));
+    handle.on_finish(move |outcome| second.borrow_mut().push((2, outcome)));
     drop(handle);
 
     assert!(dispatcher.deliver_next());
     assert_eq!(
         &*notifications.borrow(),
         &[
-            (1, DispatchOutcome::Delivered),
-            (2, DispatchOutcome::Delivered)
+            (1, DispatchOutcome::Completed),
+            (2, DispatchOutcome::Completed)
         ]
     );
 }
 
 #[test]
-fn a_handle_notifies_immediately_when_its_dispatch_already_completed() {
+fn a_handle_notifies_immediately_when_its_dispatch_already_finished() {
     let handler = EventHandler::new(|_: u32| {});
     let sink = EventTarget::from(&handler);
     let dispatch = sink.send(7_u32).tracked();
     let handle = dispatch.handle();
-    assert_eq!(dispatch.run(), DispatchOutcome::Delivered);
+    assert_eq!(dispatch.run(), DispatchOutcome::Completed);
     let outcome = Rc::new(RefCell::new(None));
     let observed = Rc::clone(&outcome);
 
-    handle.on_complete(move |completed| {
-        observed.replace(Some(completed));
+    handle.on_finish(move |outcome| {
+        observed.replace(Some(outcome));
     });
 
-    assert_eq!(*outcome.borrow(), Some(DispatchOutcome::Delivered));
+    assert_eq!(*outcome.borrow(), Some(DispatchOutcome::Completed));
 }
 
 #[test]
-fn cancelling_a_dispatch_notifies_its_completion() {
+fn cancelling_a_dispatch_notifies_its_finish() {
     let dispatcher = TestDispatcher {
         pending: Rc::new(RefCell::new(VecDeque::new())),
     };
@@ -452,8 +432,8 @@ fn cancelling_a_dispatch_notifies_its_completion() {
         submit_tracked(&event_dispatcher, &sink, 7_u32).expect("the Dispatcher accepts work");
     let outcome = Rc::new(RefCell::new(None));
     let observed = Rc::clone(&outcome);
-    handle.on_complete(move |completed| {
-        observed.replace(Some(completed));
+    handle.on_finish(move |outcome| {
+        observed.replace(Some(outcome));
     });
 
     assert!(handle.cancel());
@@ -473,7 +453,7 @@ fn one_sink_can_run_inline_or_be_submitted_to_a_dispatcher() {
         submit_event(&queued, &sink, 1_u32).expect("Dispatcher accepts work"),
         SubmissionOutcome::Deferred
     );
-    assert_eq!(sink.send(2_u32).run(), DispatchOutcome::Delivered);
+    assert_eq!(sink.send(2_u32).run(), DispatchOutcome::Completed);
     assert_eq!(&*values.borrow(), &[2]);
     assert!(dispatcher.deliver_next());
     assert_eq!(&*values.borrow(), &[2, 1]);
@@ -524,7 +504,7 @@ fn dropping_a_fifo_dispatcher_makes_its_capability_reject_submissions() {
     assert!(submit_event(&event_dispatcher, &provider, 1_u32).is_err());
     assert_eq!(
         independent_sink.send(1_u32).run(),
-        DispatchOutcome::Delivered
+        DispatchOutcome::Completed
     );
 }
 

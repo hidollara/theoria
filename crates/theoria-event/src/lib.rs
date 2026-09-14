@@ -1,7 +1,7 @@
 //! Typed event sources, sinks, and dispatchers.
 //!
 //! An [`EventSink`] turns one event into a concrete [`Dispatch`] without choosing
-//! where or when it runs. An [`EventDispatcher`] states which Dispatch family
+//! where or when it runs. A [`Dispatcher`] states which Dispatch family
 //! it accepts; [`FifoDispatcher`] provides serialized FIFO execution and a
 //! cloneable [`FifoSender`] submission capability. Inline execution uses
 //! [`Dispatch::run`] directly.
@@ -26,10 +26,9 @@ mod target;
 pub use bridge::{BridgeDispatch, BridgeProgress, BridgeSink, EventBridge, bridge};
 pub use channel::{ChannelSource, EventProvider, channel};
 pub use dispatch::{
-    Dispatch, DispatchHandle, DispatchOutcome, DispatchStatus, DynDispatch, EventDispatcher,
-    SubmissionOutcome, TrackedDispatch,
+    Dispatch, DispatchHandle, DispatchOutcome, DispatchStatus, DynDispatch, TrackedDispatch,
 };
-pub use dispatcher::{FifoDispatcher, FifoSender};
+pub use dispatcher::{Dispatcher, FifoDispatcher, FifoSender, SubmissionOutcome};
 pub use handler::EventHandler;
 pub use sink::{
     ContramapDispatch, ContramapFilterDispatch, ContramapFilterSink, ContramapSink, EventSink,

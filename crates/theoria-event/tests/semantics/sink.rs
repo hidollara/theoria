@@ -5,7 +5,7 @@ use std::{
 
 use super::drain;
 use theoria_event::{
-    Dispatch, DispatchOutcome, DynDispatch, EventDispatcher, EventHandler, EventSink, EventSource,
+    Dispatch, DispatchOutcome, Dispatcher, DynDispatch, EventHandler, EventSink, EventSource,
     EventTarget, FifoDispatcher, OwningSink, SubmissionOutcome, channel,
 };
 
@@ -21,12 +21,12 @@ fn submit_event<E, S, D>(
 ) -> Result<SubmissionOutcome, S::Dispatch>
 where
     S: EventSink<E>,
-    D: EventDispatcher<S::Dispatch>,
+    D: Dispatcher<S::Dispatch>,
 {
     dispatcher.submit(sink.send(event))
 }
 
-impl<D> EventDispatcher<D> for TestDispatcher
+impl<D> Dispatcher<D> for TestDispatcher
 where
     D: Dispatch + 'static,
 {
@@ -130,7 +130,7 @@ fn dyn_dispatch_erases_different_concrete_dispatch_types_at_a_storage_boundary()
         ),
     ];
     for dispatch in dispatches {
-        assert_eq!(dispatch.run(), DispatchOutcome::Delivered);
+        assert_eq!(dispatch.run(), DispatchOutcome::Completed);
     }
 
     assert_eq!(&*values.borrow(), &[3, 5]);
@@ -145,11 +145,11 @@ fn an_adapted_sink_is_cloneable_when_its_sink_and_mapping_are_cloneable() {
 
     assert_eq!(
         sink.clone().send(String::from("first")).run(),
-        DispatchOutcome::Delivered
+        DispatchOutcome::Completed
     );
     assert_eq!(
         sink.send(String::from("second")).run(),
-        DispatchOutcome::Delivered
+        DispatchOutcome::Completed
     );
     assert_eq!(&*values.borrow(), &[5, 6]);
 }
@@ -180,8 +180,8 @@ fn a_filtered_sink_discards_selected_inputs_during_dispatch_execution() {
     let first = dispatcher.pending.borrow_mut().remove(0).run();
     let second = dispatcher.pending.borrow_mut().remove(0).run();
 
-    assert_eq!(first, DispatchOutcome::Delivered);
-    assert_eq!(second, DispatchOutcome::Delivered);
+    assert_eq!(first, DispatchOutcome::Completed);
+    assert_eq!(second, DispatchOutcome::Completed);
     assert_eq!(mappings.get(), 2);
     assert_eq!(&*values.borrow(), &[2]);
 }
@@ -197,7 +197,7 @@ fn a_filtered_out_event_does_not_observe_underlying_target_liveness() {
     });
     drop(handler);
 
-    assert_eq!(sink.send(7_u32).run(), DispatchOutcome::Delivered);
+    assert_eq!(sink.send(7_u32).run(), DispatchOutcome::Completed);
     assert_eq!(predicate_calls.get(), 1);
 }
 

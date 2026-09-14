@@ -1,11 +1,8 @@
 use std::{
-    any::Any,
     cell::{Cell, RefCell},
     fmt,
     rc::Rc,
 };
-
-type CompletionFn = Box<dyn FnOnce(DispatchOutcome)>;
 
 /// One executable event operation.
 ///
@@ -16,7 +13,7 @@ pub trait Dispatch: Sized {
     /// Runs this operation exactly once.
     fn run(self) -> DispatchOutcome;
 
-    /// Attaches local cancellation and completion observation to this Dispatch.
+    /// Attaches local cancellation and terminal-state observation to this Dispatch.
     fn tracked(self) -> TrackedDispatch<Self> {
         TrackedDispatch::new(self)
     }
@@ -25,83 +22,26 @@ pub trait Dispatch: Sized {
 /// The result of running one accepted event Dispatch.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DispatchOutcome {
-    /// The Dispatch reached a live event sink and completed there.
-    Delivered,
-    /// The event sink's endpoint had been dropped before execution.
-    SinkUnavailable,
+    /// The Dispatch completed normally, including intentional early completion.
+    Completed,
+    /// The event sink used by this Dispatch is permanently closed.
+    ///
+    /// This outcome promises that later Dispatches to the same sink cannot
+    /// succeed. Temporary refusal must not be reported as `SinkClosed`.
+    SinkClosed,
     /// A tracked Dispatch was cancelled before execution began.
     Cancelled,
-}
-
-/// How far an accepted event submission progressed before returning.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SubmissionOutcome {
-    /// The Dispatch completed synchronously with the reported result.
-    Completed(DispatchOutcome),
-    /// A Dispatcher accepted the Dispatch for later execution.
-    Deferred,
 }
 
 /// The observable execution state of an accepted tracked Dispatch.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DispatchStatus {
-    /// The Dispatch has been accepted but has not started.
-    Pending,
+    /// Execution has not started and no terminal outcome has been recorded.
+    Unstarted,
     /// Execution started but has not produced a terminal outcome.
     Executing,
     /// Execution ended with the reported result.
     Finished(DispatchOutcome),
-}
-
-/// Accepts one family of event Dispatches for execution or scheduling.
-///
-/// Implementations express their requirements through `D`: an inline
-/// Dispatcher may accept borrowed work, a local queue may require `'static`,
-/// and a cross-thread Dispatcher may additionally require [`Send`].
-pub trait EventDispatcher<D>
-where
-    D: Dispatch,
-{
-    /// Submits one Dispatch for immediate or deferred execution.
-    ///
-    /// Rejection returns the original Dispatch without running or retaining
-    /// it, so another Dispatcher may accept it.
-    fn submit(&self, dispatch: D) -> Result<SubmissionOutcome, D>;
-}
-
-/// Observes a tracked Dispatch and allows pre-execution cancellation.
-///
-/// Dropping the Handle does not cancel its Dispatch. Dropping a tracked
-/// Dispatch before execution does cancel it.
-#[derive(Clone)]
-#[must_use = "dropping a DispatchHandle does not cancel its Dispatch"]
-pub struct DispatchHandle {
-    control: Rc<DispatchControl>,
-}
-
-impl DispatchHandle {
-    /// Returns the current execution state.
-    pub fn status(&self) -> DispatchStatus {
-        self.control.state.get().into()
-    }
-
-    /// Prevents execution if the Dispatch has not started.
-    pub fn cancel(&self) -> bool {
-        self.control.cancel()
-    }
-
-    /// Registers a callback for this Dispatch's terminal outcome.
-    pub fn on_complete(&self, notify: impl FnOnce(DispatchOutcome) + 'static) {
-        self.control.on_complete(notify);
-    }
-}
-
-impl fmt::Debug for DispatchHandle {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("DispatchHandle")
-            .finish_non_exhaustive()
-    }
 }
 
 /// A type-erased Dispatch for heterogeneous storage.
@@ -111,21 +51,10 @@ impl fmt::Debug for DispatchHandle {
 /// needs those properties should use an appropriately constrained erasure.
 #[must_use = "a DynDispatch must be run, submitted, or intentionally discarded"]
 pub struct DynDispatch<'event> {
-    operation: DispatchOperation<'event>,
+    operation: Box<dyn FnOnce() -> DispatchOutcome + 'event>,
 }
 
 impl<'event> DynDispatch<'event> {
-    fn from_operation(operation: impl FnOnce() -> DispatchOutcome + 'event) -> Self {
-        Self {
-            operation: DispatchOperation::Scoped(Box::new(operation)),
-        }
-    }
-
-    /// Runs the erased Dispatch exactly once.
-    pub fn run(self) -> DispatchOutcome {
-        self.operation.run()
-    }
-
     /// Erases the concrete type of `dispatch` while preserving its lifetime.
     ///
     /// This is useful at heterogeneous storage boundaries. Code that can keep
@@ -134,49 +63,15 @@ impl<'event> DynDispatch<'event> {
     where
         D: Dispatch + 'event,
     {
-        Self::from_operation(move || dispatch.run())
-    }
-
-    /// Erases a `'static` Dispatch while retaining its concrete value for
-    /// possible recovery after submission rejection.
-    pub fn recoverable<D>(dispatch: D) -> DynDispatch<'static>
-    where
-        D: Dispatch + 'static,
-    {
-        DynDispatch {
-            operation: DispatchOperation::Recoverable(Box::new(ConcreteDispatch(dispatch))),
+        Self {
+            operation: Box::new(move || dispatch.run()),
         }
-    }
-}
-
-impl DynDispatch<'static> {
-    /// Recovers the concrete Dispatch retained by [`Self::recoverable`].
-    ///
-    /// Returns this erased Dispatch unchanged when it was not made recoverable
-    /// or contains a different concrete type.
-    pub fn downcast<D>(self) -> Result<D, Self>
-    where
-        D: Dispatch + 'static,
-    {
-        let DynDispatch { operation } = self;
-        let DispatchOperation::Recoverable(operation) = operation else {
-            return Err(DynDispatch { operation });
-        };
-        if !operation.as_any().is::<D>() {
-            return Err(DynDispatch {
-                operation: DispatchOperation::Recoverable(operation),
-            });
-        }
-        Ok(*operation
-            .into_any()
-            .downcast::<D>()
-            .expect("a checked recoverable Dispatch retains its concrete type"))
     }
 }
 
 impl Dispatch for DynDispatch<'_> {
     fn run(self) -> DispatchOutcome {
-        DynDispatch::run(self)
+        (self.operation)()
     }
 }
 
@@ -188,7 +83,7 @@ impl fmt::Debug for DynDispatch<'_> {
     }
 }
 
-/// A Dispatch with locally observable cancellation and completion state.
+/// A Dispatch with locally observable cancellation and execution state.
 ///
 /// Tracking uses local shared state and therefore does not make a Dispatch
 /// suitable for crossing threads. The wrapped Dispatch otherwise retains its
@@ -196,22 +91,21 @@ impl fmt::Debug for DynDispatch<'_> {
 #[must_use = "a TrackedDispatch must be run, submitted, or intentionally discarded"]
 pub struct TrackedDispatch<D: Dispatch> {
     dispatch: D,
-    control: DispatchControlGuard,
+    control: Rc<DispatchControl>,
 }
 
 impl<D: Dispatch> TrackedDispatch<D> {
     fn new(dispatch: D) -> Self {
-        let control = Rc::new(DispatchControl::new());
         Self {
             dispatch,
-            control: DispatchControlGuard::new(control),
+            control: Rc::new(DispatchControl::new()),
         }
     }
 
     /// Returns a cloneable capability for observing and cancelling this Dispatch.
     pub fn handle(&self) -> DispatchHandle {
         DispatchHandle {
-            control: self.control.shared(),
+            control: Rc::clone(&self.control),
         }
     }
 }
@@ -219,7 +113,6 @@ impl<D: Dispatch> TrackedDispatch<D> {
 impl<D: Dispatch> Dispatch for TrackedDispatch<D> {
     fn run(self) -> DispatchOutcome {
         let Self { dispatch, control } = self;
-        let control = control.disarm();
         if !control.start() {
             return DispatchOutcome::Cancelled;
         }
@@ -237,141 +130,94 @@ impl<D: Dispatch> fmt::Debug for TrackedDispatch<D> {
     }
 }
 
-enum DispatchOperation<'event> {
-    Scoped(Box<dyn FnOnce() -> DispatchOutcome + 'event>),
-    Recoverable(Box<dyn RecoverableDispatch>),
+/// Observes a tracked Dispatch and allows pre-execution cancellation.
+///
+/// Dropping either the Handle or an unstarted tracked Dispatch does not record
+/// cancellation. Cancellation is an explicit operation on the Handle.
+#[derive(Clone)]
+#[must_use = "dropping a DispatchHandle does not cancel its Dispatch"]
+pub struct DispatchHandle {
+    control: Rc<DispatchControl>,
 }
 
-impl DispatchOperation<'_> {
-    fn run(self) -> DispatchOutcome {
-        match self {
-            Self::Scoped(operation) => operation(),
-            Self::Recoverable(operation) => operation.run(),
-        }
+impl DispatchHandle {
+    /// Returns the current execution state.
+    pub fn status(&self) -> DispatchStatus {
+        self.control.state.get()
+    }
+
+    /// Prevents execution if the Dispatch has not started.
+    pub fn cancel(&self) -> bool {
+        self.control.cancel()
+    }
+
+    /// Registers a callback for this Dispatch's terminal outcome.
+    pub fn on_finish(&self, notify: impl FnOnce(DispatchOutcome) + 'static) {
+        self.control.on_finish(notify);
     }
 }
 
-trait RecoverableDispatch {
-    fn run(self: Box<Self>) -> DispatchOutcome;
-
-    fn as_any(&self) -> &dyn Any;
-
-    fn into_any(self: Box<Self>) -> Box<dyn Any>;
-}
-
-struct ConcreteDispatch<D>(D);
-
-impl<D> RecoverableDispatch for ConcreteDispatch<D>
-where
-    D: Dispatch + 'static,
-{
-    fn run(self: Box<Self>) -> DispatchOutcome {
-        self.0.run()
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        &self.0
-    }
-
-    fn into_any(self: Box<Self>) -> Box<dyn Any> {
-        Box::new(self.0)
+impl fmt::Debug for DispatchHandle {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("DispatchHandle")
+            .finish_non_exhaustive()
     }
 }
 
 struct DispatchControl {
-    state: Cell<DispatchState>,
-    completions: RefCell<Vec<CompletionFn>>,
+    state: Cell<DispatchStatus>,
+    #[allow(clippy::type_complexity)]
+    finish_callbacks: RefCell<Vec<Box<dyn FnOnce(DispatchOutcome)>>>,
 }
 
 impl DispatchControl {
     fn new() -> Self {
         Self {
-            state: Cell::new(DispatchState::Pending),
-            completions: RefCell::new(Vec::new()),
+            state: Cell::new(DispatchStatus::Unstarted),
+            finish_callbacks: RefCell::new(Vec::new()),
         }
     }
 
     fn start(&self) -> bool {
-        if self.state.get() != DispatchState::Pending {
-            return false;
+        match self.state.get() {
+            DispatchStatus::Unstarted => {
+                self.state.set(DispatchStatus::Executing);
+                true
+            }
+            DispatchStatus::Finished(DispatchOutcome::Cancelled) => false,
+            DispatchStatus::Executing | DispatchStatus::Finished(_) => {
+                unreachable!("a Dispatch can only start once")
+            }
         }
-        self.state.set(DispatchState::Executing);
-        true
     }
 
     fn complete(&self, outcome: DispatchOutcome) {
-        debug_assert_eq!(self.state.get(), DispatchState::Executing);
+        debug_assert_eq!(self.state.get(), DispatchStatus::Executing);
         self.finish(outcome);
     }
 
     fn cancel(&self) -> bool {
-        if self.state.get() != DispatchState::Pending {
+        if self.state.get() != DispatchStatus::Unstarted {
             return false;
         }
         self.finish(DispatchOutcome::Cancelled);
         true
     }
 
-    fn on_complete(&self, notify: impl FnOnce(DispatchOutcome) + 'static) {
-        if let DispatchState::Finished(outcome) = self.state.get() {
+    fn on_finish(&self, notify: impl FnOnce(DispatchOutcome) + 'static) {
+        if let DispatchStatus::Finished(outcome) = self.state.get() {
             notify(outcome);
         } else {
-            self.completions.borrow_mut().push(Box::new(notify));
+            self.finish_callbacks.borrow_mut().push(Box::new(notify));
         }
     }
 
     fn finish(&self, outcome: DispatchOutcome) {
-        self.state.set(DispatchState::Finished(outcome));
-        let completions = std::mem::take(&mut *self.completions.borrow_mut());
-        for notify in completions {
+        self.state.set(DispatchStatus::Finished(outcome));
+        let callbacks = std::mem::take(&mut *self.finish_callbacks.borrow_mut());
+        for notify in callbacks {
             notify(outcome);
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum DispatchState {
-    Pending,
-    Executing,
-    Finished(DispatchOutcome),
-}
-
-impl From<DispatchState> for DispatchStatus {
-    fn from(state: DispatchState) -> Self {
-        match state {
-            DispatchState::Pending => Self::Pending,
-            DispatchState::Executing => Self::Executing,
-            DispatchState::Finished(outcome) => Self::Finished(outcome),
-        }
-    }
-}
-
-struct DispatchControlGuard(Option<Rc<DispatchControl>>);
-
-impl DispatchControlGuard {
-    fn new(control: Rc<DispatchControl>) -> Self {
-        Self(Some(control))
-    }
-
-    fn shared(&self) -> Rc<DispatchControl> {
-        Rc::clone(
-            self.0
-                .as_ref()
-                .expect("an armed Dispatch control retains its shared state"),
-        )
-    }
-
-    fn disarm(mut self) -> Rc<DispatchControl> {
-        self.0
-            .take()
-            .expect("a tracked Dispatch retains its control until execution")
-    }
-}
-
-impl Drop for DispatchControlGuard {
-    fn drop(&mut self) {
-        if let Some(control) = &self.0 {
-            control.cancel();
         }
     }
 }

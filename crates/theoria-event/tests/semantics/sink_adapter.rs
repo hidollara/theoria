@@ -4,8 +4,8 @@ use std::{
 };
 
 use theoria_event::{
-    ContramapSink, Dispatch, DispatchOutcome, EventDispatcher, EventHandler, EventSink,
-    EventTarget, FifoDispatcher, OwningSink,
+    ContramapSink, Dispatch, DispatchOutcome, Dispatcher, EventHandler, EventSink, EventTarget,
+    FifoDispatcher, OwningSink,
 };
 
 #[test]
@@ -24,7 +24,7 @@ fn contramap_runs_when_its_dispatch_runs() {
     assert!(!mapped.get());
     assert!(values.borrow().is_empty());
 
-    assert_eq!(dispatch.run(), DispatchOutcome::Delivered);
+    assert_eq!(dispatch.run(), DispatchOutcome::Completed);
     assert!(mapped.get());
     assert_eq!(&*values.borrow(), &[5]);
 }
@@ -38,7 +38,7 @@ fn contramap_dispatch_retains_a_borrowed_input_until_inline_execution() {
     let owned = String::from("temporary");
     let dispatch = sink.send(owned.as_str());
 
-    assert_eq!(dispatch.run(), DispatchOutcome::Delivered);
+    assert_eq!(dispatch.run(), DispatchOutcome::Completed);
     assert_eq!(length.get(), 9);
 }
 

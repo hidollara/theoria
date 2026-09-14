@@ -21,7 +21,7 @@ struct BorrowedLengthDispatch<'event> {
 impl Dispatch for BorrowedLengthDispatch<'_> {
     fn run(self) -> DispatchOutcome {
         self.output.set(self.event.len());
-        DispatchOutcome::Delivered
+        DispatchOutcome::Completed
     }
 }
 
@@ -48,7 +48,7 @@ struct OwnedDispatch {
 impl Dispatch for OwnedDispatch {
     fn run(self) -> DispatchOutcome {
         self.output.set(self.event);
-        DispatchOutcome::Delivered
+        DispatchOutcome::Completed
     }
 }
 

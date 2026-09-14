@@ -22,7 +22,7 @@ fn a_bridge_sink_preserves_cross_thread_dispatch_capabilities() {
     assert_send::<BridgeDispatch<u32>>();
 
     let (bridge, sink) = bridge();
-    assert_eq!(send(&sink, 7).run(), DispatchOutcome::Delivered);
+    assert_eq!(send(&sink, 7).run(), DispatchOutcome::Completed);
     assert_eq!(bridge.forward_next(), BridgeProgress::Forwarded);
 }
 
@@ -54,8 +54,8 @@ fn progress_distinguishes_idle_from_closed() {
     let (bridge, sender) = bridge::<u32>();
 
     assert_eq!(bridge.forward_next(), BridgeProgress::Idle);
-    assert_eq!(sender.send(1).run(), DispatchOutcome::Delivered);
-    assert_eq!(sender.send(2).run(), DispatchOutcome::Delivered);
+    assert_eq!(sender.send(1).run(), DispatchOutcome::Completed);
+    assert_eq!(sender.send(2).run(), DispatchOutcome::Completed);
     drop(sender);
 
     assert_eq!(bridge.forward_next(), BridgeProgress::Forwarded);
@@ -70,7 +70,7 @@ fn cloned_senders_keep_the_bridge_input_open() {
     drop(first);
 
     assert_eq!(bridge.forward_next(), BridgeProgress::Idle);
-    assert_eq!(second.send(7).run(), DispatchOutcome::Delivered);
+    assert_eq!(second.send(7).run(), DispatchOutcome::Completed);
     assert_eq!(bridge.forward_next(), BridgeProgress::Forwarded);
     drop(second);
     assert_eq!(bridge.forward_next(), BridgeProgress::Closed);
@@ -89,8 +89,8 @@ fn a_bridge_forwards_events_in_receive_order() {
         .expect("live bridge")
         .detach();
 
-    assert_eq!(sender.send(1).run(), DispatchOutcome::Delivered);
-    assert_eq!(sender.send(2).run(), DispatchOutcome::Delivered);
+    assert_eq!(sender.send(1).run(), DispatchOutcome::Completed);
+    assert_eq!(sender.send(2).run(), DispatchOutcome::Completed);
     assert_eq!(bridge.forward_next(), BridgeProgress::Forwarded);
     assert_eq!(bridge.forward_next(), BridgeProgress::Forwarded);
 
@@ -122,7 +122,7 @@ fn each_subscriber_selects_its_own_dispatcher() {
         .expect("live bridge")
         .detach();
 
-    assert_eq!(sender.send(7_u32).run(), DispatchOutcome::Delivered);
+    assert_eq!(sender.send(7_u32).run(), DispatchOutcome::Completed);
     assert_eq!(bridge.forward_next(), BridgeProgress::Forwarded);
     assert!(values.borrow().is_empty());
 

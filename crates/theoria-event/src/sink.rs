@@ -37,7 +37,7 @@ pub trait EventSink<E> {
     /// Accepts `T` by optionally converting it into this sink's `E` during
     /// execution.
     ///
-    /// Returning `None` completes the Dispatch as delivered without invoking
+    /// Returning `None` completes the Dispatch normally without invoking
     /// the underlying sink.
     fn contramap_filter<T, M>(self, map: M) -> ContramapFilterSink<Self, M, E>
     where
@@ -49,7 +49,7 @@ pub trait EventSink<E> {
 
     /// Accepts only values satisfying `predicate`.
     ///
-    /// A rejected value completes the Dispatch as delivered without invoking
+    /// A rejected value completes the Dispatch normally without invoking
     /// the underlying sink.
     fn filter<P>(self, predicate: P) -> FilterSink<Self, P>
     where
@@ -244,7 +244,7 @@ where
         } = self;
         match map(input) {
             Some(event) => sink.send(event).run(),
-            None => DispatchOutcome::Delivered,
+            None => DispatchOutcome::Completed,
         }
     }
 }
@@ -324,7 +324,7 @@ where
         if predicate(&event) {
             sink.send(event).run()
         } else {
-            DispatchOutcome::Delivered
+            DispatchOutcome::Completed
         }
     }
 }

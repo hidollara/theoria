@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use theoria_event::{
-    ChannelSource, Dispatch, DispatchHandle, DispatchOutcome, EventDispatcher, EventHandler,
-    EventSink, EventSource, EventTarget, SubmissionOutcome, TrackedDispatch, channel,
+    ChannelSource, Dispatch, DispatchHandle, DispatchOutcome, Dispatcher, DynDispatch,
+    EventHandler, EventSink, EventSource, EventTarget, SubmissionOutcome, TrackedDispatch, channel,
 };
 use theoria_reactive::{
     Computed, Effect, ReadContext, SnapshotState, State, StateSetter, WriteContext,
@@ -88,7 +88,11 @@ impl<'mount> MountContext<'mount> {
         for<'event> K: EventSink<S::Event<'event>>,
         for<'event> <K as EventSink<S::Event<'event>>>::Dispatch: 'static,
     {
-        self.connect_via(self.tree.default_dispatcher().clone(), source, sink)
+        let Some(subscription) = self.tree.default_dispatcher().connect(source, sink) else {
+            return false;
+        };
+        self.current.retain(subscription);
+        true
     }
 
     /// Connects one Source through an explicitly selected Dispatcher.
@@ -98,7 +102,7 @@ impl<'mount> MountContext<'mount> {
         K: 'static,
         D: 'static,
         for<'event> K: EventSink<S::Event<'event>>,
-        for<'event> D: EventDispatcher<<K as EventSink<S::Event<'event>>>::Dispatch>,
+        for<'event> D: Dispatcher<<K as EventSink<S::Event<'event>>>::Dispatch>,
     {
         let Some(subscription) = source.connect(sink).via(dispatcher) else {
             return false;
@@ -260,7 +264,14 @@ impl<'delivery> UpdateContext<'delivery> {
     }
 
     /// Sends one event to `sink` through this Component tree's default Dispatcher.
-    pub fn send<E, S>(&mut self, sink: S, event: E) -> Result<SubmissionOutcome, S::Dispatch>
+    ///
+    /// Rejection returns the still-executable, type-erased Dispatch. Use
+    /// [`Self::send_via`] when rejection must preserve its concrete type.
+    pub fn send<E, S>(
+        &mut self,
+        sink: S,
+        event: E,
+    ) -> Result<SubmissionOutcome, DynDispatch<'static>>
     where
         S: EventSink<E>,
         S::Dispatch: 'static,
@@ -288,17 +299,19 @@ impl<'delivery> UpdateContext<'delivery> {
     ) -> Result<SubmissionOutcome, S::Dispatch>
     where
         S: EventSink<E>,
-        D: EventDispatcher<S::Dispatch>,
+        D: Dispatcher<S::Dispatch>,
     {
         dispatcher.submit(sink.send(event))
     }
 
     /// Sends one tracked event through this Component tree's default Dispatcher.
+    ///
+    /// Rejection returns the still-executable, type-erased tracked Dispatch.
     pub fn send_tracked<E, S>(
         &mut self,
         sink: S,
         event: E,
-    ) -> Result<DispatchHandle, TrackedDispatch<S::Dispatch>>
+    ) -> Result<DispatchHandle, DynDispatch<'static>>
     where
         S: EventSink<E>,
         S::Dispatch: 'static,
@@ -320,7 +333,7 @@ impl<'delivery> UpdateContext<'delivery> {
     ) -> Result<DispatchHandle, TrackedDispatch<S::Dispatch>>
     where
         S: EventSink<E>,
-        D: EventDispatcher<TrackedDispatch<S::Dispatch>>,
+        D: Dispatcher<TrackedDispatch<S::Dispatch>>,
     {
         let dispatch = sink.send(event).tracked();
         let handle = dispatch.handle();

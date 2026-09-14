@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use crate::{
     component::{ComponentInstance, MountContext},
-    event::{EventTarget, FifoDispatcher, SubmissionOutcome, TargetDispatch},
+    event::{DynDispatch, EventTarget, FifoDispatcher, SubmissionOutcome},
     reactive::ReactiveError,
 };
 
@@ -25,7 +25,7 @@ impl TestDriver {
         &self,
         sink: impl Into<EventTarget<E>>,
         event: E,
-    ) -> Result<SubmissionOutcome, TargetDispatch<E>> {
+    ) -> Result<SubmissionOutcome, DynDispatch<'static>> {
         self.components.send(sink.into(), event)
     }
 

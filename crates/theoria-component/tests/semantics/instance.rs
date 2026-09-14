@@ -5,21 +5,30 @@ use std::{
 
 use theoria_component::ComponentInstance;
 use theoria_event::{
-    BridgeProgress, Dispatch, DispatchOutcome, DispatchStatus, EventDispatcher, EventTarget,
+    BridgeProgress, Dispatch, DispatchOutcome, DispatchStatus, Dispatcher, EventTarget,
     FifoDispatcher, OwningSink, SubmissionOutcome, bridge,
 };
 
 #[derive(Clone, Copy)]
 struct TestImmediateDispatcher;
 
-impl<D: Dispatch> EventDispatcher<D> for TestImmediateDispatcher {
+impl<D: Dispatch> Dispatcher<D> for TestImmediateDispatcher {
     fn submit(&self, dispatch: D) -> Result<SubmissionOutcome, D> {
-        Ok(SubmissionOutcome::Completed(dispatch.run()))
+        Ok(SubmissionOutcome::Executed(dispatch.run()))
     }
 }
 
 fn immediate_dispatcher() -> TestImmediateDispatcher {
     TestImmediateDispatcher
+}
+
+#[derive(Clone, Copy)]
+struct RejectingDispatcher;
+
+impl<D: Dispatch> Dispatcher<D> for RejectingDispatcher {
+    fn submit(&self, dispatch: D) -> Result<SubmissionOutcome, D> {
+        Err(dispatch)
+    }
 }
 
 #[test]
@@ -46,7 +55,7 @@ fn handlers_do_not_run_until_root_construction_finishes() {
         instance
             .send(&input, ())
             .expect("the immediate dispatcher accepts the event"),
-        SubmissionOutcome::Completed(DispatchOutcome::Delivered)
+        SubmissionOutcome::Executed(DispatchOutcome::Completed)
     );
     assert_eq!(runs.get(), 1);
 }
@@ -85,7 +94,7 @@ fn child_handlers_remain_inactive_until_root_construction_finishes() {
         instance
             .send(&input, ())
             .expect("the immediate dispatcher accepts the event"),
-        SubmissionOutcome::Completed(DispatchOutcome::Delivered)
+        SubmissionOutcome::Executed(DispatchOutcome::Completed)
     );
     assert_eq!(runs.get(), 1);
 }
@@ -158,7 +167,7 @@ fn inline_send_bypasses_the_default_dispatcher() {
 
     assert_eq!(
         instance.send_inline(&input, "inline"),
-        DispatchOutcome::Delivered
+        DispatchOutcome::Completed
     );
     assert_eq!(&*observed.borrow(), &["inline"]);
 
@@ -188,7 +197,7 @@ fn an_inline_connection_handles_a_publication_on_the_publishing_stack() {
 
     assert_eq!(
         instance.send_inline(input, 7_u32),
-        DispatchOutcome::Delivered
+        DispatchOutcome::Completed
     );
     assert_eq!(&*observed.borrow(), &[7]);
     assert!(!dispatcher.has_pending());
@@ -214,7 +223,7 @@ fn a_connection_accepts_a_dispatcher_without_erasing_it() {
 
     assert_eq!(
         instance.send_inline(input, 7_u32),
-        DispatchOutcome::Delivered
+        DispatchOutcome::Completed
     );
     assert_eq!(observed.get(), 7);
     assert!(!dispatcher.has_pending());
@@ -237,6 +246,18 @@ fn an_instance_can_send_to_a_sink_with_its_own_dispatch_type() {
 }
 
 #[test]
+fn default_rejection_returns_an_executable_erased_dispatch() {
+    let instance = ComponentInstance::new(RejectingDispatcher, |_| {});
+    let (bridge, sink) = bridge();
+
+    let dispatch = instance
+        .send(&sink, 7_u32)
+        .expect_err("the default Dispatcher rejects the Dispatch");
+    assert_eq!(dispatch.run(), DispatchOutcome::Completed);
+    assert_eq!(bridge.forward_next(), BridgeProgress::Forwarded);
+}
+
+#[test]
 fn an_instance_can_track_a_sink_specific_dispatch() {
     let mut dispatcher = FifoDispatcher::new();
     let instance = ComponentInstance::new(dispatcher.sender(), |_| {});
@@ -245,11 +266,11 @@ fn an_instance_can_track_a_sink_specific_dispatch() {
     let handle = instance
         .send_tracked(&sink, 7_u32)
         .expect("the default Dispatcher accepts the tracked Bridge Dispatch");
-    assert_eq!(handle.status(), DispatchStatus::Pending);
+    assert_eq!(handle.status(), DispatchStatus::Unstarted);
     assert!(dispatcher.deliver_next());
     assert_eq!(
         handle.status(),
-        DispatchStatus::Finished(DispatchOutcome::Delivered)
+        DispatchStatus::Finished(DispatchOutcome::Completed)
     );
     assert_eq!(bridge.forward_next(), BridgeProgress::Forwarded);
 }

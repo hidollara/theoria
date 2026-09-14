@@ -116,8 +116,8 @@ impl<E: Send + 'static> BridgeDispatch<E> {
 impl<E: Send + 'static> Dispatch for BridgeDispatch<E> {
     fn run(self) -> DispatchOutcome {
         match self.try_run() {
-            Ok(()) => DispatchOutcome::Delivered,
-            Err(_) => DispatchOutcome::SinkUnavailable,
+            Ok(()) => DispatchOutcome::Completed,
+            Err(_) => DispatchOutcome::SinkClosed,
         }
     }
 }

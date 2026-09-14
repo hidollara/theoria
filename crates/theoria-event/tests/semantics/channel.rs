@@ -154,7 +154,7 @@ fn source_and_input_do_not_keep_their_provider_alive() {
     drop(provider);
 
     assert!(source.subscribe(|_| {}).is_none());
-    assert_eq!(input.send(1).run(), DispatchOutcome::SinkUnavailable);
+    assert_eq!(input.send(1).run(), DispatchOutcome::SinkClosed);
 }
 
 #[test]

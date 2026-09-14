@@ -1,9 +1,6 @@
 use std::fmt;
 
-use crate::{
-    dispatch::{Dispatch, EventDispatcher},
-    sink::EventSink,
-};
+use crate::{dispatch::Dispatch, dispatcher::Dispatcher, sink::EventSink};
 
 /// A stream-like capability whose event type may vary with each publication's
 /// lifetime.
@@ -55,11 +52,11 @@ where
     where
         D: 'static,
         for<'event> K: EventSink<S::Event<'event>>,
-        for<'event> D: EventDispatcher<<K as EventSink<S::Event<'event>>>::Dispatch>,
+        for<'event> D: Dispatcher<<K as EventSink<S::Event<'event>>>::Dispatch>,
     {
         let Self { source, sink } = self;
         source.subscribe(move |event| {
-            let _ = EventDispatcher::submit(&dispatcher, sink.send(event));
+            let _ = Dispatcher::submit(&dispatcher, sink.send(event));
         })
     }
 }

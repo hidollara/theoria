@@ -1,7 +1,7 @@
 use std::{fmt, rc::Rc};
 
 use theoria_event::{
-    Dispatch, DispatchHandle, DispatchOutcome, DynDispatch, EventDispatcher, EventSink,
+    Dispatch, DispatchHandle, DispatchOutcome, Dispatcher, DynDispatch, EventSink,
     SubmissionOutcome, TrackedDispatch,
 };
 use theoria_reactive::{Reactive, ReactiveError};
@@ -28,7 +28,7 @@ impl ComponentInstance {
     /// accepts self-contained [`DynDispatch`] values. Explicit `*_via` calls
     /// continue to use each sink's concrete Dispatch type.
     pub fn new(
-        default_dispatcher: impl EventDispatcher<DynDispatch<'static>> + 'static,
+        default_dispatcher: impl Dispatcher<DynDispatch<'static>> + 'static,
         build: impl FnOnce(&mut MountContext<'_>),
     ) -> Self {
         let tree = ComponentTree::new(
@@ -43,7 +43,11 @@ impl ComponentInstance {
     }
 
     /// Sends one event through this Instance's default Dispatcher.
-    pub fn send<E, S>(&self, sink: S, event: E) -> Result<SubmissionOutcome, S::Dispatch>
+    ///
+    /// Rejection returns the still-executable, type-erased Dispatch because
+    /// the default Dispatcher is itself a type-erasure boundary. Use
+    /// [`Self::send_via`] when rejection must preserve the concrete type.
+    pub fn send<E, S>(&self, sink: S, event: E) -> Result<SubmissionOutcome, DynDispatch<'static>>
     where
         S: EventSink<E>,
         S::Dispatch: 'static,
@@ -71,17 +75,19 @@ impl ComponentInstance {
     ) -> Result<SubmissionOutcome, S::Dispatch>
     where
         S: EventSink<E>,
-        D: EventDispatcher<S::Dispatch>,
+        D: Dispatcher<S::Dispatch>,
     {
         dispatcher.submit(sink.send(event))
     }
 
     /// Sends one tracked event through this Instance's default Dispatcher.
+    ///
+    /// Rejection returns the still-executable, type-erased tracked Dispatch.
     pub fn send_tracked<E, S>(
         &self,
         sink: S,
         event: E,
-    ) -> Result<DispatchHandle, TrackedDispatch<S::Dispatch>>
+    ) -> Result<DispatchHandle, DynDispatch<'static>>
     where
         S: EventSink<E>,
         S::Dispatch: 'static,
@@ -103,7 +109,7 @@ impl ComponentInstance {
     ) -> Result<DispatchHandle, TrackedDispatch<S::Dispatch>>
     where
         S: EventSink<E>,
-        D: EventDispatcher<TrackedDispatch<S::Dispatch>>,
+        D: Dispatcher<TrackedDispatch<S::Dispatch>>,
     {
         let dispatch = sink.send(event).tracked();
         let handle = dispatch.handle();

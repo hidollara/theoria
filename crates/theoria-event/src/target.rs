@@ -61,10 +61,10 @@ impl<E> EventTarget<E> {
 
     pub(crate) fn deliver(&self, event: E) -> DispatchOutcome {
         let Some(endpoint) = self.endpoint.upgrade() else {
-            return DispatchOutcome::SinkUnavailable;
+            return DispatchOutcome::SinkClosed;
         };
         (self.receive)(endpoint.as_ref(), event);
-        DispatchOutcome::Delivered
+        DispatchOutcome::Completed
     }
 }
 

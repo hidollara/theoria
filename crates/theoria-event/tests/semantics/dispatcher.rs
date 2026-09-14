@@ -4,8 +4,8 @@ use std::{
 };
 
 use theoria_event::{
-    Dispatch, DispatchOutcome, EventDispatcher, EventHandler, EventSource, EventTarget,
-    FifoDispatcher, OwningSink, SubmissionOutcome, channel,
+    Dispatch, DispatchOutcome, Dispatcher, EventHandler, EventSource, EventTarget, FifoDispatcher,
+    OwningSink, SubmissionOutcome, channel,
 };
 
 #[derive(Debug)]
@@ -16,7 +16,7 @@ struct LocalDispatch {
 impl Dispatch for LocalDispatch {
     fn run(self) -> DispatchOutcome {
         self.output.set(true);
-        DispatchOutcome::Delivered
+        DispatchOutcome::Completed
     }
 }
 
