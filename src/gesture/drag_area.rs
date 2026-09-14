@@ -1,5 +1,5 @@
 use crate::{
-    component::UpdateContext, event::EventTarget, interaction::HitRegion, transform::Projective2,
+    component::UpdateContext, event::EventSink, interaction::HitRegion, transform::Projective2,
 };
 
 use super::{Drag, DragPhase, area::GestureArea};
@@ -13,8 +13,12 @@ use super::{Drag, DragPhase, area::GestureArea};
 pub struct DragArea(GestureArea<Drag>);
 
 impl DragArea {
-    pub fn new(sink: impl Into<EventTarget<Drag>>, region: HitRegion) -> Self {
-        Self(GestureArea::new(sink.into(), region))
+    pub fn new<S>(sink: S, region: HitRegion) -> Self
+    where
+        S: EventSink<Drag> + 'static,
+        S::Dispatch: 'static,
+    {
+        Self(GestureArea::new(sink, region))
     }
 
     pub fn transformed(mut self, local_to_parent: impl Into<Projective2>) -> Self {

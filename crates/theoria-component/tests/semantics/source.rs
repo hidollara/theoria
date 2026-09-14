@@ -1,6 +1,6 @@
 use std::{cell::RefCell, rc::Rc};
 
-use theoria_event::{EventTarget, OwningSink};
+use theoria_event::{EventSink, EventTarget, OwningSink};
 
 use super::support::{DrainOutcome, TestDriver, TestRuntime};
 

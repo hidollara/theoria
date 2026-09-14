@@ -6,8 +6,8 @@ use std::{
 };
 
 use crate::{
-    sink::{EventEndpoint, EventTarget},
     source::{EventSource, Subscription},
+    target::{EventEndpoint, EventTarget},
 };
 
 type Subscriber<E> = Rc<dyn Fn(&E)>;
@@ -59,7 +59,7 @@ impl<E: 'static> fmt::Debug for EventProvider<E> {
 /// A cloneable, non-owning view of one typed channel.
 ///
 /// A Channel Source lends each publication to its subscribers. Connect it to
-/// an [`crate::sink_adapter::OwningSink`] when the resulting Dispatch must own
+/// an [`crate::sink::OwningSink`] when the resulting Dispatch must own
 /// the event and outlive the publication call.
 pub struct ChannelSource<E: 'static> {
     state: Weak<ChannelState<E>>,

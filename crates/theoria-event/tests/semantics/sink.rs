@@ -5,20 +5,25 @@ use std::{
 
 use super::drain;
 use theoria_event::{
-    DispatchOutcome, Dispatcher, EventDispatch, EventDispatcher, EventHandler, EventSource,
-    EventTarget, FifoDispatcher, OwningSink, SubmissionOutcome, channel,
+    Dispatch, DispatchOutcome, Dispatcher, ErasedEventSink, EventDispatch, EventDispatcher,
+    EventHandler, EventSink, EventSource, EventTarget, FifoDispatcher, OwningSink,
+    SubmissionOutcome, channel,
 };
 
 struct TestDispatcher {
     pending: RefCell<Vec<EventDispatch<'static>>>,
 }
 
-fn submit_event<E: 'static>(
+fn submit_event<E, S>(
     dispatcher: &Dispatcher,
-    sink: impl Into<EventTarget<E>>,
+    sink: S,
     event: E,
-) -> Result<SubmissionOutcome, EventDispatch<'static>> {
-    dispatcher.submit(sink.into().send(event))
+) -> Result<SubmissionOutcome, S::Dispatch>
+where
+    S: EventSink<E>,
+    S::Dispatch: 'static,
+{
+    dispatcher.submit(sink.send(event))
 }
 
 impl EventDispatcher<EventDispatch<'static>> for TestDispatcher {
@@ -32,7 +37,7 @@ impl EventDispatcher<EventDispatch<'static>> for TestDispatcher {
 }
 
 #[test]
-fn a_sink_alive_at_dispatch_start_finishes_that_dispatch() {
+fn dropping_a_target_during_generic_contramap_prevents_delivery() {
     let mut dispatcher = FifoDispatcher::new();
     let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
     let values = Rc::new(RefCell::new(Vec::new()));
@@ -51,14 +56,14 @@ fn a_sink_alive_at_dispatch_start_finishes_that_dispatch() {
         .expect("live provider")
         .detach();
 
-    assert!(submit_event(&event_dispatcher, &provider, 1_u32).is_ok());
+    assert!(submit_event(&event_dispatcher, EventTarget::from(&provider), 1_u32).is_ok());
     assert!(dispatcher.deliver_next());
     assert!(dispatcher.deliver_next());
     assert!(!dispatcher.deliver_next());
-    assert_eq!(&*values.borrow(), &[1]);
+    assert!(values.borrow().is_empty());
     assert!(submit_event(&event_dispatcher, &sink, 2_u32).is_ok());
     drain(&mut dispatcher);
-    assert_eq!(&*values.borrow(), &[1]);
+    assert!(values.borrow().is_empty());
 }
 
 #[test]
@@ -108,6 +113,29 @@ fn a_contramap_sink_converts_its_input_during_dispatch_execution() {
 }
 
 #[test]
+fn an_erased_event_sink_preserves_a_concrete_sinks_dispatch() {
+    let values = Rc::new(RefCell::new(Vec::new()));
+    let output = Rc::clone(&values);
+    let handler = EventHandler::new(move |value: usize| output.borrow_mut().push(value));
+    let sink = EventTarget::from(&handler).contramap(|value: String| value.len());
+    let erased = ErasedEventSink::new(sink);
+
+    let dispatch = erased.send(String::from("erased"));
+    assert!(values.borrow().is_empty());
+    assert_eq!(dispatch.run(), DispatchOutcome::Delivered);
+    assert_eq!(&*values.borrow(), &[6]);
+}
+
+#[test]
+fn erasing_an_event_target_does_not_keep_its_endpoint_alive() {
+    let handler = EventHandler::new(|_: u32| {});
+    let erased = ErasedEventSink::new(EventTarget::from(&handler));
+    drop(handler);
+
+    assert_eq!(erased.send(7).run(), DispatchOutcome::SinkUnavailable);
+}
+
+#[test]
 fn a_filtered_sink_discards_selected_inputs_during_dispatch_execution() {
     let dispatcher = Rc::new(TestDispatcher {
         pending: RefCell::new(Vec::new()),
@@ -140,7 +168,7 @@ fn a_filtered_sink_discards_selected_inputs_during_dispatch_execution() {
 }
 
 #[test]
-fn an_expired_filtered_sink_is_unavailable_without_running_its_predicate() {
+fn a_filtered_out_event_does_not_observe_underlying_target_liveness() {
     let predicate_calls = Rc::new(Cell::new(0));
     let observed_calls = Rc::clone(&predicate_calls);
     let handler = EventHandler::new(|_: u32| {});
@@ -150,8 +178,8 @@ fn an_expired_filtered_sink_is_unavailable_without_running_its_predicate() {
     });
     drop(handler);
 
-    assert_eq!(sink.send(7_u32).run(), DispatchOutcome::SinkUnavailable);
-    assert_eq!(predicate_calls.get(), 0);
+    assert_eq!(sink.send(7_u32).run(), DispatchOutcome::Delivered);
+    assert_eq!(predicate_calls.get(), 1);
 }
 
 #[test]

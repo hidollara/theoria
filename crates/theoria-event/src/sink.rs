@@ -1,12 +1,6 @@
-use std::{
-    any::Any,
-    fmt,
-    rc::{Rc, Weak},
-};
+use std::{fmt, marker::PhantomData, rc::Rc};
 
 use crate::dispatch::{Dispatch, DispatchOutcome, EventDispatch};
-
-type ReceiveFn<E> = dyn Fn(&dyn Any, E);
 
 /// A typed event destination that turns each send into one Dispatch.
 ///
@@ -17,171 +11,66 @@ pub trait EventSink<E> {
 
     /// Turns `event` into one unexecuted invocation of this event sink.
     fn send(&self, event: E) -> Self::Dispatch;
-}
 
-/// An event-sink adapter that turns a borrowed input into an owned event.
-///
-/// This is the borrowing counterpart of [`EventTarget::contramap`]. The
-/// conversion runs only when the resulting Dispatch runs, while the borrowed
-/// input is still valid.
-pub struct BorrowingEventSink<T: ?Sized, E> {
-    sink: EventTarget<E>,
-    map: Rc<dyn for<'event> Fn(&'event T) -> E>,
-}
-
-pub(crate) trait EventEndpoint: 'static {
-    type Event;
-
-    fn receive(&self, event: Self::Event);
-}
-
-/// A cloneable, type-erased event target independent of any Dispatcher.
-///
-/// An [`EventTarget`] does not keep its endpoint alive. [`Self::send`] creates an
-/// [`EventDispatch`], which may be run on the current call stack or submitted
-/// through a compatible Dispatcher. If the endpoint has already been dropped
-/// when a Dispatch starts, it completes with
-/// [`crate::dispatch::DispatchOutcome::SinkUnavailable`].
-pub struct EventTarget<E> {
-    endpoint: Weak<dyn Any>,
-    receive: Rc<ReceiveFn<E>>,
-}
-
-impl<E> EventTarget<E> {
-    pub(crate) fn from_endpoint<T>(endpoint: Weak<T>) -> Self
+    /// Accepts `T` by converting it into this sink's `E` during execution.
+    fn contramap<T, M>(&self, map: M) -> ContramapSink<Self, M, E>
     where
-        T: EventEndpoint<Event = E>,
+        Self: Clone + Sized,
+        M: Fn(T) -> E + Clone,
     {
-        Self {
-            endpoint,
-            receive: Rc::new(move |endpoint, event| {
-                let endpoint = endpoint
-                    .downcast_ref::<T>()
-                    .expect("an EventTarget endpoint must retain its original type");
-                endpoint.receive(event);
-            }),
-        }
+        ContramapSink::new(self.clone(), map)
     }
 
-    /// Creates a target accepting `U` by converting it into this target's `E`.
-    pub fn contramap<U>(&self, map: impl Fn(U) -> E + 'static) -> EventTarget<U>
-    where
-        E: 'static,
-        U: 'static,
-    {
-        self.contramap_filter(move |event| Some(map(event)))
-    }
-
-    /// Creates an event sink accepting a borrowed `T` by converting it into `E`.
-    pub fn contramap_borrow<T: ?Sized>(
-        &self,
-        map: impl for<'event> Fn(&'event T) -> E + 'static,
-    ) -> BorrowingEventSink<T, E>
-    where
-        E: 'static,
-    {
-        BorrowingEventSink {
-            sink: self.clone(),
-            map: Rc::new(map),
-        }
-    }
-
-    /// Creates a target that accepts only values satisfying `predicate`.
+    /// Accepts a borrowed `T` by converting it into this sink's `E` during
+    /// execution.
     ///
-    /// For a live endpoint, a filtered-out value completes its Dispatch as
-    /// delivered without invoking the endpoint callback. Endpoint liveness is
-    /// checked before the predicate runs.
-    pub fn filter(&self, predicate: impl Fn(&E) -> bool + 'static) -> EventTarget<E>
+    /// This is the higher-ranked counterpart of [`Self::contramap`], allowing
+    /// one adapter to accept every lifetime of `&T`.
+    fn contramap_borrow<T: ?Sized, M>(&self, map: M) -> ContramapSink<Self, M, E>
     where
-        E: 'static,
+        Self: Clone + Sized,
+        M: for<'event> Fn(&'event T) -> E + Clone,
     {
-        self.contramap_filter(move |event| predicate(&event).then_some(event))
+        ContramapSink::new(self.clone(), map)
     }
 
-    /// Creates a target accepting `U` by optionally converting it into this
-    /// target's `E`.
+    /// Accepts `T` by optionally converting it into this sink's `E` during
+    /// execution.
     ///
-    /// For a live endpoint, returning `None` completes that Dispatch as
-    /// delivered without invoking the endpoint callback. Endpoint liveness is
-    /// checked before `map` runs.
-    pub fn contramap_filter<U>(&self, map: impl Fn(U) -> Option<E> + 'static) -> EventTarget<U>
+    /// Returning `None` completes the Dispatch as delivered without invoking
+    /// the underlying sink.
+    fn contramap_filter<T, M>(&self, map: M) -> ContramapFilterSink<Self, M, E>
     where
-        E: 'static,
-        U: 'static,
+        Self: Clone + Sized,
+        M: Fn(T) -> Option<E> + Clone,
     {
-        let receive = Rc::clone(&self.receive);
-        EventTarget {
-            endpoint: Weak::clone(&self.endpoint),
-            receive: Rc::new(move |endpoint, event| {
-                if let Some(event) = map(event) {
-                    receive(endpoint, event);
-                }
-            }),
-        }
+        ContramapFilterSink::new(self.clone(), map)
     }
 
-    /// Creates a target accepting every `U: Into<E>`.
-    pub fn accepting<U>(&self) -> EventTarget<U>
-    where
-        E: 'static,
-        U: Into<E> + 'static,
-    {
-        self.contramap(Into::into)
-    }
-
-    /// Builds one invocation carrying `event` to this target.
+    /// Accepts only values satisfying `predicate`.
     ///
-    /// Building a Dispatch does not invoke the endpoint. The Dispatch owns the
-    /// event and may run on the current call stack. When `E: 'static`, it may
-    /// instead be submitted to a Dispatcher.
-    pub fn send<'event>(&self, event: E) -> EventDispatch<'event>
+    /// A rejected value completes the Dispatch as delivered without invoking
+    /// the underlying sink.
+    fn filter<P>(&self, predicate: P) -> FilterSink<Self, P>
     where
-        E: 'event,
+        Self: Clone + Sized,
+        P: Fn(&E) -> bool + Clone,
     {
-        let sink = self.clone();
-        EventDispatch::new(move || sink.deliver(event))
+        FilterSink::new(self.clone(), predicate)
     }
 
-    /// Delivers one event immediately, returning it when the endpoint is gone.
-    pub fn send_inline(&self, event: E) -> Result<(), E> {
-        let Some(endpoint) = self.endpoint.upgrade() else {
-            return Err(event);
-        };
-        (self.receive)(endpoint.as_ref(), event);
-        Ok(())
-    }
-
-    pub(crate) fn deliver(&self, event: E) -> DispatchOutcome {
-        let Some(endpoint) = self.endpoint.upgrade() else {
-            return DispatchOutcome::SinkUnavailable;
-        };
-        (self.receive)(endpoint.as_ref(), event);
-        DispatchOutcome::Delivered
+    /// Accepts every `T: Into<E>`.
+    fn accepting<T>(&self) -> ContramapSink<Self, fn(T) -> E, E>
+    where
+        Self: Clone + Sized,
+        T: Into<E>,
+    {
+        ContramapSink::new(self.clone(), into_event::<T, E>)
     }
 }
 
-impl<E> EventSink<E> for EventTarget<E>
-where
-    E: 'static,
-{
-    type Dispatch = EventDispatch<'static>;
-
-    fn send(&self, event: E) -> Self::Dispatch {
-        EventTarget::send(self, event)
-    }
-}
-
-impl<'input, T: ?Sized, E> EventSink<&'input T> for BorrowingEventSink<T, E>
-where
-    E: 'static,
-{
-    type Dispatch = EventDispatch<'input>;
-
-    fn send(&self, event: &'input T) -> Self::Dispatch {
-        let sink = self.sink.clone();
-        let map = Rc::clone(&self.map);
-        EventDispatch::new(move || sink.deliver(map(event)))
-    }
+fn into_event<T: Into<E>, E>(event: T) -> E {
+    event.into()
 }
 
 impl<E, S> EventSink<E> for &S
@@ -195,42 +84,351 @@ where
     }
 }
 
-impl<T: ?Sized, E> Clone for BorrowingEventSink<T, E> {
+type ErasedSend<E> = dyn Fn(E) -> EventDispatch<'static>;
+
+/// A cloneable, type-erased event sink.
+///
+/// Unlike an endpoint [`EventTarget`], this type owns the concrete sink it
+/// erases. Use it where concrete sink types must share one stored type; APIs
+/// that only send an event should accept an `impl EventSink<E>` directly.
+///
+/// [`EventTarget`]: crate::target::EventTarget
+pub struct ErasedEventSink<E> {
+    send: Rc<ErasedSend<E>>,
+}
+
+impl<E> ErasedEventSink<E> {
+    /// Erases `sink` and its self-contained Dispatch type.
+    pub fn new<S>(sink: S) -> Self
+    where
+        S: EventSink<E> + 'static,
+        S::Dispatch: 'static,
+    {
+        Self {
+            send: Rc::new(move |event| {
+                let dispatch = sink.send(event);
+                EventDispatch::new(move || dispatch.run())
+            }),
+        }
+    }
+}
+
+impl<E> EventSink<E> for ErasedEventSink<E> {
+    type Dispatch = EventDispatch<'static>;
+
+    fn send(&self, event: E) -> Self::Dispatch {
+        (self.send)(event)
+    }
+}
+
+impl<E> Clone for ErasedEventSink<E> {
     fn clone(&self) -> Self {
         Self {
+            send: Rc::clone(&self.send),
+        }
+    }
+}
+
+impl<E> fmt::Debug for ErasedEventSink<E> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ErasedEventSink")
+            .finish_non_exhaustive()
+    }
+}
+
+/// Adapts an event sink by converting its input when the resulting Dispatch runs.
+///
+/// Sending `T` does not run `map`. The returned [`ContramapDispatch`] retains
+/// `T`, the conversion, and the underlying event sink until execution, so their
+/// lifetimes and auto traits remain visible to a prospective Dispatcher.
+pub struct ContramapSink<S, M, E> {
+    sink: S,
+    map: M,
+    event: PhantomData<fn(E)>,
+}
+
+impl<S, M, E> ContramapSink<S, M, E> {
+    /// Wraps `sink` with a conversion performed during Dispatch execution.
+    pub const fn new(sink: S, map: M) -> Self {
+        Self {
+            sink,
+            map,
+            event: PhantomData,
+        }
+    }
+}
+
+impl<T, E, S, M> EventSink<T> for ContramapSink<S, M, E>
+where
+    S: EventSink<E> + Clone,
+    M: Fn(T) -> E + Clone,
+{
+    type Dispatch = ContramapDispatch<S, M, T, E>;
+
+    fn send(&self, event: T) -> Self::Dispatch {
+        ContramapDispatch {
             sink: self.sink.clone(),
-            map: Rc::clone(&self.map),
+            map: self.map.clone(),
+            input: event,
+            event: PhantomData,
         }
     }
 }
 
-impl<T: ?Sized, E> fmt::Debug for BorrowingEventSink<T, E> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("BorrowingEventSink")
-            .finish_non_exhaustive()
-    }
-}
-
-impl<E> Clone for EventTarget<E> {
+impl<S, M, E> Clone for ContramapSink<S, M, E>
+where
+    S: Clone,
+    M: Clone,
+{
     fn clone(&self) -> Self {
+        Self::new(self.sink.clone(), self.map.clone())
+    }
+}
+
+impl<S, M, E> fmt::Debug for ContramapSink<S, M, E> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ContramapSink")
+            .finish_non_exhaustive()
+    }
+}
+
+/// A Dispatch that converts `T` before invoking an underlying [`EventSink<E>`].
+#[must_use = "a ContramapDispatch must be run, submitted, or intentionally discarded"]
+pub struct ContramapDispatch<S, M, T, E> {
+    sink: S,
+    map: M,
+    input: T,
+    event: PhantomData<fn(E)>,
+}
+
+impl<S, M, T, E> Dispatch for ContramapDispatch<S, M, T, E>
+where
+    S: EventSink<E>,
+    M: FnOnce(T) -> E,
+{
+    fn run(self) -> DispatchOutcome {
+        let Self {
+            sink, map, input, ..
+        } = self;
+        sink.send(map(input)).run()
+    }
+}
+
+impl<S, M, T, E> fmt::Debug for ContramapDispatch<S, M, T, E> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ContramapDispatch")
+            .finish_non_exhaustive()
+    }
+}
+
+/// Adapts an event sink by optionally converting its input during execution.
+pub struct ContramapFilterSink<S, M, E> {
+    sink: S,
+    map: M,
+    event: PhantomData<fn(E)>,
+}
+
+impl<S, M, E> ContramapFilterSink<S, M, E> {
+    /// Wraps `sink` with an optional conversion performed during Dispatch execution.
+    pub const fn new(sink: S, map: M) -> Self {
         Self {
-            endpoint: Weak::clone(&self.endpoint),
-            receive: Rc::clone(&self.receive),
+            sink,
+            map,
+            event: PhantomData,
         }
     }
 }
 
-impl<E> From<&EventTarget<E>> for EventTarget<E> {
-    fn from(sink: &EventTarget<E>) -> Self {
-        sink.clone()
+impl<T, E, S, M> EventSink<T> for ContramapFilterSink<S, M, E>
+where
+    S: EventSink<E> + Clone,
+    M: Fn(T) -> Option<E> + Clone,
+{
+    type Dispatch = ContramapFilterDispatch<S, M, T, E>;
+
+    fn send(&self, event: T) -> Self::Dispatch {
+        ContramapFilterDispatch {
+            sink: self.sink.clone(),
+            map: self.map.clone(),
+            input: event,
+            event: PhantomData,
+        }
     }
 }
 
-impl<E> fmt::Debug for EventTarget<E> {
+impl<S, M, E> Clone for ContramapFilterSink<S, M, E>
+where
+    S: Clone,
+    M: Clone,
+{
+    fn clone(&self) -> Self {
+        Self::new(self.sink.clone(), self.map.clone())
+    }
+}
+
+impl<S, M, E> fmt::Debug for ContramapFilterSink<S, M, E> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
-            .debug_struct("EventTarget")
+            .debug_struct("ContramapFilterSink")
             .finish_non_exhaustive()
+    }
+}
+
+/// A Dispatch that may convert `T` before invoking an underlying event sink.
+#[must_use = "a ContramapFilterDispatch must be run, submitted, or intentionally discarded"]
+pub struct ContramapFilterDispatch<S, M, T, E> {
+    sink: S,
+    map: M,
+    input: T,
+    event: PhantomData<fn(E)>,
+}
+
+impl<S, M, T, E> Dispatch for ContramapFilterDispatch<S, M, T, E>
+where
+    S: EventSink<E>,
+    M: FnOnce(T) -> Option<E>,
+{
+    fn run(self) -> DispatchOutcome {
+        let Self {
+            sink, map, input, ..
+        } = self;
+        match map(input) {
+            Some(event) => sink.send(event).run(),
+            None => DispatchOutcome::Delivered,
+        }
+    }
+}
+
+impl<S, M, T, E> fmt::Debug for ContramapFilterDispatch<S, M, T, E> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ContramapFilterDispatch")
+            .finish_non_exhaustive()
+    }
+}
+
+/// Adapts an event sink by filtering its input during execution.
+pub struct FilterSink<S, P> {
+    sink: S,
+    predicate: P,
+}
+
+impl<S, P> FilterSink<S, P> {
+    /// Wraps `sink` with a predicate evaluated during Dispatch execution.
+    pub const fn new(sink: S, predicate: P) -> Self {
+        Self { sink, predicate }
+    }
+}
+
+impl<E, S, P> EventSink<E> for FilterSink<S, P>
+where
+    S: EventSink<E> + Clone,
+    P: Fn(&E) -> bool + Clone,
+{
+    type Dispatch = FilterDispatch<S, P, E>;
+
+    fn send(&self, event: E) -> Self::Dispatch {
+        FilterDispatch {
+            sink: self.sink.clone(),
+            predicate: self.predicate.clone(),
+            event,
+        }
+    }
+}
+
+impl<S, P> Clone for FilterSink<S, P>
+where
+    S: Clone,
+    P: Clone,
+{
+    fn clone(&self) -> Self {
+        Self::new(self.sink.clone(), self.predicate.clone())
+    }
+}
+
+impl<S, P> fmt::Debug for FilterSink<S, P> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.debug_struct("FilterSink").finish_non_exhaustive()
+    }
+}
+
+/// A Dispatch that filters `E` before invoking an underlying event sink.
+#[must_use = "a FilterDispatch must be run, submitted, or intentionally discarded"]
+pub struct FilterDispatch<S, P, E> {
+    sink: S,
+    predicate: P,
+    event: E,
+}
+
+impl<S, P, E> Dispatch for FilterDispatch<S, P, E>
+where
+    S: EventSink<E>,
+    P: FnOnce(&E) -> bool,
+{
+    fn run(self) -> DispatchOutcome {
+        let Self {
+            sink,
+            predicate,
+            event,
+        } = self;
+        if predicate(&event) {
+            sink.send(event).run()
+        } else {
+            DispatchOutcome::Delivered
+        }
+    }
+}
+
+impl<S, P, E> fmt::Debug for FilterDispatch<S, P, E> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("FilterDispatch")
+            .finish_non_exhaustive()
+    }
+}
+
+/// Adapts an event sink to own borrowed inputs before its Dispatch is built.
+///
+/// Unlike [`ContramapSink`], this conversion runs in [`EventSink::send`]. The
+/// resulting Dispatch is exactly the underlying event sink's Dispatch and
+/// therefore does not retain the input borrow.
+pub struct OwningSink<S> {
+    sink: S,
+}
+
+impl<S> OwningSink<S> {
+    /// Wraps `sink` with a `ToOwned` conversion at the send boundary.
+    pub const fn new(sink: S) -> Self {
+        Self { sink }
+    }
+}
+
+impl<'input, T, S> EventSink<&'input T> for OwningSink<S>
+where
+    T: ToOwned + ?Sized,
+    S: EventSink<T::Owned>,
+{
+    type Dispatch = S::Dispatch;
+
+    fn send(&self, event: &'input T) -> Self::Dispatch {
+        self.sink.send(event.to_owned())
+    }
+}
+
+impl<S> Clone for OwningSink<S>
+where
+    S: Clone,
+{
+    fn clone(&self) -> Self {
+        Self::new(self.sink.clone())
+    }
+}
+
+impl<S> fmt::Debug for OwningSink<S> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.debug_struct("OwningSink").finish_non_exhaustive()
     }
 }

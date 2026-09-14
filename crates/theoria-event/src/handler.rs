@@ -1,6 +1,6 @@
 use std::{cell::RefCell, fmt, rc::Rc};
 
-use crate::sink::{EventEndpoint, EventTarget};
+use crate::target::{EventEndpoint, EventTarget};
 
 /// Uniquely owns a terminal event handler and acts as its endpoint.
 ///

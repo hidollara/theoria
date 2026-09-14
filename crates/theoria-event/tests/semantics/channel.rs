@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 use super::drain;
 use theoria_event::{
-    DispatchOutcome, Dispatcher, EventHandler, EventSource, EventTarget, FifoDispatcher,
+    DispatchOutcome, Dispatcher, EventHandler, EventSink, EventSource, EventTarget, FifoDispatcher,
     OwningSink, Subscription, channel,
 };
 

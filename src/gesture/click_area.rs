@@ -1,5 +1,5 @@
 use crate::{
-    component::UpdateContext, event::EventTarget, geometry::Point, interaction::HitRegion,
+    component::UpdateContext, event::EventSink, geometry::Point, interaction::HitRegion,
     transform::Projective2,
 };
 
@@ -14,8 +14,12 @@ use super::{Click, area::GestureArea};
 pub struct ClickArea(GestureArea<Click>);
 
 impl ClickArea {
-    pub fn new(sink: impl Into<EventTarget<Click>>, region: HitRegion) -> Self {
-        Self(GestureArea::new(sink.into(), region))
+    pub fn new<S>(sink: S, region: HitRegion) -> Self
+    where
+        S: EventSink<Click> + 'static,
+        S::Dispatch: 'static,
+    {
+        Self(GestureArea::new(sink, region))
     }
 
     /// Places this local area in its containing click coordinate space.

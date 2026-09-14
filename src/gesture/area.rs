@@ -1,19 +1,26 @@
 use crate::{
-    component::UpdateContext, event::EventTarget, geometry::Point, interaction::HitRegion,
+    component::UpdateContext,
+    event::{ErasedEventSink, EventSink},
+    geometry::Point,
+    interaction::HitRegion,
     transform::Projective2,
 };
 
 #[derive(Clone, Debug)]
 pub(super) struct GestureArea<E: 'static> {
-    sink: EventTarget<E>,
+    sink: ErasedEventSink<E>,
     region: HitRegion,
     local_to_parent: Projective2,
 }
 
 impl<E: 'static> GestureArea<E> {
-    pub(super) fn new(sink: EventTarget<E>, region: HitRegion) -> Self {
+    pub(super) fn new<S>(sink: S, region: HitRegion) -> Self
+    where
+        S: EventSink<E> + 'static,
+        S::Dispatch: 'static,
+    {
         Self {
-            sink,
+            sink: ErasedEventSink::new(sink),
             region,
             local_to_parent: Projective2::IDENTITY,
         }

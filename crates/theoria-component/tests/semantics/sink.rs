@@ -4,7 +4,7 @@ use std::{
 };
 
 use theoria_component::UpdateContext;
-use theoria_event::EventTarget;
+use theoria_event::{ErasedEventSink, EventSink};
 
 use super::support::{DrainOutcome, HandlesEvent, TestRuntime, receive};
 
@@ -65,7 +65,7 @@ impl HandlesEvent for RightRecorder {
 }
 
 struct ValueRouter {
-    targets: Vec<EventTarget<RoutedValue>>,
+    targets: Vec<ErasedEventSink<RoutedValue>>,
 }
 
 impl HandlesEvent for ValueRouter {
@@ -79,7 +79,7 @@ impl HandlesEvent for ValueRouter {
 }
 
 #[test]
-fn event_targets_store_heterogeneous_handlers_for_one_input_type() {
+fn erased_event_sinks_store_heterogeneous_adapted_sinks() {
     let values = Rc::new(RefCell::new(Vec::new()));
     let mounted_values = Rc::clone(&values);
     let mut runtime = TestRuntime::new(move |context| {
@@ -89,7 +89,10 @@ fn event_targets_store_heterogeneous_handlers_for_one_input_type() {
         receive(
             context,
             ValueRouter {
-                targets: vec![left.accepting(), right.accepting()],
+                targets: vec![
+                    ErasedEventSink::new(left.accepting()),
+                    ErasedEventSink::new(right.accepting()),
+                ],
             },
         )
     });
@@ -100,7 +103,7 @@ fn event_targets_store_heterogeneous_handlers_for_one_input_type() {
 }
 
 struct TargetProbe {
-    target: EventTarget<RoutedValue>,
+    target: ErasedEventSink<RoutedValue>,
     result: Rc<Cell<Option<bool>>>,
 }
 
@@ -114,7 +117,7 @@ impl HandlesEvent for TargetProbe {
 }
 
 #[test]
-fn an_event_target_does_not_keep_an_unmounted_component_alive() {
+fn an_adapted_event_sink_does_not_keep_an_unmounted_component_alive() {
     let result = Rc::new(Cell::new(None));
     let probe_result = Rc::clone(&result);
     let target_events = Rc::new(RefCell::new(Vec::new()));
@@ -127,11 +130,13 @@ fn an_event_target_does_not_keep_an_unmounted_component_alive() {
             let target = receive(context, RightRecorder(mounted_target_events));
             child_target.replace(Some(target));
         });
-        let erased = mounted_target
-            .borrow()
-            .as_ref()
-            .expect("child construction exports its test input")
-            .accepting();
+        let erased = ErasedEventSink::new(
+            mounted_target
+                .borrow()
+                .as_ref()
+                .expect("child construction exports its test input")
+                .accepting(),
+        );
         receive(
             context,
             TargetProbe {

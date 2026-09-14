@@ -80,7 +80,7 @@ fn a_user_defined_source_can_lend_a_non_static_event_inline() {
     let length = Rc::new(Cell::new(0));
     let output = Rc::clone(&length);
     let handler = EventHandler::new(move |value: usize| output.set(value));
-    let sink = EventTarget::from(&handler).contramap_borrow(str::len);
+    let sink = EventTarget::from(&handler).contramap(str::len);
     let owned = String::from("temporary");
 
     let subscription = BorrowingSource { value: &owned }

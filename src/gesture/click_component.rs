@@ -1,6 +1,6 @@
 use crate::{
     component::{Component, MountContext},
-    event::{ChannelSource, EventTarget, OwningSink},
+    event::{ChannelSource, ErasedEventSink, EventSink, OwningSink},
     input::pointer::PointerEvent,
 };
 
@@ -8,25 +8,29 @@ use super::{Click, ClickRecognizer};
 
 /// Component adapter that publishes clicks recognized from pointer input.
 ///
-/// The output Target is supplied by the component that composes the input
+/// The output Sink is supplied by the component that composes the input
 /// pipeline. It may publish through an Event Source or deliver directly to
 /// another Component, keeping routing separate from the recognition algorithm.
 pub struct ClickGesture {
     recognizer: ClickRecognizer,
     pointers: ChannelSource<PointerEvent>,
-    clicks: EventTarget<Click>,
+    clicks: ErasedEventSink<Click>,
 }
 
 impl ClickGesture {
-    pub fn new(
+    pub fn new<S>(
         recognizer: ClickRecognizer,
         pointers: ChannelSource<PointerEvent>,
-        clicks: impl Into<EventTarget<Click>>,
-    ) -> Self {
+        clicks: S,
+    ) -> Self
+    where
+        S: EventSink<Click> + 'static,
+        S::Dispatch: 'static,
+    {
         Self {
             recognizer,
             pointers,
-            clicks: clicks.into(),
+            clicks: ErasedEventSink::new(clicks),
         }
     }
 }

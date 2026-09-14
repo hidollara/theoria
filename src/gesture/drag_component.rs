@@ -1,28 +1,32 @@
 use crate::{
     component::{Component, MountContext},
-    event::{ChannelSource, EventTarget, OwningSink},
+    event::{ChannelSource, ErasedEventSink, EventSink, OwningSink},
     input::pointer::PointerEvent,
 };
 
 use super::{Drag, DragRecognizer};
 
-/// Component adapter that sends recognized drags to a composed output Target.
+/// Component adapter that sends recognized drags to a composed output Sink.
 pub struct DragGesture {
     recognizer: DragRecognizer,
     pointers: ChannelSource<PointerEvent>,
-    drags: EventTarget<Drag>,
+    drags: ErasedEventSink<Drag>,
 }
 
 impl DragGesture {
-    pub fn new(
+    pub fn new<S>(
         recognizer: DragRecognizer,
         pointers: ChannelSource<PointerEvent>,
-        drags: impl Into<EventTarget<Drag>>,
-    ) -> Self {
+        drags: S,
+    ) -> Self
+    where
+        S: EventSink<Drag> + 'static,
+        S::Dispatch: 'static,
+    {
         Self {
             recognizer,
             pointers,
-            drags: drags.into(),
+            drags: ErasedEventSink::new(drags),
         }
     }
 }
