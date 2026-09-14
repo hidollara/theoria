@@ -5,8 +5,8 @@ use std::{
 
 use theoria_component::ComponentInstance;
 use theoria_event::{
-    BridgeProgress, Dispatch, DispatchOutcome, DispatchStatus, Dispatcher, EventDispatcher,
-    EventTarget, FifoDispatcher, OwningSink, SubmissionOutcome, bridge,
+    BridgeProgress, Dispatch, DispatchOutcome, DispatchStatus, EventDispatcher, EventTarget,
+    FifoDispatcher, OwningSink, SubmissionOutcome, bridge,
 };
 
 #[derive(Clone, Copy)]
@@ -18,8 +18,8 @@ impl<D: Dispatch> EventDispatcher<D> for TestImmediateDispatcher {
     }
 }
 
-fn immediate_dispatcher() -> Dispatcher {
-    Dispatcher::new(TestImmediateDispatcher)
+fn immediate_dispatcher() -> TestImmediateDispatcher {
+    TestImmediateDispatcher
 }
 
 #[test]
@@ -97,7 +97,7 @@ fn an_instance_can_use_a_caller_owned_dispatcher_and_flush_boundary() {
     let mounted_input = Rc::clone(&input);
     let observed = Rc::new(RefCell::new(Vec::new()));
     let effect_output = Rc::clone(&observed);
-    let mut instance = ComponentInstance::new(&dispatcher, move |context| {
+    let mut instance = ComponentInstance::new(dispatcher.sender(), move |context| {
         let state = context.create_state(0_u32);
         let effect_state = state.clone();
         let effect = context.create_effect(move |context| {
@@ -138,7 +138,7 @@ fn inline_send_bypasses_the_default_dispatcher() {
     let mounted_input = Rc::clone(&input);
     let observed = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&observed);
-    let instance = ComponentInstance::new(&dispatcher, move |context| {
+    let instance = ComponentInstance::new(dispatcher.sender(), move |context| {
         mounted_input.replace(Some(context.receive(move |value, _context| {
             output.borrow_mut().push(value);
         })));
@@ -173,7 +173,7 @@ fn an_inline_connection_handles_a_publication_on_the_publishing_stack() {
     let mounted_input = Rc::clone(&input);
     let observed = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&observed);
-    let instance = ComponentInstance::new(&dispatcher, move |context| {
+    let instance = ComponentInstance::new(dispatcher.sender(), move |context| {
         let (source, source_input) = context.event_source::<u32>();
         let sink = context.receive(move |value: u32, _context| {
             output.borrow_mut().push(value);
@@ -201,7 +201,7 @@ fn a_connection_accepts_a_dispatcher_without_erasing_it() {
     let mounted_input = Rc::clone(&input);
     let observed = Rc::new(Cell::new(0));
     let output = Rc::clone(&observed);
-    let instance = ComponentInstance::new(&dispatcher, move |context| {
+    let instance = ComponentInstance::new(dispatcher.sender(), move |context| {
         let (source, source_input) = context.event_source::<u32>();
         let sink = context.receive(move |value, _context| output.set(value));
         assert!(context.connect_via(TestImmediateDispatcher, source, OwningSink::new(sink)));
@@ -223,7 +223,7 @@ fn a_connection_accepts_a_dispatcher_without_erasing_it() {
 #[test]
 fn an_instance_can_send_to_a_sink_with_its_own_dispatch_type() {
     let mut dispatcher = FifoDispatcher::new();
-    let instance = ComponentInstance::new(&dispatcher, |_| {});
+    let instance = ComponentInstance::new(dispatcher.sender(), |_| {});
     let (bridge, sink) = bridge();
 
     assert_eq!(
@@ -239,7 +239,7 @@ fn an_instance_can_send_to_a_sink_with_its_own_dispatch_type() {
 #[test]
 fn an_instance_can_track_a_sink_specific_dispatch() {
     let mut dispatcher = FifoDispatcher::new();
-    let instance = ComponentInstance::new(&dispatcher, |_| {});
+    let instance = ComponentInstance::new(dispatcher.sender(), |_| {});
     let (bridge, sink) = bridge();
 
     let handle = instance
@@ -258,12 +258,12 @@ fn an_instance_can_track_a_sink_specific_dispatch() {
 fn an_instance_can_send_through_default_and_explicit_dispatchers() {
     let mut default_dispatcher = FifoDispatcher::new();
     let mut priority_dispatcher = FifoDispatcher::new();
-    let priority_input: Dispatcher = priority_dispatcher.as_ref().clone();
+    let priority_input = priority_dispatcher.sender();
     let input = Rc::new(RefCell::new(None));
     let mounted_input = Rc::clone(&input);
     let observed = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&observed);
-    let instance = ComponentInstance::new(&default_dispatcher, move |context| {
+    let instance = ComponentInstance::new(default_dispatcher.sender(), move |context| {
         mounted_input.replace(Some(context.receive(move |value, _context| {
             output.borrow_mut().push(value);
         })));
@@ -296,14 +296,14 @@ fn an_instance_can_send_through_default_and_explicit_dispatchers() {
 fn one_source_can_connect_through_default_and_explicit_dispatchers() {
     let mut default_dispatcher = FifoDispatcher::new();
     let mut priority_dispatcher = FifoDispatcher::new();
-    let priority_input: Dispatcher = priority_dispatcher.as_ref().clone();
+    let priority_input = priority_dispatcher.sender();
     let mounted_priority_input = priority_input.clone();
     let input = Rc::new(RefCell::new(None));
     let mounted_input = Rc::clone(&input);
     let observed = Rc::new(RefCell::new(Vec::new()));
     let default_output = Rc::clone(&observed);
     let priority_output = Rc::clone(&observed);
-    let instance = ComponentInstance::new(&default_dispatcher, move |context| {
+    let instance = ComponentInstance::new(default_dispatcher.sender(), move |context| {
         let (source, source_input) = context.event_source::<u32>();
         let default_sink = context.receive(move |value, _context| {
             default_output.borrow_mut().push(("default", value));

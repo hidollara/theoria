@@ -6,9 +6,9 @@ use std::{
 
 use super::drain;
 use theoria_event::{
-    Dispatch, DispatchHandle, DispatchOutcome, DispatchStatus, Dispatcher, DynDispatch,
-    EventDispatcher, EventHandler, EventSource, EventTarget, FifoDispatcher, OwningSink,
-    SubmissionOutcome, TargetDispatch, TrackedDispatch, channel,
+    Dispatch, DispatchHandle, DispatchOutcome, DispatchStatus, DynDispatch, EventDispatcher,
+    EventHandler, EventSource, EventTarget, FifoDispatcher, OwningSink, SubmissionOutcome,
+    TargetDispatch, TrackedDispatch, channel,
 };
 
 #[derive(Clone)]
@@ -16,12 +16,14 @@ struct TestDispatcher {
     pending: Rc<RefCell<VecDeque<DynDispatch<'static>>>>,
 }
 
-impl EventDispatcher<DynDispatch<'static>> for TestDispatcher {
-    fn submit(
-        &self,
-        dispatch: DynDispatch<'static>,
-    ) -> Result<SubmissionOutcome, DynDispatch<'static>> {
-        self.pending.borrow_mut().push_back(dispatch);
+impl<D> EventDispatcher<D> for TestDispatcher
+where
+    D: Dispatch + 'static,
+{
+    fn submit(&self, dispatch: D) -> Result<SubmissionOutcome, D> {
+        self.pending
+            .borrow_mut()
+            .push_back(DynDispatch::new(dispatch));
         Ok(SubmissionOutcome::Deferred)
     }
 }
@@ -40,29 +42,32 @@ impl Dispatch for TestDispatch {
     }
 }
 
-fn submit_event<E: 'static>(
-    dispatcher: &Dispatcher,
+fn submit_event<E, D>(
+    dispatcher: &D,
     sink: impl Into<EventTarget<E>>,
     event: E,
-) -> Result<SubmissionOutcome, TargetDispatch<E>> {
+) -> Result<SubmissionOutcome, TargetDispatch<E>>
+where
+    D: EventDispatcher<TargetDispatch<E>>,
+{
     dispatcher.submit(sink.into().send(event))
 }
 
-fn submit_tracked<E: 'static>(
-    dispatcher: &Dispatcher,
+fn submit_tracked<E, D>(
+    dispatcher: &D,
     sink: impl Into<EventTarget<E>>,
     event: E,
-) -> Result<DispatchHandle, TrackedDispatch<TargetDispatch<E>>> {
+) -> Result<DispatchHandle, TrackedDispatch<TargetDispatch<E>>>
+where
+    D: EventDispatcher<TrackedDispatch<TargetDispatch<E>>>,
+{
     let dispatch = sink.into().send(event).tracked();
     let handle = dispatch.handle();
     dispatcher.submit(dispatch).map(|_| handle)
 }
 
-impl EventDispatcher<DynDispatch<'static>> for RejectingDispatcher {
-    fn submit(
-        &self,
-        dispatch: DynDispatch<'static>,
-    ) -> Result<SubmissionOutcome, DynDispatch<'static>> {
+impl<D: Dispatch> EventDispatcher<D> for RejectingDispatcher {
+    fn submit(&self, dispatch: D) -> Result<SubmissionOutcome, D> {
         Err(dispatch)
     }
 }
@@ -72,7 +77,7 @@ fn a_custom_dispatcher_can_defer_an_opaque_dispatch() {
     let dispatcher = TestDispatcher {
         pending: Rc::new(RefCell::new(VecDeque::new())),
     };
-    let event_dispatcher = Dispatcher::new(dispatcher.clone());
+    let event_dispatcher = dispatcher.clone();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
@@ -95,7 +100,7 @@ fn a_custom_dispatcher_can_defer_an_opaque_dispatch() {
 
 #[test]
 fn rejection_returns_the_original_dispatch() {
-    let event_dispatcher = Dispatcher::new(RejectingDispatcher);
+    let event_dispatcher = RejectingDispatcher;
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
@@ -109,15 +114,16 @@ fn rejection_returns_the_original_dispatch() {
 }
 
 #[test]
-fn an_erased_dispatcher_returns_a_rejected_concrete_dispatch() {
-    let event_dispatcher = Dispatcher::new(RejectingDispatcher);
+fn a_recoverable_dyn_dispatch_restores_its_concrete_dispatch() {
     let output = Rc::new(Cell::new(false));
 
-    let dispatch = event_dispatcher
-        .submit(TestDispatch {
+    let dispatch = RejectingDispatcher
+        .submit(DynDispatch::recoverable(TestDispatch {
             output: Rc::clone(&output),
-        })
-        .expect_err("the Dispatcher rejects work");
+        }))
+        .expect_err("the Dispatcher rejects work")
+        .downcast::<TestDispatch>()
+        .expect("the recoverable erasure retains its concrete Dispatch");
 
     assert!(!output.get());
     assert_eq!(dispatch.run(), DispatchOutcome::Delivered);
@@ -125,8 +131,22 @@ fn an_erased_dispatcher_returns_a_rejected_concrete_dispatch() {
 }
 
 #[test]
+fn ordinary_dyn_dispatch_erasure_is_not_downcastable() {
+    let output = Rc::new(Cell::new(false));
+    let dispatch = DynDispatch::new(TestDispatch {
+        output: Rc::clone(&output),
+    });
+
+    let dispatch = dispatch
+        .downcast::<TestDispatch>()
+        .expect_err("ordinary erasure does not retain a recoverable concrete value");
+    assert_eq!(dispatch.run(), DispatchOutcome::Delivered);
+    assert!(output.get());
+}
+
+#[test]
 fn tracked_rejection_returns_the_original_dispatch() {
-    let event_dispatcher = Dispatcher::new(RejectingDispatcher);
+    let event_dispatcher = RejectingDispatcher;
     let handler = EventHandler::new(|_: u32| {});
     let sink = EventTarget::from(&handler);
 
@@ -159,7 +179,7 @@ fn a_tracked_dispatch_can_be_cancelled_before_execution() {
     let dispatcher = TestDispatcher {
         pending: Rc::new(RefCell::new(VecDeque::new())),
     };
-    let event_dispatcher = Dispatcher::new(dispatcher.clone());
+    let event_dispatcher = dispatcher.clone();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
@@ -193,7 +213,7 @@ fn execution_reports_when_its_sink_was_dropped() {
     let dispatcher = TestDispatcher {
         pending: Rc::new(RefCell::new(VecDeque::new())),
     };
-    let event_dispatcher = Dispatcher::new(dispatcher.clone());
+    let event_dispatcher = dispatcher.clone();
     let handler = EventHandler::new(|_: u32| {});
     let sink = EventTarget::from(&handler);
 
@@ -212,7 +232,7 @@ fn execution_reports_when_its_sink_was_dropped() {
 #[test]
 fn dropping_a_handle_does_not_cancel_its_dispatch() {
     let mut dispatcher = FifoDispatcher::new();
-    let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
+    let event_dispatcher = dispatcher.sender();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
@@ -243,7 +263,7 @@ fn running_a_tracked_dispatch_finishes_its_handle() {
 #[test]
 fn a_tracked_deferred_submission_records_its_execution_outcome() {
     let mut dispatcher = FifoDispatcher::new();
-    let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
+    let event_dispatcher = dispatcher.sender();
     let handler = EventHandler::new(|_: u32| {});
     let sink = EventTarget::from(&handler);
     let handle =
@@ -260,7 +280,7 @@ fn a_tracked_deferred_submission_records_its_execution_outcome() {
 #[test]
 fn a_handler_observes_its_tracked_dispatch_as_executing() {
     let mut dispatcher = FifoDispatcher::new();
-    let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
+    let event_dispatcher = dispatcher.sender();
     let handle_slot = Rc::new(RefCell::new(None::<DispatchHandle>));
     let handle_from_handler = Rc::clone(&handle_slot);
     let observed = Rc::new(RefCell::new(Vec::new()));
@@ -296,7 +316,7 @@ fn a_handler_observes_its_tracked_dispatch_as_executing() {
 #[test]
 fn a_completion_callback_panic_prevents_later_callbacks() {
     let mut dispatcher = FifoDispatcher::new();
-    let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
+    let event_dispatcher = dispatcher.sender();
     let handler = EventHandler::new(|_: u32| {});
     let sink = EventTarget::from(&handler);
     let handle = submit_tracked(&event_dispatcher, &sink, 7_u32)
@@ -321,7 +341,7 @@ fn a_completion_callback_panic_prevents_later_callbacks() {
 #[test]
 fn dropping_a_dispatcher_cancels_its_pending_tracked_dispatches() {
     let dispatcher = FifoDispatcher::new();
-    let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
+    let event_dispatcher = dispatcher.sender();
     let handler = EventHandler::new(|_: u32| {});
     let sink = EventTarget::from(&handler);
     let handle = submit_tracked(&event_dispatcher, &sink, 7_u32)
@@ -342,7 +362,7 @@ fn dropping_a_dispatcher_cancels_its_pending_tracked_dispatches() {
 #[test]
 fn a_panicking_sink_leaves_its_tracked_dispatch_executing() {
     let mut dispatcher = FifoDispatcher::new();
-    let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
+    let event_dispatcher = dispatcher.sender();
     let handler = EventHandler::new(|(): ()| panic!("sink panic"));
     let sink = EventTarget::from(&handler);
     let handle =
@@ -363,7 +383,7 @@ fn a_panicking_sink_leaves_its_tracked_dispatch_executing() {
 #[test]
 fn a_handle_notifies_completion_after_deferred_execution() {
     let mut dispatcher = FifoDispatcher::new();
-    let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
+    let event_dispatcher = dispatcher.sender();
     let handler = EventHandler::new(|_: u32| {});
     let sink = EventTarget::from(&handler);
     let handle =
@@ -381,7 +401,7 @@ fn a_handle_notifies_completion_after_deferred_execution() {
 #[test]
 fn completion_callbacks_survive_handle_drop_and_keep_registration_order() {
     let mut dispatcher = FifoDispatcher::new();
-    let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
+    let event_dispatcher = dispatcher.sender();
     let handler = EventHandler::new(|_: u32| {});
     let sink = EventTarget::from(&handler);
     let handle =
@@ -425,7 +445,7 @@ fn cancelling_a_dispatch_notifies_its_completion() {
     let dispatcher = TestDispatcher {
         pending: Rc::new(RefCell::new(VecDeque::new())),
     };
-    let event_dispatcher = Dispatcher::new(dispatcher);
+    let event_dispatcher = dispatcher;
     let handler = EventHandler::new(|_: u32| {});
     let sink = EventTarget::from(&handler);
     let handle =
@@ -443,7 +463,7 @@ fn cancelling_a_dispatch_notifies_its_completion() {
 #[test]
 fn one_sink_can_run_inline_or_be_submitted_to_a_dispatcher() {
     let mut dispatcher = FifoDispatcher::new();
-    let queued: Dispatcher = dispatcher.as_ref().clone();
+    let queued = dispatcher.sender();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
@@ -462,7 +482,7 @@ fn one_sink_can_run_inline_or_be_submitted_to_a_dispatcher() {
 #[test]
 fn a_handler_can_build_and_use_a_source_while_handling_one_dispatch() {
     let mut dispatcher = FifoDispatcher::new();
-    let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
+    let event_dispatcher = dispatcher.sender();
     let values = Rc::new(RefCell::new(Vec::new()));
     let dynamic = Rc::new(RefCell::new(None));
     let dynamic_from_handler = Rc::clone(&dynamic);
@@ -495,7 +515,7 @@ fn a_handler_can_build_and_use_a_source_while_handling_one_dispatch() {
 #[test]
 fn dropping_a_fifo_dispatcher_makes_its_capability_reject_submissions() {
     let dispatcher = FifoDispatcher::new();
-    let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
+    let event_dispatcher = dispatcher.sender();
     let (provider, _source) = channel::<u32>();
     let handler = EventHandler::new(|_: u32| {});
     let independent_sink = EventTarget::from(&handler);
@@ -511,7 +531,7 @@ fn dropping_a_fifo_dispatcher_makes_its_capability_reject_submissions() {
 #[test]
 fn heterogeneous_event_types_share_one_fifo() {
     let mut dispatcher = FifoDispatcher::new();
-    let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
+    let event_dispatcher = dispatcher.sender();
     let order = Rc::new(RefCell::new(Vec::new()));
     let number_order = Rc::clone(&order);
     let text_order = Rc::clone(&order);
@@ -534,7 +554,7 @@ fn heterogeneous_event_types_share_one_fifo() {
 #[test]
 fn work_submitted_while_a_dispatch_executes_joins_the_fifo_tail() {
     let mut dispatcher = FifoDispatcher::new();
-    let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
+    let event_dispatcher = dispatcher.sender();
     let order = Rc::new(RefCell::new(Vec::new()));
 
     let last_order = Rc::clone(&order);

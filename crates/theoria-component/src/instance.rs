@@ -1,12 +1,12 @@
 use std::{fmt, rc::Rc};
 
 use theoria_event::{
-    Dispatch, DispatchHandle, DispatchOutcome, Dispatcher, EventDispatcher, EventSink,
+    Dispatch, DispatchHandle, DispatchOutcome, DynDispatch, EventDispatcher, EventSink,
     SubmissionOutcome, TrackedDispatch,
 };
 use theoria_reactive::{Reactive, ReactiveError};
 
-use crate::{component::MountContext, tree::ComponentTree};
+use crate::{component::MountContext, delivery::DefaultDispatcher, tree::ComponentTree};
 
 /// One live, mounted Component tree with a default event Dispatcher.
 ///
@@ -23,13 +23,17 @@ pub struct ComponentInstance {
 impl ComponentInstance {
     /// Mounts one root Component tree using `default_dispatcher` for ordinary
     /// Component event sends and connections.
+    ///
+    /// A Component tree stores heterogeneous sends, so its default Dispatcher
+    /// accepts self-contained [`DynDispatch`] values. Explicit `*_via` calls
+    /// continue to use each sink's concrete Dispatch type.
     pub fn new(
-        default_dispatcher: impl AsRef<Dispatcher>,
+        default_dispatcher: impl EventDispatcher<DynDispatch<'static>> + 'static,
         build: impl FnOnce(&mut MountContext<'_>),
     ) -> Self {
         let tree = ComponentTree::new(
             Reactive::new(),
-            default_dispatcher.as_ref().clone(),
+            DefaultDispatcher::new(default_dispatcher),
             |tree, root| {
                 let mut context = MountContext::new(tree, root);
                 build(&mut context);

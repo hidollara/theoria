@@ -2,9 +2,9 @@
 //!
 //! An [`EventSink`] turns one event into a concrete [`Dispatch`] without choosing
 //! where or when it runs. An [`EventDispatcher`] states which Dispatch family
-//! it accepts; [`Dispatcher`] is a cloneable local capability for
-//! self-contained work and [`FifoDispatcher`] provides serialized FIFO
-//! execution. Inline execution uses [`Dispatch::run`] directly.
+//! it accepts; [`FifoDispatcher`] provides serialized FIFO execution and a
+//! cloneable [`FifoSender`] submission capability. Inline execution uses
+//! [`Dispatch::run`] directly.
 //! Concrete sinks retain their Dispatch type and capabilities. Code that must
 //! store heterogeneous sinks chooses and owns its type-erasure boundary.
 //!
@@ -26,10 +26,10 @@ mod target;
 pub use bridge::{BridgeDispatch, BridgeProgress, BridgeSink, EventBridge, bridge};
 pub use channel::{ChannelSource, EventProvider, channel};
 pub use dispatch::{
-    Dispatch, DispatchHandle, DispatchOutcome, DispatchStatus, Dispatcher, DynDispatch,
-    EventDispatcher, SubmissionOutcome, TrackedDispatch,
+    Dispatch, DispatchHandle, DispatchOutcome, DispatchStatus, DynDispatch, EventDispatcher,
+    SubmissionOutcome, TrackedDispatch,
 };
-pub use dispatcher::FifoDispatcher;
+pub use dispatcher::{FifoDispatcher, FifoSender};
 pub use handler::EventHandler;
 pub use sink::{
     ContramapDispatch, ContramapFilterDispatch, ContramapFilterSink, ContramapSink, EventSink,

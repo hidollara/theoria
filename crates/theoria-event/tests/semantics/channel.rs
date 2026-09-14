@@ -2,8 +2,8 @@ use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 use super::drain;
 use theoria_event::{
-    Dispatch, DispatchOutcome, Dispatcher, EventHandler, EventSink, EventSource, EventTarget,
-    FifoDispatcher, OwningSink, Subscription, channel,
+    Dispatch, DispatchOutcome, EventHandler, EventSink, EventSource, EventTarget, FifoDispatcher,
+    OwningSink, Subscription, channel,
 };
 
 #[test]
@@ -31,7 +31,7 @@ fn a_borrowed_source_runs_without_owning_its_publication() {
 #[test]
 fn an_owning_sink_can_defer_a_borrowed_publication() {
     let mut fifo = FifoDispatcher::new();
-    let dispatcher: Dispatcher = fifo.as_ref().clone();
+    let dispatcher = fifo.sender();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
@@ -53,7 +53,7 @@ fn an_rc_channel_defers_move_only_values_without_cloning_the_value() {
     struct MoveOnly(String);
 
     let mut fifo = FifoDispatcher::new();
-    let dispatcher: Dispatcher = fifo.as_ref().clone();
+    let dispatcher = fifo.sender();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: usize| output.borrow_mut().push(value));
@@ -77,7 +77,7 @@ fn an_arc_channel_uses_the_same_deferred_source_contract() {
     struct MoveOnly(String);
 
     let mut fifo = FifoDispatcher::new();
-    let dispatcher: Dispatcher = fifo.as_ref().clone();
+    let dispatcher = fifo.sender();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: usize| output.borrow_mut().push(value));
@@ -217,7 +217,7 @@ fn subscribers_are_invoked_in_registration_order() {
 #[test]
 fn unsubscribing_does_not_cancel_an_already_deferred_dispatch() {
     let mut fifo = FifoDispatcher::new();
-    let dispatcher: Dispatcher = fifo.as_ref().clone();
+    let dispatcher = fifo.sender();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));

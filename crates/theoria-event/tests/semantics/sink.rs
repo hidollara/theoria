@@ -5,8 +5,8 @@ use std::{
 
 use super::drain;
 use theoria_event::{
-    Dispatch, DispatchOutcome, Dispatcher, DynDispatch, EventDispatcher, EventHandler, EventSink,
-    EventSource, EventTarget, FifoDispatcher, OwningSink, SubmissionOutcome, channel,
+    Dispatch, DispatchOutcome, DynDispatch, EventDispatcher, EventHandler, EventSink, EventSource,
+    EventTarget, FifoDispatcher, OwningSink, SubmissionOutcome, channel,
 };
 
 #[derive(Clone)]
@@ -14,24 +14,24 @@ struct TestDispatcher {
     pending: Rc<RefCell<Vec<DynDispatch<'static>>>>,
 }
 
-fn submit_event<E, S>(
-    dispatcher: &Dispatcher,
+fn submit_event<E, S, D>(
+    dispatcher: &D,
     sink: S,
     event: E,
 ) -> Result<SubmissionOutcome, S::Dispatch>
 where
     S: EventSink<E>,
-    S::Dispatch: 'static,
+    D: EventDispatcher<S::Dispatch>,
 {
     dispatcher.submit(sink.send(event))
 }
 
-impl EventDispatcher<DynDispatch<'static>> for TestDispatcher {
-    fn submit(
-        &self,
-        dispatch: DynDispatch<'static>,
-    ) -> Result<SubmissionOutcome, DynDispatch<'static>> {
-        self.pending.borrow_mut().push(dispatch);
+impl<D> EventDispatcher<D> for TestDispatcher
+where
+    D: Dispatch + 'static,
+{
+    fn submit(&self, dispatch: D) -> Result<SubmissionOutcome, D> {
+        self.pending.borrow_mut().push(DynDispatch::new(dispatch));
         Ok(SubmissionOutcome::Deferred)
     }
 }
@@ -39,7 +39,7 @@ impl EventDispatcher<DynDispatch<'static>> for TestDispatcher {
 #[test]
 fn dropping_a_target_during_generic_contramap_prevents_delivery() {
     let mut dispatcher = FifoDispatcher::new();
-    let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
+    let event_dispatcher = dispatcher.sender();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
@@ -80,7 +80,7 @@ fn an_accepting_sink_converts_its_input_during_dispatch_execution() {
     }
 
     let mut dispatcher = FifoDispatcher::new();
-    let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
+    let event_dispatcher = dispatcher.sender();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: Output| {
@@ -99,7 +99,7 @@ fn an_accepting_sink_converts_its_input_during_dispatch_execution() {
 #[test]
 fn a_contramap_sink_converts_its_input_during_dispatch_execution() {
     let mut dispatcher = FifoDispatcher::new();
-    let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
+    let event_dispatcher = dispatcher.sender();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: usize| output.borrow_mut().push(value));
@@ -159,7 +159,7 @@ fn a_filtered_sink_discards_selected_inputs_during_dispatch_execution() {
     let dispatcher = TestDispatcher {
         pending: Rc::new(RefCell::new(Vec::new())),
     };
-    let event_dispatcher = Dispatcher::new(dispatcher.clone());
+    let event_dispatcher = dispatcher.clone();
     let mappings = Rc::new(Cell::new(0));
     let mapped = Rc::clone(&mappings);
     let values = Rc::new(RefCell::new(Vec::new()));
@@ -204,7 +204,7 @@ fn a_filtered_out_event_does_not_observe_underlying_target_liveness() {
 #[test]
 fn a_contramap_filter_sink_converts_only_selected_input_values() {
     let mut dispatcher = FifoDispatcher::new();
-    let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
+    let event_dispatcher = dispatcher.sender();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));

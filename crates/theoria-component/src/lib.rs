@@ -17,6 +17,7 @@
 //! of any particular Dispatcher or application loop.
 
 mod component;
+mod delivery;
 mod effect;
 mod instance;
 mod node;

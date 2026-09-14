@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use theoria_event::{
-    ChannelSource, Dispatch, DispatchHandle, DispatchOutcome, Dispatcher, EventDispatcher,
-    EventHandler, EventSink, EventSource, EventTarget, SubmissionOutcome, TrackedDispatch, channel,
+    ChannelSource, Dispatch, DispatchHandle, DispatchOutcome, EventDispatcher, EventHandler,
+    EventSink, EventSource, EventTarget, SubmissionOutcome, TrackedDispatch, channel,
 };
 use theoria_reactive::{
     Computed, Effect, ReadContext, SnapshotState, State, StateSetter, WriteContext,
@@ -86,7 +86,7 @@ impl<'mount> MountContext<'mount> {
         S: EventSource,
         K: 'static,
         for<'event> K: EventSink<S::Event<'event>>,
-        for<'event> Dispatcher: EventDispatcher<<K as EventSink<S::Event<'event>>>::Dispatch>,
+        for<'event> <K as EventSink<S::Event<'event>>>::Dispatch: 'static,
     {
         self.connect_via(self.tree.default_dispatcher().clone(), source, sink)
     }

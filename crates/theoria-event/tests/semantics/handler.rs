@@ -6,7 +6,7 @@ use std::{
 
 use super::drain;
 use theoria_event::{
-    Dispatch, DispatchOutcome, Dispatcher, EventHandler, EventTarget, FifoDispatcher,
+    Dispatch, DispatchOutcome, EventDispatcher, EventHandler, EventTarget, FifoDispatcher,
 };
 
 #[test]
@@ -29,7 +29,7 @@ fn direct_delivery_returns_events_after_handler_drop() {
 #[test]
 fn a_panicking_handler_is_restored_for_a_later_dispatch() {
     let mut dispatcher = FifoDispatcher::new();
-    let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
+    let event_dispatcher = dispatcher.sender();
     let calls = Rc::new(Cell::new(0));
     let handler_calls = Rc::clone(&calls);
     let handler = EventHandler::new(move |(): ()| {
@@ -84,7 +84,7 @@ fn recursively_dispatching_to_the_same_handler_panics() {
 #[test]
 fn dropping_a_handler_prevents_a_queued_dispatch_from_invoking_it() {
     let mut dispatcher = FifoDispatcher::new();
-    let event_dispatcher: Dispatcher = dispatcher.as_ref().clone();
+    let event_dispatcher = dispatcher.sender();
     let calls = Rc::new(Cell::new(0));
     let handler_calls = Rc::clone(&calls);
     let handler = EventHandler::new(move |(): ()| {

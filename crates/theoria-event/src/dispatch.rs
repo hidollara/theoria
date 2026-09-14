@@ -69,55 +69,6 @@ where
     fn submit(&self, dispatch: D) -> Result<SubmissionOutcome, D>;
 }
 
-/// A cloneable capability for submitting self-contained event Dispatches.
-#[derive(Clone)]
-pub struct Dispatcher {
-    endpoint: Rc<dyn EventDispatcher<DynDispatch<'static>>>,
-}
-
-impl Dispatcher {
-    /// Wraps an event Dispatcher as a cloneable submission capability.
-    pub fn new(dispatcher: impl EventDispatcher<DynDispatch<'static>> + 'static) -> Self {
-        Self {
-            endpoint: Rc::new(dispatcher),
-        }
-    }
-
-    /// Submits one self-contained local Dispatch.
-    pub fn submit<D>(&self, dispatch: D) -> Result<SubmissionOutcome, D>
-    where
-        D: Dispatch + 'static,
-    {
-        <Self as EventDispatcher<D>>::submit(self, dispatch)
-    }
-}
-
-impl<D> EventDispatcher<D> for Dispatcher
-where
-    D: Dispatch + 'static,
-{
-    fn submit(&self, dispatch: D) -> Result<SubmissionOutcome, D> {
-        let erased = DynDispatch::recoverable(dispatch);
-
-        match self.endpoint.submit(erased) {
-            Ok(outcome) => Ok(outcome),
-            Err(erased) => Err(erased.into_concrete()),
-        }
-    }
-}
-
-impl AsRef<Dispatcher> for Dispatcher {
-    fn as_ref(&self) -> &Dispatcher {
-        self
-    }
-}
-
-impl fmt::Debug for Dispatcher {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.debug_struct("Dispatcher").finish_non_exhaustive()
-    }
-}
-
 /// Observes a tracked Dispatch and allows pre-execution cancellation.
 ///
 /// Dropping the Handle does not cancel its Dispatch. Dropping a tracked
@@ -186,7 +137,9 @@ impl<'event> DynDispatch<'event> {
         Self::from_operation(move || dispatch.run())
     }
 
-    fn recoverable<D>(dispatch: D) -> DynDispatch<'static>
+    /// Erases a `'static` Dispatch while retaining its concrete value for
+    /// possible recovery after submission rejection.
+    pub fn recoverable<D>(dispatch: D) -> DynDispatch<'static>
     where
         D: Dispatch + 'static,
     {
@@ -197,18 +150,27 @@ impl<'event> DynDispatch<'event> {
 }
 
 impl DynDispatch<'static> {
-    fn into_concrete<D>(self) -> D
+    /// Recovers the concrete Dispatch retained by [`Self::recoverable`].
+    ///
+    /// Returns this erased Dispatch unchanged when it was not made recoverable
+    /// or contains a different concrete type.
+    pub fn downcast<D>(self) -> Result<D, Self>
     where
         D: Dispatch + 'static,
     {
         let DynDispatch { operation } = self;
         let DispatchOperation::Recoverable(operation) = operation else {
-            panic!("a rejecting Dispatcher must return its original Dispatch");
+            return Err(DynDispatch { operation });
         };
-        *operation
+        if !operation.as_any().is::<D>() {
+            return Err(DynDispatch {
+                operation: DispatchOperation::Recoverable(operation),
+            });
+        }
+        Ok(*operation
             .into_any()
             .downcast::<D>()
-            .unwrap_or_else(|_| panic!("a rejecting Dispatcher changed its Dispatch type"))
+            .expect("a checked recoverable Dispatch retains its concrete type"))
     }
 }
 
@@ -292,6 +254,8 @@ impl DispatchOperation<'_> {
 trait RecoverableDispatch {
     fn run(self: Box<Self>) -> DispatchOutcome;
 
+    fn as_any(&self) -> &dyn Any;
+
     fn into_any(self: Box<Self>) -> Box<dyn Any>;
 }
 
@@ -303,6 +267,10 @@ where
 {
     fn run(self: Box<Self>) -> DispatchOutcome {
         self.0.run()
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        &self.0
     }
 
     fn into_any(self: Box<Self>) -> Box<dyn Any> {

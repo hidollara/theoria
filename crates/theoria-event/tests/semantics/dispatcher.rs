@@ -4,7 +4,7 @@ use std::{
 };
 
 use theoria_event::{
-    Dispatch, DispatchOutcome, Dispatcher, EventDispatcher, EventHandler, EventSource, EventTarget,
+    Dispatch, DispatchOutcome, EventDispatcher, EventHandler, EventSource, EventTarget,
     FifoDispatcher, OwningSink, SubmissionOutcome, channel,
 };
 
@@ -40,7 +40,7 @@ fn a_local_fifo_accepts_a_non_send_static_dispatch() {
 #[test]
 fn source_input_and_subscription_use_separate_dispatch_steps() {
     let mut dispatcher = FifoDispatcher::new();
-    let dispatcher_input: Dispatcher = dispatcher.as_ref().clone();
+    let dispatcher_input = dispatcher.sender();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
@@ -67,7 +67,7 @@ fn source_input_and_subscription_use_separate_dispatch_steps() {
 #[test]
 fn an_idle_dispatcher_reports_idle_without_delivering() {
     let mut dispatcher = FifoDispatcher::new();
-    let dispatcher_input: Dispatcher = dispatcher.as_ref().clone();
+    let dispatcher_input = dispatcher.sender();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = EventHandler::new(move |event: u32| output.borrow_mut().push(event));
@@ -86,7 +86,7 @@ fn an_idle_dispatcher_reports_idle_without_delivering() {
 #[test]
 fn the_caller_can_stop_between_dispatches_in_a_cyclic_event_chain() {
     let mut dispatcher = FifoDispatcher::new();
-    let dispatcher_input: Dispatcher = dispatcher.as_ref().clone();
+    let dispatcher_input = dispatcher.sender();
     let (left_provider, left_source) = channel::<u32>();
     let (right_provider, right_source) = channel::<u32>();
     let _left_to_right = left_source

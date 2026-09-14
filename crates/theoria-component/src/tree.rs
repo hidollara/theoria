@@ -1,9 +1,9 @@
 use std::{cell::RefCell, rc::Rc};
 
-use theoria_event::Dispatcher;
 use theoria_reactive::{Effect, Reactive, ReactiveError, WriteContext};
 
 use crate::{
+    delivery::DefaultDispatcher,
     effect::EffectScheduler,
     node::{ConstructingComponent, MountedComponent},
 };
@@ -13,13 +13,13 @@ pub(crate) struct ComponentTree {
     root: RefCell<Option<MountedComponent>>,
     effects: RefCell<EffectScheduler>,
     reactive: Reactive,
-    default_dispatcher: Dispatcher,
+    default_dispatcher: DefaultDispatcher,
 }
 
 impl ComponentTree {
     pub(crate) fn new(
         reactive: Reactive,
-        default_dispatcher: Dispatcher,
+        default_dispatcher: DefaultDispatcher,
         build: impl FnOnce(&Rc<Self>, &mut ConstructingComponent),
     ) -> Rc<Self> {
         let tree = Rc::new(Self {
@@ -36,7 +36,7 @@ impl ComponentTree {
         tree
     }
 
-    pub(crate) fn default_dispatcher(&self) -> &Dispatcher {
+    pub(crate) fn default_dispatcher(&self) -> &DefaultDispatcher {
         &self.default_dispatcher
     }
 

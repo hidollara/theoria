@@ -118,7 +118,7 @@ fn a_dispatcher_accepts_a_sink_specific_dispatch_type() {
         .connect(OwningSink::new(OwnedSink {
             output: Rc::clone(&output),
         }))
-        .via(dispatcher.as_ref().clone())
+        .via(dispatcher.sender())
         .expect("the Source is available");
 
     assert!(EventTarget::from(&provider).send_inline(7).is_ok());

@@ -20,7 +20,7 @@ impl ComponentExecution {
         let dispatcher = FifoDispatcher::new();
         let mut result = None;
         let mut build = Some(build);
-        let instance = ComponentInstance::new(&dispatcher, |context| {
+        let instance = ComponentInstance::new(dispatcher.sender(), |context| {
             result = Some(build.take().expect("the Component build runs once")(
                 context,
             ));

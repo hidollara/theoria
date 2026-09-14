@@ -5,7 +5,7 @@ use std::{
     rc::{Rc, Weak},
 };
 
-use crate::dispatch::{Dispatch, Dispatcher, DynDispatch, EventDispatcher, SubmissionOutcome};
+use crate::dispatch::{Dispatch, DynDispatch, EventDispatcher, SubmissionOutcome};
 
 struct EventQueue {
     pending: RefCell<VecDeque<DynDispatch<'static>>>,
@@ -38,18 +38,21 @@ impl EventQueue {
 /// Uniquely owns a serialized FIFO Dispatch queue.
 pub struct FifoDispatcher {
     queue: Rc<EventQueue>,
-    dispatcher: Dispatcher,
 }
 
 impl FifoDispatcher {
     /// Creates an idle FIFO Dispatcher.
     pub fn new() -> Self {
-        let queue = Rc::new(EventQueue::new());
         Self {
-            dispatcher: Dispatcher::new(QueuedDispatcher {
-                queue: Rc::downgrade(&queue),
-            }),
-            queue,
+            queue: Rc::new(EventQueue::new()),
+        }
+    }
+
+    /// Returns a cloneable, non-owning capability for submitting Dispatches to
+    /// this FIFO.
+    pub fn sender(&self) -> FifoSender {
+        FifoSender {
+            queue: Rc::downgrade(&self.queue),
         }
     }
 
@@ -72,12 +75,6 @@ impl FifoDispatcher {
     }
 }
 
-impl AsRef<Dispatcher> for FifoDispatcher {
-    fn as_ref(&self) -> &Dispatcher {
-        &self.dispatcher
-    }
-}
-
 impl<D> EventDispatcher<D> for FifoDispatcher
 where
     D: Dispatch + 'static,
@@ -88,20 +85,29 @@ where
     }
 }
 
-struct QueuedDispatcher {
+/// A cloneable, non-owning capability for submitting Dispatches to a
+/// [`FifoDispatcher`].
+#[derive(Clone)]
+pub struct FifoSender {
     queue: Weak<EventQueue>,
 }
 
-impl EventDispatcher<DynDispatch<'static>> for QueuedDispatcher {
-    fn submit(
-        &self,
-        dispatch: DynDispatch<'static>,
-    ) -> Result<SubmissionOutcome, DynDispatch<'static>> {
+impl<D> EventDispatcher<D> for FifoSender
+where
+    D: Dispatch + 'static,
+{
+    fn submit(&self, dispatch: D) -> Result<SubmissionOutcome, D> {
         let Some(queue) = self.queue.upgrade() else {
             return Err(dispatch);
         };
-        queue.enqueue(dispatch);
+        queue.enqueue(DynDispatch::new(dispatch));
         Ok(SubmissionOutcome::Deferred)
+    }
+}
+
+impl fmt::Debug for FifoSender {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.debug_struct("FifoSender").finish_non_exhaustive()
     }
 }
 

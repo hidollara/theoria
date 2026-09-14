@@ -12,7 +12,7 @@ pub(super) struct TestDriver {
 impl TestDriver {
     pub(super) fn new(build: impl FnOnce(&mut MountContext<'_>)) -> Self {
         let dispatcher = FifoDispatcher::new();
-        let instance = ComponentInstance::new(&dispatcher, build);
+        let instance = ComponentInstance::new(dispatcher.sender(), build);
         Self {
             dispatcher,
             instance,
