@@ -25,9 +25,9 @@ fn unmounting_a_connection_owner_disconnects_it() {
         });
 
         context.mount_with(move |child| {
-            assert!(child.connect_map(&values_source, &target, |value| *value));
+            assert!(child.connect(values_source.cloned(), target.clone()));
             let disconnect = child.receive(|(): (), context| context.unmount());
-            assert!(child.connect_cloned(&disconnect_source, &disconnect));
+            assert!(child.connect(disconnect_source.cloned(), disconnect));
         });
 
         context.receive(move |command, context| match command {
@@ -54,7 +54,7 @@ fn mounting_rejects_a_source_whose_provider_was_dropped() {
     let mounted_connected = Rc::clone(&connected);
     let _runtime = TestRuntime::new(move |context| {
         let target = context.receive(|_: u32, _context| {});
-        mounted_connected.set(context.connect_cloned(&source, &target));
+        mounted_connected.set(context.connect(source.cloned(), target));
         context.receive(|(): (), _context| {})
     });
 
@@ -75,7 +75,7 @@ fn dynamically_mounted_component_rejects_a_dropped_source() {
             let connected = Rc::clone(&handled_connected);
             assert!(context.mount_with(move |child| {
                 let target = child.receive(|_: u32, _context| {});
-                connected.set(Some(child.connect_cloned(&source, &target)));
+                connected.set(Some(child.connect(source.cloned(), target)));
             }));
         })
     });
@@ -105,7 +105,7 @@ fn a_component_event_input_does_not_keep_its_provider_component_alive() {
             let (_source, input) = provider_owner.event_source::<u32>();
             input_output.replace(Some(input));
             let unmount = provider_owner.receive(|(): (), context| context.unmount());
-            assert!(provider_owner.connect_cloned(&unmount_source, &unmount));
+            assert!(provider_owner.connect(unmount_source.cloned(), unmount));
         });
 
         let input = exported_input
@@ -116,7 +116,7 @@ fn a_component_event_input_does_not_keep_its_provider_component_alive() {
             let target = probe.receive(move |value: u32, context| {
                 probe_result.set(Some(context.send(&input, value).is_ok()));
             });
-            assert!(probe.connect_map(&probe_source, &target, |value| *value));
+            assert!(probe.connect(probe_source.cloned(), target));
         });
 
         context.receive(move |command, context| match command {

@@ -1,6 +1,6 @@
 use std::{fmt, rc::Rc};
 
-use theoria_event::{DispatchReceipt, Dispatcher, EventSink, SubmissionOutcome};
+use theoria_event::{DispatchReceipt, Dispatcher, EventDispatch, EventSink, SubmissionOutcome};
 use theoria_reactive::{Reactive, ReactiveError};
 
 use crate::{component::MountContext, tree::ComponentTree};
@@ -40,8 +40,10 @@ impl ComponentInstance {
         &self,
         sink: impl Into<EventSink<E>>,
         event: E,
-    ) -> Result<SubmissionOutcome, E> {
-        self.tree.default_dispatcher().send(sink, event)
+    ) -> Result<SubmissionOutcome, EventDispatch<'static>> {
+        self.tree
+            .default_dispatcher()
+            .submit(sink.into().send(event))
     }
 
     /// Sends one event directly on the current call stack.
@@ -49,7 +51,7 @@ impl ComponentInstance {
     /// This bypasses the default Dispatcher and may synchronously enter the
     /// target Component.
     pub fn send_inline<E>(&self, sink: impl Into<EventSink<E>>, event: E) -> Result<(), E> {
-        sink.into().send(event)
+        sink.into().send_inline(event)
     }
 
     /// Sends one event through an explicitly selected Dispatcher.
@@ -58,8 +60,8 @@ impl ComponentInstance {
         dispatcher: impl AsRef<Dispatcher>,
         sink: impl Into<EventSink<E>>,
         event: E,
-    ) -> Result<SubmissionOutcome, E> {
-        dispatcher.as_ref().send(sink, event)
+    ) -> Result<SubmissionOutcome, EventDispatch<'static>> {
+        dispatcher.as_ref().submit(sink.into().send(event))
     }
 
     /// Sends one tracked event through this Instance's default Dispatcher.
@@ -67,8 +69,12 @@ impl ComponentInstance {
         &self,
         sink: impl Into<EventSink<E>>,
         event: E,
-    ) -> Result<DispatchReceipt, E> {
-        self.tree.default_dispatcher().send_tracked(sink, event)
+    ) -> Result<DispatchReceipt, EventDispatch<'static>> {
+        let (dispatch, receipt) = sink.into().send(event).tracked();
+        self.tree
+            .default_dispatcher()
+            .submit(dispatch)
+            .map(|_| receipt)
     }
 
     /// Sends one tracked event through an explicitly selected Dispatcher.
@@ -77,8 +83,9 @@ impl ComponentInstance {
         dispatcher: impl AsRef<Dispatcher>,
         sink: impl Into<EventSink<E>>,
         event: E,
-    ) -> Result<DispatchReceipt, E> {
-        dispatcher.as_ref().send_tracked(sink, event)
+    ) -> Result<DispatchReceipt, EventDispatch<'static>> {
+        let (dispatch, receipt) = sink.into().send(event).tracked();
+        dispatcher.as_ref().submit(dispatch).map(|_| receipt)
     }
 
     /// Runs pending and stale Effects at a caller-selected synchronization boundary.

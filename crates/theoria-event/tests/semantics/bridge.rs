@@ -1,6 +1,8 @@
 use std::{cell::RefCell, rc::Rc, thread};
 
-use theoria_event::{BridgeProgress, Dispatcher, EventHandler, EventSink, FifoDispatcher, bridge};
+use theoria_event::{
+    BridgeProgress, Dispatcher, EventHandler, EventSink, EventSource, FifoDispatcher, bridge,
+};
 
 #[test]
 fn a_value_crosses_a_thread_boundary_into_a_local_source() {
@@ -11,7 +13,9 @@ fn a_value_crosses_a_thread_boundary_into_a_local_source() {
     let sink = EventSink::from(&handler);
     bridge
         .source()
-        .subscribe_cloned_inline(&sink)
+        .cloned()
+        .connect(sink)
+        .inline()
         .expect("live bridge")
         .detach();
 
@@ -59,7 +63,9 @@ fn a_bridge_forwards_events_in_receive_order() {
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
     bridge
         .source()
-        .subscribe_cloned_inline(EventSink::from(&handler))
+        .cloned()
+        .connect(EventSink::from(&handler))
+        .inline()
         .expect("live bridge")
         .detach();
 
@@ -91,7 +97,9 @@ fn each_subscriber_selects_its_own_dispatcher() {
     let sink = EventSink::from(&handler);
     bridge
         .source()
-        .subscribe_cloned_via(&event_dispatcher, &sink)
+        .cloned()
+        .connect(sink)
+        .via(&event_dispatcher)
         .expect("live bridge")
         .detach();
 

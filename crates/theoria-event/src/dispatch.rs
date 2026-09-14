@@ -1,15 +1,12 @@
 use std::{
-    any::Any,
     cell::{Cell, RefCell},
     fmt,
     rc::Rc,
 };
 
-use crate::sink::EventSink;
-
 type CompletionFn = Box<dyn FnOnce(DispatchOutcome)>;
 
-/// The result of executing one accepted event Dispatch.
+/// The result of running one accepted event Dispatch.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DispatchOutcome {
     /// The Dispatch reached a live Sink and completed there.
@@ -35,36 +32,36 @@ pub enum DispatchStatus {
     /// The Dispatch has been accepted but has not started.
     Pending,
     /// Execution started but has not produced a terminal outcome.
-    ///
-    /// A Sink panic is not caught, so an unwound Dispatch remains in this
-    /// state.
     Executing,
     /// Execution ended with the reported result.
     Finished(DispatchOutcome),
 }
 
-/// Accepts type-erased event Dispatches for execution or scheduling.
-///
-/// A successful return reports whether the accepted Dispatch completed during
-/// the call or was retained for later execution.
+/// Accepts self-contained event Dispatches for execution or scheduling.
 pub trait EventDispatcher: 'static {
     /// Submits one Dispatch for immediate or deferred execution.
     ///
-    /// Rejection returns the original Dispatch without executing or retaining
+    /// Rejection returns the original Dispatch without running or retaining
     /// it, so another Dispatcher may accept it.
-    fn submit(&self, dispatch: EventDispatch) -> Result<SubmissionOutcome, EventDispatch>;
+    fn submit(
+        &self,
+        dispatch: EventDispatch<'static>,
+    ) -> Result<SubmissionOutcome, EventDispatch<'static>>;
 }
 
 impl<T> EventDispatcher for Rc<T>
 where
     T: EventDispatcher + ?Sized,
 {
-    fn submit(&self, dispatch: EventDispatch) -> Result<SubmissionOutcome, EventDispatch> {
+    fn submit(
+        &self,
+        dispatch: EventDispatch<'static>,
+    ) -> Result<SubmissionOutcome, EventDispatch<'static>> {
         self.as_ref().submit(dispatch)
     }
 }
 
-/// A cloneable capability for submitting owned event Dispatches.
+/// A cloneable capability for submitting self-contained event Dispatches.
 #[derive(Clone)]
 pub struct Dispatcher {
     endpoint: Rc<dyn EventDispatcher>,
@@ -78,52 +75,17 @@ impl Dispatcher {
         }
     }
 
-    /// Creates a Dispatcher that executes accepted Dispatches immediately.
-    ///
-    /// This preserves Dispatcher semantics, including owned type-erased events
-    /// and tracked Receipts. Use [`EventSink::send`] when direct delivery
-    /// without the `E: 'static` dispatch boundary is intended.
+    /// Creates a Dispatcher that runs accepted Dispatches immediately.
     pub fn immediate() -> Self {
         Self::new(ImmediateDispatcher)
     }
 
-    /// Submits one owned event to this Dispatcher.
-    ///
-    /// A rejecting Dispatcher returns ownership of the original event. A
-    /// successful submission reports whether its Dispatch completed on this
-    /// call stack or was deferred.
-    pub fn send<E>(&self, sink: impl Into<EventSink<E>>, event: E) -> Result<SubmissionOutcome, E>
-    where
-        E: 'static,
-    {
-        self.endpoint
-            .submit(EventDispatch::new(sink.into(), event))
-            .map_err(EventDispatch::into_event)
-    }
-
-    /// Submits one tracked event to this Dispatcher.
-    ///
-    /// A rejecting Dispatcher returns ownership of the original event and no
-    /// Receipt. Otherwise the returned Receipt observes execution, Sink
-    /// unavailability, cancellation, and completion callbacks.
-    pub fn send_tracked<E>(
+    /// Submits one self-contained Dispatch.
+    pub fn submit(
         &self,
-        sink: impl Into<EventSink<E>>,
-        event: E,
-    ) -> Result<DispatchReceipt, E>
-    where
-        E: 'static,
-    {
-        let sink = sink.into();
-        let control = Rc::new(DispatchControl::new());
-        let receipt = DispatchReceipt {
-            control: Rc::clone(&control),
-        };
-
-        self.endpoint
-            .submit(EventDispatch::tracked(sink, event, control))
-            .map(|_| receipt)
-            .map_err(EventDispatch::into_event)
+        dispatch: EventDispatch<'static>,
+    ) -> Result<SubmissionOutcome, EventDispatch<'static>> {
+        self.endpoint.submit(dispatch)
     }
 }
 
@@ -142,17 +104,18 @@ impl fmt::Debug for Dispatcher {
 struct ImmediateDispatcher;
 
 impl EventDispatcher for ImmediateDispatcher {
-    fn submit(&self, dispatch: EventDispatch) -> Result<SubmissionOutcome, EventDispatch> {
-        Ok(SubmissionOutcome::Completed(dispatch.execute()))
+    fn submit(
+        &self,
+        dispatch: EventDispatch<'static>,
+    ) -> Result<SubmissionOutcome, EventDispatch<'static>> {
+        Ok(SubmissionOutcome::Completed(dispatch.run()))
     }
 }
 
-/// Observes an accepted tracked Dispatch and allows pre-execution cancellation.
+/// Observes a tracked Dispatch and allows pre-execution cancellation.
 ///
-/// Acceptance does not imply that event handling has completed. Dropping the
-/// Receipt does not cancel its Dispatch. Dropping an accepted tracked Dispatch
-/// before execution cancels it. Sink panics propagate without producing a
-/// terminal outcome or invoking completion callbacks.
+/// Dropping the Receipt does not cancel its Dispatch. Dropping a tracked
+/// Dispatch before execution does cancel it.
 #[derive(Clone)]
 #[must_use = "dropping a DispatchReceipt does not cancel its Dispatch"]
 pub struct DispatchReceipt {
@@ -166,22 +129,11 @@ impl DispatchReceipt {
     }
 
     /// Prevents execution if the Dispatch has not started.
-    ///
-    /// Returns `true` when this call cancelled pending work. Returns `false`
-    /// when it was already cancelled or had started executing.
     pub fn cancel(&self) -> bool {
         self.control.cancel()
     }
 
     /// Registers a callback for this Dispatch's terminal outcome.
-    ///
-    /// If the Dispatch has already finished, the callback runs immediately on
-    /// the current call stack. Otherwise the Dispatch retains the callback and
-    /// invokes it once on the call stack that finishes execution or
-    /// cancellation. Callbacks registered before completion run in
-    /// registration order. Dropping the Receipt after registration does not
-    /// remove them. A callback panic propagates normally and prevents later
-    /// callbacks from running.
     pub fn on_complete(&self, notify: impl FnOnce(DispatchOutcome) + 'static) {
         self.control.on_complete(notify);
     }
@@ -195,57 +147,54 @@ impl fmt::Debug for DispatchReceipt {
     }
 }
 
-/// An opaque, type-erased invocation of one event Sink.
+/// One invocation of an event Sink.
 ///
-/// A Dispatcher may execute, retain, reorder, or reject this value. Its event
-/// type and Sink remain private. A rejecting Dispatcher must return the
-/// original unexecuted value.
-#[must_use = "an EventDispatch must be executed, retained, returned, or intentionally discarded"]
-pub struct EventDispatch {
-    erased: Box<dyn ErasedDispatch>,
+/// The Dispatch owns its event and every reusable operation copied from its
+/// Sink. Its lifetime is bounded by the shortest-lived value captured by that
+/// invocation. Any Dispatch may run immediately; only a `'static` Dispatch may
+/// be submitted to a [`Dispatcher`].
+#[must_use = "an EventDispatch must be run, submitted, or intentionally discarded"]
+pub struct EventDispatch<'event> {
+    operation: Box<dyn FnOnce() -> DispatchOutcome + 'event>,
+    control: DispatchControlGuard,
 }
 
-impl EventDispatch {
-    fn new<E>(sink: EventSink<E>, event: E) -> Self
-    where
-        E: 'static,
-    {
+impl<'event> EventDispatch<'event> {
+    pub(crate) fn new(operation: impl FnOnce() -> DispatchOutcome + 'event) -> Self {
         Self {
-            erased: Box::new(TypedDispatch {
-                sink,
-                event,
-                control: DispatchControlGuard::untracked(),
-            }),
+            operation: Box::new(operation),
+            control: DispatchControlGuard::untracked(),
         }
     }
 
-    fn tracked<E>(sink: EventSink<E>, event: E, control: Rc<DispatchControl>) -> Self
-    where
-        E: 'static,
-    {
-        Self {
-            erased: Box::new(TypedDispatch {
-                sink,
-                event,
-                control: DispatchControlGuard::tracked(control),
-            }),
+    /// Attaches observable cancellation and completion state.
+    pub fn tracked(mut self) -> (Self, DispatchReceipt) {
+        debug_assert!(self.control.0.is_none());
+        let control = Rc::new(DispatchControl::new());
+        self.control = DispatchControlGuard::tracked(Rc::clone(&control));
+        (self, DispatchReceipt { control })
+    }
+
+    /// Runs this Sink invocation exactly once.
+    pub fn run(self) -> DispatchOutcome {
+        let EventDispatch { operation, control } = self;
+        let Some(control) = control.disarm() else {
+            return operation();
+        };
+        if !control.start() {
+            return DispatchOutcome::Cancelled;
         }
+        let outcome = operation();
+        control.complete(outcome);
+        outcome
     }
+}
 
-    /// Executes this Sink invocation exactly once and reports its outcome.
-    ///
-    /// A previously cancelled tracked Dispatch does not invoke its Sink and
-    /// reports [`DispatchOutcome::Cancelled`].
-    pub fn execute(self) -> DispatchOutcome {
-        self.erased.execute()
-    }
-
-    pub(crate) fn into_event<E: 'static>(self) -> E {
-        *self
-            .erased
-            .into_event()
-            .downcast::<E>()
-            .expect("a rejected EventDispatch must retain its original event type")
+impl fmt::Debug for EventDispatch<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("EventDispatch")
+            .finish_non_exhaustive()
     }
 }
 
@@ -314,58 +263,6 @@ impl From<DispatchState> for DispatchStatus {
             DispatchState::Executing => Self::Executing,
             DispatchState::Finished(outcome) => Self::Finished(outcome),
         }
-    }
-}
-
-impl fmt::Debug for EventDispatch {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("EventDispatch")
-            .finish_non_exhaustive()
-    }
-}
-
-trait ErasedDispatch {
-    fn execute(self: Box<Self>) -> DispatchOutcome;
-
-    fn into_event(self: Box<Self>) -> Box<dyn Any>;
-}
-
-struct TypedDispatch<E: 'static> {
-    sink: EventSink<E>,
-    event: E,
-    control: DispatchControlGuard,
-}
-
-impl<E: 'static> ErasedDispatch for TypedDispatch<E> {
-    fn execute(self: Box<Self>) -> DispatchOutcome {
-        let TypedDispatch {
-            sink,
-            event,
-            control,
-        } = *self;
-        let Some(control) = control.disarm() else {
-            return if sink.send(event).is_ok() {
-                DispatchOutcome::Delivered
-            } else {
-                DispatchOutcome::SinkUnavailable
-            };
-        };
-        if !control.start() {
-            return DispatchOutcome::Cancelled;
-        }
-        let outcome = if sink.send(event).is_ok() {
-            DispatchOutcome::Delivered
-        } else {
-            DispatchOutcome::SinkUnavailable
-        };
-        control.complete(outcome);
-        outcome
-    }
-
-    fn into_event(self: Box<Self>) -> Box<dyn Any> {
-        let TypedDispatch { event, .. } = *self;
-        Box::new(event)
     }
 }
 

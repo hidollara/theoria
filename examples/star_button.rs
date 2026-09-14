@@ -4,7 +4,7 @@ use theoria::{
     canvas::{Canvas, CanvasView, Composite, Coverage},
     color::Color,
     component::{Component, MountContext},
-    event::EventSource,
+    event::ChannelSource,
     font::Font,
     geometry::Point,
     gesture::{
@@ -30,7 +30,7 @@ const INITIAL_CENTER: Point = Point::new(480.0, 255.0);
 struct StarButton {
     count: State<u32>,
     center: State<Point>,
-    pointers: EventSource<PointerEvent>,
+    pointers: ChannelSource<PointerEvent>,
     movement_threshold: MovementThreshold,
     hit_region: HitRegion,
 }

@@ -48,7 +48,7 @@ fn a_component_can_create_a_source_while_handling_an_event() {
                             values.borrow_mut().push(value);
                         });
                         let (source, sink) = child.event_source::<u32>();
-                        assert!(child.connect_map(&source, &target, |value| *value));
+                        assert!(child.connect(source.cloned(), target.clone()));
                         input.replace(Some(sink));
                     }));
                 }
@@ -82,9 +82,15 @@ fn one_source_supports_repeated_connections_and_cloneable_inputs() {
         let second = context.receive(move |event: String, _context| {
             second_values.borrow_mut().push(event);
         });
-        let (source, input) = context.event_source::<MoveOnlyEvent>();
-        context.connect_map(&source, &first, |event| format!("first:{}", event.0));
-        context.connect_map(&source, &second, |event| format!("second:{}", event.0));
+        let (source, input) = context.event_source::<Rc<MoveOnlyEvent>>();
+        context.connect(
+            source.cloned(),
+            first.contramap(|event: Rc<MoveOnlyEvent>| format!("first:{}", event.0)),
+        );
+        context.connect(
+            source.cloned(),
+            second.contramap(|event: Rc<MoveOnlyEvent>| format!("second:{}", event.0)),
+        );
         let first = input.clone();
         let second = input;
 
@@ -94,7 +100,7 @@ fn one_source_supports_repeated_connections_and_cloneable_inputs() {
                 "publishing must not invoke connected targets recursively"
             );
             let input = if use_second { &second } else { &first };
-            assert!(context.send(input, event).is_ok());
+            assert!(context.send(input, Rc::new(event)).is_ok());
         })
     });
 
@@ -123,8 +129,14 @@ fn sources_with_the_same_event_type_keep_distinct_identities() {
         });
         let (left_source, left) = context.event_source::<u32>();
         let (right_source, right) = context.event_source::<u32>();
-        context.connect_map(&left_source, &target, |value| format!("left:{value}"));
-        context.connect_map(&right_source, &target, |value| format!("right:{value}"));
+        context.connect(
+            left_source.cloned(),
+            target.contramap(|value| format!("left:{value}")),
+        );
+        context.connect(
+            right_source.cloned(),
+            target.contramap(|value| format!("right:{value}")),
+        );
 
         context.receive(move |event: SelectedSource, context| match event {
             SelectedSource::Left(value) => assert!(context.send(&left, value).is_ok()),
@@ -147,7 +159,10 @@ fn source_input_and_handler_delivery_are_separate_deliveries() {
             mounted_values.borrow_mut().push(event.0);
         });
         let (source, input) = context.event_source::<u32>();
-        context.connect(&source, &target);
+        context.connect(
+            source.cloned(),
+            target.contramap(|value| RecordedU32::from(&value)),
+        );
         context.receive(move |event: u32, context| {
             assert!(context.send(&input, event).is_ok());
         })
@@ -184,7 +199,7 @@ impl From<CloneablePublication> for OwnedPublication {
 }
 
 #[test]
-fn connect_cloned_makes_owned_conversion_explicit() {
+fn a_cloned_source_makes_owned_conversion_explicit() {
     let values = Rc::new(RefCell::new(Vec::new()));
     let mounted_values = Rc::clone(&values);
     let mut runtime = TestRuntime::new(move |context| {
@@ -192,7 +207,7 @@ fn connect_cloned_makes_owned_conversion_explicit() {
             mounted_values.borrow_mut().push(event.0);
         });
         let (source, input) = context.event_source::<CloneablePublication>();
-        context.connect_cloned(&source, &target);
+        context.connect(source.cloned(), target.accepting::<CloneablePublication>());
         context.receive(move |event: CloneablePublication, context| {
             assert!(context.send(&input, event).is_ok());
         })
@@ -213,8 +228,8 @@ fn source_cycles_can_be_paused_by_the_caller() {
     let mut runtime = TestRuntime::new(|context| {
         let (left_source, left_sink) = context.event_source::<u32>();
         let (right_source, right_sink) = context.event_source::<u32>();
-        context.connect_cloned(&left_source, &right_sink);
-        context.connect_cloned(&right_source, &left_sink);
+        context.connect(left_source.cloned(), right_sink.clone());
+        context.connect(right_source.cloned(), left_sink.clone());
         context.receive(move |event: CycleCommand, context| match event {
             CycleCommand::Start => assert!(context.send(&left_sink, 1_u32).is_ok()),
             CycleCommand::Stop => context.unmount(),

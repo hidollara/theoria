@@ -35,7 +35,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 };
                 context.set(&pointer, visual);
             });
-            assert!(context.connect_cloned(window.pointer(), &pointer_events));
+            assert!(context.connect(window.pointer().cloned(), pointer_events.clone()));
 
             let clock = window.frame_clock();
             let frame = clock.frame();

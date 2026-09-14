@@ -7,6 +7,7 @@ mod semantics {
     mod dispatcher;
     mod handler;
     mod sink;
+    mod source;
 
     fn drain(dispatcher: &mut FifoDispatcher) {
         while dispatcher.deliver_next() {}

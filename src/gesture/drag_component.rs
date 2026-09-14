@@ -1,6 +1,6 @@
 use crate::{
     component::{Component, MountContext},
-    event::{EventSink, EventSource},
+    event::{ChannelSource, EventSink},
     input::pointer::PointerEvent,
 };
 
@@ -9,14 +9,14 @@ use super::{Drag, DragRecognizer};
 /// Component adapter that sends recognized drags to a composed output Sink.
 pub struct DragGesture {
     recognizer: DragRecognizer,
-    pointers: EventSource<PointerEvent>,
+    pointers: ChannelSource<PointerEvent>,
     drags: EventSink<Drag>,
 }
 
 impl DragGesture {
     pub fn new(
         recognizer: DragRecognizer,
-        pointers: EventSource<PointerEvent>,
+        pointers: ChannelSource<PointerEvent>,
         drags: impl Into<EventSink<Drag>>,
     ) -> Self {
         Self {
@@ -39,7 +39,7 @@ impl Component for DragGesture {
                 let _ = context.send(&drags, drag);
             }
         });
-        assert!(context.connect(&pointers, &input));
+        assert!(context.connect(pointers.cloned(), input));
     }
 }
 
@@ -94,7 +94,7 @@ mod tests {
             let recorder = context.receive(move |event: Drag, _context| {
                 output.borrow_mut().push(event);
             });
-            context.connect(&drag_source, &recorder);
+            context.connect(drag_source.cloned(), recorder);
             context.receive(move |event: PointerEvent, context| {
                 let _ = context.send(&pointer_events, event);
             })

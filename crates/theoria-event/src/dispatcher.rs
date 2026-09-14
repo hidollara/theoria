@@ -8,7 +8,7 @@ use std::{
 use crate::dispatch::{Dispatcher, EventDispatch, EventDispatcher, SubmissionOutcome};
 
 struct EventQueue {
-    pending: RefCell<VecDeque<EventDispatch>>,
+    pending: RefCell<VecDeque<EventDispatch<'static>>>,
 }
 
 impl EventQueue {
@@ -18,7 +18,7 @@ impl EventQueue {
         }
     }
 
-    fn enqueue(&self, dispatch: EventDispatch) {
+    fn enqueue(&self, dispatch: EventDispatch<'static>) {
         self.pending.borrow_mut().push_back(dispatch);
     }
 
@@ -26,7 +26,7 @@ impl EventQueue {
         let Some(dispatch) = self.pending.borrow_mut().pop_front() else {
             return false;
         };
-        let _ = dispatch.execute();
+        let _ = dispatch.run();
         true
     }
 
@@ -83,7 +83,10 @@ struct QueuedDispatcher {
 }
 
 impl EventDispatcher for QueuedDispatcher {
-    fn submit(&self, dispatch: EventDispatch) -> Result<SubmissionOutcome, EventDispatch> {
+    fn submit(
+        &self,
+        dispatch: EventDispatch<'static>,
+    ) -> Result<SubmissionOutcome, EventDispatch<'static>> {
         let Some(queue) = self.queue.upgrade() else {
             return Err(dispatch);
         };

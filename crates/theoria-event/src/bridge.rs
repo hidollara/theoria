@@ -3,7 +3,7 @@ use std::{
     sync::mpsc::{self, Receiver, Sender, TryRecvError},
 };
 
-use crate::channel::{EventProvider, EventSource, channel};
+use crate::channel::{ChannelSource, EventProvider, channel};
 
 /// Receives events from another execution domain and publishes them locally.
 ///
@@ -13,7 +13,7 @@ use crate::channel::{EventProvider, EventSource, channel};
 pub struct EventBridge<E: Send + 'static> {
     receiver: Receiver<E>,
     provider: EventProvider<E>,
-    source: EventSource<E>,
+    source: ChannelSource<E>,
 }
 
 /// Creates a local event Bridge and its thread-safe sending capability.
@@ -32,7 +32,7 @@ pub fn bridge<E: Send + 'static>() -> (EventBridge<E>, BridgeSender<E>) {
 
 impl<E: Send + 'static> EventBridge<E> {
     /// Returns the local Source published by this Bridge.
-    pub fn source(&self) -> EventSource<E> {
+    pub fn source(&self) -> ChannelSource<E> {
         self.source.clone()
     }
 

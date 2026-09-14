@@ -3,7 +3,7 @@
 use std::{cell::Cell, error::Error, fmt, io, rc::Rc, sync::Arc, time::Instant};
 
 use crate::event::{
-    BridgeProgress, BridgeSender, EventBridge, EventSource, bridge as event_bridge,
+    BridgeProgress, BridgeSender, ChannelSource, EventBridge, bridge as event_bridge,
 };
 
 use super::{EventLoopClosed, EventLoopHandle, EventLoopParticipant, EventLoopWaker, Result};
@@ -11,7 +11,7 @@ use super::{EventLoopClosed, EventLoopHandle, EventLoopParticipant, EventLoopWak
 /// Owns the receiving side of a cross-thread event Bridge.
 ///
 /// The Bridge is registered non-owningly with its EventLoop. Dropping it closes
-/// its [`EventSource`] and causes existing [`EventLoopBridgeSender`] values to
+/// its [`ChannelSource`] and causes existing [`EventLoopBridgeSender`] values to
 /// return their unsent events.
 pub struct EventLoopBridge<E: Send + 'static> {
     state: Rc<BridgeState<E>>,
@@ -19,7 +19,7 @@ pub struct EventLoopBridge<E: Send + 'static> {
 
 impl<E: Send + 'static> EventLoopBridge<E> {
     /// Returns the local subscription interface for events crossing this Bridge.
-    pub fn source(&self) -> EventSource<E> {
+    pub fn source(&self) -> ChannelSource<E> {
         self.state.bridge.source()
     }
 }
@@ -182,7 +182,7 @@ impl<E: Send + 'static> EventLoopParticipant for BridgeState<E> {
 mod tests {
     use std::{cell::Cell, rc::Rc};
 
-    use crate::event::{EventHandler, EventSink};
+    use crate::event::{EventHandler, EventSink, EventSource};
 
     use super::*;
     use crate::windows;
@@ -196,7 +196,9 @@ mod tests {
         let handler = EventHandler::new(move |event: u32| output.set(Some(event)));
         let _subscription = bridge
             .source()
-            .subscribe_cloned_inline(EventSink::from(&handler))
+            .cloned()
+            .connect(EventSink::from(&handler))
+            .inline()
             .expect("the Bridge owns its live Source");
 
         std::thread::spawn(move || sender.send(42))

@@ -90,9 +90,9 @@ mod tests {
         let (participant, ()) = ComponentParticipant::mount(|context| {
             let (source, source_input) = context.event_source::<()>();
             let handler = context.receive(move |(): (), _| handler_output.set(true));
-            assert!(context.connect_cloned(&source, handler));
+            assert!(context.connect(source.cloned(), handler));
             let effect = context.create_effect(move |_| {
-                assert!(EventSink::from(&source_input).send(()).is_ok());
+                assert!(EventSink::from(&source_input).send_inline(()).is_ok());
             });
             context.sync(&effect);
         });

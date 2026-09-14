@@ -2,7 +2,7 @@
 
 use crate::{
     animation::FrameClock,
-    event::EventSource,
+    event::ChannelSource,
     input::{
         pointer::{MovementThreshold, PointerEvent},
         scroll::ScrollEvent,
@@ -18,9 +18,9 @@ use crate::{
 /// their own projections directly with Theoria Event and Reactive primitives.
 pub struct WindowCapabilities {
     surface: Surface,
-    pointer: EventSource<PointerEvent>,
-    scroll: EventSource<ScrollEvent>,
-    close_requested: EventSource<CloseRequested>,
+    pointer: ChannelSource<PointerEvent>,
+    scroll: ChannelSource<ScrollEvent>,
+    close_requested: ChannelSource<CloseRequested>,
     frame_clock: FrameClock,
     movement_threshold: MovementThreshold,
 }
@@ -28,9 +28,9 @@ pub struct WindowCapabilities {
 impl WindowCapabilities {
     pub(super) const fn new(
         surface: Surface,
-        pointer: EventSource<PointerEvent>,
-        scroll: EventSource<ScrollEvent>,
-        close_requested: EventSource<CloseRequested>,
+        pointer: ChannelSource<PointerEvent>,
+        scroll: ChannelSource<ScrollEvent>,
+        close_requested: ChannelSource<CloseRequested>,
         frame_clock: FrameClock,
         movement_threshold: MovementThreshold,
     ) -> Self {
@@ -48,15 +48,15 @@ impl WindowCapabilities {
         &self.surface
     }
 
-    pub const fn pointer(&self) -> &EventSource<PointerEvent> {
+    pub const fn pointer(&self) -> &ChannelSource<PointerEvent> {
         &self.pointer
     }
 
-    pub const fn scroll(&self) -> &EventSource<ScrollEvent> {
+    pub const fn scroll(&self) -> &ChannelSource<ScrollEvent> {
         &self.scroll
     }
 
-    pub const fn close_requested(&self) -> &EventSource<CloseRequested> {
+    pub const fn close_requested(&self) -> &ChannelSource<CloseRequested> {
         &self.close_requested
     }
 

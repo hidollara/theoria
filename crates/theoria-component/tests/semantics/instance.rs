@@ -17,7 +17,7 @@ fn handlers_do_not_run_until_root_construction_finishes() {
             handler_runs.set(handler_runs.get() + 1);
         });
 
-        assert!(EventSink::from(&input).send(()).is_ok());
+        assert!(EventSink::from(&input).send_inline(()).is_ok());
         mounted_input.replace(Some(input));
     });
     let input = input
@@ -27,8 +27,10 @@ fn handlers_do_not_run_until_root_construction_finishes() {
 
     assert_eq!(runs.get(), 0);
     assert_eq!(
-        instance.send(&input, ()),
-        Ok(SubmissionOutcome::Completed(DispatchOutcome::Delivered))
+        instance
+            .send(&input, ())
+            .expect("the immediate dispatcher accepts the event"),
+        SubmissionOutcome::Completed(DispatchOutcome::Delivered)
     );
     assert_eq!(runs.get(), 1);
 }
@@ -44,7 +46,7 @@ fn child_handlers_remain_inactive_until_root_construction_finishes() {
             let input = child.receive(move |(), _context| {
                 child_runs.set(child_runs.get() + 1);
             });
-            assert!(EventSink::from(&input).send(()).is_ok());
+            assert!(EventSink::from(&input).send_inline(()).is_ok());
             mounted_input.replace(Some(input));
         });
 
@@ -53,7 +55,7 @@ fn child_handlers_remain_inactive_until_root_construction_finishes() {
             input
                 .as_ref()
                 .expect("child construction creates its event input")
-                .send(())
+                .send_inline(())
                 .is_ok()
         );
     });
@@ -64,8 +66,10 @@ fn child_handlers_remain_inactive_until_root_construction_finishes() {
 
     assert_eq!(runs.get(), 0);
     assert_eq!(
-        instance.send(&input, ()),
-        Ok(SubmissionOutcome::Completed(DispatchOutcome::Delivered))
+        instance
+            .send(&input, ())
+            .expect("the immediate dispatcher accepts the event"),
+        SubmissionOutcome::Completed(DispatchOutcome::Delivered)
     );
     assert_eq!(runs.get(), 1);
 }
@@ -97,7 +101,12 @@ fn an_instance_can_use_a_caller_owned_dispatcher_and_flush_boundary() {
 
     instance.flush_effects().expect("valid initial Effect");
     assert_eq!(&*observed.borrow(), &[0]);
-    assert_eq!(instance.send(&input, 7), Ok(SubmissionOutcome::Deferred));
+    assert_eq!(
+        instance
+            .send(&input, 7)
+            .expect("the FIFO dispatcher accepts the event"),
+        SubmissionOutcome::Deferred
+    );
     assert!(dispatcher.deliver_next());
     assert_eq!(&*observed.borrow(), &[0]);
 
@@ -124,8 +133,10 @@ fn inline_send_bypasses_the_default_dispatcher() {
         .expect("root construction creates its event input");
 
     assert_eq!(
-        instance.send(&input, "deferred"),
-        Ok(SubmissionOutcome::Deferred)
+        instance
+            .send(&input, "deferred")
+            .expect("the FIFO dispatcher accepts the event"),
+        SubmissionOutcome::Deferred
     );
     assert!(observed.borrow().is_empty());
 
@@ -148,7 +159,7 @@ fn an_inline_connection_handles_a_publication_on_the_publishing_stack() {
         let sink = context.receive(move |value: u32, _context| {
             output.borrow_mut().push(value);
         });
-        assert!(context.connect_cloned_inline(&source, sink));
+        assert!(context.connect_inline(source.cloned(), sink));
         mounted_input.replace(Some(source_input));
     });
     let input = input
@@ -181,12 +192,16 @@ fn an_instance_can_send_through_default_and_explicit_dispatchers() {
         .expect("root construction creates its event input");
 
     assert_eq!(
-        instance.send(&input, "default"),
-        Ok(SubmissionOutcome::Deferred)
+        instance
+            .send(&input, "default")
+            .expect("the default dispatcher accepts the event"),
+        SubmissionOutcome::Deferred
     );
     assert_eq!(
-        instance.send_via(&priority_input, &input, "priority"),
-        Ok(SubmissionOutcome::Deferred)
+        instance
+            .send_via(&priority_input, &input, "priority")
+            .expect("the priority dispatcher accepts the event"),
+        SubmissionOutcome::Deferred
     );
 
     assert!(priority_dispatcher.deliver_next());
@@ -215,13 +230,8 @@ fn one_source_can_connect_through_default_and_explicit_dispatchers() {
             priority_output.borrow_mut().push(("priority", value));
         });
 
-        assert!(context.connect_map(&source, &default_sink, |value| *value));
-        assert!(context.connect_map_via(
-            &mounted_priority_input,
-            &source,
-            &priority_sink,
-            |value| *value,
-        ));
+        assert!(context.connect(source.cloned(), default_sink));
+        assert!(context.connect_via(&mounted_priority_input, source.cloned(), priority_sink,));
         mounted_input.replace(Some(source_input));
     });
     let input = input
@@ -229,7 +239,12 @@ fn one_source_can_connect_through_default_and_explicit_dispatchers() {
         .take()
         .expect("root construction creates its Source input");
 
-    assert_eq!(instance.send(&input, 7), Ok(SubmissionOutcome::Deferred));
+    assert_eq!(
+        instance
+            .send(&input, 7)
+            .expect("the FIFO dispatcher accepts the event"),
+        SubmissionOutcome::Deferred
+    );
     assert!(default_dispatcher.deliver_next());
 
     assert!(priority_dispatcher.deliver_next());

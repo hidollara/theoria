@@ -1,6 +1,6 @@
 use crate::{
     component::{Component, MountContext},
-    event::{EventSink, EventSource},
+    event::{ChannelSource, EventSink},
     input::pointer::PointerEvent,
 };
 
@@ -13,14 +13,14 @@ use super::{Click, ClickRecognizer};
 /// another Component, keeping routing separate from the recognition algorithm.
 pub struct ClickGesture {
     recognizer: ClickRecognizer,
-    pointers: EventSource<PointerEvent>,
+    pointers: ChannelSource<PointerEvent>,
     clicks: EventSink<Click>,
 }
 
 impl ClickGesture {
     pub fn new(
         recognizer: ClickRecognizer,
-        pointers: EventSource<PointerEvent>,
+        pointers: ChannelSource<PointerEvent>,
         clicks: impl Into<EventSink<Click>>,
     ) -> Self {
         Self {
@@ -43,7 +43,7 @@ impl Component for ClickGesture {
                 let _ = context.send(&clicks, click);
             }
         });
-        assert!(context.connect(&pointers, &input));
+        assert!(context.connect(pointers.cloned(), input));
     }
 }
 
@@ -99,7 +99,7 @@ mod tests {
                 output.borrow_mut().push(event);
             });
 
-            context.connect(&click_source, &recorder);
+            context.connect(click_source.cloned(), recorder);
 
             let input = context.receive(move |event: PointerEvent, context| {
                 let _ = context.send(&pointer_events, event);

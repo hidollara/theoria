@@ -323,7 +323,7 @@ fn an_instance_does_not_own_exported_typed_input_capabilities() {
     assert_eq!(&*events.borrow(), &[7]);
 
     drop(runtime);
-    assert_eq!(root.send(8_u32), Err(8_u32));
+    assert_eq!(root.send_inline(8_u32), Err(8_u32));
 }
 
 #[test]
@@ -374,7 +374,7 @@ fn a_panicking_mount_rolls_back_children_created_by_its_builder() {
         .as_ref()
         .expect("child was constructed before the panic")
         .clone();
-    assert_eq!(child.send(1_u32), Err(1_u32));
+    assert_eq!(child.send_inline(1_u32), Err(1_u32));
 }
 
 struct ReactiveDropCounter(Rc<Cell<u32>>);

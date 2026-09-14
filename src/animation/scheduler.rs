@@ -8,7 +8,7 @@ use std::{
 
 use crate::{
     component::MountContext,
-    event::{EventProvider, EventSink, EventSource, channel},
+    event::{ChannelSource, EventProvider, EventSink, channel},
     reactive::Value,
 };
 
@@ -36,7 +36,7 @@ impl FrameTiming {
 
 pub(crate) struct FrameScheduler {
     provider: EventProvider<FrameOpportunity>,
-    opportunities: EventSource<FrameOpportunity>,
+    opportunities: ChannelSource<FrameOpportunity>,
     requests: Rc<FrameRequests>,
     timing: Rc<FrameTiming>,
     deadline: Option<Instant>,
@@ -85,7 +85,7 @@ impl FrameScheduler {
         let frames = context.receive(move |_: FrameOpportunity, context| {
             context.set(&frame, timing.sample(Instant::now()));
         });
-        assert!(context.connect_cloned(&self.opportunities, &frames));
+        assert!(context.connect(self.opportunities.cloned(), frames));
         clock
     }
 
@@ -118,7 +118,7 @@ impl FrameScheduler {
         }
         debug_assert!(
             EventSink::from(&self.provider)
-                .send(FrameOpportunity)
+                .send_inline(FrameOpportunity)
                 .is_ok(),
             "the FrameScheduler owns its live Provider and publishes inline"
         );

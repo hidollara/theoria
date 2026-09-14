@@ -71,7 +71,7 @@ impl WindowHost {
                     context.set(&surface_size, size);
                 }
             });
-            assert!(context.connect_cloned(&surface, update_size));
+            assert!(context.connect(surface.cloned(), update_size));
 
             let capabilities = WindowCapabilities::new(
                 Surface::new(surface, size.value()),
@@ -88,7 +88,7 @@ impl WindowHost {
             // by `build` are registered first on the default Dispatcher; this final
             // subscription supplies the default non-cancellable close action.
             let close_window = context.receive(|_: CloseRequested, context| context.unmount());
-            assert!(context.connect_cloned(capabilities.close_requested(), close_window));
+            assert!(context.connect(capabilities.close_requested().cloned(), close_window));
 
             let host = Rc::new(RefCell::new(Self {
                 inputs: WindowInputs {
@@ -185,6 +185,6 @@ impl WindowInputs {
     }
 
     fn publish_to<E: 'static>(sink: &EventSink<E>, event: E) {
-        debug_assert!(sink.send(event).is_ok());
+        debug_assert!(sink.send_inline(event).is_ok());
     }
 }

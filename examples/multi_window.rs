@@ -45,7 +45,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let close = context.receive(move |_: theoria::window::CloseRequested, context| {
                     context.set(&controller_lifecycle, false);
                 });
-                assert!(context.connect_cloned(window.close_requested(), close));
+                assert!(context.connect(window.close_requested().cloned(), close));
 
                 let increment = context.receive(move |click: Click, context| {
                     if click.button == PointerButton::Primary {
