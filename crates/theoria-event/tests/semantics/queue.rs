@@ -5,8 +5,8 @@ use std::{
 
 use super::{TestSink, TestSinkOwner, drain};
 use theoria_event::{
-    Dispatch, DispatchOutcome, DispatchQueue, Dispatcher, EventSink, SubmissionOutcome,
-    Subscription, channel,
+    Channel, Dispatch, DispatchOutcome, DispatchQueue, Dispatcher, EventSink, SubmissionOutcome,
+    Subscription,
 };
 
 #[derive(Debug)]
@@ -47,14 +47,15 @@ fn source_input_and_subscription_use_separate_dispatch_steps() {
     let output = Rc::clone(&values);
     let handler = TestSinkOwner::new(move |value: u32| output.borrow_mut().push(value));
     let sink = TestSink::from(&handler);
-    let (provider, source) = channel::<u32>();
+    let channel = Channel::<u32>::new();
+    let source = channel.source();
     Subscription::builder(source, sink)
         .owned()
         .via(dispatcher.clone())
-        .expect("live provider")
+        .expect("live channel")
         .detach();
 
-    assert!(dispatcher.submit(provider.sink().send(7_u32)).is_ok());
+    assert!(dispatcher.submit(channel.sink().send(7_u32)).is_ok());
     assert!(queue.run_next().is_some());
     assert!(values.borrow().is_empty());
     assert!(queue.run_next().is_some());
@@ -85,18 +86,20 @@ fn an_idle_queue_reports_empty_without_running() {
 fn the_caller_can_stop_between_dispatches_in_a_cyclic_event_chain() {
     let mut queue = DispatchQueue::new();
     let dispatcher = queue.dispatcher();
-    let (left_provider, left_source) = channel::<u32>();
-    let (right_provider, right_source) = channel::<u32>();
-    let _left_to_right = Subscription::builder(left_source, right_provider.sink())
+    let left_channel = Channel::<u32>::new();
+    let left_source = left_channel.source();
+    let right_channel = Channel::<u32>::new();
+    let right_source = right_channel.source();
+    let _left_to_right = Subscription::builder(left_source, right_channel.sink())
         .owned()
         .via(dispatcher.clone())
-        .expect("live provider");
-    let _right_to_left = Subscription::builder(right_source, left_provider.sink())
+        .expect("live channel");
+    let _right_to_left = Subscription::builder(right_source, left_channel.sink())
         .owned()
         .via(dispatcher.clone())
-        .expect("live provider");
+        .expect("live channel");
 
-    assert!(dispatcher.submit(left_provider.sink().send(1_u32)).is_ok());
+    assert!(dispatcher.submit(left_channel.sink().send(1_u32)).is_ok());
     for _ in 0..8 {
         assert!(queue.run_next().is_some());
     }
@@ -106,12 +109,13 @@ fn the_caller_can_stop_between_dispatches_in_a_cyclic_event_chain() {
 fn dropping_a_dispatch_queue_makes_its_dispatcher_reject_submissions() {
     let queue = DispatchQueue::new();
     let dispatcher = queue.dispatcher();
-    let (provider, _source) = channel::<u32>();
+    let channel = Channel::<u32>::new();
+    let _source = channel.source();
     let handler = TestSinkOwner::new(|_: u32| {});
     let independent_sink = TestSink::from(&handler);
     drop(queue);
 
-    assert!(dispatcher.submit(provider.sink().send(1_u32)).is_err());
+    assert!(dispatcher.submit(channel.sink().send(1_u32)).is_err());
     assert_eq!(
         independent_sink.send(1_u32).run(),
         DispatchOutcome::Completed

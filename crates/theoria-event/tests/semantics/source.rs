@@ -2,7 +2,7 @@ use std::{cell::Cell, rc::Rc};
 
 use super::{TestSink, TestSinkOwner};
 use theoria_event::{
-    Dispatch, DispatchOutcome, DispatchQueue, EventSink, EventSource, Subscription, channel,
+    Channel, Dispatch, DispatchOutcome, DispatchQueue, EventSink, EventSource, Subscription,
 };
 
 struct BorrowingSource<'value> {
@@ -113,7 +113,8 @@ fn an_inline_source_accepts_a_sink_specific_borrowed_dispatch() {
 fn an_owned_connection_preserves_a_sink_specific_dispatch_type() {
     let mut queue = DispatchQueue::new();
     let output = Rc::new(Cell::new(0));
-    let (provider, source) = channel::<u32>();
+    let channel = Channel::<u32>::new();
+    let source = channel.source();
 
     let subscription = Subscription::builder(
         source,
@@ -125,7 +126,7 @@ fn an_owned_connection_preserves_a_sink_specific_dispatch_type() {
     .via(queue.dispatcher())
     .expect("the Source is available");
 
-    assert_eq!(provider.sink().send(7).run(), DispatchOutcome::Completed);
+    assert_eq!(channel.sink().send(7).run(), DispatchOutcome::Completed);
     assert_eq!(output.get(), 0);
     assert!(queue.run_next().is_some());
     assert_eq!(output.get(), 7);

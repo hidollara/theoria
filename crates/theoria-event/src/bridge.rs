@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    channel::{ChannelSource, EventProvider, channel},
+    channel::{Channel, ChannelSource},
     dispatch::{Dispatch, DispatchOutcome},
     sink::EventSink,
 };
@@ -17,35 +17,32 @@ use crate::{
 /// remain with the caller.
 pub struct EventBridge<E: Send + 'static> {
     receiver: Receiver<E>,
-    provider: EventProvider<E>,
-    source: ChannelSource<E>,
+    channel: Channel<E>,
 }
 
 /// Creates a local event bridge and its thread-safe sink.
 pub fn bridge<E: Send + 'static>() -> (EventBridge<E>, BridgeSink<E>) {
     let (sender, receiver) = mpsc::channel();
-    let (provider, source) = channel();
-    (
-        EventBridge {
-            receiver,
-            provider,
-            source,
-        },
-        BridgeSink { sender },
-    )
+    let channel = Channel::new();
+    (EventBridge { receiver, channel }, BridgeSink { sender })
 }
 
 impl<E: Send + 'static> EventBridge<E> {
     /// Returns the local Source published by this Bridge.
     pub fn source(&self) -> ChannelSource<E> {
-        self.source.clone()
+        self.channel.source()
     }
 
     /// Attempts to forward exactly one received event into the local Source.
     pub fn forward_next(&self) -> BridgeProgress {
         match self.receiver.try_recv() {
             Ok(event) => {
-                self.provider.publish(event);
+                let outcome = self.channel.sink().send(event).run();
+                debug_assert_eq!(
+                    outcome,
+                    DispatchOutcome::Completed,
+                    "the EventBridge owns its live Channel"
+                );
                 BridgeProgress::Forwarded
             }
             Err(TryRecvError::Empty) => BridgeProgress::Idle,

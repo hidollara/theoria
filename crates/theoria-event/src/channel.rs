@@ -11,35 +11,30 @@ use crate::{
     source::EventSource,
 };
 
-type Subscriber<E> = Rc<dyn Fn(&E)>;
-
-/// Creates an owning event Provider and a non-owning Channel Source.
-pub fn channel<E: 'static>() -> (EventProvider<E>, ChannelSource<E>) {
-    let state = Rc::new(ChannelState {
-        next_subscription: Cell::new(0),
-        subscriptions: RefCell::new(BTreeMap::new()),
-    });
-    (
-        EventProvider {
-            state: Rc::clone(&state),
-        },
-        ChannelSource {
-            state: Rc::downgrade(&state),
-        },
-    )
-}
-
-/// Owns one typed event channel and creates publishing capabilities for it.
+/// Owns one typed event channel and creates non-owning capabilities for it.
 ///
-/// Dropping the Provider closes the channel. Sinks and Source views derived
+/// Dropping the Channel closes it. Sinks and Source views derived
 /// from it do not extend its lifetime.
-pub struct EventProvider<E: 'static> {
+pub struct Channel<E: 'static> {
     state: Rc<ChannelState<E>>,
 }
 
-impl<E: 'static> EventProvider<E> {
-    pub(crate) fn publish(&self, event: E) {
-        self.state.publish(event);
+impl<E: 'static> Channel<E> {
+    /// Creates one owned typed event Channel.
+    pub fn new() -> Self {
+        Self {
+            state: Rc::new(ChannelState {
+                next_subscription: Cell::new(0),
+                subscriptions: RefCell::new(BTreeMap::new()),
+            }),
+        }
+    }
+
+    /// Returns a non-owning subscription capability for this Channel.
+    pub fn source(&self) -> ChannelSource<E> {
+        ChannelSource {
+            state: Rc::downgrade(&self.state),
+        }
     }
 
     /// Returns a non-owning capability for publishing into this channel.
@@ -50,17 +45,21 @@ impl<E: 'static> EventProvider<E> {
     }
 }
 
-impl<E: 'static> fmt::Debug for EventProvider<E> {
+impl<E: 'static> Default for Channel<E> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<E: 'static> fmt::Debug for Channel<E> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("EventProvider")
-            .finish_non_exhaustive()
+        formatter.debug_struct("Channel").finish_non_exhaustive()
     }
 }
 
 /// A cloneable, non-owning publishing capability for one typed channel.
 ///
-/// Dropping the corresponding [`EventProvider`] closes this sink. Pending
+/// Dropping the corresponding [`Channel`] closes this sink. Pending
 /// Dispatches then complete with [`DispatchOutcome::SinkClosed`].
 pub struct ChannelSink<E: 'static> {
     state: Weak<ChannelState<E>>,
@@ -164,7 +163,8 @@ impl<E: 'static> EventSource for ChannelSource<E> {
 
 struct ChannelState<E: 'static> {
     next_subscription: Cell<u64>,
-    subscriptions: RefCell<BTreeMap<u64, Subscriber<E>>>,
+    #[allow(clippy::type_complexity)]
+    subscriptions: RefCell<BTreeMap<u64, Rc<dyn Fn(&E)>>>,
 }
 
 impl<E: 'static> ChannelState<E> {

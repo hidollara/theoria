@@ -8,8 +8,9 @@
 //! Concrete sinks retain their Dispatch type and capabilities. Code that must
 //! store heterogeneous sinks chooses and owns its type-erasure boundary.
 //!
-//! [`channel`] creates an owning [`EventProvider`] and its non-owning
-//! [`ChannelSource`]. A Channel Source lends each publication; an
+//! An owning [`Channel`] provides non-owning [`ChannelSource`] and
+//! [`ChannelSink`] capabilities. A
+//! Channel Source lends each publication; an
 //! [`Subscription`] builder can own that publication before constructing
 //! a self-contained Dispatch.
 //! [`bridge`] pairs a local [`EventBridge`] with a thread-safe [`BridgeSink`].
@@ -21,7 +22,7 @@ mod sink;
 mod source;
 
 pub use bridge::{BridgeDispatch, BridgeProgress, BridgeSink, EventBridge, bridge};
-pub use channel::{ChannelDispatch, ChannelSink, ChannelSource, EventProvider, channel};
+pub use channel::{Channel, ChannelDispatch, ChannelSink, ChannelSource};
 pub use dispatch::{
     Dispatch, DispatchHandle, DispatchOutcome, DispatchQueue, DispatchStatus, Dispatcher,
     DynDispatch, QueueDispatcher, SubmissionOutcome, TrackedDispatch,

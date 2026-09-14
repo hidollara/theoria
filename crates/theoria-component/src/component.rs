@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use theoria_event::{
-    ChannelSink, ChannelSource, Dispatch, DispatchHandle, DispatchOutcome, Dispatcher, DynDispatch,
-    EventSink, EventSource, SubmissionOutcome, Subscription, TrackedDispatch, channel,
+    Channel, ChannelSink, ChannelSource, Dispatch, DispatchHandle, DispatchOutcome, Dispatcher,
+    DynDispatch, EventSink, EventSource, SubmissionOutcome, Subscription, TrackedDispatch,
 };
 use theoria_reactive::{
     Computed, Effect, ReadContext, SnapshotState, State, StateSetter, WriteContext,
@@ -39,13 +39,14 @@ impl<'mount> MountContext<'mount> {
 
     /// Creates a typed [`EventSource`] and its input [`ChannelSink`].
     ///
-    /// The current Component owns the EventProvider. The returned Source and
+    /// The current Component owns the Channel. The returned Source and
     /// input sink do not keep that Component alive. After it is unmounted, the
     /// Source rejects new subscriptions and input deliveries produce no events.
     pub fn event_source<E: 'static>(&mut self) -> (ChannelSource<E>, ChannelSink<E>) {
-        let (provider, source) = channel();
-        let input = provider.sink();
-        self.current.retain(provider);
+        let channel = Channel::new();
+        let source = channel.source();
+        let input = channel.sink();
+        self.current.retain(channel);
         (source, input)
     }
 

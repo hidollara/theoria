@@ -5,8 +5,8 @@ use std::{
 
 use super::{TestSink, TestSinkOwner, drain};
 use theoria_event::{
-    Dispatch, DispatchOutcome, DispatchQueue, Dispatcher, DynDispatch, EventSink,
-    SubmissionOutcome, Subscription, channel,
+    Channel, Dispatch, DispatchOutcome, DispatchQueue, Dispatcher, DynDispatch, EventSink,
+    SubmissionOutcome, Subscription,
 };
 
 #[derive(Clone)]
@@ -46,7 +46,8 @@ fn dropping_a_sink_owner_during_generic_contramap_prevents_delivery() {
     let sink = TestSink::from(&handler);
     let handler = Rc::new(RefCell::new(Some(handler)));
     let callback_handler = Rc::clone(&handler);
-    let (provider, source) = channel::<u32>();
+    let channel = Channel::<u32>::new();
+    let source = channel.source();
     Subscription::builder(
         source,
         sink.clone().contramap(move |event| {
@@ -56,10 +57,10 @@ fn dropping_a_sink_owner_during_generic_contramap_prevents_delivery() {
     )
     .owned()
     .via(event_dispatcher.clone())
-    .expect("live provider")
+    .expect("live channel")
     .detach();
 
-    assert!(submit_event(&event_dispatcher, provider.sink(), 1_u32).is_ok());
+    assert!(submit_event(&event_dispatcher, channel.sink(), 1_u32).is_ok());
     assert!(queue.run_next().is_some());
     assert!(queue.run_next().is_some());
     assert!(queue.run_next().is_none());

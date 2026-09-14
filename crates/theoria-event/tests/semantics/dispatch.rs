@@ -6,8 +6,8 @@ use std::{
 
 use super::{TestSink, TestSinkOwner, drain};
 use theoria_event::{
-    Dispatch, DispatchHandle, DispatchOutcome, DispatchQueue, DispatchStatus, Dispatcher,
-    DynDispatch, EventSink, SubmissionOutcome, Subscription, TrackedDispatch, channel,
+    Channel, Dispatch, DispatchHandle, DispatchOutcome, DispatchQueue, DispatchStatus, Dispatcher,
+    DynDispatch, EventSink, SubmissionOutcome, Subscription, TrackedDispatch,
 };
 
 #[derive(Clone)]
@@ -475,13 +475,14 @@ fn a_handler_can_build_and_use_a_source_while_handling_one_dispatch() {
             handler_output.borrow_mut().push(value);
         });
         let sink = TestSink::from(&handler);
-        let (provider, source) = channel::<u32>();
-        let input = provider.sink();
+        let channel = Channel::<u32>::new();
+        let source = channel.source();
+        let input = channel.sink();
         let subscription = Subscription::builder(source.clone(), sink)
             .owned()
             .via(nested_dispatcher.clone())
-            .expect("live provider");
-        dynamic_from_handler.replace(Some((provider, source, handler, subscription)));
+            .expect("live channel");
+        dynamic_from_handler.replace(Some((channel, source, handler, subscription)));
         assert!(submit_event(&nested_dispatcher, &input, 9_u32).is_ok());
     });
     let trigger = TestSink::from(&trigger_handler);

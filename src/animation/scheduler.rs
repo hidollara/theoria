@@ -8,7 +8,7 @@ use std::{
 
 use crate::{
     component::MountContext,
-    event::{ChannelSource, Dispatch, EventProvider, EventSink, OwningSink, channel},
+    event::{Channel, Dispatch, EventSink, OwningSink},
     reactive::Value,
 };
 
@@ -35,8 +35,7 @@ impl FrameTiming {
 }
 
 pub(crate) struct FrameScheduler {
-    provider: EventProvider<FrameOpportunity>,
-    opportunities: ChannelSource<FrameOpportunity>,
+    channel: Channel<FrameOpportunity>,
     requests: Rc<FrameRequests>,
     timing: Rc<FrameTiming>,
     deadline: Option<Instant>,
@@ -49,13 +48,12 @@ impl FrameScheduler {
     }
 
     fn with_timing(origin: Instant, interval: Duration) -> Self {
-        let (provider, opportunities) = channel();
+        let channel = Channel::new();
         let requests = Rc::new(FrameRequests {
             pending: Cell::new(false),
         });
         Self {
-            provider,
-            opportunities,
+            channel,
             requests,
             timing: Rc::new(FrameTiming {
                 origin,
@@ -85,7 +83,7 @@ impl FrameScheduler {
         let frames = context.receive(move |_: FrameOpportunity, context| {
             context.set(&frame, timing.sample(Instant::now()));
         });
-        assert!(context.connect(self.opportunities.clone(), OwningSink::new(frames)));
+        assert!(context.connect(self.channel.source(), OwningSink::new(frames)));
         clock
     }
 
@@ -117,9 +115,9 @@ impl FrameScheduler {
             return false;
         }
         debug_assert_eq!(
-            self.provider.sink().send(FrameOpportunity).run(),
+            self.channel.sink().send(FrameOpportunity).run(),
             crate::event::DispatchOutcome::Completed,
-            "the FrameScheduler owns its live Provider and publishes inline"
+            "the FrameScheduler owns its live Channel and publishes inline"
         );
         true
     }

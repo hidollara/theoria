@@ -1,6 +1,6 @@
 use std::{cell::Cell, cell::RefCell, rc::Rc};
 
-use theoria_event::{ChannelSink, OwningSink, channel};
+use theoria_event::{Channel, ChannelSink, OwningSink};
 
 use super::support::{DrainOutcome, TestRuntime};
 
@@ -46,9 +46,10 @@ fn unmounting_a_connection_owner_disconnects_it() {
 }
 
 #[test]
-fn mounting_rejects_a_source_whose_provider_was_dropped() {
-    let (provider, source) = channel::<u32>();
-    drop(provider);
+fn mounting_rejects_a_source_whose_channel_was_dropped() {
+    let channel = Channel::<u32>::new();
+    let source = channel.source();
+    drop(channel);
 
     let connected = Rc::new(Cell::new(true));
     let mounted_connected = Rc::clone(&connected);
@@ -63,8 +64,9 @@ fn mounting_rejects_a_source_whose_provider_was_dropped() {
 
 #[test]
 fn dynamically_mounted_component_rejects_a_dropped_source() {
-    let (provider, source) = channel::<u32>();
-    drop(provider);
+    let channel = Channel::<u32>::new();
+    let source = channel.source();
+    drop(channel);
 
     let connected = Rc::new(Cell::new(None));
     let handled_connected = Rc::clone(&connected);
@@ -85,13 +87,13 @@ fn dynamically_mounted_component_rejects_a_dropped_source() {
     assert_eq!(connected.get(), Some(false));
 }
 
-enum ProviderCommand {
+enum ChannelOwnerCommand {
     Unmount,
     Probe(u32),
 }
 
 #[test]
-fn a_component_event_input_does_not_keep_its_provider_component_alive() {
+fn a_component_event_input_does_not_keep_its_channel_owner_component_alive() {
     let exported_input = Rc::new(RefCell::new(None::<ChannelSink<u32>>));
     let input_output = Rc::clone(&exported_input);
     let result = Rc::new(Cell::new(None));
@@ -101,17 +103,17 @@ fn a_component_event_input_does_not_keep_its_provider_component_alive() {
         let (unmount_source, unmount_input) = context.event_source::<()>();
         let (probe_source, probe_input) = context.event_source::<u32>();
 
-        context.mount_with(move |provider_owner| {
-            let (_source, input) = provider_owner.event_source::<u32>();
+        context.mount_with(move |channel_owner| {
+            let (_source, input) = channel_owner.event_source::<u32>();
             input_output.replace(Some(input));
-            let unmount = provider_owner.receive(|(): (), context| context.unmount());
-            assert!(provider_owner.connect(unmount_source, OwningSink::new(unmount)));
+            let unmount = channel_owner.receive(|(): (), context| context.unmount());
+            assert!(channel_owner.connect(unmount_source, OwningSink::new(unmount)));
         });
 
         let input = exported_input
             .borrow_mut()
             .take()
-            .expect("provider component exports its non-owning input for this test");
+            .expect("channel-owning component exports its non-owning input for this test");
         context.mount_with(move |probe| {
             let target = probe.receive(move |value: u32, context| {
                 probe_result.set(Some(context.send(&input, value).is_ok()));
@@ -120,16 +122,16 @@ fn a_component_event_input_does_not_keep_its_provider_component_alive() {
         });
 
         context.receive(move |command, context| match command {
-            ProviderCommand::Unmount => assert!(context.send(&unmount_input, ()).is_ok()),
-            ProviderCommand::Probe(value) => {
+            ChannelOwnerCommand::Unmount => assert!(context.send(&unmount_input, ()).is_ok()),
+            ChannelOwnerCommand::Probe(value) => {
                 assert!(context.send(&probe_input, value).is_ok())
             }
         })
     });
 
-    assert!(runtime.send(ProviderCommand::Unmount));
+    assert!(runtime.send(ChannelOwnerCommand::Unmount));
     deliver_all(&mut runtime);
-    assert!(runtime.send(ProviderCommand::Probe(1)));
+    assert!(runtime.send(ChannelOwnerCommand::Probe(1)));
     deliver_all(&mut runtime);
     assert_eq!(result.get(), Some(true));
 }

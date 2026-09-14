@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 use super::{TestSink, TestSinkOwner, drain};
 use theoria_event::{
-    Dispatch, DispatchOutcome, DispatchQueue, EventSink, EventSource, Subscription, channel,
+    Channel, Dispatch, DispatchOutcome, DispatchQueue, EventSink, EventSource, Subscription,
 };
 
 #[test]
@@ -13,13 +13,14 @@ fn a_borrowed_source_runs_without_owning_its_publication() {
     let output = Rc::clone(&values);
     let handler = TestSinkOwner::new(move |value: usize| output.borrow_mut().push(value));
     let sink = TestSink::from(&handler).contramap(|event: &Publication| event.0.len());
-    let (provider, source) = channel::<Publication>();
+    let channel = Channel::<Publication>::new();
+    let source = channel.source();
     Subscription::builder(source, sink)
         .inline()
-        .expect("live Provider")
+        .expect("live Channel")
         .detach();
 
-    provider
+    channel
         .sink()
         .send(Publication(String::from("event")))
         .run();
@@ -34,14 +35,15 @@ fn an_owned_connection_can_defer_a_borrowed_publication() {
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = TestSinkOwner::new(move |value: u32| output.borrow_mut().push(value));
-    let (provider, source) = channel::<u32>();
+    let channel = Channel::<u32>::new();
+    let source = channel.source();
     Subscription::builder(source, TestSink::from(&handler))
         .owned()
         .via(dispatcher.clone())
-        .expect("live Provider")
+        .expect("live Channel")
         .detach();
 
-    provider.sink().send(7).run();
+    channel.sink().send(7).run();
     assert!(values.borrow().is_empty());
     assert!(queue.run_next().is_some());
     assert_eq!(&*values.borrow(), &[7]);
@@ -57,14 +59,15 @@ fn an_rc_channel_defers_move_only_values_without_cloning_the_value() {
     let output = Rc::clone(&values);
     let handler = TestSinkOwner::new(move |value: usize| output.borrow_mut().push(value));
     let sink = TestSink::from(&handler).contramap(|event: Rc<MoveOnly>| event.0.len());
-    let (provider, source) = channel::<Rc<MoveOnly>>();
+    let channel = Channel::<Rc<MoveOnly>>::new();
+    let source = channel.source();
     Subscription::builder(source, sink)
         .owned()
         .via(dispatcher.clone())
-        .expect("live Provider")
+        .expect("live Channel")
         .detach();
 
-    provider
+    channel
         .sink()
         .send(Rc::new(MoveOnly(String::from("shared"))))
         .run();
@@ -82,14 +85,15 @@ fn an_arc_channel_uses_the_same_deferred_source_contract() {
     let output = Rc::clone(&values);
     let handler = TestSinkOwner::new(move |value: usize| output.borrow_mut().push(value));
     let sink = TestSink::from(&handler).contramap(|event: Arc<MoveOnly>| event.0.len());
-    let (provider, source) = channel::<Arc<MoveOnly>>();
+    let channel = Channel::<Arc<MoveOnly>>::new();
+    let source = channel.source();
     Subscription::builder(source, sink)
         .owned()
         .via(dispatcher.clone())
-        .expect("live Provider")
+        .expect("live Channel")
         .detach();
 
-    provider
+    channel
         .sink()
         .send(Arc::new(MoveOnly(String::from("shared"))))
         .run();
@@ -102,14 +106,15 @@ fn dropping_a_subscription_stops_future_publications() {
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = TestSinkOwner::new(move |value: u32| output.borrow_mut().push(value));
-    let (provider, source) = channel::<u32>();
+    let channel = Channel::<u32>::new();
+    let source = channel.source();
     let subscription = Subscription::builder(source, TestSink::from(&handler))
         .owned()
         .inline()
-        .expect("live Provider");
+        .expect("live Channel");
 
     drop(subscription);
-    provider.sink().send(1).run();
+    channel.sink().send(1).run();
 
     assert!(values.borrow().is_empty());
 }
@@ -119,31 +124,33 @@ fn unsubscribing_stops_future_publications() {
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = TestSinkOwner::new(move |value: u32| output.borrow_mut().push(value));
-    let (provider, source) = channel::<u32>();
+    let channel = Channel::<u32>::new();
+    let source = channel.source();
     let subscription = Subscription::builder(source, TestSink::from(&handler))
         .owned()
         .inline()
-        .expect("live Provider");
+        .expect("live Channel");
 
     subscription.unsubscribe();
-    provider.sink().send(1).run();
+    channel.sink().send(1).run();
 
     assert!(values.borrow().is_empty());
 }
 
 #[test]
-fn detaching_leaves_the_subscription_owned_by_the_provider() {
+fn detaching_leaves_the_subscription_owned_by_the_channel() {
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = TestSinkOwner::new(move |value: u32| output.borrow_mut().push(value));
-    let (provider, source) = channel::<u32>();
+    let channel = Channel::<u32>::new();
+    let source = channel.source();
     Subscription::builder(source, TestSink::from(&handler))
         .owned()
         .inline()
-        .expect("live Provider")
+        .expect("live Channel")
         .detach();
 
-    provider.sink().send(1).run();
+    channel.sink().send(1).run();
 
     assert_eq!(&*values.borrow(), &[1]);
 }
@@ -152,14 +159,15 @@ fn detaching_leaves_the_subscription_owned_by_the_provider() {
 fn calling_a_source_unregister_operation_stops_future_publications() {
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
-    let (provider, source) = channel::<u32>();
+    let channel = Channel::<u32>::new();
+    let source = channel.source();
     let unregister = source
         .register(move |value| output.borrow_mut().push(*value))
-        .expect("live Provider");
+        .expect("live Channel");
 
-    provider.sink().send(1).run();
+    channel.sink().send(1).run();
     unregister();
-    provider.sink().send(2).run();
+    channel.sink().send(2).run();
 
     assert_eq!(&*values.borrow(), &[1]);
 }
@@ -168,23 +176,25 @@ fn calling_a_source_unregister_operation_stops_future_publications() {
 fn dropping_a_source_unregister_operation_leaves_the_registration_intact() {
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
-    let (provider, source) = channel::<u32>();
+    let channel = Channel::<u32>::new();
+    let source = channel.source();
     let unregister = source
         .register(move |value| output.borrow_mut().push(*value))
-        .expect("live Provider");
+        .expect("live Channel");
 
     drop(unregister);
-    provider.sink().send(1).run();
+    channel.sink().send(1).run();
 
     assert_eq!(&*values.borrow(), &[1]);
 }
 
 #[test]
-fn source_and_input_do_not_keep_their_provider_alive() {
-    let (provider, source) = channel::<u32>();
-    let input = provider.sink();
+fn source_and_sink_do_not_keep_their_channel_alive() {
+    let channel = Channel::<u32>::new();
+    let source = channel.source();
+    let input = channel.sink();
     let pending = input.send(1);
-    drop(provider);
+    drop(channel);
 
     assert!(source.register(|_| {}).is_none());
     assert_eq!(pending.run(), DispatchOutcome::SinkClosed);
@@ -192,7 +202,8 @@ fn source_and_input_do_not_keep_their_provider_alive() {
 
 #[test]
 fn subscription_changes_during_publication_apply_to_the_next_event() {
-    let (provider, source) = channel::<u32>();
+    let channel = Channel::<u32>::new();
+    let source = channel.source();
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let late_source = source.clone();
@@ -213,14 +224,14 @@ fn subscription_changes_during_publication_apply_to_the_next_event() {
                 )
                 .owned()
                 .inline()
-                .expect("live Provider");
+                .expect("live Channel");
                 install_once.replace(Some(subscription));
             }
         })
-        .expect("live Provider");
+        .expect("live Channel");
 
-    provider.sink().send(1).run();
-    provider.sink().send(2).run();
+    channel.sink().send(1).run();
+    channel.sink().send(2).run();
     unregister_first();
 
     assert_eq!(
@@ -231,19 +242,20 @@ fn subscription_changes_during_publication_apply_to_the_next_event() {
 
 #[test]
 fn subscribers_are_invoked_in_registration_order() {
-    let (provider, source) = channel::<()>();
+    let channel = Channel::<()>::new();
+    let source = channel.source();
     let order = Rc::new(RefCell::new(Vec::new()));
     let first_order = Rc::clone(&order);
     let unregister_first = source
         .clone()
         .register(move |_| first_order.borrow_mut().push(1))
-        .expect("live Provider");
+        .expect("live Channel");
     let second_order = Rc::clone(&order);
     let unregister_second = source
         .register(move |_| second_order.borrow_mut().push(2))
-        .expect("live Provider");
+        .expect("live Channel");
 
-    provider.sink().send(()).run();
+    channel.sink().send(()).run();
     unregister_first();
     unregister_second();
 
@@ -257,13 +269,14 @@ fn unsubscribing_does_not_cancel_an_already_deferred_dispatch() {
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let handler = TestSinkOwner::new(move |value: u32| output.borrow_mut().push(value));
-    let (provider, source) = channel::<u32>();
+    let channel = Channel::<u32>::new();
+    let source = channel.source();
     let subscription = Subscription::builder(source, TestSink::from(&handler))
         .owned()
         .via(dispatcher.clone())
-        .expect("live Provider");
+        .expect("live Channel");
 
-    provider.sink().send(1).run();
+    channel.sink().send(1).run();
     subscription.unsubscribe();
     drain(&mut queue);
 
