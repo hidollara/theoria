@@ -1,8 +1,8 @@
 use std::{cell::Cell, rc::Rc};
 
 use theoria_event::{
-    Dispatch, DispatchOutcome, EventHandler, EventSink, EventSource, FifoDispatcher, Sink,
-    Subscription, channel,
+    Dispatch, DispatchOutcome, EventHandler, EventSink, EventSource, FifoDispatcher,
+    ImmediateDispatcher, Sink, Subscription, channel,
 };
 
 struct BorrowingSource<'value> {
@@ -93,7 +93,7 @@ fn a_user_defined_source_can_lend_a_non_static_event_inline() {
 }
 
 #[test]
-fn a_sink_preserves_its_borrowed_dispatch_type_until_inline_execution() {
+fn a_source_can_send_a_borrowed_dispatch_through_an_accepting_dispatcher() {
     let length = Rc::new(Cell::new(0));
     let owned = String::from("temporary");
 
@@ -101,7 +101,7 @@ fn a_sink_preserves_its_borrowed_dispatch_type_until_inline_execution() {
         .connect(BorrowedLengthSink {
             output: Rc::clone(&length),
         })
-        .inline()
+        .via(ImmediateDispatcher)
         .expect("the Source is available");
 
     assert_eq!(length.get(), 9);
@@ -119,7 +119,7 @@ fn a_dispatcher_accepts_a_sink_specific_dispatch_type() {
         .connect(OwnedSink {
             output: Rc::clone(&output),
         })
-        .via(&dispatcher)
+        .via(dispatcher.as_ref().clone())
         .expect("the Source is available");
 
     assert!(EventSink::from(&provider).send_inline(7).is_ok());

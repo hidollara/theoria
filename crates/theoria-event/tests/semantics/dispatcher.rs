@@ -76,7 +76,7 @@ fn source_input_and_subscription_use_separate_dispatch_steps() {
     source
         .cloned()
         .connect(sink)
-        .via(&dispatcher_input)
+        .via(dispatcher_input.clone())
         .expect("live provider")
         .detach();
 
@@ -120,12 +120,12 @@ fn the_caller_can_stop_between_dispatches_in_a_cyclic_event_chain() {
     let _left_to_right = left_source
         .cloned()
         .connect(EventSink::from(&right_provider))
-        .via(&dispatcher_input)
+        .via(dispatcher_input.clone())
         .expect("live provider");
     let _right_to_left = right_source
         .cloned()
         .connect(EventSink::from(&left_provider))
-        .via(&dispatcher_input)
+        .via(dispatcher_input.clone())
         .expect("live provider");
 
     assert!(

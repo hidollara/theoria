@@ -40,7 +40,7 @@ fn a_cloned_source_can_defer_its_dispatches() {
     source
         .cloned()
         .connect(EventSink::from(&handler))
-        .via(&dispatcher)
+        .via(dispatcher.clone())
         .expect("live Provider")
         .detach();
 
@@ -64,7 +64,7 @@ fn an_rc_channel_defers_move_only_values_without_cloning_the_value() {
     source
         .cloned()
         .connect(sink)
-        .via(&dispatcher)
+        .via(dispatcher.clone())
         .expect("live Provider")
         .detach();
 
@@ -89,7 +89,7 @@ fn an_arc_channel_uses_the_same_deferred_source_contract() {
     source
         .cloned()
         .connect(sink)
-        .via(&dispatcher)
+        .via(dispatcher.clone())
         .expect("live Provider")
         .detach();
 
@@ -234,7 +234,7 @@ fn unsubscribing_does_not_cancel_an_already_deferred_dispatch() {
     let subscription = source
         .cloned()
         .connect(EventSink::from(&handler))
-        .via(&dispatcher)
+        .via(dispatcher.clone())
         .expect("live Provider");
 
     EventSink::from(&provider).send(1).run();

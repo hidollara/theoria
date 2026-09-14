@@ -472,7 +472,7 @@ fn a_handler_can_build_and_use_a_source_while_handling_one_dispatch() {
         let subscription = source
             .cloned()
             .connect(sink)
-            .via(&nested_dispatcher)
+            .via(nested_dispatcher.clone())
             .expect("live provider");
         dynamic_from_handler.replace(Some((provider, source, handler, subscription)));
         assert!(submit_event(&nested_dispatcher, &input, 9_u32).is_ok());

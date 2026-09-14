@@ -103,6 +103,7 @@ impl<'mount> MountContext<'mount> {
         for<'event> K: Sink<S::Event<'event>>,
         for<'event> Dispatcher: EventDispatcher<<K as Sink<S::Event<'event>>>::Dispatch>,
     {
+        let dispatcher = dispatcher.as_ref().clone();
         let Some(subscription) = source.connect(sink).via(dispatcher) else {
             return false;
         };

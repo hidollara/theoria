@@ -1,7 +1,7 @@
 use std::fmt;
 
 use crate::{
-    dispatch::{Dispatch, Dispatcher, EventDispatcher},
+    dispatch::{EventDispatcher, ImmediateDispatcher},
     sink::Sink,
 };
 
@@ -40,21 +40,22 @@ where
     pub fn inline(self) -> Option<Subscription>
     where
         for<'event> K: Sink<S::Event<'event>>,
+        for<'event> ImmediateDispatcher: EventDispatcher<<K as Sink<S::Event<'event>>>::Dispatch>,
     {
-        let Self { source, sink } = self;
-        source.subscribe(move |event| {
-            let _ = sink.send(event).run();
-        })
+        self.via(ImmediateDispatcher)
     }
 
-    /// Submits every generated self-contained Dispatch to `dispatcher`.
-    pub fn via(self, dispatcher: impl AsRef<Dispatcher>) -> Option<Subscription>
+    /// Submits every generated Dispatch to `dispatcher`.
+    ///
+    /// The selected Dispatcher determines which Dispatch lifetimes and
+    /// capabilities it accepts.
+    pub fn via<D>(self, dispatcher: D) -> Option<Subscription>
     where
+        D: 'static,
         for<'event> K: Sink<S::Event<'event>>,
-        for<'event> Dispatcher: EventDispatcher<<K as Sink<S::Event<'event>>>::Dispatch>,
+        for<'event> D: EventDispatcher<<K as Sink<S::Event<'event>>>::Dispatch>,
     {
         let Self { source, sink } = self;
-        let dispatcher = dispatcher.as_ref().clone();
         source.subscribe(move |event| {
             let _ = EventDispatcher::submit(&dispatcher, sink.send(event));
         })

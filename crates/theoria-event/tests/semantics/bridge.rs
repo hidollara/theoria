@@ -99,7 +99,7 @@ fn each_subscriber_selects_its_own_dispatcher() {
         .source()
         .cloned()
         .connect(sink)
-        .via(&event_dispatcher)
+        .via(event_dispatcher.clone())
         .expect("live bridge")
         .detach();
 

@@ -48,7 +48,7 @@ fn a_sink_alive_at_dispatch_start_finishes_that_dispatch() {
             callback_handler.borrow_mut().take();
             event
         }))
-        .via(&event_dispatcher)
+        .via(event_dispatcher.clone())
         .expect("live provider")
         .detach();
 
