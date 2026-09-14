@@ -2,13 +2,13 @@ use std::{fmt, rc::Rc};
 
 use crate::{
     component::UpdateContext,
-    event::{EventDispatch, EventSink},
+    event::{DynDispatch, EventSink},
     geometry::Point,
     interaction::HitRegion,
     transform::Projective2,
 };
 
-type StoredSend<E> = dyn Fn(E) -> EventDispatch<'static>;
+type StoredSend<E> = dyn Fn(E) -> DynDispatch<'static>;
 
 /// The gesture layer's shared storage form for heterogeneous event sinks.
 #[derive(Clone)]
@@ -23,13 +23,13 @@ impl<E> GestureSink<E> {
         S::Dispatch: 'static,
     {
         Self {
-            send: Rc::new(move |event| EventDispatch::erase(sink.send(event))),
+            send: Rc::new(move |event| DynDispatch::new(sink.send(event))),
         }
     }
 }
 
 impl<E> EventSink<E> for GestureSink<E> {
-    type Dispatch = EventDispatch<'static>;
+    type Dispatch = DynDispatch<'static>;
 
     fn send(&self, event: E) -> Self::Dispatch {
         (self.send)(event)

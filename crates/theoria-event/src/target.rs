@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{
-    dispatch::{DispatchOutcome, EventDispatch},
+    dispatch::{Dispatch, DispatchOutcome},
     sink::EventSink,
 };
 
@@ -20,7 +20,7 @@ pub(crate) trait EventEndpoint: 'static {
 /// A cloneable, non-owning reference to an event endpoint.
 ///
 /// An [`EventTarget`] does not keep its endpoint alive. [`Self::send`] creates
-/// an [`EventDispatch`], which checks the endpoint when it runs.
+/// a [`TargetDispatch`], which checks the endpoint when it runs.
 pub struct EventTarget<E> {
     endpoint: Weak<dyn Any>,
     receive: Rc<ReceiveFn<E>>,
@@ -43,12 +43,11 @@ impl<E> EventTarget<E> {
     }
 
     /// Builds one invocation carrying `event` to this target.
-    pub fn send<'event>(&self, event: E) -> EventDispatch<'event>
-    where
-        E: 'event,
-    {
-        let target = self.clone();
-        EventDispatch::new(move || target.deliver(event))
+    pub fn send(&self, event: E) -> TargetDispatch<E> {
+        TargetDispatch {
+            target: self.clone(),
+            event,
+        }
     }
 
     /// Delivers one event immediately, returning it if the endpoint is gone.
@@ -69,11 +68,32 @@ impl<E> EventTarget<E> {
     }
 }
 
-impl<E: 'static> EventSink<E> for EventTarget<E> {
-    type Dispatch = EventDispatch<'static>;
+impl<E> EventSink<E> for EventTarget<E> {
+    type Dispatch = TargetDispatch<E>;
 
     fn send(&self, event: E) -> Self::Dispatch {
         EventTarget::send(self, event)
+    }
+}
+
+/// One concrete invocation of an [`EventTarget`].
+#[must_use = "a TargetDispatch must be run, submitted, or intentionally discarded"]
+pub struct TargetDispatch<E> {
+    target: EventTarget<E>,
+    event: E,
+}
+
+impl<E> Dispatch for TargetDispatch<E> {
+    fn run(self) -> DispatchOutcome {
+        self.target.deliver(self.event)
+    }
+}
+
+impl<E> fmt::Debug for TargetDispatch<E> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TargetDispatch")
+            .finish_non_exhaustive()
     }
 }
 

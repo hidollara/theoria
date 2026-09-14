@@ -5,10 +5,10 @@ use std::{
     rc::{Rc, Weak},
 };
 
-use crate::dispatch::{Dispatch, Dispatcher, EventDispatch, EventDispatcher, SubmissionOutcome};
+use crate::dispatch::{Dispatch, Dispatcher, DynDispatch, EventDispatcher, SubmissionOutcome};
 
 struct EventQueue {
-    pending: RefCell<VecDeque<EventDispatch<'static>>>,
+    pending: RefCell<VecDeque<DynDispatch<'static>>>,
 }
 
 impl EventQueue {
@@ -18,7 +18,7 @@ impl EventQueue {
         }
     }
 
-    fn enqueue(&self, dispatch: EventDispatch<'static>) {
+    fn enqueue(&self, dispatch: DynDispatch<'static>) {
         self.pending.borrow_mut().push_back(dispatch);
     }
 
@@ -83,7 +83,7 @@ where
     D: Dispatch + 'static,
 {
     fn submit(&self, dispatch: D) -> Result<SubmissionOutcome, D> {
-        self.queue.enqueue(EventDispatch::erase(dispatch));
+        self.queue.enqueue(DynDispatch::new(dispatch));
         Ok(SubmissionOutcome::Deferred)
     }
 }
@@ -92,11 +92,11 @@ struct QueuedDispatcher {
     queue: Weak<EventQueue>,
 }
 
-impl EventDispatcher<EventDispatch<'static>> for QueuedDispatcher {
+impl EventDispatcher<DynDispatch<'static>> for QueuedDispatcher {
     fn submit(
         &self,
-        dispatch: EventDispatch<'static>,
-    ) -> Result<SubmissionOutcome, EventDispatch<'static>> {
+        dispatch: DynDispatch<'static>,
+    ) -> Result<SubmissionOutcome, DynDispatch<'static>> {
         let Some(queue) = self.queue.upgrade() else {
             return Err(dispatch);
         };

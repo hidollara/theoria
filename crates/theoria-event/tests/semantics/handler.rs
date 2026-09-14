@@ -5,7 +5,9 @@ use std::{
 };
 
 use super::drain;
-use theoria_event::{DispatchOutcome, Dispatcher, EventHandler, EventTarget, FifoDispatcher};
+use theoria_event::{
+    Dispatch, DispatchOutcome, Dispatcher, EventHandler, EventTarget, FifoDispatcher,
+};
 
 #[test]
 fn direct_delivery_returns_events_after_handler_drop() {

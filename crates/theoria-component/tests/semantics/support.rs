@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use theoria_component::{ComponentInstance, MountContext, UpdateContext};
-use theoria_event::{EventDispatch, EventTarget, FifoDispatcher, SubmissionOutcome};
+use theoria_event::{EventTarget, FifoDispatcher, SubmissionOutcome, TargetDispatch};
 use theoria_reactive::ReactiveError;
 
 pub(super) struct TestDriver {
@@ -23,7 +23,7 @@ impl TestDriver {
         &self,
         sink: impl Into<EventTarget<E>>,
         event: E,
-    ) -> Result<SubmissionOutcome, EventDispatch<'static>> {
+    ) -> Result<SubmissionOutcome, TargetDispatch<E>> {
         self.instance.send(sink.into(), event)
     }
 

@@ -2,8 +2,8 @@ use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 use super::drain;
 use theoria_event::{
-    DispatchOutcome, Dispatcher, EventHandler, EventSink, EventSource, EventTarget, FifoDispatcher,
-    OwningSink, Subscription, channel,
+    Dispatch, DispatchOutcome, Dispatcher, EventHandler, EventSink, EventSource, EventTarget,
+    FifoDispatcher, OwningSink, Subscription, channel,
 };
 
 #[test]

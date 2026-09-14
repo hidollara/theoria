@@ -5,13 +5,13 @@ use std::{
 
 use super::drain;
 use theoria_event::{
-    Dispatch, DispatchOutcome, Dispatcher, EventDispatch, EventDispatcher, EventHandler, EventSink,
+    Dispatch, DispatchOutcome, Dispatcher, DynDispatch, EventDispatcher, EventHandler, EventSink,
     EventSource, EventTarget, FifoDispatcher, OwningSink, SubmissionOutcome, channel,
 };
 
 #[derive(Clone)]
 struct TestDispatcher {
-    pending: Rc<RefCell<Vec<EventDispatch<'static>>>>,
+    pending: Rc<RefCell<Vec<DynDispatch<'static>>>>,
 }
 
 fn submit_event<E, S>(
@@ -26,11 +26,11 @@ where
     dispatcher.submit(sink.send(event))
 }
 
-impl EventDispatcher<EventDispatch<'static>> for TestDispatcher {
+impl EventDispatcher<DynDispatch<'static>> for TestDispatcher {
     fn submit(
         &self,
-        dispatch: EventDispatch<'static>,
-    ) -> Result<SubmissionOutcome, EventDispatch<'static>> {
+        dispatch: DynDispatch<'static>,
+    ) -> Result<SubmissionOutcome, DynDispatch<'static>> {
         self.pending.borrow_mut().push(dispatch);
         Ok(SubmissionOutcome::Deferred)
     }
@@ -113,7 +113,7 @@ fn a_contramap_sink_converts_its_input_during_dispatch_execution() {
 }
 
 #[test]
-fn event_dispatch_erases_different_concrete_dispatch_types_at_a_storage_boundary() {
+fn dyn_dispatch_erases_different_concrete_dispatch_types_at_a_storage_boundary() {
     let values = Rc::new(RefCell::new(Vec::new()));
     let first_output = Rc::clone(&values);
     let first = EventHandler::new(move |value: u32| first_output.borrow_mut().push(value));
@@ -122,8 +122,8 @@ fn event_dispatch_erases_different_concrete_dispatch_types_at_a_storage_boundary
         EventHandler::new(move |value: usize| second_output.borrow_mut().push(value as u32));
 
     let dispatches = vec![
-        EventDispatch::erase(EventTarget::from(&first).send(3_u32)),
-        EventDispatch::erase(
+        DynDispatch::new(EventTarget::from(&first).send(3_u32)),
+        DynDispatch::new(
             EventTarget::from(&second)
                 .contramap(|value: String| value.len())
                 .send(String::from("seven")),

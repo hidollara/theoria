@@ -6,21 +6,21 @@ use std::{
 
 use super::drain;
 use theoria_event::{
-    Dispatch, DispatchHandle, DispatchOutcome, DispatchStatus, Dispatcher, EventDispatch,
+    Dispatch, DispatchHandle, DispatchOutcome, DispatchStatus, Dispatcher, DynDispatch,
     EventDispatcher, EventHandler, EventSource, EventTarget, FifoDispatcher, OwningSink,
-    SubmissionOutcome, TrackedDispatch, channel,
+    SubmissionOutcome, TargetDispatch, TrackedDispatch, channel,
 };
 
 #[derive(Clone)]
 struct TestDispatcher {
-    pending: Rc<RefCell<VecDeque<EventDispatch<'static>>>>,
+    pending: Rc<RefCell<VecDeque<DynDispatch<'static>>>>,
 }
 
-impl EventDispatcher<EventDispatch<'static>> for TestDispatcher {
+impl EventDispatcher<DynDispatch<'static>> for TestDispatcher {
     fn submit(
         &self,
-        dispatch: EventDispatch<'static>,
-    ) -> Result<SubmissionOutcome, EventDispatch<'static>> {
+        dispatch: DynDispatch<'static>,
+    ) -> Result<SubmissionOutcome, DynDispatch<'static>> {
         self.pending.borrow_mut().push_back(dispatch);
         Ok(SubmissionOutcome::Deferred)
     }
@@ -44,7 +44,7 @@ fn submit_event<E: 'static>(
     dispatcher: &Dispatcher,
     sink: impl Into<EventTarget<E>>,
     event: E,
-) -> Result<SubmissionOutcome, EventDispatch<'static>> {
+) -> Result<SubmissionOutcome, TargetDispatch<E>> {
     dispatcher.submit(sink.into().send(event))
 }
 
@@ -52,17 +52,17 @@ fn submit_tracked<E: 'static>(
     dispatcher: &Dispatcher,
     sink: impl Into<EventTarget<E>>,
     event: E,
-) -> Result<DispatchHandle, TrackedDispatch<EventDispatch<'static>>> {
+) -> Result<DispatchHandle, TrackedDispatch<TargetDispatch<E>>> {
     let dispatch = sink.into().send(event).tracked();
     let handle = dispatch.handle();
     dispatcher.submit(dispatch).map(|_| handle)
 }
 
-impl EventDispatcher<EventDispatch<'static>> for RejectingDispatcher {
+impl EventDispatcher<DynDispatch<'static>> for RejectingDispatcher {
     fn submit(
         &self,
-        dispatch: EventDispatch<'static>,
-    ) -> Result<SubmissionOutcome, EventDispatch<'static>> {
+        dispatch: DynDispatch<'static>,
+    ) -> Result<SubmissionOutcome, DynDispatch<'static>> {
         Err(dispatch)
     }
 }

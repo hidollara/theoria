@@ -72,12 +72,12 @@ where
 /// A cloneable capability for submitting self-contained event Dispatches.
 #[derive(Clone)]
 pub struct Dispatcher {
-    endpoint: Rc<dyn EventDispatcher<EventDispatch<'static>>>,
+    endpoint: Rc<dyn EventDispatcher<DynDispatch<'static>>>,
 }
 
 impl Dispatcher {
     /// Wraps an event Dispatcher as a cloneable submission capability.
-    pub fn new(dispatcher: impl EventDispatcher<EventDispatch<'static>> + 'static) -> Self {
+    pub fn new(dispatcher: impl EventDispatcher<DynDispatch<'static>> + 'static) -> Self {
         Self {
             endpoint: Rc::new(dispatcher),
         }
@@ -97,7 +97,7 @@ where
     D: Dispatch + 'static,
 {
     fn submit(&self, dispatch: D) -> Result<SubmissionOutcome, D> {
-        let erased = EventDispatch::recoverable(dispatch);
+        let erased = DynDispatch::recoverable(dispatch);
 
         match self.endpoint.submit(erased) {
             Ok(outcome) => Ok(outcome),
@@ -153,25 +153,24 @@ impl fmt::Debug for DispatchHandle {
     }
 }
 
-/// One invocation of an event sink.
+/// A type-erased Dispatch for heterogeneous storage.
 ///
-/// The Dispatch owns its event and every reusable operation copied from its
-/// sink. Its lifetime is bounded by the shortest-lived value captured by that
-/// invocation. Any Dispatch may run immediately; only a `'static` Dispatch may
-/// be submitted to a [`Dispatcher`].
-#[must_use = "an EventDispatch must be run, submitted, or intentionally discarded"]
-pub struct EventDispatch<'event> {
+/// Erasure preserves the lifetime of the concrete Dispatch. It intentionally
+/// does not promise to preserve auto traits such as [`Send`]; storage that
+/// needs those properties should use an appropriately constrained erasure.
+#[must_use = "a DynDispatch must be run, submitted, or intentionally discarded"]
+pub struct DynDispatch<'event> {
     operation: DispatchOperation<'event>,
 }
 
-impl<'event> EventDispatch<'event> {
-    pub(crate) fn new(operation: impl FnOnce() -> DispatchOutcome + 'event) -> Self {
+impl<'event> DynDispatch<'event> {
+    fn from_operation(operation: impl FnOnce() -> DispatchOutcome + 'event) -> Self {
         Self {
             operation: DispatchOperation::Scoped(Box::new(operation)),
         }
     }
 
-    /// Runs this event-sink invocation exactly once.
+    /// Runs the erased Dispatch exactly once.
     pub fn run(self) -> DispatchOutcome {
         self.operation.run()
     }
@@ -180,29 +179,29 @@ impl<'event> EventDispatch<'event> {
     ///
     /// This is useful at heterogeneous storage boundaries. Code that can keep
     /// a concrete Dispatch type should retain it instead.
-    pub fn erase<D>(dispatch: D) -> Self
+    pub fn new<D>(dispatch: D) -> Self
     where
         D: Dispatch + 'event,
     {
-        Self::new(move || dispatch.run())
+        Self::from_operation(move || dispatch.run())
     }
 
-    fn recoverable<D>(dispatch: D) -> EventDispatch<'static>
+    fn recoverable<D>(dispatch: D) -> DynDispatch<'static>
     where
         D: Dispatch + 'static,
     {
-        EventDispatch {
+        DynDispatch {
             operation: DispatchOperation::Recoverable(Box::new(ConcreteDispatch(dispatch))),
         }
     }
 }
 
-impl EventDispatch<'static> {
+impl DynDispatch<'static> {
     fn into_concrete<D>(self) -> D
     where
         D: Dispatch + 'static,
     {
-        let EventDispatch { operation } = self;
+        let DynDispatch { operation } = self;
         let DispatchOperation::Recoverable(operation) = operation else {
             panic!("a rejecting Dispatcher must return its original Dispatch");
         };
@@ -213,16 +212,16 @@ impl EventDispatch<'static> {
     }
 }
 
-impl Dispatch for EventDispatch<'_> {
+impl Dispatch for DynDispatch<'_> {
     fn run(self) -> DispatchOutcome {
-        EventDispatch::run(self)
+        DynDispatch::run(self)
     }
 }
 
-impl fmt::Debug for EventDispatch<'_> {
+impl fmt::Debug for DynDispatch<'_> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
-            .debug_struct("EventDispatch")
+            .debug_struct("DynDispatch")
             .finish_non_exhaustive()
     }
 }
