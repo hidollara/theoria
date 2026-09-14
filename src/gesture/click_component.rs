@@ -1,6 +1,6 @@
 use crate::{
     component::{Component, MountContext},
-    event::{ChannelSource, EventSink},
+    event::{ChannelSource, EventSink, OwningSink},
     input::pointer::PointerEvent,
 };
 
@@ -43,7 +43,7 @@ impl Component for ClickGesture {
                 let _ = context.send(&clicks, click);
             }
         });
-        assert!(context.connect(pointers.cloned(), input));
+        assert!(context.connect(pointers, OwningSink::new(input)));
     }
 }
 
@@ -99,7 +99,7 @@ mod tests {
                 output.borrow_mut().push(event);
             });
 
-            context.connect(click_source.cloned(), recorder);
+            context.connect(click_source, OwningSink::new(recorder));
 
             let input = context.receive(move |event: PointerEvent, context| {
                 let _ = context.send(&pointer_events, event);

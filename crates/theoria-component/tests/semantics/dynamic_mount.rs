@@ -4,7 +4,7 @@ use std::{
 };
 
 use theoria_component::{Component, MountContext, UpdateContext};
-use theoria_event::{ChannelSource, EventSink};
+use theoria_event::{ChannelSource, EventSink, OwningSink};
 
 use super::support::{DrainOutcome, HandlesEvent, TestRuntime, receive};
 
@@ -47,7 +47,7 @@ struct U32Subscriber {
 impl Component for U32Subscriber {
     fn mount(self, context: &mut MountContext<'_>) {
         let target = context.receive(move |value, _context| self.values.borrow_mut().push(value));
-        assert!(context.connect(self.source.cloned(), target));
+        assert!(context.connect(self.source, OwningSink::new(target)));
     }
 }
 
@@ -108,7 +108,7 @@ fn a_dynamically_mounted_component_owns_reactive_nodes_created_by_its_builder() 
             let handler = handler_context.receive(move |value, context: &mut UpdateContext<'_>| {
                 context.modify(&count, |count| *count += value);
             });
-            assert!(handler_context.connect(source.cloned(), handler));
+            assert!(handler_context.connect(source, OwningSink::new(handler)));
         });
         receive(context, OwnedU32Publisher { input })
     });

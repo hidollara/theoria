@@ -2,7 +2,7 @@ use std::{cell::Cell, rc::Rc};
 
 use theoria_event::{
     Dispatch, DispatchOutcome, EventHandler, EventSink, EventSource, FifoDispatcher,
-    ImmediateDispatcher, Sink, Subscription, channel,
+    ImmediateDispatcher, OwningSink, Sink, Subscription, channel,
 };
 
 struct BorrowingSource<'value> {
@@ -115,10 +115,9 @@ fn a_dispatcher_accepts_a_sink_specific_dispatch_type() {
     let (provider, source) = channel::<u32>();
 
     let subscription = source
-        .cloned()
-        .connect(OwnedSink {
+        .connect(OwningSink::new(OwnedSink {
             output: Rc::clone(&output),
-        })
+        }))
         .via(dispatcher.as_ref().clone())
         .expect("the Source is available");
 

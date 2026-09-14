@@ -8,7 +8,7 @@ use std::{
 
 use crate::{
     component::MountContext,
-    event::{ChannelSource, EventProvider, EventSink, channel},
+    event::{ChannelSource, EventProvider, EventSink, OwningSink, channel},
     reactive::Value,
 };
 
@@ -85,7 +85,7 @@ impl FrameScheduler {
         let frames = context.receive(move |_: FrameOpportunity, context| {
             context.set(&frame, timing.sample(Instant::now()));
         });
-        assert!(context.connect(self.opportunities.cloned(), frames));
+        assert!(context.connect(self.opportunities.clone(), OwningSink::new(frames)));
         clock
     }
 

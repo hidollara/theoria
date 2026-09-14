@@ -1,6 +1,6 @@
 use crate::{
     component::{Component, MountContext},
-    event::{ChannelSource, EventSink},
+    event::{ChannelSource, EventSink, OwningSink},
     input::pointer::PointerEvent,
 };
 
@@ -39,7 +39,7 @@ impl Component for DragGesture {
                 let _ = context.send(&drags, drag);
             }
         });
-        assert!(context.connect(pointers.cloned(), input));
+        assert!(context.connect(pointers, OwningSink::new(input)));
     }
 }
 
@@ -94,7 +94,7 @@ mod tests {
             let recorder = context.receive(move |event: Drag, _context| {
                 output.borrow_mut().push(event);
             });
-            context.connect(drag_source.cloned(), recorder);
+            context.connect(drag_source, OwningSink::new(recorder));
             context.receive(move |event: PointerEvent, context| {
                 let _ = context.send(&pointer_events, event);
             })

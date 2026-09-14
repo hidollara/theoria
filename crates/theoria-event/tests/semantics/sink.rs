@@ -6,7 +6,7 @@ use std::{
 use super::drain;
 use theoria_event::{
     DispatchOutcome, Dispatcher, EventDispatch, EventDispatcher, EventHandler, EventSink,
-    EventSource, FifoDispatcher, SubmissionOutcome, channel,
+    EventSource, FifoDispatcher, OwningSink, SubmissionOutcome, channel,
 };
 
 struct TestDispatcher {
@@ -43,11 +43,10 @@ fn a_sink_alive_at_dispatch_start_finishes_that_dispatch() {
     let callback_handler = Rc::clone(&handler);
     let (provider, source) = channel::<u32>();
     source
-        .cloned()
-        .connect(sink.contramap(move |event| {
+        .connect(OwningSink::new(sink.contramap(move |event| {
             callback_handler.borrow_mut().take();
             event
-        }))
+        })))
         .via(event_dispatcher.clone())
         .expect("live provider")
         .detach();

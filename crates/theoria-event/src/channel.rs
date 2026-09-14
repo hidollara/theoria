@@ -58,30 +58,11 @@ impl<E: 'static> fmt::Debug for EventProvider<E> {
 
 /// A cloneable, non-owning view of one typed channel.
 ///
-/// Select whether publications are borrowed or cloned before connecting this
-/// Source to a Sink. That choice determines whether a generated Dispatch can
-/// outlive the publication call.
+/// A Channel Source lends each publication to its subscribers. Connect it to
+/// an [`crate::sink_adapter::OwningSink`] when the resulting Dispatch must own
+/// the event and outlive the publication call.
 pub struct ChannelSource<E: 'static> {
     state: Weak<ChannelState<E>>,
-}
-
-impl<E: 'static> ChannelSource<E> {
-    /// Borrows each publication for an inline-only connection.
-    pub fn borrowed(&self) -> BorrowedChannelSource<E> {
-        BorrowedChannelSource {
-            state: self.state.clone(),
-        }
-    }
-
-    /// Clones each publication into a self-contained event.
-    pub fn cloned(&self) -> ClonedChannelSource<E>
-    where
-        E: Clone,
-    {
-        ClonedChannelSource {
-            state: self.state.clone(),
-        }
-    }
 }
 
 impl<E: 'static> Clone for ChannelSource<E> {
@@ -100,12 +81,7 @@ impl<E: 'static> fmt::Debug for ChannelSource<E> {
     }
 }
 
-/// A Channel Source view that lends each publication.
-pub struct BorrowedChannelSource<E: 'static> {
-    state: Weak<ChannelState<E>>,
-}
-
-impl<E: 'static> EventSource for BorrowedChannelSource<E> {
+impl<E: 'static> EventSource for ChannelSource<E> {
     type Event<'event> = &'event E;
 
     fn subscribe<F>(self, receive: F) -> Option<Subscription>
@@ -113,29 +89,6 @@ impl<E: 'static> EventSource for BorrowedChannelSource<E> {
         F: for<'event> Fn(Self::Event<'event>) + 'static,
     {
         Some(self.state.upgrade()?.subscribe(move |event| receive(event)))
-    }
-}
-
-/// A Channel Source view that clones each publication.
-pub struct ClonedChannelSource<E: 'static> {
-    state: Weak<ChannelState<E>>,
-}
-
-impl<E> EventSource for ClonedChannelSource<E>
-where
-    E: Clone + 'static,
-{
-    type Event<'event> = E;
-
-    fn subscribe<F>(self, receive: F) -> Option<Subscription>
-    where
-        F: for<'event> Fn(Self::Event<'event>) + 'static,
-    {
-        Some(
-            self.state
-                .upgrade()?
-                .subscribe(move |event| receive(event.clone())),
-        )
     }
 }
 

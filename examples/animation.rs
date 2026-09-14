@@ -3,6 +3,7 @@ use std::f32::consts::TAU;
 use theoria::{
     canvas::{Canvas, CanvasView, Composite, Coverage},
     color::Color,
+    event::OwningSink,
     geometry::Point,
     input::pointer::{PointerButton, PointerEvent, PointerPhase},
     math::{Matrix2, Vector2},
@@ -35,7 +36,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 };
                 context.set(&pointer, visual);
             });
-            assert!(context.connect(window.pointer().cloned(), pointer_events.clone()));
+            assert!(context.connect(
+                window.pointer().clone(),
+                OwningSink::new(pointer_events.clone())
+            ));
 
             let clock = window.frame_clock();
             let frame = clock.frame();

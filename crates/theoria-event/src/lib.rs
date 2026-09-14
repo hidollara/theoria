@@ -7,8 +7,9 @@
 //! [`FifoDispatcher`] provides serialized FIFO execution.
 //!
 //! [`channel`] creates an owning [`EventProvider`] and its non-owning
-//! [`ChannelSource`]. A Source connection selects whether publications are
-//! borrowed for immediate execution or cloned into self-contained Dispatches.
+//! [`ChannelSource`]. A Channel Source lends each publication; an
+//! [`OwningSink`] can turn that borrow into a self-contained Dispatch at the
+//! send boundary.
 //! [`bridge`] pairs a local [`EventBridge`] with a thread-safe [`BridgeSink`].
 
 mod bridge;
@@ -21,9 +22,7 @@ mod sink_adapter;
 mod source;
 
 pub use bridge::{BridgeDispatch, BridgeProgress, BridgeSink, EventBridge, bridge};
-pub use channel::{
-    BorrowedChannelSource, ChannelSource, ClonedChannelSource, EventProvider, channel,
-};
+pub use channel::{ChannelSource, EventProvider, channel};
 pub use dispatch::{
     Dispatch, DispatchOutcome, DispatchReceipt, DispatchStatus, Dispatcher, EventDispatch,
     EventDispatcher, ImmediateDispatcher, SubmissionOutcome, TrackedDispatch,

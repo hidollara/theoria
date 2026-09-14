@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc, thread};
 
 use theoria_event::{
     BridgeDispatch, BridgeProgress, BridgeSink, Dispatch, DispatchOutcome, Dispatcher,
-    EventHandler, EventSink, EventSource, FifoDispatcher, Sink, bridge,
+    EventHandler, EventSink, EventSource, FifoDispatcher, OwningSink, Sink, bridge,
 };
 
 fn assert_send_sync<T: Send + Sync>() {}
@@ -35,8 +35,7 @@ fn a_value_crosses_a_thread_boundary_into_a_local_source() {
     let sink = EventSink::from(&handler);
     bridge
         .source()
-        .cloned()
-        .connect(sink)
+        .connect(OwningSink::new(sink))
         .inline()
         .expect("live bridge")
         .detach();
@@ -85,8 +84,7 @@ fn a_bridge_forwards_events_in_receive_order() {
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
     bridge
         .source()
-        .cloned()
-        .connect(EventSink::from(&handler))
+        .connect(OwningSink::new(EventSink::from(&handler)))
         .inline()
         .expect("live bridge")
         .detach();
@@ -119,8 +117,7 @@ fn each_subscriber_selects_its_own_dispatcher() {
     let sink = EventSink::from(&handler);
     bridge
         .source()
-        .cloned()
-        .connect(sink)
+        .connect(OwningSink::new(sink))
         .via(event_dispatcher.clone())
         .expect("live bridge")
         .detach();

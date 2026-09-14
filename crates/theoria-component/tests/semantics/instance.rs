@@ -6,7 +6,7 @@ use std::{
 use theoria_component::ComponentInstance;
 use theoria_event::{
     BridgeProgress, DispatchOutcome, DispatchStatus, Dispatcher, EventSink, FifoDispatcher,
-    ImmediateDispatcher, SubmissionOutcome, bridge,
+    ImmediateDispatcher, OwningSink, SubmissionOutcome, bridge,
 };
 
 #[test]
@@ -165,7 +165,7 @@ fn an_inline_connection_handles_a_publication_on_the_publishing_stack() {
         let sink = context.receive(move |value: u32, _context| {
             output.borrow_mut().push(value);
         });
-        assert!(context.connect_inline(source.cloned(), sink));
+        assert!(context.connect_inline(source, OwningSink::new(sink)));
         mounted_input.replace(Some(source_input));
     });
     let input = input
@@ -191,7 +191,7 @@ fn a_connection_accepts_a_dispatcher_without_erasing_it() {
     let instance = ComponentInstance::new(&dispatcher, move |context| {
         let (source, source_input) = context.event_source::<u32>();
         let sink = context.receive(move |value, _context| output.set(value));
-        assert!(context.connect_via(ImmediateDispatcher, source.cloned(), sink));
+        assert!(context.connect_via(ImmediateDispatcher, source, OwningSink::new(sink)));
         mounted_input.replace(Some(source_input));
     });
     let input = input
@@ -299,11 +299,11 @@ fn one_source_can_connect_through_default_and_explicit_dispatchers() {
             priority_output.borrow_mut().push(("priority", value));
         });
 
-        assert!(context.connect(source.cloned(), default_sink));
+        assert!(context.connect(source.clone(), OwningSink::new(default_sink)));
         assert!(context.connect_via(
             mounted_priority_input.clone(),
-            source.cloned(),
-            priority_sink,
+            source,
+            OwningSink::new(priority_sink),
         ));
         mounted_input.replace(Some(source_input));
     });

@@ -1,6 +1,6 @@
 use std::{cell::RefCell, rc::Rc};
 
-use theoria_event::EventSink;
+use theoria_event::{EventSink, OwningSink};
 
 use super::support::{DrainOutcome, TestDriver, TestRuntime};
 
@@ -48,7 +48,7 @@ fn a_component_can_create_a_source_while_handling_an_event() {
                             values.borrow_mut().push(value);
                         });
                         let (source, sink) = child.event_source::<u32>();
-                        assert!(child.connect(source.cloned(), target.clone()));
+                        assert!(child.connect(source, OwningSink::new(target.clone())));
                         input.replace(Some(sink));
                     }));
                 }
@@ -84,12 +84,16 @@ fn one_source_supports_repeated_connections_and_cloneable_inputs() {
         });
         let (source, input) = context.event_source::<Rc<MoveOnlyEvent>>();
         context.connect(
-            source.cloned(),
-            first.contramap(|event: Rc<MoveOnlyEvent>| format!("first:{}", event.0)),
+            source.clone(),
+            OwningSink::new(
+                first.contramap(|event: Rc<MoveOnlyEvent>| format!("first:{}", event.0)),
+            ),
         );
         context.connect(
-            source.cloned(),
-            second.contramap(|event: Rc<MoveOnlyEvent>| format!("second:{}", event.0)),
+            source,
+            OwningSink::new(
+                second.contramap(|event: Rc<MoveOnlyEvent>| format!("second:{}", event.0)),
+            ),
         );
         let first = input.clone();
         let second = input;
@@ -130,12 +134,12 @@ fn sources_with_the_same_event_type_keep_distinct_identities() {
         let (left_source, left) = context.event_source::<u32>();
         let (right_source, right) = context.event_source::<u32>();
         context.connect(
-            left_source.cloned(),
-            target.contramap(|value| format!("left:{value}")),
+            left_source,
+            OwningSink::new(target.contramap(|value| format!("left:{value}"))),
         );
         context.connect(
-            right_source.cloned(),
-            target.contramap(|value| format!("right:{value}")),
+            right_source,
+            OwningSink::new(target.contramap(|value| format!("right:{value}"))),
         );
 
         context.receive(move |event: SelectedSource, context| match event {
@@ -160,8 +164,8 @@ fn source_input_and_handler_delivery_are_separate_deliveries() {
         });
         let (source, input) = context.event_source::<u32>();
         context.connect(
-            source.cloned(),
-            target.contramap(|value| RecordedU32::from(&value)),
+            source,
+            OwningSink::new(target.contramap(|value| RecordedU32::from(&value))),
         );
         context.receive(move |event: u32, context| {
             assert!(context.send(&input, event).is_ok());
@@ -199,7 +203,7 @@ impl From<CloneablePublication> for OwnedPublication {
 }
 
 #[test]
-fn a_cloned_source_makes_owned_conversion_explicit() {
+fn an_owning_sink_makes_owned_conversion_explicit() {
     let values = Rc::new(RefCell::new(Vec::new()));
     let mounted_values = Rc::clone(&values);
     let mut runtime = TestRuntime::new(move |context| {
@@ -207,7 +211,10 @@ fn a_cloned_source_makes_owned_conversion_explicit() {
             mounted_values.borrow_mut().push(event.0);
         });
         let (source, input) = context.event_source::<CloneablePublication>();
-        context.connect(source.cloned(), target.accepting::<CloneablePublication>());
+        context.connect(
+            source,
+            OwningSink::new(target.accepting::<CloneablePublication>()),
+        );
         context.receive(move |event: CloneablePublication, context| {
             assert!(context.send(&input, event).is_ok());
         })
@@ -228,8 +235,8 @@ fn source_cycles_can_be_paused_by_the_caller() {
     let mut runtime = TestRuntime::new(|context| {
         let (left_source, left_sink) = context.event_source::<u32>();
         let (right_source, right_sink) = context.event_source::<u32>();
-        context.connect(left_source.cloned(), right_sink.clone());
-        context.connect(right_source.cloned(), left_sink.clone());
+        context.connect(left_source, OwningSink::new(right_sink.clone()));
+        context.connect(right_source, OwningSink::new(left_sink.clone()));
         context.receive(move |event: CycleCommand, context| match event {
             CycleCommand::Start => assert!(context.send(&left_sink, 1_u32).is_ok()),
             CycleCommand::Stop => context.unmount(),

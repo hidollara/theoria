@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 use super::drain;
 use theoria_event::{
-    DispatchOutcome, Dispatcher, EventHandler, EventSink, EventSource, FifoDispatcher,
+    DispatchOutcome, Dispatcher, EventHandler, EventSink, EventSource, FifoDispatcher, OwningSink,
     Subscription, channel,
 };
 
@@ -16,7 +16,6 @@ fn a_borrowed_source_runs_without_owning_its_publication() {
     let sink = EventSink::from(&handler).contramap_borrow(|event: &Publication| event.0.len());
     let (provider, source) = channel::<Publication>();
     source
-        .borrowed()
         .connect(sink)
         .inline()
         .expect("live Provider")
@@ -30,7 +29,7 @@ fn a_borrowed_source_runs_without_owning_its_publication() {
 }
 
 #[test]
-fn a_cloned_source_can_defer_its_dispatches() {
+fn an_owning_sink_can_defer_a_borrowed_publication() {
     let mut fifo = FifoDispatcher::new();
     let dispatcher: Dispatcher = fifo.as_ref().clone();
     let values = Rc::new(RefCell::new(Vec::new()));
@@ -38,8 +37,7 @@ fn a_cloned_source_can_defer_its_dispatches() {
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
     let (provider, source) = channel::<u32>();
     source
-        .cloned()
-        .connect(EventSink::from(&handler))
+        .connect(OwningSink::new(EventSink::from(&handler)))
         .via(dispatcher.clone())
         .expect("live Provider")
         .detach();
@@ -62,8 +60,7 @@ fn an_rc_channel_defers_move_only_values_without_cloning_the_value() {
     let sink = EventSink::from(&handler).contramap(|event: Rc<MoveOnly>| event.0.len());
     let (provider, source) = channel::<Rc<MoveOnly>>();
     source
-        .cloned()
-        .connect(sink)
+        .connect(OwningSink::new(sink))
         .via(dispatcher.clone())
         .expect("live Provider")
         .detach();
@@ -87,8 +84,7 @@ fn an_arc_channel_uses_the_same_deferred_source_contract() {
     let sink = EventSink::from(&handler).contramap(|event: Arc<MoveOnly>| event.0.len());
     let (provider, source) = channel::<Arc<MoveOnly>>();
     source
-        .cloned()
-        .connect(sink)
+        .connect(OwningSink::new(sink))
         .via(dispatcher.clone())
         .expect("live Provider")
         .detach();
@@ -107,8 +103,7 @@ fn dropping_a_subscription_stops_future_publications() {
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
     let (provider, source) = channel::<u32>();
     let subscription = source
-        .cloned()
-        .connect(EventSink::from(&handler))
+        .connect(OwningSink::new(EventSink::from(&handler)))
         .inline()
         .expect("live Provider");
 
@@ -125,8 +120,7 @@ fn unsubscribing_stops_future_publications() {
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
     let (provider, source) = channel::<u32>();
     let subscription = source
-        .cloned()
-        .connect(EventSink::from(&handler))
+        .connect(OwningSink::new(EventSink::from(&handler)))
         .inline()
         .expect("live Provider");
 
@@ -143,8 +137,7 @@ fn detaching_leaves_the_subscription_owned_by_the_provider() {
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
     let (provider, source) = channel::<u32>();
     source
-        .cloned()
-        .connect(EventSink::from(&handler))
+        .connect(OwningSink::new(EventSink::from(&handler)))
         .inline()
         .expect("live Provider")
         .detach();
@@ -160,7 +153,7 @@ fn source_and_input_do_not_keep_their_provider_alive() {
     let input = EventSink::from(&provider);
     drop(provider);
 
-    assert!(source.cloned().subscribe(|_| {}).is_none());
+    assert!(source.subscribe(|_| {}).is_none());
     assert_eq!(input.send(1).run(), DispatchOutcome::SinkUnavailable);
 }
 
@@ -178,13 +171,12 @@ fn subscription_changes_during_publication_apply_to_the_next_event() {
     let install_once = Rc::clone(&late_subscription);
     let keep_handler = Rc::clone(&late_handler);
     let first = source
-        .cloned()
         .subscribe(move |value| {
-            output.borrow_mut().push(("first", value));
+            output.borrow_mut().push(("first", *value));
             if install_once.borrow().is_none() {
                 let subscription = late_source
-                    .cloned()
-                    .connect(EventSink::from(keep_handler.as_ref()))
+                    .clone()
+                    .connect(OwningSink::new(EventSink::from(keep_handler.as_ref())))
                     .inline()
                     .expect("live Provider");
                 install_once.replace(Some(subscription));
@@ -208,12 +200,11 @@ fn subscribers_are_invoked_in_registration_order() {
     let order = Rc::new(RefCell::new(Vec::new()));
     let first_order = Rc::clone(&order);
     let first = source
-        .cloned()
+        .clone()
         .subscribe(move |_| first_order.borrow_mut().push(1))
         .expect("live Provider");
     let second_order = Rc::clone(&order);
     let second = source
-        .cloned()
         .subscribe(move |_| second_order.borrow_mut().push(2))
         .expect("live Provider");
 
@@ -232,8 +223,7 @@ fn unsubscribing_does_not_cancel_an_already_deferred_dispatch() {
     let handler = EventHandler::new(move |value: u32| output.borrow_mut().push(value));
     let (provider, source) = channel::<u32>();
     let subscription = source
-        .cloned()
-        .connect(EventSink::from(&handler))
+        .connect(OwningSink::new(EventSink::from(&handler)))
         .via(dispatcher.clone())
         .expect("live Provider");
 

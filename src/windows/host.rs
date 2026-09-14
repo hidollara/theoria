@@ -9,7 +9,7 @@ use std::{
 use crate::{
     animation::FrameScheduler,
     component::MountContext,
-    event::EventSink,
+    event::{EventSink, OwningSink},
     input::{
         pointer::{MovementThreshold, PointerEvent},
         scroll::ScrollEvent,
@@ -71,7 +71,7 @@ impl WindowHost {
                     context.set(&surface_size, size);
                 }
             });
-            assert!(context.connect(surface.cloned(), update_size));
+            assert!(context.connect(surface.clone(), OwningSink::new(update_size)));
 
             let capabilities = WindowCapabilities::new(
                 Surface::new(surface, size.value()),
@@ -88,7 +88,10 @@ impl WindowHost {
             // by `build` are registered first on the default Dispatcher; this final
             // subscription supplies the default non-cancellable close action.
             let close_window = context.receive(|_: CloseRequested, context| context.unmount());
-            assert!(context.connect(capabilities.close_requested().cloned(), close_window));
+            assert!(context.connect(
+                capabilities.close_requested().clone(),
+                OwningSink::new(close_window)
+            ));
 
             let host = Rc::new(RefCell::new(Self {
                 inputs: WindowInputs {

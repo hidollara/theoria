@@ -75,11 +75,12 @@ impl<'mount> MountContext<'mount> {
         sink
     }
 
-    /// Connects one deferrable Source to a Sink through the tree's default
-    /// Dispatcher.
+    /// Connects one Source to a Sink through the tree's default Dispatcher.
     ///
-    /// The current Component owns the resulting Subscription. Returns `false`
-    /// when the Source is no longer available.
+    /// The Sink must turn every publication into a self-contained Dispatch
+    /// accepted by the default Dispatcher. The current Component owns the
+    /// resulting Subscription. Returns `false` when the Source is no longer
+    /// available.
     pub fn connect<S, K>(&mut self, source: S, sink: K) -> bool
     where
         S: EventSource,
@@ -90,7 +91,7 @@ impl<'mount> MountContext<'mount> {
         self.connect_via(self.tree.default_dispatcher().clone(), source, sink)
     }
 
-    /// Connects one deferrable Source through an explicitly selected Dispatcher.
+    /// Connects one Source through an explicitly selected Dispatcher.
     pub fn connect_via<S, K, D>(&mut self, dispatcher: D, source: S, sink: K) -> bool
     where
         S: EventSource,

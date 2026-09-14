@@ -3,6 +3,7 @@ use std::f32::consts::PI;
 use theoria::{
     canvas::{Canvas, CanvasView, Composite, Coverage},
     color::Color,
+    event::OwningSink,
     font::Font,
     geometry::Point,
     gesture::{Click, ClickArea, ClickGesture, ClickRecognizer},
@@ -45,7 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let close = context.receive(move |_: theoria::window::CloseRequested, context| {
                     context.set(&controller_lifecycle, false);
                 });
-                assert!(context.connect(window.close_requested().cloned(), close));
+                assert!(context.connect(window.close_requested().clone(), OwningSink::new(close)));
 
                 let increment = context.receive(move |click: Click, context| {
                     if click.button == PointerButton::Primary {
