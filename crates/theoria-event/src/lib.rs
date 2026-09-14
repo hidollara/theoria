@@ -17,6 +17,7 @@ mod dispatch;
 mod dispatcher;
 mod handler;
 mod sink;
+mod sink_adapter;
 mod source;
 
 pub use bridge::{BridgeDispatch, BridgeProgress, BridgeSink, EventBridge, bridge};
@@ -30,4 +31,5 @@ pub use dispatch::{
 pub use dispatcher::FifoDispatcher;
 pub use handler::EventHandler;
 pub use sink::{BorrowingEventSink, EventSink, Sink};
+pub use sink_adapter::{ContramapDispatch, ContramapSink, OwningSink};
 pub use source::{EventConnection, EventSource, Subscription};
