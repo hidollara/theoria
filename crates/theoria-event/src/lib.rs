@@ -20,8 +20,8 @@ pub use channel::{
     BorrowedChannelSource, ChannelSource, ClonedChannelSource, EventProvider, channel,
 };
 pub use dispatch::{
-    DispatchOutcome, DispatchReceipt, DispatchStatus, Dispatcher, EventDispatch, EventDispatcher,
-    SubmissionOutcome,
+    Dispatch, DispatchOutcome, DispatchReceipt, DispatchStatus, Dispatcher, EventDispatch,
+    EventDispatcher, ImmediateDispatcher, SubmissionOutcome,
 };
 pub use dispatcher::FifoDispatcher;
 pub use handler::EventHandler;

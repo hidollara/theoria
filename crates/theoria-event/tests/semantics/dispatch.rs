@@ -6,15 +6,16 @@ use std::{
 
 use super::drain;
 use theoria_event::{
-    DispatchOutcome, DispatchReceipt, DispatchStatus, Dispatcher, EventDispatch, EventDispatcher,
-    EventHandler, EventSink, EventSource, FifoDispatcher, SubmissionOutcome, channel,
+    Dispatch, DispatchOutcome, DispatchReceipt, DispatchStatus, Dispatcher, EventDispatch,
+    EventDispatcher, EventHandler, EventSink, EventSource, FifoDispatcher, SubmissionOutcome,
+    channel,
 };
 
 struct TestDispatcher {
     pending: RefCell<VecDeque<EventDispatch<'static>>>,
 }
 
-impl EventDispatcher for TestDispatcher {
+impl EventDispatcher<EventDispatch<'static>> for TestDispatcher {
     fn submit(
         &self,
         dispatch: EventDispatch<'static>,
@@ -25,6 +26,18 @@ impl EventDispatcher for TestDispatcher {
 }
 
 struct RejectingDispatcher;
+
+#[derive(Debug)]
+struct TestDispatch {
+    output: Rc<Cell<bool>>,
+}
+
+impl Dispatch for TestDispatch {
+    fn run(self) -> DispatchOutcome {
+        self.output.set(true);
+        DispatchOutcome::Delivered
+    }
+}
 
 fn submit_event<E: 'static>(
     dispatcher: &Dispatcher,
@@ -43,7 +56,7 @@ fn submit_tracked<E: 'static>(
     dispatcher.submit(dispatch).map(|_| receipt)
 }
 
-impl EventDispatcher for RejectingDispatcher {
+impl EventDispatcher<EventDispatch<'static>> for RejectingDispatcher {
     fn submit(
         &self,
         dispatch: EventDispatch<'static>,
@@ -91,6 +104,22 @@ fn rejection_returns_the_original_dispatch() {
     assert!(values.borrow().is_empty());
     assert_eq!(dispatch.run(), DispatchOutcome::Delivered);
     assert_eq!(&*values.borrow(), &[7]);
+}
+
+#[test]
+fn an_erased_dispatcher_returns_a_rejected_concrete_dispatch() {
+    let event_dispatcher = Dispatcher::new(RejectingDispatcher);
+    let output = Rc::new(Cell::new(false));
+
+    let dispatch = event_dispatcher
+        .submit(TestDispatch {
+            output: Rc::clone(&output),
+        })
+        .expect_err("the Dispatcher rejects work");
+
+    assert!(!output.get());
+    assert_eq!(dispatch.run(), DispatchOutcome::Delivered);
+    assert!(output.get());
 }
 
 #[test]

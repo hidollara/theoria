@@ -21,7 +21,7 @@ fn submit_event<E: 'static>(
     dispatcher.submit(sink.into().send(event))
 }
 
-impl EventDispatcher for TestDispatcher {
+impl EventDispatcher<EventDispatch<'static>> for TestDispatcher {
     fn submit(
         &self,
         dispatch: EventDispatch<'static>,

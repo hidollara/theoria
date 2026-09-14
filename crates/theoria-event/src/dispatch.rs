@@ -1,10 +1,21 @@
 use std::{
+    any::Any,
     cell::{Cell, RefCell},
     fmt,
     rc::Rc,
 };
 
 type CompletionFn = Box<dyn FnOnce(DispatchOutcome)>;
+
+/// One executable event operation.
+///
+/// A Dispatch retains its concrete lifetime and auto traits until a
+/// Dispatcher accepts it. This lets each Dispatcher state the operations it
+/// can retain or move instead of imposing those constraints on every event.
+pub trait Dispatch: Sized {
+    /// Runs this operation exactly once.
+    fn run(self) -> DispatchOutcome;
+}
 
 /// The result of running one accepted event Dispatch.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -37,26 +48,28 @@ pub enum DispatchStatus {
     Finished(DispatchOutcome),
 }
 
-/// Accepts self-contained event Dispatches for execution or scheduling.
-pub trait EventDispatcher: 'static {
+/// Accepts one family of event Dispatches for execution or scheduling.
+///
+/// Implementations express their requirements through `D`: an inline
+/// Dispatcher may accept borrowed work, a local queue may require `'static`,
+/// and a cross-thread Dispatcher may additionally require [`Send`].
+pub trait EventDispatcher<D>
+where
+    D: Dispatch,
+{
     /// Submits one Dispatch for immediate or deferred execution.
     ///
     /// Rejection returns the original Dispatch without running or retaining
     /// it, so another Dispatcher may accept it.
-    fn submit(
-        &self,
-        dispatch: EventDispatch<'static>,
-    ) -> Result<SubmissionOutcome, EventDispatch<'static>>;
+    fn submit(&self, dispatch: D) -> Result<SubmissionOutcome, D>;
 }
 
-impl<T> EventDispatcher for Rc<T>
+impl<D, T> EventDispatcher<D> for Rc<T>
 where
-    T: EventDispatcher + ?Sized,
+    D: Dispatch,
+    T: EventDispatcher<D> + ?Sized,
 {
-    fn submit(
-        &self,
-        dispatch: EventDispatch<'static>,
-    ) -> Result<SubmissionOutcome, EventDispatch<'static>> {
+    fn submit(&self, dispatch: D) -> Result<SubmissionOutcome, D> {
         self.as_ref().submit(dispatch)
     }
 }
@@ -64,12 +77,12 @@ where
 /// A cloneable capability for submitting self-contained event Dispatches.
 #[derive(Clone)]
 pub struct Dispatcher {
-    endpoint: Rc<dyn EventDispatcher>,
+    endpoint: Rc<dyn EventDispatcher<EventDispatch<'static>>>,
 }
 
 impl Dispatcher {
     /// Wraps an event Dispatcher as a cloneable submission capability.
-    pub fn new(dispatcher: impl EventDispatcher) -> Self {
+    pub fn new(dispatcher: impl EventDispatcher<EventDispatch<'static>> + 'static) -> Self {
         Self {
             endpoint: Rc::new(dispatcher),
         }
@@ -80,12 +93,26 @@ impl Dispatcher {
         Self::new(ImmediateDispatcher)
     }
 
-    /// Submits one self-contained Dispatch.
-    pub fn submit(
-        &self,
-        dispatch: EventDispatch<'static>,
-    ) -> Result<SubmissionOutcome, EventDispatch<'static>> {
-        self.endpoint.submit(dispatch)
+    /// Submits one self-contained local Dispatch.
+    pub fn submit<D>(&self, dispatch: D) -> Result<SubmissionOutcome, D>
+    where
+        D: Dispatch + 'static,
+    {
+        <Self as EventDispatcher<D>>::submit(self, dispatch)
+    }
+}
+
+impl<D> EventDispatcher<D> for Dispatcher
+where
+    D: Dispatch + 'static,
+{
+    fn submit(&self, dispatch: D) -> Result<SubmissionOutcome, D> {
+        let erased = EventDispatch::recoverable(dispatch);
+
+        match self.endpoint.submit(erased) {
+            Ok(outcome) => Ok(outcome),
+            Err(erased) => Err(erased.into_concrete()),
+        }
     }
 }
 
@@ -101,13 +128,15 @@ impl fmt::Debug for Dispatcher {
     }
 }
 
-struct ImmediateDispatcher;
+/// A Dispatcher that runs any accepted Dispatch before returning.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ImmediateDispatcher;
 
-impl EventDispatcher for ImmediateDispatcher {
-    fn submit(
-        &self,
-        dispatch: EventDispatch<'static>,
-    ) -> Result<SubmissionOutcome, EventDispatch<'static>> {
+impl<D> EventDispatcher<D> for ImmediateDispatcher
+where
+    D: Dispatch,
+{
+    fn submit(&self, dispatch: D) -> Result<SubmissionOutcome, D> {
         Ok(SubmissionOutcome::Completed(dispatch.run()))
     }
 }
@@ -155,14 +184,14 @@ impl fmt::Debug for DispatchReceipt {
 /// be submitted to a [`Dispatcher`].
 #[must_use = "an EventDispatch must be run, submitted, or intentionally discarded"]
 pub struct EventDispatch<'event> {
-    operation: Box<dyn FnOnce() -> DispatchOutcome + 'event>,
+    operation: DispatchOperation<'event>,
     control: DispatchControlGuard,
 }
 
 impl<'event> EventDispatch<'event> {
     pub(crate) fn new(operation: impl FnOnce() -> DispatchOutcome + 'event) -> Self {
         Self {
-            operation: Box::new(operation),
+            operation: DispatchOperation::Scoped(Box::new(operation)),
             control: DispatchControlGuard::untracked(),
         }
     }
@@ -179,14 +208,54 @@ impl<'event> EventDispatch<'event> {
     pub fn run(self) -> DispatchOutcome {
         let EventDispatch { operation, control } = self;
         let Some(control) = control.disarm() else {
-            return operation();
+            return operation.run();
         };
         if !control.start() {
             return DispatchOutcome::Cancelled;
         }
-        let outcome = operation();
+        let outcome = operation.run();
         control.complete(outcome);
         outcome
+    }
+
+    pub(crate) fn erase<D>(dispatch: D) -> Self
+    where
+        D: Dispatch + 'event,
+    {
+        Self::new(move || dispatch.run())
+    }
+
+    fn recoverable<D>(dispatch: D) -> EventDispatch<'static>
+    where
+        D: Dispatch + 'static,
+    {
+        EventDispatch {
+            operation: DispatchOperation::Recoverable(Box::new(ConcreteDispatch(dispatch))),
+            control: DispatchControlGuard::untracked(),
+        }
+    }
+}
+
+impl EventDispatch<'static> {
+    fn into_concrete<D>(self) -> D
+    where
+        D: Dispatch + 'static,
+    {
+        let EventDispatch { operation, control } = self;
+        drop(control.disarm());
+        let DispatchOperation::Recoverable(operation) = operation else {
+            panic!("a rejecting Dispatcher must return its original Dispatch");
+        };
+        *operation
+            .into_any()
+            .downcast::<D>()
+            .unwrap_or_else(|_| panic!("a rejecting Dispatcher changed its Dispatch type"))
+    }
+}
+
+impl Dispatch for EventDispatch<'_> {
+    fn run(self) -> DispatchOutcome {
+        EventDispatch::run(self)
     }
 }
 
@@ -195,6 +264,41 @@ impl fmt::Debug for EventDispatch<'_> {
         formatter
             .debug_struct("EventDispatch")
             .finish_non_exhaustive()
+    }
+}
+
+enum DispatchOperation<'event> {
+    Scoped(Box<dyn FnOnce() -> DispatchOutcome + 'event>),
+    Recoverable(Box<dyn RecoverableDispatch>),
+}
+
+impl DispatchOperation<'_> {
+    fn run(self) -> DispatchOutcome {
+        match self {
+            Self::Scoped(operation) => operation(),
+            Self::Recoverable(operation) => operation.run(),
+        }
+    }
+}
+
+trait RecoverableDispatch {
+    fn run(self: Box<Self>) -> DispatchOutcome;
+
+    fn into_any(self: Box<Self>) -> Box<dyn Any>;
+}
+
+struct ConcreteDispatch<D>(D);
+
+impl<D> RecoverableDispatch for ConcreteDispatch<D>
+where
+    D: Dispatch + 'static,
+{
+    fn run(self: Box<Self>) -> DispatchOutcome {
+        self.0.run()
+    }
+
+    fn into_any(self: Box<Self>) -> Box<dyn Any> {
+        Box::new(self.0)
     }
 }
 

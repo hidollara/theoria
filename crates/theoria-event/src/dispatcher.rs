@@ -5,7 +5,7 @@ use std::{
     rc::{Rc, Weak},
 };
 
-use crate::dispatch::{Dispatcher, EventDispatch, EventDispatcher, SubmissionOutcome};
+use crate::dispatch::{Dispatch, Dispatcher, EventDispatch, EventDispatcher, SubmissionOutcome};
 
 struct EventQueue {
     pending: RefCell<VecDeque<EventDispatch<'static>>>,
@@ -78,11 +78,21 @@ impl AsRef<Dispatcher> for FifoDispatcher {
     }
 }
 
+impl<D> EventDispatcher<D> for FifoDispatcher
+where
+    D: Dispatch + 'static,
+{
+    fn submit(&self, dispatch: D) -> Result<SubmissionOutcome, D> {
+        self.queue.enqueue(EventDispatch::erase(dispatch));
+        Ok(SubmissionOutcome::Deferred)
+    }
+}
+
 struct QueuedDispatcher {
     queue: Weak<EventQueue>,
 }
 
-impl EventDispatcher for QueuedDispatcher {
+impl EventDispatcher<EventDispatch<'static>> for QueuedDispatcher {
     fn submit(
         &self,
         dispatch: EventDispatch<'static>,
