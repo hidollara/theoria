@@ -36,6 +36,20 @@ use crate::{
     math::Vector2,
 };
 
+pub(super) const fn is_pointer_message(message: u32) -> bool {
+    matches!(
+        message,
+        WM_POINTERDOWN
+            | WM_POINTERUP
+            | WM_POINTERUPDATE
+            | WM_POINTERENTER
+            | WM_POINTERLEAVE
+            | WM_POINTERCAPTURECHANGED
+            | WM_POINTERWHEEL
+            | WM_POINTERHWHEEL
+    )
+}
+
 pub(super) fn enable() -> Result<()> {
     unsafe { EnableMouseInPointer(true) }
 }

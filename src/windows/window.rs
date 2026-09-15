@@ -13,8 +13,8 @@ use crate::{
 /// One Win32 Window with an independent Component update boundary.
 ///
 /// Native observations are projected into Theoria's portable Surface and input
-/// vocabulary before entering the Component tree. Windows-specific integrations
-/// may expose additional event sources beside those projections.
+/// vocabulary before entering the Component tree. The same Window also exposes
+/// its raw Win32 messages for integrations that need another interpretation.
 pub struct Window {
     composition: Rc<WindowComposition>,
 }

@@ -15,16 +15,14 @@ use ::windows::{
                 CREATESTRUCTW, DefWindowProcW, GWLP_USERDATA, GetClientRect, GetWindowLongPtrW,
                 RegisterClassExW, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOZORDER, SetWindowLongPtrW,
                 SetWindowPos, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_DESTROY, WM_ERASEBKGND,
-                WM_NCCREATE, WM_PAINT, WM_POINTERCAPTURECHANGED, WM_POINTERDOWN, WM_POINTERENTER,
-                WM_POINTERHWHEEL, WM_POINTERLEAVE, WM_POINTERUP, WM_POINTERUPDATE, WM_POINTERWHEEL,
-                WM_SIZE, WNDCLASSEXW,
+                WM_NCCREATE, WM_PAINT, WM_SIZE, WNDCLASSEXW,
             },
         },
     },
     core::{Error, Result, w},
 };
 
-use crate::{surface::SurfaceSize, windows::event_buffer::Win32WindowEvent};
+use crate::surface::SurfaceSize;
 
 use super::{pointer, state::WindowState};
 
@@ -108,7 +106,12 @@ unsafe extern "system" fn window_proc(
         unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *const RefCell<WindowState>;
     let state = unsafe { state_ptr.as_ref() };
 
-    match message {
+    // Clone the publication state before running built-in handling.
+    // Native observers run only after that handling has released every borrow
+    // of WindowState, and this procedure does not touch WindowState afterwards.
+    let messages = state.map(|state| state.borrow().messages().clone());
+
+    let result = match message {
         WM_SIZE => {
             if let Some(state) = state {
                 let mut state = state.borrow_mut();
@@ -121,9 +124,6 @@ unsafe extern "system" fn window_proc(
             LRESULT(0)
         }
         WM_PAINT => {
-            if let Some(state) = state {
-                state.borrow_mut().request_redraw();
-            }
             let mut paint = PAINTSTRUCT::default();
             unsafe {
                 BeginPaint(hwnd, &mut paint);
@@ -131,35 +131,16 @@ unsafe extern "system" fn window_proc(
             }
             LRESULT(0)
         }
-        WM_POINTERDOWN
-        | WM_POINTERUP
-        | WM_POINTERUPDATE
-        | WM_POINTERENTER
-        | WM_POINTERLEAVE
-        | WM_POINTERCAPTURECHANGED => {
-            if let Some(state) = state
-                && let Some(event) = pointer::pointer_event(hwnd, message, wparam)
-            {
-                state.borrow_mut().push(Win32WindowEvent::Pointer(event));
-            }
-            LRESULT(0)
-        }
-        WM_POINTERWHEEL | WM_POINTERHWHEEL => {
-            if let Some(state) = state
-                && let Some(event) = pointer::scroll_event(hwnd, message, wparam)
-            {
-                state.borrow_mut().push(Win32WindowEvent::Scroll(event));
-            }
-            LRESULT(0)
-        }
+        message if pointer::is_pointer_message(message) => LRESULT(0),
         WM_ERASEBKGND => LRESULT(1),
-        WM_CLOSE => {
-            if let Some(state) = state {
-                state.borrow_mut().push(Win32WindowEvent::CloseRequested);
-            }
-            LRESULT(0)
-        }
+        WM_CLOSE => LRESULT(0),
         WM_DESTROY => LRESULT(0),
         _ => unsafe { DefWindowProcW(hwnd, message, wparam, lparam) },
+    };
+
+    if let Some(messages) = messages {
+        messages.publish(hwnd, message, wparam, lparam);
     }
+
+    result
 }

@@ -17,6 +17,7 @@ mod window;
 
 pub use self::capabilities::WindowCapabilities;
 pub use self::group::{WindowGroup, WindowGroupContext};
+pub use self::native_window::{Win32Message, Win32WindowMessage, Win32WindowMessageSource};
 pub use self::presentation_target::Win32PresentationTarget;
 pub use self::window::Window;
 

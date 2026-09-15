@@ -55,6 +55,7 @@ impl WindowHost {
             horizontal,
             vertical,
         };
+        let native_messages = native.messages();
         let mut mounted = None;
 
         context.mount_with(|context| {
@@ -80,6 +81,7 @@ impl WindowHost {
                 close_requested,
                 frame_clock,
                 movement_threshold,
+                native_messages,
             );
             let content = build(context, &capabilities);
             presentation.bind(context, content);

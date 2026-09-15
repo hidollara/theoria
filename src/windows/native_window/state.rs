@@ -1,44 +1,33 @@
-//! Semantic events accumulated by one native Window procedure.
+//! State retained behind one native Win32 Window procedure.
 
-use std::rc::Rc;
+use crate::surface::SurfaceSize;
 
-use crate::{
-    surface::SurfaceSize,
-    windows::event_buffer::{Win32WindowEvent, WindowEventBuffer},
-};
+use crate::windows::native_window::message::WindowMessages;
 
 pub(super) struct WindowState {
     size: SurfaceSize,
-    events: Rc<WindowEventBuffer>,
+    messages: WindowMessages,
 }
 
 impl WindowState {
-    pub(super) fn new(size: SurfaceSize, events: Rc<WindowEventBuffer>) -> Self {
-        Self { size, events }
+    pub(super) fn new(size: SurfaceSize, messages: WindowMessages) -> Self {
+        Self { size, messages }
     }
 
-    /// Replaces messages emitted during native construction with the first
-    /// redraw for the final client extent.
+    /// Records the final client extent after native construction.
     pub(super) fn finish_initialization(&mut self, size: SurfaceSize) {
         self.size = size;
-        self.events.reset_for_initial_redraw();
     }
 
     pub(super) const fn size(&self) -> SurfaceSize {
         self.size
     }
 
-    pub(super) fn request_redraw(&mut self) {
-        self.events.request_redraw();
+    pub(super) const fn messages(&self) -> &WindowMessages {
+        &self.messages
     }
 
     pub(super) fn resize(&mut self, size: SurfaceSize) {
         self.size = size;
-
-        self.events.resize(size);
-    }
-
-    pub(super) fn push(&mut self, event: Win32WindowEvent) {
-        self.events.push(event);
     }
 }

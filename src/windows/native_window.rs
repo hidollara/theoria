@@ -19,11 +19,17 @@ use ::windows::{
 
 use crate::surface::SurfaceSize;
 
+mod message;
 mod pointer;
 mod procedure;
+mod projection;
 mod state;
 
-use self::{procedure::initialize_windowing, procedure::resize_client_area, state::WindowState};
+pub use self::message::{Win32Message, Win32WindowMessage, Win32WindowMessageSource};
+use self::{
+    message::WindowMessages, procedure::initialize_windowing, procedure::resize_client_area,
+    state::WindowState,
+};
 use crate::windows::{
     event_buffer::WindowEventBuffer, presentation_target::Win32PresentationTarget,
 };
@@ -35,6 +41,7 @@ pub(super) struct Win32Window {
     // call. Interior mutability makes that callback access explicit instead of
     // manufacturing a mutable reference beside Win32Window's active borrow.
     state: Box<RefCell<WindowState>>,
+    events: Rc<WindowEventBuffer>,
     _thread_affinity: PhantomData<Rc<()>>,
 }
 
@@ -50,9 +57,12 @@ impl Win32Window {
             let hinstance = HINSTANCE(module.0);
             initialize_windowing(hinstance)?;
 
+            let messages = WindowMessages::new();
+            let projected_events = Rc::clone(&events);
+            messages.observe(move |message| projection::observe(&projected_events, message));
             let state = Box::new(RefCell::new(WindowState::new(
                 SurfaceSize { width, height },
-                events,
+                messages,
             )));
             let state_ptr = (&*state as *const RefCell<WindowState>).cast::<c_void>();
             let title: Vec<u16> = title.encode_utf16().chain(Some(0)).collect();
@@ -82,11 +92,13 @@ impl Win32Window {
                 }
             };
             state.borrow_mut().finish_initialization(actual_size);
+            events.reset_for_initial_redraw();
 
             Ok(Self {
                 hwnd,
                 hinstance,
                 state,
+                events,
                 _thread_affinity: PhantomData,
             })
         }
@@ -109,6 +121,10 @@ impl Win32Window {
         self.state.borrow().size()
     }
 
+    pub(super) fn messages(&self) -> Win32WindowMessageSource {
+        self.state.borrow().messages().source()
+    }
+
     pub(super) fn movement_threshold_extents(&self) -> (f32, f32) {
         // Win32 defines the native drag boundary in device pixels for the
         // Window's current DPI.
@@ -119,7 +135,7 @@ impl Win32Window {
     }
 
     pub(super) fn request_redraw(&mut self) {
-        self.state.borrow_mut().request_redraw();
+        self.events.request_redraw();
     }
 }
 

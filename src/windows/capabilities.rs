@@ -1,4 +1,4 @@
-//! Portable projections supplied by the built-in Win32 Window.
+//! Capabilities supplied by the built-in Win32 Window.
 
 use crate::{
     animation::FrameClock,
@@ -11,7 +11,9 @@ use crate::{
     window::CloseRequested,
 };
 
-/// Standard Theoria projections exposed by the built-in Win32 Window.
+use crate::windows::native_window::Win32WindowMessageSource;
+
+/// Portable projections and native observations exposed by a Win32 Window.
 ///
 /// These capabilities are convenient, not mandatory. A Windows integration
 /// may expose additional native event sources, and applications may compose
@@ -23,6 +25,7 @@ pub struct WindowCapabilities {
     close_requested: ChannelSource<CloseRequested>,
     frame_clock: FrameClock,
     movement_threshold: MovementThreshold,
+    native_messages: Win32WindowMessageSource,
 }
 
 impl WindowCapabilities {
@@ -33,6 +36,7 @@ impl WindowCapabilities {
         close_requested: ChannelSource<CloseRequested>,
         frame_clock: FrameClock,
         movement_threshold: MovementThreshold,
+        native_messages: Win32WindowMessageSource,
     ) -> Self {
         Self {
             surface,
@@ -41,6 +45,7 @@ impl WindowCapabilities {
             close_requested,
             frame_clock,
             movement_threshold,
+            native_messages,
         }
     }
 
@@ -71,5 +76,13 @@ impl WindowCapabilities {
     /// may choose another policy per device.
     pub const fn movement_threshold(&self) -> MovementThreshold {
         self.movement_threshold
+    }
+
+    /// Returns raw messages observed by this Window's Win32 procedure.
+    ///
+    /// Message parameters may borrow native storage that is valid only while
+    /// the procedure is running, so this Source must be connected inline.
+    pub const fn native_messages(&self) -> &Win32WindowMessageSource {
+        &self.native_messages
     }
 }
