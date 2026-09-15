@@ -25,7 +25,7 @@ mod procedure;
 mod projection;
 mod state;
 
-pub use self::message::{Win32Message, Win32WindowMessage, Win32WindowMessageSource};
+pub use self::message::{Win32WindowMessage, Win32WindowMessageSource};
 use self::{
     message::WindowMessages, procedure::initialize_windowing, procedure::resize_client_area,
     state::WindowState,

@@ -4,75 +4,13 @@ use std::{
     cell::{Cell, RefCell},
     collections::BTreeMap,
     fmt,
-    marker::PhantomData,
     rc::{Rc, Weak},
 };
 
 use ::windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 
 use crate::event::EventSource;
-
-/// Destination-independent contents of one Win32 message.
-///
-/// The message identifier determines how `WPARAM` and `LPARAM` are interpreted.
-/// Any data referenced by those parameters is valid only for the lifetime
-/// carried by this value.
-#[derive(Clone, Copy)]
-pub struct Win32Message<'message> {
-    id: u32,
-    wparam: WPARAM,
-    lparam: LPARAM,
-    lifetime: PhantomData<&'message ()>,
-}
-
-impl<'message> Win32Message<'message> {
-    const fn new(id: u32, wparam: WPARAM, lparam: LPARAM, _lifetime: &'message ()) -> Self {
-        Self {
-            id,
-            wparam,
-            lparam,
-            lifetime: PhantomData,
-        }
-    }
-
-    /// Returns the Win32 message identifier.
-    pub const fn id(&self) -> u32 {
-        self.id
-    }
-
-    /// Returns the message's raw `WPARAM`.
-    pub const fn wparam(&self) -> WPARAM {
-        self.wparam
-    }
-
-    /// Returns the message's raw `LPARAM`.
-    pub const fn lparam(&self) -> LPARAM {
-        self.lparam
-    }
-
-    /// Interprets `LPARAM` as a reference valid for this message callback.
-    ///
-    /// # Safety
-    ///
-    /// The caller must verify from the Win32 contract for [`Self::id`] that
-    /// `LPARAM` is a non-null, correctly aligned pointer to a live `T`, and
-    /// that reading it does not violate aliasing requirements. This observation
-    /// interface never grants mutable access to native message storage.
-    pub unsafe fn lparam_ref<T>(&self) -> Option<&'message T> {
-        unsafe { (self.lparam.0 as *const T).as_ref() }
-    }
-}
-
-impl fmt::Debug for Win32Message<'_> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("Win32Message")
-            .field("id", &self.id)
-            .field("wparam", &self.wparam)
-            .field("lparam", &self.lparam)
-            .finish()
-    }
-}
+use crate::windows::message::Win32Message;
 
 /// One message observed while its Win32 Window procedure is executing.
 ///

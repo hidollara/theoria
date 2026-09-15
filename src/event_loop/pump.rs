@@ -7,18 +7,9 @@ pub(crate) type PumpResult<T> = Result<T, Box<dyn Error>>;
 /// One platform event observed while driving the current thread.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum PumpEvent {
-    NativeDispatched,
-    ThreadMessage(ThreadMessage),
+    NativeProgress,
     Idle,
     ExitRequested(i32),
-}
-
-/// One event addressed to the thread rather than a native Window.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct ThreadMessage {
-    pub(crate) message: u32,
-    pub(crate) wparam: usize,
-    pub(crate) lparam: isize,
 }
 
 /// Platform operations needed by the EventLoop coordinator.

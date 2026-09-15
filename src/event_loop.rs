@@ -15,7 +15,7 @@ pub(crate) mod pump;
 
 pub use self::bridge::{EventLoopBridge, EventLoopBridgeSendError, EventLoopBridgeSender};
 pub(crate) use self::component::ComponentParticipant;
-use self::pump::{EventPump, EventPumpWake, PumpEvent, ThreadMessage};
+use self::pump::{EventPump, EventPumpWake, PumpEvent};
 
 /// Time an otherwise idle iteration may lend to one waitable work item.
 const WAIT_SLICE: Duration = Duration::from_millis(1);
@@ -120,14 +120,7 @@ impl EventLoop {
             PumpEvent::ExitRequested(exit_code) => {
                 return Ok(EventLoopStatus::ExitRequested(exit_code));
             }
-            PumpEvent::ThreadMessage(ThreadMessage {
-                message: _message,
-                wparam: _wparam,
-                lparam: _lparam,
-            }) => {
-                // No registered thread-message producer consumes this yet.
-            }
-            PumpEvent::NativeDispatched | PumpEvent::Idle => {}
+            PumpEvent::NativeProgress | PumpEvent::Idle => {}
         }
 
         let now = Instant::now();
