@@ -85,8 +85,8 @@ mod tests {
         let received = Rc::new(RefCell::new(Vec::new()));
         let output = Rc::clone(&received);
         let instance = TestRuntime::new(move |context: &mut MountContext<'_>| {
-            let (pointer_source, pointer_events) = context.event_source::<PointerEvent>();
-            let (drag_source, drags) = context.event_source::<Drag>();
+            let (pointer_source, pointer_events) = context.channel::<PointerEvent>();
+            let (drag_source, drags) = context.channel::<Drag>();
             context.mount(DragGesture::new(
                 DragRecognizer::new(MovementThreshold::AxisAligned {
                     horizontal: 3.0,

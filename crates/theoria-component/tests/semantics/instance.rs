@@ -184,7 +184,7 @@ fn an_inline_connection_handles_a_publication_on_the_publishing_stack() {
     let observed = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&observed);
     let instance = ComponentInstance::new(queue.dispatcher(), move |context| {
-        let (source, source_input) = context.event_source::<u32>();
+        let (source, source_input) = context.channel::<u32>();
         let sink = context.receive(move |value: u32, _context| {
             output.borrow_mut().push(value);
         });
@@ -212,7 +212,7 @@ fn a_connection_accepts_a_dispatcher_without_erasing_it() {
     let observed = Rc::new(Cell::new(0));
     let output = Rc::clone(&observed);
     let instance = ComponentInstance::new(queue.dispatcher(), move |context| {
-        let (source, source_input) = context.event_source::<u32>();
+        let (source, source_input) = context.channel::<u32>();
         let sink = context.receive(move |value, _context| output.set(value));
         assert!(context.connect_via(TestImmediateDispatcher, source, OwningSink::new(sink)));
         mounted_input.replace(Some(source_input));
@@ -329,7 +329,7 @@ fn one_source_can_connect_through_default_and_explicit_dispatchers() {
     let default_output = Rc::clone(&observed);
     let priority_output = Rc::clone(&observed);
     let instance = ComponentInstance::new(default_queue.dispatcher(), move |context| {
-        let (source, source_input) = context.event_source::<u32>();
+        let (source, source_input) = context.channel::<u32>();
         let default_sink = context.receive(move |value, _context| {
             default_output.borrow_mut().push(("default", value));
         });

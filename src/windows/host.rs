@@ -60,10 +60,10 @@ impl WindowHost {
         context.mount_with(|context| {
             let size = context.create_state(initial_size);
             let frame_clock = frames.mount(context);
-            let (surface, surface_input) = context.event_source::<SurfaceEvent>();
-            let (pointer, pointer_input) = context.event_source::<PointerEvent>();
-            let (scroll, scroll_input) = context.event_source::<ScrollEvent>();
-            let (close_requested, close_input) = context.event_source::<CloseRequested>();
+            let (surface, surface_input) = context.channel::<SurfaceEvent>();
+            let (pointer, pointer_input) = context.channel::<PointerEvent>();
+            let (scroll, scroll_input) = context.channel::<ScrollEvent>();
+            let (close_requested, close_input) = context.channel::<CloseRequested>();
 
             let surface_size = size.clone();
             let update_size = context.receive(move |event: SurfaceEvent, context| {

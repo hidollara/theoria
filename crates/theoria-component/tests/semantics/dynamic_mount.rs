@@ -75,7 +75,7 @@ fn a_component_can_mount_a_handler_during_an_event() {
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let mut runtime = TestRuntime::new(move |context| {
-        let (source, input) = context.event_source();
+        let (source, input) = context.channel();
         receive(
             context,
             DynamicHandlerOwner {
@@ -97,7 +97,7 @@ fn a_dynamically_mounted_component_owns_reactive_nodes_created_by_its_builder() 
     let observed = Rc::new(Cell::new(0_u32));
     let effect_output = Rc::clone(&observed);
     let mut runtime = TestRuntime::new(move |context| {
-        let (source, input) = context.event_source::<u32>();
+        let (source, input) = context.channel::<u32>();
         context.mount_with(move |handler_context| {
             let count = handler_context.create_state(0_u32);
             let count_value = count.value();

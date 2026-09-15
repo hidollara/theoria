@@ -93,8 +93,8 @@ mod tests {
         let output = Rc::clone(&received);
 
         let instance = TestRuntime::new(move |context: &mut MountContext<'_>| {
-            let (pointer_source, pointer_events) = context.event_source::<PointerEvent>();
-            let (click_source, clicks) = context.event_source::<Click>();
+            let (pointer_source, pointer_events) = context.channel::<PointerEvent>();
+            let (click_source, clicks) = context.channel::<Click>();
             context.mount(ClickGesture::new(
                 ClickRecognizer::new(MovementThreshold::Radial { radius: 4.0 }).unwrap(),
                 pointer_source,

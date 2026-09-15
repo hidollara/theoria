@@ -18,8 +18,8 @@ fn unmounting_a_connection_owner_disconnects_it() {
     let values = Rc::new(RefCell::new(Vec::new()));
     let output = Rc::clone(&values);
     let mut runtime = TestRuntime::new(move |context| {
-        let (values_source, values_input) = context.event_source::<u32>();
-        let (disconnect_source, disconnect_input) = context.event_source::<()>();
+        let (values_source, values_input) = context.channel::<u32>();
+        let (disconnect_source, disconnect_input) = context.channel::<()>();
         let target = context.receive(move |value: u32, _context| {
             output.borrow_mut().push(value);
         });
@@ -100,11 +100,11 @@ fn a_component_event_input_does_not_keep_its_channel_owner_component_alive() {
     let probe_result = Rc::clone(&result);
 
     let mut runtime = TestRuntime::new(move |context| {
-        let (unmount_source, unmount_input) = context.event_source::<()>();
-        let (probe_source, probe_input) = context.event_source::<u32>();
+        let (unmount_source, unmount_input) = context.channel::<()>();
+        let (probe_source, probe_input) = context.channel::<u32>();
 
         context.mount_with(move |channel_owner| {
-            let (_source, input) = channel_owner.event_source::<u32>();
+            let (_source, input) = channel_owner.channel::<u32>();
             input_output.replace(Some(input));
             let unmount = channel_owner.receive(|(): (), context| context.unmount());
             assert!(channel_owner.connect(unmount_source, OwningSink::new(unmount)));

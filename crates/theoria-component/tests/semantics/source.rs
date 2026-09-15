@@ -48,7 +48,7 @@ fn a_component_can_create_a_source_while_handling_an_event() {
                         let target = child.receive(move |value: u32, _context| {
                             values.borrow_mut().push(value);
                         });
-                        let (source, sink) = child.event_source::<u32>();
+                        let (source, sink) = child.channel::<u32>();
                         assert!(child.connect(source, OwningSink::new(target.clone())));
                         input.replace(Some(sink));
                     }));
@@ -83,7 +83,7 @@ fn one_source_supports_repeated_connections_and_cloneable_inputs() {
         let second = context.receive(move |event: String, _context| {
             second_values.borrow_mut().push(event);
         });
-        let (source, input) = context.event_source::<Rc<MoveOnlyEvent>>();
+        let (source, input) = context.channel::<Rc<MoveOnlyEvent>>();
         context.connect(
             source.clone(),
             OwningSink::new(
@@ -132,8 +132,8 @@ fn sources_with_the_same_event_type_keep_distinct_identities() {
         let target = context.receive(move |event: String, _context| {
             mounted_values.borrow_mut().push(event);
         });
-        let (left_source, left) = context.event_source::<u32>();
-        let (right_source, right) = context.event_source::<u32>();
+        let (left_source, left) = context.channel::<u32>();
+        let (right_source, right) = context.channel::<u32>();
         context.connect(
             left_source,
             OwningSink::new(target.clone().contramap(|value| format!("left:{value}"))),
@@ -163,7 +163,7 @@ fn source_input_and_handler_delivery_are_separate_deliveries() {
         let target = context.receive(move |event: RecordedU32, _context| {
             mounted_values.borrow_mut().push(event.0);
         });
-        let (source, input) = context.event_source::<u32>();
+        let (source, input) = context.channel::<u32>();
         context.connect(
             source,
             OwningSink::new(target.contramap(|value| RecordedU32::from(&value))),
@@ -211,7 +211,7 @@ fn an_owning_sink_makes_owned_conversion_explicit() {
         let target = context.receive(move |event: OwnedPublication, _context| {
             mounted_values.borrow_mut().push(event.0);
         });
-        let (source, input) = context.event_source::<CloneablePublication>();
+        let (source, input) = context.channel::<CloneablePublication>();
         context.connect(
             source,
             OwningSink::new(target.accepting::<CloneablePublication>()),
@@ -234,8 +234,8 @@ enum CycleCommand {
 #[test]
 fn source_cycles_can_be_paused_by_the_caller() {
     let mut runtime = TestRuntime::new(|context| {
-        let (left_source, left_sink) = context.event_source::<u32>();
-        let (right_source, right_sink) = context.event_source::<u32>();
+        let (left_source, left_sink) = context.channel::<u32>();
+        let (right_source, right_sink) = context.channel::<u32>();
         context.connect(left_source, OwningSink::new(right_sink.clone()));
         context.connect(right_source, OwningSink::new(left_sink.clone()));
         context.receive(move |event: CycleCommand, context| match event {

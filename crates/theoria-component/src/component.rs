@@ -42,7 +42,7 @@ impl<'mount> MountContext<'mount> {
     /// The current Component owns the Channel. The returned Source and
     /// input sink do not keep that Component alive. After it is unmounted, the
     /// Source rejects new subscriptions and input deliveries produce no events.
-    pub fn event_source<E: 'static>(&mut self) -> (ChannelSource<E>, ChannelSink<E>) {
+    pub fn channel<E: 'static>(&mut self) -> (ChannelSource<E>, ChannelSink<E>) {
         let channel = Channel::new();
         let source = channel.source();
         let input = channel.sink();

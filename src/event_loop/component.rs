@@ -88,7 +88,7 @@ mod tests {
         let received = Rc::new(Cell::new(false));
         let handler_output = Rc::clone(&received);
         let (participant, ()) = ComponentParticipant::mount(|context| {
-            let (source, source_input) = context.event_source::<()>();
+            let (source, source_input) = context.channel::<()>();
             let handler = context.receive(move |(): (), _| handler_output.set(true));
             assert!(context.connect(source, OwningSink::new(handler)));
             let effect = context.create_effect(move |_| {
