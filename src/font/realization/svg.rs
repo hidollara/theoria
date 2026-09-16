@@ -280,7 +280,6 @@ mod tests {
             pattern
                 .image()
                 .rgba8()
-                .unwrap()
                 .chunks_exact(4)
                 .any(|pixel| pixel[3] != 0)
         );
@@ -350,7 +349,7 @@ mod tests {
         let crate::canvas::ColorField::Image(pattern) = &draw.source else {
             panic!("SVG realization should use an image color field");
         };
-        let pixel = &pattern.image().rgba8().unwrap()[..4];
+        let pixel = &pattern.image().rgba8()[..4];
         assert_eq!(pixel, [210, 30, 90, 255]);
     }
 

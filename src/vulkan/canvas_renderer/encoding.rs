@@ -1,7 +1,7 @@
 use std::{mem::size_of, slice};
 
 use crate::{
-    canvas::{BlendMode, CanvasView, Composite, ImagePattern},
+    canvas::{BlendMode, CanvasView, Composite, ImagePattern, Layer},
     geometry::Point,
     transform::Projective2,
 };
@@ -111,8 +111,52 @@ impl ImagePushConstants {
         image_to_root: Projective2,
         view: CanvasView,
     ) -> Self {
-        let width = pattern.image().width() as f32;
-        let height = pattern.image().height() as f32;
+        Self::new_sampled(
+            pattern.image().width(),
+            pattern.image().height(),
+            pattern.canvas_to_image(),
+            alpha_mode,
+            points,
+            image_to_root,
+            view,
+        )
+    }
+
+    pub(super) fn new_layer(
+        layer: &Layer,
+        alpha_mode: GpuAlphaMode,
+        points: [Point; 3],
+        layer_to_root: Projective2,
+        view: CanvasView,
+    ) -> Self {
+        let normalized_to_pixels = Projective2::from_rows([
+            [layer.width() as f32, 0.0, 0.0],
+            [0.0, layer.height() as f32, 0.0],
+            [0.0, 0.0, 1.0],
+        ]);
+        Self::new_sampled(
+            layer.width(),
+            layer.height(),
+            layer.view().canvas_to_view.then(normalized_to_pixels),
+            alpha_mode,
+            points,
+            layer_to_root,
+            view,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn new_sampled(
+        width: u32,
+        height: u32,
+        canvas_to_image: Projective2,
+        alpha_mode: GpuAlphaMode,
+        points: [Point; 3],
+        image_to_root: Projective2,
+        view: CanvasView,
+    ) -> Self {
+        let width = width as f32;
+        let height = height as f32;
         let premultiplied = match alpha_mode {
             GpuAlphaMode::Straight => 0.0,
             GpuAlphaMode::Premultiplied => 1.0,
@@ -120,7 +164,7 @@ impl ImagePushConstants {
         let image_to_view = image_to_root.then(view.canvas_to_view);
         Self {
             vertices: points.map(|point| {
-                let image_point = pattern.canvas_to_image().transform_homogeneous(point);
+                let image_point = canvas_to_image.transform_homogeneous(point);
                 ImageVertex {
                     position: transformed_point_to_clip(point, image_to_view),
                     uv: [

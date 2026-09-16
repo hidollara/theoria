@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::transform::Projective2;
 
-use super::{BlendMode, ColorField, Composite, Coverage};
+use super::{BlendMode, ColorField, Composite, Coverage, Layer};
 
 #[derive(Clone, Debug)]
 pub(crate) struct Draw {
@@ -20,6 +20,7 @@ pub(crate) enum CanvasNode {
         content: Canvas,
         transform: Projective2,
     },
+    Layer(Layer),
     Composite {
         backdrop: Canvas,
         source: Canvas,
@@ -111,5 +112,13 @@ impl Canvas {
 impl Default for Canvas {
     fn default() -> Self {
         Self::empty()
+    }
+}
+
+impl From<Layer> for Canvas {
+    fn from(layer: Layer) -> Self {
+        Self {
+            node: Arc::new(CanvasNode::Layer(layer)),
+        }
     }
 }

@@ -25,6 +25,55 @@ fn assert_point_near(actual: Option<Point>, expected: Point) {
 }
 
 #[test]
+fn layer_fixes_a_canvas_view_and_pixel_extent() {
+    let content = Canvas::draw(Color::rgb8(10, 20, 30), Coverage::all());
+    let view = CanvasView::axis_aligned(Point::new(-2.0, -1.0), Point::new(2.0, 1.0)).unwrap();
+    let layer = Layer::new(content.clone(), view, 320, 180).unwrap();
+
+    assert_eq!(layer.view(), view);
+    assert_eq!(layer.width(), 320);
+    assert_eq!(layer.height(), 180);
+    assert!(Arc::ptr_eq(&layer.content().node, &content.node));
+    assert!(matches!(Canvas::from(layer).node(), CanvasNode::Layer(_)));
+}
+
+#[test]
+fn layer_clones_share_one_materialization_identity() {
+    let view = CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(1.0, 1.0)).unwrap();
+    let layer = Layer::new(Canvas::empty(), view, 1, 1).unwrap();
+    let clone = layer.clone();
+    let independent = Layer::new(Canvas::empty(), view, 1, 1).unwrap();
+
+    assert_eq!(layer.instance_key(), clone.instance_key());
+    assert_ne!(layer.instance_key(), independent.instance_key());
+}
+
+#[test]
+fn layer_cache_identity_does_not_keep_the_layer_alive() {
+    let key = {
+        let view = CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(1.0, 1.0)).unwrap();
+        Layer::new(Canvas::empty(), view, 1, 1)
+            .unwrap()
+            .instance_key()
+    };
+
+    assert!(!key.is_alive());
+}
+
+#[test]
+fn layer_rejects_an_empty_pixel_extent() {
+    let view = CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(1.0, 1.0)).unwrap();
+
+    assert_eq!(
+        Layer::new(Canvas::empty(), view, 0, 10).unwrap_err(),
+        LayerError::Empty {
+            width: 0,
+            height: 10,
+        }
+    );
+}
+
+#[test]
 fn composes_color_fields_in_paint_order_without_a_size() {
     let first = [
         Point::new(-10.0, -10.0),

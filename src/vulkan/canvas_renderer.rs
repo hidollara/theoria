@@ -1,10 +1,9 @@
-use std::{collections::HashSet, error::Error, sync::Arc};
+use std::{error::Error, sync::Arc};
 
 use ash::vk;
 
 use crate::{
-    canvas::{Canvas, CanvasView},
-    image::{Image, ImageContent, ImageInstanceKey},
+    canvas::{Canvas, CanvasView, Layer},
     surface::Viewport,
 };
 
@@ -24,7 +23,7 @@ mod resources;
 mod view_space;
 
 use crate::vulkan::one_shot::OneShotCommands;
-use canvas_plan::{collect_images, required_scratch_images};
+use canvas_plan::{collect_images, collect_layers, required_scratch_images};
 use recording::CanvasRecorder;
 use resources::CanvasGpuResources;
 
@@ -34,7 +33,6 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 pub struct CanvasRenderer {
     device: RenderDevice,
     gpu: CanvasGpuResources,
-    resolving_images: HashSet<ImageInstanceKey>,
 }
 
 impl CanvasRenderer {
@@ -42,7 +40,6 @@ impl CanvasRenderer {
         Self {
             device,
             gpu: CanvasGpuResources::new(),
-            resolving_images: HashSet::new(),
         }
     }
 
@@ -57,7 +54,7 @@ impl CanvasRenderer {
         canvas: &Canvas,
         view: CanvasView,
     ) -> Result<()> {
-        self.materialize_canvas_images(canvas)?;
+        self.materialize_canvas_resources(canvas)?;
         let (image_view, format, extent) = target.surface();
         self.record_to_image_view(
             target.command_buffer,
@@ -71,7 +68,7 @@ impl CanvasRenderer {
         )
     }
 
-    fn materialize_canvas_image(
+    fn materialize_layer_backing(
         &mut self,
         width: u32,
         height: u32,
@@ -129,51 +126,43 @@ impl CanvasRenderer {
         Ok(backing)
     }
 
-    fn materialize_canvas_images(&mut self, canvas: &Canvas) -> Result<()> {
+    fn materialize_canvas_resources(&mut self, canvas: &Canvas) -> Result<()> {
         let mut images = Vec::new();
         collect_images(canvas, &mut images);
         for image in images {
-            self.materialize_image(&image)?;
+            self.gpu.ensure_image_cache(&self.device)?;
+            self.gpu
+                .image_cache
+                .as_mut()
+                .unwrap()
+                .ensure_uploaded(&image)?;
+        }
+        let mut layers = Vec::new();
+        collect_layers(canvas, &mut layers);
+        for layer in layers {
+            self.materialize_layer(&layer)?;
         }
         Ok(())
     }
 
-    fn materialize_image(&mut self, image: &Image) -> Result<()> {
+    fn materialize_layer(&mut self, layer: &Layer) -> Result<()> {
         self.gpu.ensure_image_cache(&self.device)?;
-        if self.gpu.image_cache.as_mut().unwrap().contains(image) {
+        if self.gpu.image_cache.as_mut().unwrap().contains_layer(layer) {
             return Ok(());
         }
 
-        let key = image.instance_key();
-        if !self.resolving_images.insert(key.clone()) {
-            return Err("cyclic Image producer dependency".into());
-        }
-        let result = (|| -> Result<()> {
-            match image.content() {
-                ImageContent::Rgba8(_) => self
-                    .gpu
-                    .image_cache
-                    .as_mut()
-                    .unwrap()
-                    .ensure_uploaded(image),
-                ImageContent::Canvas { canvas, view } => {
-                    self.materialize_canvas_images(canvas)?;
-                    let backing = self.materialize_canvas_image(
-                        image.width(),
-                        image.height(),
-                        canvas,
-                        *view,
-                    )?;
-                    self.gpu
-                        .image_cache
-                        .as_mut()
-                        .unwrap()
-                        .insert_rendered(image, backing)
-                }
-            }
-        })();
-        self.resolving_images.remove(&key);
-        result
+        self.materialize_canvas_resources(layer.content())?;
+        let backing = self.materialize_layer_backing(
+            layer.width(),
+            layer.height(),
+            layer.content(),
+            layer.view(),
+        )?;
+        self.gpu
+            .image_cache
+            .as_mut()
+            .unwrap()
+            .insert_layer(layer, backing)
     }
 
     #[allow(clippy::too_many_arguments)]

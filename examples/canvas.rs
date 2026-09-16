@@ -1,7 +1,7 @@
 use theoria::{
     canvas::{
         AcrossPathGradient, AlongPathGradient, BlendMode, Canvas, CanvasView, ColorRamp, Composite,
-        ConicGradient, Coverage, GradientPoint, GradientStop, ImageExtend, ImagePattern,
+        ConicGradient, Coverage, GradientPoint, GradientStop, ImageExtend, ImagePattern, Layer,
         LinearGradient, MeshGradient, RadialGradient,
     },
     color::Color,
@@ -19,20 +19,7 @@ use theoria::{
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut event_loop = windows::event_loop();
     let event_loop_handle = event_loop.handle();
-    let source_image = make_sample_image()?;
-    let image_width = source_image.width();
-    let image_height = source_image.height();
-    let image_canvas = Canvas::draw(source_image, Coverage::all());
-    let image = Image::from_canvas(
-        image_width,
-        image_height,
-        image_canvas,
-        CanvasView::axis_aligned(
-            Point::new(0.0, 0.0),
-            Point::new(image_width as f32, image_height as f32),
-        )
-        .expect("the sample image view is non-degenerate"),
-    )?;
+    let image = make_sample_image()?;
 
     let window = Window::new(
         &event_loop_handle,
@@ -230,8 +217,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Point::new(width * 0.02, height * 0.72),
                     )
                     .expect("the sample view quadrilateral is non-degenerate");
+                    let content = Layer::new(content, view, size.width.max(1), size.height.max(1))?;
                     let clear_color = Color::rgba(0.025, 0.035, 0.055, 1.0)?;
-                    Ok(SurfaceContent::new(content, view, clear_color))
+                    Ok(SurfaceContent::new(content.into(), view, clear_color))
                 })()
                 .expect("the Canvas sample uses valid fixed drawing parameters")
             })

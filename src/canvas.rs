@@ -1,6 +1,7 @@
 mod color_field;
 mod composition;
 mod coverage;
+mod layer;
 mod model;
 mod view;
 
@@ -12,10 +13,12 @@ pub use color_field::{
 };
 pub use composition::{BlendMode, Composite};
 pub use coverage::Coverage;
+pub use layer::{Layer, LayerError};
 pub use model::Canvas;
 pub use view::CanvasView;
 
 pub(crate) use coverage::CoverageNode;
+pub(crate) use layer::LayerInstanceKey;
 pub(crate) use model::{CanvasNode, Draw};
 
 #[cfg(test)]

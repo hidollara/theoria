@@ -1,11 +1,12 @@
 use crate::{
-    canvas::{BlendMode, Canvas, CanvasNode, ColorField, Composite, CoverageNode, Draw},
+    canvas::{BlendMode, Canvas, CanvasNode, ColorField, Composite, CoverageNode, Draw, Layer},
     image::Image,
 };
 
 pub(super) fn collect_images(canvas: &Canvas, images: &mut Vec<Image>) {
     match canvas.node() {
         CanvasNode::Empty => {}
+        CanvasNode::Layer(_) => {}
         CanvasNode::Draw(draw) => collect_draw_images(draw, images),
         CanvasNode::Transform { content, .. } => collect_images(content, images),
         CanvasNode::Composite {
@@ -17,10 +18,32 @@ pub(super) fn collect_images(canvas: &Canvas, images: &mut Vec<Image>) {
     }
 }
 
+pub(super) fn collect_layers(canvas: &Canvas, layers: &mut Vec<Layer>) {
+    match canvas.node() {
+        CanvasNode::Empty => {}
+        CanvasNode::Layer(layer) => layers.push(layer.clone()),
+        CanvasNode::Draw(draw) => collect_draw_layers(draw, layers),
+        CanvasNode::Transform { content, .. } => collect_layers(content, layers),
+        CanvasNode::Composite {
+            backdrop, source, ..
+        } => {
+            collect_layers(backdrop, layers);
+            collect_layers(source, layers);
+        }
+    }
+}
+
 fn collect_draw_images(draw: &Draw, images: &mut Vec<Image>) {
     collect_color_field_images(&draw.source, images);
     if let CoverageNode::AlphaOf(source) = draw.coverage.node() {
         collect_color_field_images(source, images);
+    }
+}
+
+fn collect_draw_layers(draw: &Draw, layers: &mut Vec<Layer>) {
+    collect_color_field_layers(&draw.source, layers);
+    if let CoverageNode::AlphaOf(source) = draw.coverage.node() {
+        collect_color_field_layers(source, layers);
     }
 }
 
@@ -38,6 +61,12 @@ fn collect_color_field_images(source: &ColorField, images: &mut Vec<Image>) {
     }
 }
 
+fn collect_color_field_layers(source: &ColorField, layers: &mut Vec<Layer>) {
+    if let ColorField::Canvas(canvas) = source {
+        collect_layers(canvas, layers);
+    }
+}
+
 pub(super) fn required_scratch_images(canvas: &Canvas) -> usize {
     1 + additional_scratch_images(canvas)
 }
@@ -45,6 +74,7 @@ pub(super) fn required_scratch_images(canvas: &Canvas) -> usize {
 fn additional_scratch_images(canvas: &Canvas) -> usize {
     match canvas.node() {
         CanvasNode::Empty => 0,
+        CanvasNode::Layer(_) => 0,
         CanvasNode::Draw(draw) => {
             if (draw.blend_mode != BlendMode::Normal || draw.composite != Composite::SourceOver)
                 && !matches!(draw.coverage.node(), CoverageNode::All)
@@ -115,6 +145,7 @@ fn required_coverage_scratch_images(coverage: &crate::canvas::Coverage) -> usize
 pub(super) fn can_record_directly(canvas: &Canvas) -> bool {
     match canvas.node() {
         CanvasNode::Empty => true,
+        CanvasNode::Layer(_) => true,
         CanvasNode::Draw(draw) => {
             draw.blend_mode == BlendMode::Normal && draw.composite == Composite::SourceOver
         }

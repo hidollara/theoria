@@ -65,6 +65,12 @@ struct SamplerKey {
 }
 
 impl SamplerKey {
+    const LAYER: Self = Self {
+        sampling: ImageSampling::Linear,
+        extend_x: ImageExtend::Transparent,
+        extend_y: ImageExtend::Transparent,
+    };
+
     const RENDER_IMAGE: Self = Self {
         sampling: ImageSampling::Linear,
         extend_x: ImageExtend::Clamp,
@@ -87,6 +93,10 @@ impl GpuImage {
 
     pub(in crate::vulkan) fn alpha_mode(&self) -> GpuAlphaMode {
         self.alpha_mode
+    }
+
+    pub(in crate::vulkan) fn layer_descriptor_set(&self) -> vk::DescriptorSet {
+        self.descriptor_sets[&SamplerKey::LAYER]
     }
 }
 

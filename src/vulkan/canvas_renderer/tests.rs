@@ -1,27 +1,31 @@
 use super::super::image::GpuAlphaMode;
-use super::canvas_plan::{can_record_directly, collect_images, required_scratch_images};
+use super::canvas_plan::{
+    can_record_directly, collect_images, collect_layers, required_scratch_images,
+};
 use super::encoding::ImagePushConstants;
 use super::pipeline::composite_blend_factors;
 use super::*;
-use crate::canvas::{Composite, Coverage, ImagePattern};
+use crate::canvas::{Composite, Coverage, ImagePattern, Layer};
 use crate::color::Color;
 use crate::geometry::Point;
+use crate::image::Image;
 use crate::transform::Projective2;
 
 #[test]
-fn image_is_a_raster_boundary_while_canvas_color_field_stays_semantic() {
+fn layer_is_a_raster_boundary_while_canvas_color_field_stays_semantic() {
     let pixels = Image::from_rgba8(1, 1, vec![255; 4]).unwrap();
     let producer = Canvas::draw(pixels.clone(), Coverage::all());
     let view = CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(1.0, 1.0)).unwrap();
-    let image = Image::from_canvas(1, 1, producer.clone(), view).unwrap();
+    let layer = Layer::new(producer.clone(), view, 1, 1).unwrap();
 
-    let mut image_dependencies = Vec::new();
-    collect_images(
-        &Canvas::draw(image.clone(), Coverage::all()),
-        &mut image_dependencies,
-    );
-    assert_eq!(image_dependencies.len(), 1);
-    assert_eq!(image_dependencies[0].instance_key(), image.instance_key());
+    let mut layer_dependencies = Vec::new();
+    collect_layers(&Canvas::from(layer.clone()), &mut layer_dependencies);
+    assert_eq!(layer_dependencies.len(), 1);
+    assert_eq!(layer_dependencies[0].instance_key(), layer.instance_key());
+
+    let mut outer_image_dependencies = Vec::new();
+    collect_images(&Canvas::from(layer.clone()), &mut outer_image_dependencies);
+    assert!(outer_image_dependencies.is_empty());
 
     let mut canvas_dependencies = Vec::new();
     collect_images(
@@ -35,11 +39,11 @@ fn image_is_a_raster_boundary_while_canvas_color_field_stays_semantic() {
 #[test]
 fn image_sampling_respects_the_gpu_images_alpha_representation() {
     let straight = Image::from_rgba8(1, 1, vec![255, 128, 64, 128]).unwrap();
-    let premultiplied = Image::from_canvas(
-        1,
-        1,
+    let layer = Layer::new(
         Canvas::empty(),
         CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(1.0, 1.0)).unwrap(),
+        1,
+        1,
     )
     .unwrap();
     let points = [Point::new(0.0, 0.0); 3];
@@ -52,8 +56,8 @@ fn image_sampling_respects_the_gpu_images_alpha_representation() {
         Projective2::IDENTITY,
         view,
     );
-    let premultiplied_constants = ImagePushConstants::new(
-        &ImagePattern::new(premultiplied),
+    let premultiplied_constants = ImagePushConstants::new_layer(
+        &layer,
         GpuAlphaMode::Premultiplied,
         points,
         Projective2::IDENTITY,

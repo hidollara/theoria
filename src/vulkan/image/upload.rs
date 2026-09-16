@@ -17,9 +17,7 @@ use super::storage::VulkanImage;
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 pub(super) fn upload_rgba8(device: RenderDevice, source: &Image) -> Result<Arc<VulkanImage>> {
-    let pixels = source
-        .rgba8()
-        .ok_or("the Image has neither RGBA8 pixels nor a compatible Vulkan materialization")?;
+    let pixels = source.rgba8();
     let staging = HostBuffer::new(
         device.clone(),
         pixels.len() as vk::DeviceSize,

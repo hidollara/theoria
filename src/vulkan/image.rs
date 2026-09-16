@@ -2,7 +2,10 @@ use std::{collections::HashMap, error::Error, sync::Arc};
 
 use ash::vk;
 
-use crate::image::{Image, ImageContent, ImageInstanceKey};
+use crate::{
+    canvas::{Layer, LayerInstanceKey},
+    image::{Image, ImageInstanceKey},
+};
 
 use super::presenter::RenderDevice;
 
@@ -21,6 +24,7 @@ pub(super) struct ImageCache {
     // Fields drop in declaration order: image bindings must disappear before
     // the shared sampler and descriptor-layout infrastructure they reference.
     images: HashMap<ImageInstanceKey, GpuImage>,
+    layers: HashMap<LayerInstanceKey, GpuImage>,
     descriptors: ImageDescriptors,
     device: RenderDevice,
 }
@@ -30,6 +34,7 @@ impl ImageCache {
         let descriptors = ImageDescriptors::new(device.clone())?;
         Ok(Self {
             images: HashMap::new(),
+            layers: HashMap::new(),
             descriptors,
             device,
         })
@@ -43,31 +48,28 @@ impl ImageCache {
         self.prune_unused();
         let key = image.instance_key();
         if !self.images.contains_key(&key) {
-            if !matches!(image.content(), ImageContent::Rgba8(_)) {
-                return Err("only CPU raster Images can be uploaded directly".into());
-            }
             let gpu_image = self.upload(image)?;
             self.images.insert(key, gpu_image);
         }
         Ok(())
     }
 
-    pub(super) fn insert_rendered(
-        &mut self,
-        image: &Image,
-        backing: Arc<VulkanImage>,
-    ) -> Result<()> {
+    pub(super) fn insert_layer(&mut self, layer: &Layer, backing: Arc<VulkanImage>) -> Result<()> {
         self.prune_unused();
         let gpu_image = self
             .descriptors
             .bind_backing(backing, GpuAlphaMode::Premultiplied)?;
-        self.images.insert(image.instance_key(), gpu_image);
+        self.layers.insert(layer.instance_key(), gpu_image);
         Ok(())
     }
 
-    pub(super) fn contains(&mut self, image: &Image) -> bool {
+    pub(super) fn contains_layer(&mut self, layer: &Layer) -> bool {
         self.prune_unused();
-        self.images.contains_key(&image.instance_key())
+        self.layers.contains_key(&layer.instance_key())
+    }
+
+    pub(super) fn get_layer(&self, layer: &Layer) -> Option<&GpuImage> {
+        self.layers.get(&layer.instance_key())
     }
 
     pub(super) fn get(&self, image: &Image) -> Option<&GpuImage> {
@@ -76,6 +78,7 @@ impl ImageCache {
 
     fn prune_unused(&mut self) {
         self.images.retain(|key, _| key.is_alive());
+        self.layers.retain(|key, _| key.is_alive());
     }
 
     pub(super) fn create_render_target(

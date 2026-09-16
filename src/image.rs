@@ -5,17 +5,10 @@ use std::{
     sync::{Arc, Weak},
 };
 
-use crate::canvas::{Canvas, CanvasView};
-
 struct ImageInner {
     width: u32,
     height: u32,
-    content: ImageContent,
-}
-
-pub(crate) enum ImageContent {
-    Rgba8(Vec<u8>),
-    Canvas { canvas: Canvas, view: CanvasView },
+    rgba8: Vec<u8>,
 }
 
 /// An instance-identity key used internally by backend caches.
@@ -50,10 +43,9 @@ impl fmt::Debug for ImageInstanceKey {
 
 /// An immutable logical 2D raster resource.
 ///
-/// An Image contains either CPU raster data or a finite Canvas evaluation
-/// recipe. Its physical GPU representation is intentionally not part of the
-/// public API and may be allocated, uploaded, and cached lazily by each
-/// renderer. Cloning only clones the shared logical handle.
+/// Its physical GPU representation is intentionally not part of the public
+/// API and may be uploaded and cached lazily by each renderer. Cloning only
+/// clones the shared logical handle.
 #[derive(Clone)]
 pub struct Image {
     inner: Arc<ImageInner>,
@@ -65,13 +57,6 @@ impl fmt::Debug for Image {
             .debug_struct("Image")
             .field("width", &self.width())
             .field("height", &self.height())
-            .field(
-                "content",
-                &match &self.inner.content {
-                    ImageContent::Rgba8(_) => "rgba8",
-                    ImageContent::Canvas { .. } => "canvas",
-                },
-            )
             .finish_non_exhaustive()
     }
 }
@@ -99,27 +84,7 @@ impl Image {
             inner: Arc::new(ImageInner {
                 width,
                 height,
-                content: ImageContent::Rgba8(rgba8),
-            }),
-        })
-    }
-
-    /// Declares a finite raster evaluation of an immutable Canvas.
-    ///
-    /// This does not allocate a GPU image or execute rendering. A renderer
-    /// materializes and caches the result when an Image source is needed.
-    pub fn from_canvas(
-        width: u32,
-        height: u32,
-        canvas: Canvas,
-        view: CanvasView,
-    ) -> Result<Self, ImageError> {
-        validate_dimensions(width, height)?;
-        Ok(Self {
-            inner: Arc::new(ImageInner {
-                width,
-                height,
-                content: ImageContent::Canvas { canvas, view },
+                rgba8,
             }),
         })
     }
@@ -132,19 +97,9 @@ impl Image {
         self.inner.height
     }
 
-    pub(crate) fn content(&self) -> &ImageContent {
-        &self.inner.content
-    }
-
-    /// Returns the CPU-readable straight-alpha RGBA8 pixels when this Image has them.
-    ///
-    /// A lazily evaluated Canvas Image has no CPU pixels until a renderer
-    /// explicitly produces a raster Image.
-    pub fn rgba8(&self) -> Option<&[u8]> {
-        match self.content() {
-            ImageContent::Rgba8(rgba8) => Some(rgba8),
-            ImageContent::Canvas { .. } => None,
-        }
+    /// Returns the CPU-readable straight-alpha RGBA8 pixels.
+    pub fn rgba8(&self) -> &[u8] {
+        &self.inner.rgba8
     }
 
     pub(crate) fn instance_key(&self) -> ImageInstanceKey {
@@ -156,16 +111,6 @@ impl ImageInstanceKey {
     pub(crate) fn is_alive(&self) -> bool {
         self.0.strong_count() != 0
     }
-}
-
-fn validate_dimensions(width: u32, height: u32) -> Result<(), ImageError> {
-    if width == 0 || height == 0 {
-        return Err(ImageError::Empty { width, height });
-    }
-    width
-        .checked_mul(height)
-        .ok_or(ImageError::DimensionsTooLarge { width, height })?;
-    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -210,10 +155,7 @@ mod tests {
         let clone = image.clone();
 
         assert_eq!(image.instance_key(), clone.instance_key());
-        assert_eq!(
-            image.rgba8().unwrap().as_ptr(),
-            clone.rgba8().unwrap().as_ptr()
-        );
+        assert_eq!(image.rgba8().as_ptr(), clone.rgba8().as_ptr());
     }
 
     #[test]
@@ -244,27 +186,5 @@ mod tests {
         };
 
         assert!(key.0.upgrade().is_none());
-    }
-
-    #[test]
-    fn canvas_image_is_an_unevaluated_raster_recipe() {
-        let canvas = Canvas::empty();
-        let view = CanvasView::axis_aligned(
-            crate::geometry::Point::new(0.0, 0.0),
-            crate::geometry::Point::new(8.0, 6.0),
-        )
-        .unwrap();
-        let image = Image::from_canvas(8, 6, canvas.clone(), view).unwrap();
-
-        assert_eq!((image.width(), image.height()), (8, 6));
-        let ImageContent::Canvas {
-            canvas: producer,
-            view: producer_view,
-        } = image.content()
-        else {
-            panic!("expected a Canvas image recipe");
-        };
-        assert!(matches!(producer.node(), crate::canvas::CanvasNode::Empty));
-        assert_eq!(*producer_view, view);
     }
 }

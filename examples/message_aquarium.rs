@@ -15,7 +15,7 @@ use ::windows::Win32::{
     UI::WindowsAndMessaging::{PostThreadMessageW, WM_APP},
 };
 use theoria::{
-    canvas::CanvasView,
+    canvas::{CanvasView, Layer},
     event::EventSink,
     font::Font,
     geometry::Point,
@@ -51,6 +51,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             })
         })
         .transpose()?;
+    let snapshotting = image_surface.is_some();
 
     let window = Window::new(
         &event_loop_handle,
@@ -125,6 +126,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let view =
                     CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(width, height))
                         .expect("a positive Window extent has a non-degenerate view");
+                let canvas = if snapshotting {
+                    Layer::new(canvas, view, size.width.max(1), size.height.max(1))
+                        .expect("a positive Window extent is a valid Layer size")
+                        .into()
+                } else {
+                    canvas
+                };
                 SurfaceContent::new(canvas, view, theoria::color::Color::rgb8(5, 8, 15))
             });
 
@@ -195,10 +203,6 @@ fn write_png(path: &Path, image: &theoria::image::Image) -> Result<(), Box<dyn s
     let mut encoder = png::Encoder::new(output, image.width(), image.height());
     encoder.set_color(png::ColorType::Rgba);
     encoder.set_depth(png::BitDepth::Eight);
-    encoder.write_header()?.write_image_data(
-        image
-            .rgba8()
-            .ok_or("the rendered Image has no RGBA8 pixels")?,
-    )?;
+    encoder.write_header()?.write_image_data(image.rgba8())?;
     Ok(())
 }
