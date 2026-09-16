@@ -60,7 +60,7 @@ pub fn render(
                 21.0,
                 stage_color(stage),
                 x + 14.0,
-                82.0,
+                118.0,
             ),
             Composite::SourceOver,
         );
@@ -102,7 +102,7 @@ pub fn render(
                 30.0,
                 Color::rgb8(231, 240, 255),
                 margin,
-                40.0,
+                8.0,
             ),
             Composite::SourceOver,
         )
@@ -113,7 +113,7 @@ pub fn render(
                 18.0,
                 Color::rgb8(138, 157, 188),
                 margin,
-                height - 20.0,
+                height - 42.0,
             ),
             Composite::SourceOver,
         );
@@ -146,7 +146,7 @@ pub fn render(
                 15.0,
                 Color::rgb8(180, 197, 224),
                 margin,
-                62.0,
+                55.0,
             ),
             Composite::SourceOver,
         );
