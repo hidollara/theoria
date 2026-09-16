@@ -136,7 +136,11 @@ impl Image {
         &self.inner.content
     }
 
-    pub(crate) fn rgba8(&self) -> Option<&[u8]> {
+    /// Returns the CPU-readable straight-alpha RGBA8 pixels when this Image has them.
+    ///
+    /// A lazily evaluated Canvas Image has no CPU pixels until a renderer
+    /// explicitly produces a raster Image.
+    pub fn rgba8(&self) -> Option<&[u8]> {
         match self.content() {
             ImageContent::Rgba8(rgba8) => Some(rgba8),
             ImageContent::Canvas { .. } => None,

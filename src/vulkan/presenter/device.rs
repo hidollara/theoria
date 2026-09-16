@@ -10,9 +10,106 @@ mod render;
 mod selection;
 
 pub use render::RenderDevice;
-use selection::{DeviceSelection, InstanceSupport, REQUIRED_API_VERSION};
+use selection::{DeviceSelection, InstanceSupport, REQUIRED_API_VERSION, select_render_device};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
+
+struct RenderDeviceConstruction {
+    entry: Option<ash::Entry>,
+    instance: Option<ash::Instance>,
+}
+
+impl RenderDeviceConstruction {
+    fn new(entry: ash::Entry, instance: ash::Instance) -> Self {
+        Self {
+            entry: Some(entry),
+            instance: Some(instance),
+        }
+    }
+
+    fn finish(
+        mut self,
+        physical_device: vk::PhysicalDevice,
+        device: ash::Device,
+        memory_properties: vk::PhysicalDeviceMemoryProperties,
+        graphics_queue: vk::Queue,
+        queue_family_index: u32,
+    ) -> RenderDevice {
+        RenderDevice::new(
+            self.entry.take().expect("entry is present"),
+            self.instance.take().expect("instance is present"),
+            physical_device,
+            device,
+            memory_properties,
+            graphics_queue,
+            queue_family_index,
+        )
+    }
+}
+
+impl Drop for RenderDeviceConstruction {
+    fn drop(&mut self) {
+        if let Some(instance) = self.instance.as_ref() {
+            unsafe { instance.destroy_instance(None) };
+        }
+    }
+}
+
+impl RenderDevice {
+    pub(crate) fn independent() -> Result<Self> {
+        unsafe {
+            let entry = ash::Entry::load()?;
+            let loader_version = entry
+                .try_enumerate_instance_version()?
+                .unwrap_or(vk::API_VERSION_1_0);
+            if loader_version < REQUIRED_API_VERSION {
+                return Err(format!(
+                    "Vulkan 1.4 is required, but the loader only supports {}.{}.{}",
+                    vk::api_version_major(loader_version),
+                    vk::api_version_minor(loader_version),
+                    vk::api_version_patch(loader_version),
+                )
+                .into());
+            }
+
+            let application_name = c"theoria";
+            let app_info = vk::ApplicationInfo::default()
+                .application_name(application_name)
+                .application_version(vk::make_api_version(0, 0, 1, 0))
+                .engine_name(application_name)
+                .engine_version(vk::make_api_version(0, 0, 1, 0))
+                .api_version(REQUIRED_API_VERSION);
+            let instance = entry.create_instance(
+                &vk::InstanceCreateInfo::default().application_info(&app_info),
+                None,
+            )?;
+            let construction = RenderDeviceConstruction::new(entry, instance);
+            let instance = construction.instance.as_ref().expect("instance is present");
+            let (physical_device, queue_family_index) = select_render_device(instance)?;
+            let queue_priorities = [1.0];
+            let queue_info = vk::DeviceQueueCreateInfo::default()
+                .queue_family_index(queue_family_index)
+                .queue_priorities(&queue_priorities);
+            let mut vulkan_13_features = vk::PhysicalDeviceVulkan13Features::default()
+                .dynamic_rendering(true)
+                .synchronization2(true);
+            let device_info = vk::DeviceCreateInfo::default()
+                .queue_create_infos(std::slice::from_ref(&queue_info))
+                .push_next(&mut vulkan_13_features);
+            let device = instance.create_device(physical_device, &device_info, None)?;
+            let graphics_queue = device.get_device_queue(queue_family_index, 0);
+            let memory_properties = instance.get_physical_device_memory_properties(physical_device);
+
+            Ok(construction.finish(
+                physical_device,
+                device,
+                memory_properties,
+                graphics_queue,
+                queue_family_index,
+            ))
+        }
+    }
+}
 
 struct PresentationDeviceConstruction {
     entry: Option<ash::Entry>,

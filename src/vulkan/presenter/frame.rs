@@ -7,8 +7,7 @@ use ash::vk;
 use crate::color::Color;
 use crate::vulkan::image_layout::transition_image;
 
-use super::swapchain::SwapchainResources;
-use super::{device::PresentationDevice, swapchain::SurfaceRenderTarget};
+use super::{device::PresentationDevice, swapchain::SwapchainResources};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -46,18 +45,33 @@ impl FrameSynchronization {
 /// An acquired destination that a renderer can record commands into.
 pub struct RenderTarget<'a> {
     pub(crate) command_buffer: vk::CommandBuffer,
-    surface: SurfaceRenderTarget,
+    image_view: vk::ImageView,
+    format: vk::Format,
+    extent: vk::Extent2D,
     clear_color: Color,
     _frame: PhantomData<&'a ()>,
 }
 
 impl RenderTarget<'_> {
+    pub(in crate::vulkan) const fn new(
+        command_buffer: vk::CommandBuffer,
+        image_view: vk::ImageView,
+        format: vk::Format,
+        extent: vk::Extent2D,
+        clear_color: Color,
+    ) -> Self {
+        Self {
+            command_buffer,
+            image_view,
+            format,
+            extent,
+            clear_color,
+            _frame: PhantomData,
+        }
+    }
+
     pub(crate) fn surface(&self) -> (vk::ImageView, vk::Format, vk::Extent2D) {
-        (
-            self.surface.image_view,
-            self.surface.format,
-            self.surface.extent,
-        )
+        (self.image_view, self.format, self.extent)
     }
 
     pub(crate) fn clear_color(&self) -> Color {
@@ -108,12 +122,14 @@ impl<'a> PresentFrame<'a> {
     }
 
     pub fn render_target(&self, clear_color: Color) -> RenderTarget<'_> {
-        RenderTarget {
-            command_buffer: self.command_buffer,
-            surface: self.swapchain.render_targets[self.image_index as usize],
+        let surface = self.swapchain.render_targets[self.image_index as usize];
+        RenderTarget::new(
+            self.command_buffer,
+            surface.image_view,
+            surface.format,
+            surface.extent,
             clear_color,
-            _frame: PhantomData,
-        }
+        )
     }
 
     /// Submits the recorded frame and presents it.

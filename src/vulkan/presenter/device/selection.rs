@@ -120,11 +120,44 @@ impl DeviceSelection {
     }
 }
 
+pub(super) unsafe fn select_render_device(
+    instance: &ash::Instance,
+) -> Result<(vk::PhysicalDevice, u32)> {
+    unsafe { render_candidates(instance)? }
+        .into_iter()
+        .max_by_key(|candidate| candidate.0)
+        .map(|(_, device, queue)| (device, queue))
+        .ok_or_else(|| {
+            "no Vulkan 1.4 graphics device with dynamic rendering and synchronization2".into()
+        })
+}
+
 unsafe fn pick_physical_device(
     instance: &ash::Instance,
     surface_loader: &khr::surface::Instance,
     surface: vk::SurfaceKHR,
 ) -> Result<(vk::PhysicalDevice, u32)> {
+    let mut candidates = Vec::new();
+    for (score, physical_device, queue) in unsafe { render_candidates(instance)? } {
+        if unsafe {
+            surface_loader.get_physical_device_surface_support(physical_device, queue, surface)?
+        } {
+            candidates.push((score, physical_device, queue));
+        }
+    }
+    candidates
+        .into_iter()
+        .max_by_key(|candidate| candidate.0)
+        .map(|(_, device, queue)| (device, queue))
+        .ok_or_else(|| {
+            "no Vulkan 1.4 device with dynamic rendering and synchronization2 can present to this window"
+                .into()
+        })
+}
+
+unsafe fn render_candidates(
+    instance: &ash::Instance,
+) -> Result<Vec<(u8, vk::PhysicalDevice, u32)>> {
     let mut candidates = Vec::new();
     for physical_device in unsafe { instance.enumerate_physical_devices()? } {
         let properties = unsafe { instance.get_physical_device_properties(physical_device) };
@@ -148,28 +181,12 @@ unsafe fn pick_physical_device(
         let queue_families =
             unsafe { instance.get_physical_device_queue_family_properties(physical_device) };
         for (index, family) in queue_families.iter().enumerate() {
-            let supports_graphics = family.queue_flags.contains(vk::QueueFlags::GRAPHICS);
-            let supports_present = unsafe {
-                surface_loader.get_physical_device_surface_support(
-                    physical_device,
-                    index as u32,
-                    surface,
-                )?
-            };
-            if supports_graphics && supports_present {
+            if family.queue_flags.contains(vk::QueueFlags::GRAPHICS) {
                 candidates.push((score, physical_device, index as u32));
-                break;
             }
         }
     }
-    candidates
-        .into_iter()
-        .max_by_key(|candidate| candidate.0)
-        .map(|(_, device, queue)| (device, queue))
-        .ok_or_else(|| {
-            "no Vulkan 1.4 device with dynamic rendering and synchronization2 can present to this window"
-                .into()
-        })
+    Ok(candidates)
 }
 
 unsafe fn supports_instance_extension(entry: &ash::Entry, extension: &CStr) -> Result<bool> {

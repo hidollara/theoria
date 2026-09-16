@@ -46,6 +46,10 @@ impl CanvasRenderer {
         }
     }
 
+    pub(crate) fn device(&self) -> RenderDevice {
+        self.device.clone()
+    }
+
     pub fn render(
         &mut self,
         target: RenderTarget<'_>,
