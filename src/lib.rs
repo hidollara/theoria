@@ -11,6 +11,7 @@ pub mod input;
 pub mod interaction;
 pub mod math;
 pub mod path;
+pub mod recording;
 pub mod surface;
 mod tessellation;
 pub mod text;

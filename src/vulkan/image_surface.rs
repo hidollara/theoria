@@ -29,33 +29,20 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 pub struct ImageSurface {
     size: SurfaceSize,
     renderer: CanvasRenderer,
+    target: VulkanImage,
+    readback: HostBuffer,
+    target_initialized: bool,
 }
 
 impl ImageSurface {
     /// Creates an offscreen image Surface with a fixed non-zero extent.
     pub fn new(size: SurfaceSize) -> Result<Self> {
-        validate_size(size)?;
-        let device = RenderDevice::independent()?;
-        Ok(Self {
-            size,
-            renderer: CanvasRenderer::new(device),
-        })
-    }
-
-    /// Returns the output image extent.
-    pub const fn size(&self) -> SurfaceSize {
-        self.size
-    }
-
-    /// Evaluates the latest content into one CPU-readable sRGBA8 image.
-    pub fn render(&mut self, content: &SurfaceContent) -> Result<Srgba8Image> {
-        let size = self.size;
         let byte_len = pixel_byte_len(size)?;
+        let device = RenderDevice::independent()?;
         let extent = vk::Extent2D {
             width: size.width,
             height: size.height,
         };
-        let device = self.renderer.device();
         let target = VulkanImage::new(
             device.clone(),
             vk::Format::R8G8B8A8_UNORM,
@@ -68,18 +55,49 @@ impl ImageSurface {
             byte_len as vk::DeviceSize,
             vk::BufferUsageFlags::TRANSFER_DST,
         )?;
+        Ok(Self {
+            size,
+            renderer: CanvasRenderer::new(device),
+            target,
+            readback,
+            target_initialized: false,
+        })
+    }
+
+    /// Returns the output image extent.
+    pub const fn size(&self) -> SurfaceSize {
+        self.size
+    }
+
+    /// Evaluates the latest content into one CPU-readable sRGBA8 image.
+    pub fn render(&mut self, content: &SurfaceContent) -> Result<Srgba8Image> {
+        let size = self.size;
+        let device = self.renderer.device();
         let commands = OneShotCommands::begin(device.clone())?;
         let command_buffer = commands.buffer();
 
+        let (old_layout, source_stage, source_access) = if self.target_initialized {
+            (
+                vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                vk::PipelineStageFlags2::COPY,
+                vk::AccessFlags2::TRANSFER_READ,
+            )
+        } else {
+            (
+                vk::ImageLayout::UNDEFINED,
+                vk::PipelineStageFlags2::NONE,
+                vk::AccessFlags2::NONE,
+            )
+        };
         unsafe {
             transition_image(
                 device.raw(),
                 command_buffer,
-                target.image,
-                vk::ImageLayout::UNDEFINED,
+                self.target.image,
+                old_layout,
                 vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-                vk::PipelineStageFlags2::NONE,
-                vk::AccessFlags2::NONE,
+                source_stage,
+                source_access,
                 vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
                 vk::AccessFlags2::COLOR_ATTACHMENT_WRITE,
             );
@@ -87,9 +105,9 @@ impl ImageSurface {
         self.renderer.render(
             RenderTarget::new(
                 command_buffer,
-                target.view,
-                target.format,
-                target.extent,
+                self.target.view,
+                self.target.format,
+                self.target.extent,
                 content.clear_color(),
             ),
             Viewport::new(0.0, 0.0, size.width as f32, size.height as f32),
@@ -100,7 +118,7 @@ impl ImageSurface {
             transition_image(
                 device.raw(),
                 command_buffer,
-                target.image,
+                self.target.image,
                 vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
                 vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
                 vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
@@ -121,23 +139,19 @@ impl ImageSurface {
                 });
             device.raw().cmd_copy_image_to_buffer(
                 command_buffer,
-                target.image,
+                self.target.image,
                 vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-                readback.raw(),
+                self.readback.raw(),
                 &[copy],
             );
         }
         commands.submit_and_wait()?;
+        self.target_initialized = true;
 
-        let mut pixels = readback.read()?;
+        let mut pixels = self.readback.read()?;
         linear_premultiplied_to_srgba_straight(&mut pixels);
         Ok(Srgba8Image::new(size.width, size.height, pixels)?)
     }
-}
-
-fn validate_size(size: SurfaceSize) -> Result<()> {
-    let _ = pixel_byte_len(size)?;
-    Ok(())
 }
 
 fn pixel_byte_len(size: SurfaceSize) -> Result<usize> {
