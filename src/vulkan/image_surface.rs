@@ -1,11 +1,11 @@
-//! Offscreen Canvas evaluation into CPU-readable Images.
+//! Offscreen Canvas evaluation into CPU-readable sRGBA8 images.
 
 use std::error::Error;
 
 use ash::vk;
 
 use crate::{
-    image::Image,
+    image::Srgba8Image,
     surface::{SurfaceContent, SurfaceSize, Viewport},
     vulkan::{
         CanvasRenderer,
@@ -19,12 +19,12 @@ use crate::{
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-/// A finite offscreen Vulkan Surface that evaluates [`SurfaceContent`] into an Image.
+/// A finite offscreen Vulkan Surface that evaluates [`SurfaceContent`] into an sRGBA8 image.
 ///
 /// Unlike a presentation Surface, this Surface owns an independent rendering
 /// device and returns CPU-readable straight-alpha RGBA8 pixels. It is suitable
 /// for image generation, visual tests, and as the frame producer beneath a
-/// recorder. Rendering is synchronous: the returned Image is complete when
+/// recorder. Rendering is synchronous: the returned image is complete when
 /// [`Self::render`] returns.
 pub struct ImageSurface {
     size: SurfaceSize,
@@ -47,8 +47,8 @@ impl ImageSurface {
         self.size
     }
 
-    /// Evaluates the latest content into one CPU-readable Image.
-    pub fn render(&mut self, content: &SurfaceContent) -> Result<Image> {
+    /// Evaluates the latest content into one CPU-readable sRGBA8 image.
+    pub fn render(&mut self, content: &SurfaceContent) -> Result<Srgba8Image> {
         let size = self.size;
         let byte_len = pixel_byte_len(size)?;
         let extent = vk::Extent2D {
@@ -131,7 +131,7 @@ impl ImageSurface {
 
         let mut pixels = readback.read()?;
         linear_premultiplied_to_srgba_straight(&mut pixels);
-        Ok(Image::from_rgba8(size.width, size.height, pixels)?)
+        Ok(Srgba8Image::new(size.width, size.height, pixels)?)
     }
 }
 

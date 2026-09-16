@@ -5,7 +5,7 @@ use skrifa::{GlyphId, MetadataProvider};
 
 use crate::{
     canvas::{Canvas, ColorField, Coverage, ImagePattern, ImageSampling},
-    image::Image,
+    image::Srgba8Image,
     math::{Matrix2, Vector2},
     transform::Affine2,
 };
@@ -88,7 +88,7 @@ pub(super) fn canvas(
         ),
     }
 
-    let image = Image::from_rgba8(width, height, pixmap.take_demultiplied())
+    let image = Srgba8Image::new(width, height, pixmap.take_demultiplied())
         .map_err(|_| GlyphPresentationError::UnsupportedSvg)?;
     let pixel_to_design = raster_scale.recip();
     let image_to_font = Affine2::new(
@@ -276,13 +276,10 @@ mod tests {
         };
 
         assert_eq!((pattern.image().width(), pattern.image().height()), (6, 14));
-        assert!(
-            pattern
-                .image()
-                .rgba8()
-                .chunks_exact(4)
-                .any(|pixel| pixel[3] != 0)
-        );
+        let crate::canvas::image::ImageKind::Srgba8(image) = pattern.image().kind() else {
+            panic!("the SVG glyph source must be an sRGBA8 image");
+        };
+        assert!(image.pixels().chunks_exact(4).any(|pixel| pixel[3] != 0));
     }
 
     #[test]
@@ -349,7 +346,10 @@ mod tests {
         let crate::canvas::ColorField::Image(pattern) = &draw.source else {
             panic!("SVG realization should use an image color field");
         };
-        let pixel = &pattern.image().rgba8()[..4];
+        let crate::canvas::image::ImageKind::Srgba8(image) = pattern.image().kind() else {
+            panic!("the SVG glyph source must be an sRGBA8 image");
+        };
+        let pixel = &image.pixels()[..4];
         assert_eq!(pixel, [210, 30, 90, 255]);
     }
 

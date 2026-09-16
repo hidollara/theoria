@@ -1,7 +1,7 @@
 use std::{mem::size_of, slice};
 
 use crate::{
-    canvas::{BlendMode, CanvasView, Composite, ImagePattern, Layer},
+    canvas::{BlendMode, CanvasView, Composite, ImagePattern},
     geometry::Point,
     transform::Projective2,
 };
@@ -118,29 +118,6 @@ impl ImagePushConstants {
             alpha_mode,
             points,
             image_to_root,
-            view,
-        )
-    }
-
-    pub(super) fn new_layer(
-        layer: &Layer,
-        alpha_mode: GpuAlphaMode,
-        points: [Point; 3],
-        layer_to_root: Projective2,
-        view: CanvasView,
-    ) -> Self {
-        let normalized_to_pixels = Projective2::from_rows([
-            [layer.width() as f32, 0.0, 0.0],
-            [0.0, layer.height() as f32, 0.0],
-            [0.0, 0.0, 1.0],
-        ]);
-        Self::new_sampled(
-            layer.width(),
-            layer.height(),
-            layer.view().canvas_to_view.then(normalized_to_pixels),
-            alpha_mode,
-            points,
-            layer_to_root,
             view,
         )
     }

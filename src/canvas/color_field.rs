@@ -1,6 +1,6 @@
-use crate::{color::Color, image::Image};
+use crate::{color::Color, image::Srgba8Image};
 
-use super::Canvas;
+use super::{Canvas, canvas_image::CanvasImage, image::Image};
 
 mod gradient;
 mod image_pattern;
@@ -29,6 +29,18 @@ pub enum ColorField {
     Image(ImagePattern),
     /// Evaluates a child Canvas as one spatial RGBA field.
     Canvas(Canvas),
+}
+
+impl From<Srgba8Image> for ColorField {
+    fn from(image: Srgba8Image) -> Self {
+        Self::Image(ImagePattern::new(image))
+    }
+}
+
+impl From<CanvasImage> for ColorField {
+    fn from(image: CanvasImage) -> Self {
+        Self::Image(ImagePattern::new(image))
+    }
 }
 
 impl From<Image> for ColorField {

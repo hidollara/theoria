@@ -8,36 +8,39 @@ use std::{
 use super::{Canvas, CanvasView};
 
 #[derive(Debug)]
-struct LayerInner {
+struct CanvasImageInner {
     content: Canvas,
     view: CanvasView,
     width: u32,
     height: u32,
 }
 
-/// A finite-resolution evaluation boundary embedded in Canvas space.
+/// A finite, backend-independent image evaluation of a [`Canvas`].
 ///
-/// A renderer may materialize one Layer into a backend image and reuse that
-/// result wherever clones of the Layer occur. The cache itself remains an
-/// implementation detail and may be discarded and rebuilt. The Layer is
-/// placed back into Canvas space through the same View used to evaluate it;
-/// points outside that finite View are transparent.
+/// `CanvasImage` fixes an immutable Canvas value to one [`CanvasView`] and
+/// pixel extent. Sampling it therefore crosses an explicit rasterization
+/// boundary: transforms applied after conversion operate on the finite image,
+/// rather than reevaluating the original Canvas at the final resolution.
+///
+/// The definition itself contains no pixel buffer or backend resource. A
+/// renderer may materialize it lazily, reuse that materialization wherever
+/// clones occur, and discard and rebuild the physical representation later.
 #[derive(Clone, Debug)]
-pub struct Layer {
-    inner: Arc<LayerInner>,
+pub struct CanvasImage {
+    inner: Arc<CanvasImageInner>,
 }
 
-impl Layer {
-    /// Fixes `content` to one View and pixel resolution.
+impl CanvasImage {
+    /// Defines a finite image by fixing `content` to one View and pixel extent.
     pub fn new(
         content: Canvas,
         view: CanvasView,
         width: u32,
         height: u32,
-    ) -> Result<Self, LayerError> {
+    ) -> Result<Self, CanvasImageError> {
         validate_dimensions(width, height)?;
         Ok(Self {
-            inner: Arc::new(LayerInner {
+            inner: Arc::new(CanvasImageInner {
                 content,
                 view,
                 width,
@@ -62,76 +65,76 @@ impl Layer {
         self.inner.height
     }
 
-    pub(crate) fn instance_key(&self) -> LayerInstanceKey {
-        LayerInstanceKey(Arc::downgrade(&self.inner))
+    pub(crate) fn instance_key(&self) -> CanvasImageInstanceKey {
+        CanvasImageInstanceKey(Arc::downgrade(&self.inner))
     }
 }
 
 #[derive(Clone)]
-pub(crate) struct LayerInstanceKey(Weak<LayerInner>);
+pub(crate) struct CanvasImageInstanceKey(Weak<CanvasImageInner>);
 
-impl LayerInstanceKey {
+impl CanvasImageInstanceKey {
     pub(crate) fn is_alive(&self) -> bool {
         self.0.strong_count() != 0
     }
 }
 
-impl PartialEq for LayerInstanceKey {
+impl PartialEq for CanvasImageInstanceKey {
     fn eq(&self, other: &Self) -> bool {
         self.0.ptr_eq(&other.0)
     }
 }
 
-impl Eq for LayerInstanceKey {}
+impl Eq for CanvasImageInstanceKey {}
 
-impl Hash for LayerInstanceKey {
+impl Hash for CanvasImageInstanceKey {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.0.as_ptr().hash(state);
     }
 }
 
-impl fmt::Debug for LayerInstanceKey {
+impl fmt::Debug for CanvasImageInstanceKey {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
-            .debug_tuple("LayerInstanceKey")
+            .debug_tuple("CanvasImageInstanceKey")
             .field(&self.0.as_ptr())
             .finish()
     }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum LayerError {
+pub enum CanvasImageError {
     Empty { width: u32, height: u32 },
     DimensionsTooLarge { width: u32, height: u32 },
 }
 
-impl fmt::Display for LayerError {
+impl fmt::Display for CanvasImageError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Empty { width, height } => {
                 write!(
                     formatter,
-                    "layer dimensions must be non-zero, got {width}x{height}"
+                    "CanvasImage dimensions must be non-zero, got {width}x{height}"
                 )
             }
             Self::DimensionsTooLarge { width, height } => {
                 write!(
                     formatter,
-                    "layer dimensions are too large: {width}x{height}"
+                    "CanvasImage dimensions are too large: {width}x{height}"
                 )
             }
         }
     }
 }
 
-impl Error for LayerError {}
+impl Error for CanvasImageError {}
 
-fn validate_dimensions(width: u32, height: u32) -> Result<(), LayerError> {
+fn validate_dimensions(width: u32, height: u32) -> Result<(), CanvasImageError> {
     if width == 0 || height == 0 {
-        return Err(LayerError::Empty { width, height });
+        return Err(CanvasImageError::Empty { width, height });
     }
     width
         .checked_mul(height)
-        .ok_or(LayerError::DimensionsTooLarge { width, height })?;
+        .ok_or(CanvasImageError::DimensionsTooLarge { width, height })?;
     Ok(())
 }

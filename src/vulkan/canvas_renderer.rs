@@ -3,7 +3,11 @@ use std::{error::Error, sync::Arc};
 use ash::vk;
 
 use crate::{
-    canvas::{Canvas, CanvasView, Layer},
+    canvas::{
+        Canvas, CanvasView,
+        canvas_image::CanvasImage,
+        image::{Image, ImageKind},
+    },
     surface::Viewport,
 };
 
@@ -23,7 +27,7 @@ mod resources;
 mod view_space;
 
 use crate::vulkan::one_shot::OneShotCommands;
-use canvas_plan::{collect_images, collect_layers, required_scratch_images};
+use canvas_plan::{collect_images, required_scratch_images};
 use recording::CanvasRecorder;
 use resources::CanvasGpuResources;
 
@@ -68,7 +72,7 @@ impl CanvasRenderer {
         )
     }
 
-    fn materialize_layer_backing(
+    fn materialize_canvas_image_backing(
         &mut self,
         width: u32,
         height: u32,
@@ -130,39 +134,49 @@ impl CanvasRenderer {
         let mut images = Vec::new();
         collect_images(canvas, &mut images);
         for image in images {
-            self.gpu.ensure_image_cache(&self.device)?;
-            self.gpu
-                .image_cache
-                .as_mut()
-                .unwrap()
-                .ensure_uploaded(&image)?;
-        }
-        let mut layers = Vec::new();
-        collect_layers(canvas, &mut layers);
-        for layer in layers {
-            self.materialize_layer(&layer)?;
+            self.materialize_image(&image)?;
         }
         Ok(())
     }
 
-    fn materialize_layer(&mut self, layer: &Layer) -> Result<()> {
+    fn materialize_image(&mut self, image: &Image) -> Result<()> {
+        match image.kind() {
+            ImageKind::Srgba8(image) => {
+                self.gpu.ensure_image_cache(&self.device)?;
+                self.gpu
+                    .image_cache
+                    .as_mut()
+                    .unwrap()
+                    .ensure_uploaded(image)
+            }
+            ImageKind::Canvas(image) => self.materialize_canvas_image(image),
+        }
+    }
+
+    fn materialize_canvas_image(&mut self, image: &CanvasImage) -> Result<()> {
         self.gpu.ensure_image_cache(&self.device)?;
-        if self.gpu.image_cache.as_mut().unwrap().contains_layer(layer) {
+        if self
+            .gpu
+            .image_cache
+            .as_mut()
+            .unwrap()
+            .contains_canvas(image)
+        {
             return Ok(());
         }
 
-        self.materialize_canvas_resources(layer.content())?;
-        let backing = self.materialize_layer_backing(
-            layer.width(),
-            layer.height(),
-            layer.content(),
-            layer.view(),
+        self.materialize_canvas_resources(image.content())?;
+        let backing = self.materialize_canvas_image_backing(
+            image.width(),
+            image.height(),
+            image.content(),
+            image.view(),
         )?;
         self.gpu
             .image_cache
             .as_mut()
             .unwrap()
-            .insert_layer(layer, backing)
+            .insert_canvas(image, backing)
     }
 
     #[allow(clippy::too_many_arguments)]

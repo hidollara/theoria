@@ -78,11 +78,6 @@ impl<'a> CanvasRecorder<'a> {
             CanvasNode::Transform { content, transform } => {
                 self.render_node(accumulator, content, transform.then(canvas_to_root));
             }
-            CanvasNode::Layer(layer) => {
-                if self.commands.set_canvas_region() {
-                    self.commands.render_unbounded_layer(layer, canvas_to_root);
-                }
-            }
             CanvasNode::Composite {
                 backdrop,
                 source,

@@ -4,7 +4,7 @@ use skrifa::bitmap::{BitmapData, BitmapGlyph, Origin};
 
 use crate::{
     canvas::{Canvas, ColorField, Coverage, ImagePattern, ImageSampling},
-    image::Image,
+    image::Srgba8Image,
     math::{Matrix2, Vector2},
     transform::Affine2,
 };
@@ -47,7 +47,7 @@ pub(super) fn canvas(
     }
 }
 
-fn decode_image(glyph: &BitmapGlyph<'_>) -> Result<(Image, bool), GlyphPresentationError> {
+fn decode_image(glyph: &BitmapGlyph<'_>) -> Result<(Srgba8Image, bool), GlyphPresentationError> {
     match &glyph.data {
         BitmapData::Png(data) => decode_png(data).map(|image| (image, false)),
         BitmapData::Bgra(data) => {
@@ -69,7 +69,7 @@ fn decode_image(glyph: &BitmapGlyph<'_>) -> Result<(Image, bool), GlyphPresentat
                     ]);
                 }
             }
-            Image::from_rgba8(glyph.width, glyph.height, rgba)
+            Srgba8Image::new(glyph.width, glyph.height, rgba)
                 .map(|image| (image, false))
                 .map_err(|_| GlyphPresentationError::InvalidBitmap)
         }
@@ -81,14 +81,14 @@ fn decode_image(glyph: &BitmapGlyph<'_>) -> Result<(Image, bool), GlyphPresentat
             for alpha in alpha {
                 rgba.extend_from_slice(&[255, 255, 255, alpha]);
             }
-            Image::from_rgba8(glyph.width, glyph.height, rgba)
+            Srgba8Image::new(glyph.width, glyph.height, rgba)
                 .map(|image| (image, true))
                 .map_err(|_| GlyphPresentationError::InvalidBitmap)
         }
     }
 }
 
-fn decode_png(data: &[u8]) -> Result<Image, GlyphPresentationError> {
+fn decode_png(data: &[u8]) -> Result<Srgba8Image, GlyphPresentationError> {
     let mut decoder = png::Decoder::new(Cursor::new(data));
     decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
     let mut reader = decoder
@@ -123,7 +123,7 @@ fn decode_png(data: &[u8]) -> Result<Image, GlyphPresentationError> {
         }
         png::ColorType::Indexed => return Err(GlyphPresentationError::InvalidBitmap),
     }
-    Image::from_rgba8(info.width, info.height, rgba)
+    Srgba8Image::new(info.width, info.height, rgba)
         .map_err(|_| GlyphPresentationError::InvalidBitmap)
 }
 

@@ -15,7 +15,7 @@ use ::windows::Win32::{
     UI::WindowsAndMessaging::{PostThreadMessageW, WM_APP},
 };
 use theoria::{
-    canvas::{CanvasView, Layer},
+    canvas::{Canvas, CanvasImage, CanvasView, Coverage},
     event::EventSink,
     font::Font,
     geometry::Point,
@@ -127,9 +127,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(width, height))
                         .expect("a positive Window extent has a non-degenerate view");
                 let canvas = if snapshotting {
-                    Layer::new(canvas, view, size.width.max(1), size.height.max(1))
-                        .expect("a positive Window extent is a valid Layer size")
-                        .into()
+                    Canvas::draw(
+                        CanvasImage::new(canvas, view, size.width.max(1), size.height.max(1))
+                            .expect("a positive Window extent is a valid CanvasImage size"),
+                        Coverage::all(),
+                    )
                 } else {
                     canvas
                 };
@@ -198,11 +200,14 @@ fn post_snapshot_activity(thread_id: u32) {
     });
 }
 
-fn write_png(path: &Path, image: &theoria::image::Image) -> Result<(), Box<dyn std::error::Error>> {
+fn write_png(
+    path: &Path,
+    image: &theoria::image::Srgba8Image,
+) -> Result<(), Box<dyn std::error::Error>> {
     let output = BufWriter::new(File::create(path)?);
     let mut encoder = png::Encoder::new(output, image.width(), image.height());
     encoder.set_color(png::ColorType::Rgba);
     encoder.set_depth(png::BitDepth::Eight);
-    encoder.write_header()?.write_image_data(image.rgba8())?;
+    encoder.write_header()?.write_image_data(image.pixels())?;
     Ok(())
 }

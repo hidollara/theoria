@@ -3,7 +3,7 @@
 use ash::vk;
 
 use crate::{
-    canvas::{BlendMode, CanvasView, ColorField, Composite, ImagePattern, Layer},
+    canvas::{BlendMode, CanvasView, ColorField, Composite, ImagePattern},
     geometry::Point,
     path::Path,
     tessellation::{DEFAULT_TESSELLATION_TOLERANCE, Mesh},
@@ -156,12 +156,6 @@ impl<'a> CanvasCommandEncoder<'a> {
         }
     }
 
-    pub(super) fn render_unbounded_layer(&self, layer: &Layer, layer_to_root: Projective2) {
-        if let Some(mesh) = self.unbounded_mesh(layer_to_root) {
-            self.render_layer_mesh(&mesh, layer, layer_to_root);
-        }
-    }
-
     fn unbounded_mesh(&self, source_to_root: Projective2) -> Option<Mesh> {
         let source_to_view = source_to_root.then(self.view.canvas_to_view);
         let view_to_source = source_to_view.try_inverse()?;
@@ -256,47 +250,6 @@ impl<'a> CanvasCommandEncoder<'a> {
                     gpu_image.alpha_mode(),
                     points,
                     mesh_to_root,
-                    self.view,
-                );
-                self.device.cmd_push_constants(
-                    self.command_buffer,
-                    self.pipelines.image.layout,
-                    vk::ShaderStageFlags::VERTEX,
-                    0,
-                    constants.as_bytes(),
-                );
-                self.device.cmd_draw(self.command_buffer, 3, 1, 0, 0);
-            }
-        }
-    }
-
-    fn render_layer_mesh(&self, mesh: &Mesh, layer: &Layer, layer_to_root: Projective2) {
-        let gpu_image = self.image_cache.get_layer(layer).unwrap();
-        unsafe {
-            self.device.cmd_bind_pipeline(
-                self.command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                self.pipelines.image.handle,
-            );
-            self.device.cmd_bind_descriptor_sets(
-                self.command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                self.pipelines.image.layout,
-                0,
-                &[gpu_image.layer_descriptor_set()],
-                &[],
-            );
-            for triangle in mesh.indices.chunks_exact(3) {
-                let points = [
-                    mesh.vertices[triangle[0] as usize],
-                    mesh.vertices[triangle[1] as usize],
-                    mesh.vertices[triangle[2] as usize],
-                ];
-                let constants = ImagePushConstants::new_layer(
-                    layer,
-                    gpu_image.alpha_mode(),
-                    points,
-                    layer_to_root,
                     self.view,
                 );
                 self.device.cmd_push_constants(

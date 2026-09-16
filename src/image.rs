@@ -5,10 +5,10 @@ use std::{
     sync::{Arc, Weak},
 };
 
-struct ImageInner {
+struct Srgba8ImageInner {
     width: u32,
     height: u32,
-    rgba8: Vec<u8>,
+    pixels: Vec<u8>,
 }
 
 /// An instance-identity key used internally by backend caches.
@@ -16,75 +16,75 @@ struct ImageInner {
 /// The Weak handle lets a cache detect that no Canvas or caller retains the
 /// logical image without keeping its CPU pixels alive itself.
 #[derive(Clone)]
-pub(crate) struct ImageInstanceKey(Weak<ImageInner>);
+pub(crate) struct Srgba8ImageInstanceKey(Weak<Srgba8ImageInner>);
 
-impl PartialEq for ImageInstanceKey {
+impl PartialEq for Srgba8ImageInstanceKey {
     fn eq(&self, other: &Self) -> bool {
         self.0.ptr_eq(&other.0)
     }
 }
 
-impl Eq for ImageInstanceKey {}
+impl Eq for Srgba8ImageInstanceKey {}
 
-impl Hash for ImageInstanceKey {
+impl Hash for Srgba8ImageInstanceKey {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.0.as_ptr().hash(state);
     }
 }
 
-impl fmt::Debug for ImageInstanceKey {
+impl fmt::Debug for Srgba8ImageInstanceKey {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
-            .debug_tuple("ImageInstanceKey")
+            .debug_tuple("Srgba8ImageInstanceKey")
             .field(&self.0.as_ptr())
             .finish()
     }
 }
 
-/// An immutable logical 2D raster resource.
+/// An immutable straight-alpha sRGBA8 image.
 ///
 /// Its physical GPU representation is intentionally not part of the public
 /// API and may be uploaded and cached lazily by each renderer. Cloning only
 /// clones the shared logical handle.
 #[derive(Clone)]
-pub struct Image {
-    inner: Arc<ImageInner>,
+pub struct Srgba8Image {
+    inner: Arc<Srgba8ImageInner>,
 }
 
-impl fmt::Debug for Image {
+impl fmt::Debug for Srgba8Image {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
-            .debug_struct("Image")
+            .debug_struct("Srgba8Image")
             .field("width", &self.width())
             .field("height", &self.height())
             .finish_non_exhaustive()
     }
 }
 
-impl Image {
-    pub fn from_rgba8(width: u32, height: u32, rgba8: Vec<u8>) -> Result<Self, ImageError> {
+impl Srgba8Image {
+    pub fn new(width: u32, height: u32, pixels: Vec<u8>) -> Result<Self, Srgba8ImageError> {
         let pixel_count = width
             .checked_mul(height)
-            .ok_or(ImageError::DimensionsTooLarge { width, height })?;
+            .ok_or(Srgba8ImageError::DimensionsTooLarge { width, height })?;
         let expected = usize::try_from(pixel_count)
             .ok()
             .and_then(|count| count.checked_mul(4))
-            .ok_or(ImageError::DimensionsTooLarge { width, height })?;
+            .ok_or(Srgba8ImageError::DimensionsTooLarge { width, height })?;
         if width == 0 || height == 0 {
-            return Err(ImageError::Empty { width, height });
+            return Err(Srgba8ImageError::Empty { width, height });
         }
-        if rgba8.len() != expected {
-            return Err(ImageError::InvalidDataLength {
+        if pixels.len() != expected {
+            return Err(Srgba8ImageError::InvalidDataLength {
                 expected,
-                actual: rgba8.len(),
+                actual: pixels.len(),
             });
         }
 
         Ok(Self {
-            inner: Arc::new(ImageInner {
+            inner: Arc::new(Srgba8ImageInner {
                 width,
                 height,
-                rgba8,
+                pixels,
             }),
         })
     }
@@ -97,30 +97,30 @@ impl Image {
         self.inner.height
     }
 
-    /// Returns the CPU-readable straight-alpha RGBA8 pixels.
-    pub fn rgba8(&self) -> &[u8] {
-        &self.inner.rgba8
+    /// Returns the straight-alpha sRGBA8 pixels in row-major order.
+    pub fn pixels(&self) -> &[u8] {
+        &self.inner.pixels
     }
 
-    pub(crate) fn instance_key(&self) -> ImageInstanceKey {
-        ImageInstanceKey(Arc::downgrade(&self.inner))
+    pub(crate) fn instance_key(&self) -> Srgba8ImageInstanceKey {
+        Srgba8ImageInstanceKey(Arc::downgrade(&self.inner))
     }
 }
 
-impl ImageInstanceKey {
+impl Srgba8ImageInstanceKey {
     pub(crate) fn is_alive(&self) -> bool {
         self.0.strong_count() != 0
     }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ImageError {
+pub enum Srgba8ImageError {
     Empty { width: u32, height: u32 },
     DimensionsTooLarge { width: u32, height: u32 },
     InvalidDataLength { expected: usize, actual: usize },
 }
 
-impl fmt::Display for ImageError {
+impl fmt::Display for Srgba8ImageError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Empty { width, height } => {
@@ -143,7 +143,7 @@ impl fmt::Display for ImageError {
     }
 }
 
-impl Error for ImageError {}
+impl Error for Srgba8ImageError {}
 
 #[cfg(test)]
 mod tests {
@@ -151,19 +151,19 @@ mod tests {
 
     #[test]
     fn clones_share_the_same_logical_image() {
-        let image = Image::from_rgba8(1, 1, vec![10, 20, 30, 40]).unwrap();
+        let image = Srgba8Image::new(1, 1, vec![10, 20, 30, 40]).unwrap();
         let clone = image.clone();
 
         assert_eq!(image.instance_key(), clone.instance_key());
-        assert_eq!(image.rgba8().as_ptr(), clone.rgba8().as_ptr());
+        assert_eq!(image.pixels().as_ptr(), clone.pixels().as_ptr());
     }
 
     #[test]
     fn rejects_an_invalid_pixel_buffer() {
-        let error = Image::from_rgba8(2, 2, vec![0; 15]).err().unwrap();
+        let error = Srgba8Image::new(2, 2, vec![0; 15]).err().unwrap();
         assert_eq!(
             error,
-            ImageError::InvalidDataLength {
+            Srgba8ImageError::InvalidDataLength {
                 expected: 16,
                 actual: 15,
             }
@@ -172,8 +172,8 @@ mod tests {
 
     #[test]
     fn independent_images_with_the_same_pixels_are_distinct_registrations() {
-        let first = Image::from_rgba8(1, 1, vec![10, 20, 30, 40]).unwrap();
-        let second = Image::from_rgba8(1, 1, vec![10, 20, 30, 40]).unwrap();
+        let first = Srgba8Image::new(1, 1, vec![10, 20, 30, 40]).unwrap();
+        let second = Srgba8Image::new(1, 1, vec![10, 20, 30, 40]).unwrap();
 
         assert_ne!(first.instance_key(), second.instance_key());
     }
@@ -181,7 +181,7 @@ mod tests {
     #[test]
     fn cache_key_does_not_keep_the_image_alive() {
         let key = {
-            let image = Image::from_rgba8(1, 1, vec![10, 20, 30, 40]).unwrap();
+            let image = Srgba8Image::new(1, 1, vec![10, 20, 30, 40]).unwrap();
             image.instance_key()
         };
 

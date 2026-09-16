@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::{
     color::Color,
     geometry::Point,
-    image::Image,
+    image::Srgba8Image,
     math::Vector2,
     path::{
         DashPattern, DashPatternError, FillRule, LineCap, LineJoin, Path, StrokeStyle,
@@ -25,34 +25,43 @@ fn assert_point_near(actual: Option<Point>, expected: Point) {
 }
 
 #[test]
-fn layer_fixes_a_canvas_view_and_pixel_extent() {
+fn canvas_image_fixes_a_canvas_view_and_pixel_extent() {
     let content = Canvas::draw(Color::rgb8(10, 20, 30), Coverage::all());
     let view = CanvasView::axis_aligned(Point::new(-2.0, -1.0), Point::new(2.0, 1.0)).unwrap();
-    let layer = Layer::new(content.clone(), view, 320, 180).unwrap();
+    let image = CanvasImage::new(content.clone(), view, 320, 180).unwrap();
 
-    assert_eq!(layer.view(), view);
-    assert_eq!(layer.width(), 320);
-    assert_eq!(layer.height(), 180);
-    assert!(Arc::ptr_eq(&layer.content().node, &content.node));
-    assert!(matches!(Canvas::from(layer).node(), CanvasNode::Layer(_)));
+    assert_eq!(image.view(), view);
+    assert_eq!(image.width(), 320);
+    assert_eq!(image.height(), 180);
+    assert!(Arc::ptr_eq(&image.content().node, &content.node));
 }
 
 #[test]
-fn layer_clones_share_one_materialization_identity() {
+fn canvas_image_converts_to_a_finite_image() {
+    let view = CanvasView::axis_aligned(Point::new(-2.0, -1.0), Point::new(2.0, 1.0)).unwrap();
+    let canvas_image = CanvasImage::new(Canvas::empty(), view, 320, 180).unwrap();
+    let image = Image::from(canvas_image);
+
+    assert_eq!(image.width(), 320);
+    assert_eq!(image.height(), 180);
+}
+
+#[test]
+fn canvas_image_clones_share_one_materialization_identity() {
     let view = CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(1.0, 1.0)).unwrap();
-    let layer = Layer::new(Canvas::empty(), view, 1, 1).unwrap();
-    let clone = layer.clone();
-    let independent = Layer::new(Canvas::empty(), view, 1, 1).unwrap();
+    let image = CanvasImage::new(Canvas::empty(), view, 1, 1).unwrap();
+    let clone = image.clone();
+    let independent = CanvasImage::new(Canvas::empty(), view, 1, 1).unwrap();
 
-    assert_eq!(layer.instance_key(), clone.instance_key());
-    assert_ne!(layer.instance_key(), independent.instance_key());
+    assert_eq!(image.instance_key(), clone.instance_key());
+    assert_ne!(image.instance_key(), independent.instance_key());
 }
 
 #[test]
-fn layer_cache_identity_does_not_keep_the_layer_alive() {
+fn canvas_image_cache_identity_does_not_keep_the_image_alive() {
     let key = {
         let view = CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(1.0, 1.0)).unwrap();
-        Layer::new(Canvas::empty(), view, 1, 1)
+        CanvasImage::new(Canvas::empty(), view, 1, 1)
             .unwrap()
             .instance_key()
     };
@@ -61,12 +70,12 @@ fn layer_cache_identity_does_not_keep_the_layer_alive() {
 }
 
 #[test]
-fn layer_rejects_an_empty_pixel_extent() {
+fn canvas_image_rejects_an_empty_pixel_extent() {
     let view = CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(1.0, 1.0)).unwrap();
 
     assert_eq!(
-        Layer::new(Canvas::empty(), view, 0, 10).unwrap_err(),
-        LayerError::Empty {
+        CanvasImage::new(Canvas::empty(), view, 0, 10).unwrap_err(),
+        CanvasImageError::Empty {
             width: 0,
             height: 10,
         }
@@ -146,7 +155,7 @@ fn fill_records_non_zero_by_default_and_accepts_even_odd_explicitly() {
 
 #[test]
 fn an_image_can_be_used_as_an_unbounded_color_field_explicitly() {
-    let image = Image::from_rgba8(2, 3, vec![255; 2 * 3 * 4]).unwrap();
+    let image = Srgba8Image::new(2, 3, vec![255; 2 * 3 * 4]).unwrap();
     let canvas = Canvas::draw(image, Coverage::all());
 
     let CanvasNode::Draw(Draw {
@@ -165,7 +174,7 @@ fn an_image_can_be_used_as_an_unbounded_color_field_explicitly() {
 
 #[test]
 fn image_pattern_separates_placement_sampling_and_extension() {
-    let image = Image::from_rgba8(2, 3, vec![255; 2 * 3 * 4]).unwrap();
+    let image = Srgba8Image::new(2, 3, vec![255; 2 * 3 * 4]).unwrap();
     let image_to_canvas = Affine2::from_scale(Vector2::new(2.0, 2.0))
         .then(Affine2::from_translation(Vector2::new(10.0, 20.0)));
     let pattern = ImagePattern::placed(image, image_to_canvas)
@@ -187,7 +196,7 @@ fn image_pattern_separates_placement_sampling_and_extension() {
 
 #[test]
 fn image_pattern_defaults_to_a_transparent_linear_color_field() {
-    let image = Image::from_rgba8(1, 1, vec![255; 4]).unwrap();
+    let image = Srgba8Image::new(1, 1, vec![255; 4]).unwrap();
     let pattern = ImagePattern::new(image);
 
     assert_eq!(pattern.sampling(), ImageSampling::Linear);
@@ -272,7 +281,7 @@ fn any_color_field_can_supply_an_alpha_coverage_field() {
         Point::new(0.0, 1.0),
     ]);
     let content = Canvas::draw(Color::rgb8(255, 255, 255), Coverage::fill(triangle));
-    let image = Image::from_rgba8(1, 1, vec![255; 4]).unwrap();
+    let image = Srgba8Image::new(1, 1, vec![255; 4]).unwrap();
     let masked = Canvas::draw(content, Coverage::from_alpha(ImagePattern::new(image)));
 
     assert!(matches!(

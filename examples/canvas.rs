@@ -1,12 +1,12 @@
 use theoria::{
     canvas::{
-        AcrossPathGradient, AlongPathGradient, BlendMode, Canvas, CanvasView, ColorRamp, Composite,
-        ConicGradient, Coverage, GradientPoint, GradientStop, ImageExtend, ImagePattern, Layer,
-        LinearGradient, MeshGradient, RadialGradient,
+        AcrossPathGradient, AlongPathGradient, BlendMode, Canvas, CanvasImage, CanvasView,
+        ColorRamp, Composite, ConicGradient, Coverage, GradientPoint, GradientStop, ImageExtend,
+        ImagePattern, LinearGradient, MeshGradient, RadialGradient,
     },
     color::Color,
     geometry::Point,
-    image::{Image, ImageError},
+    image::{Srgba8Image, Srgba8ImageError},
     math::Vector2,
     path::{
         ArcSize, ArcSweep, DashPattern, FillRule, LineCap, LineJoin, Path, StrokeStyle, Subpath,
@@ -217,9 +217,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Point::new(width * 0.02, height * 0.72),
                     )
                     .expect("the sample view quadrilateral is non-degenerate");
-                    let content = Layer::new(content, view, size.width.max(1), size.height.max(1))?;
+                    let content = Canvas::draw(
+                        CanvasImage::new(content, view, size.width.max(1), size.height.max(1))?,
+                        Coverage::all(),
+                    );
                     let clear_color = Color::rgba(0.025, 0.035, 0.055, 1.0)?;
-                    Ok(SurfaceContent::new(content.into(), view, clear_color))
+                    Ok(SurfaceContent::new(content, view, clear_color))
                 })()
                 .expect("the Canvas sample uses valid fixed drawing parameters")
             })
@@ -240,7 +243,7 @@ fn ellipse_path(center: Point, radii: Vector2) -> Path {
     )
 }
 
-fn make_sample_image() -> Result<Image, ImageError> {
+fn make_sample_image() -> Result<Srgba8Image, Srgba8ImageError> {
     const SIZE: u32 = 64;
     let mut pixels = Vec::with_capacity((SIZE * SIZE * 4) as usize);
     for y in 0..SIZE {
@@ -254,5 +257,5 @@ fn make_sample_image() -> Result<Image, ImageError> {
             pixels.extend_from_slice(&rgba);
         }
     }
-    Image::from_rgba8(SIZE, SIZE, pixels)
+    Srgba8Image::new(SIZE, SIZE, pixels)
 }

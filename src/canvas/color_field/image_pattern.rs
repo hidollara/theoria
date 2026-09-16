@@ -1,4 +1,4 @@
-use crate::{image::Image, transform::Projective2};
+use crate::{canvas::image::Image, transform::Projective2};
 
 /// Filtering used when an image-backed color field is sampled between texels.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -36,11 +36,16 @@ pub struct ImagePattern {
 }
 
 impl ImagePattern {
-    /// Creates a pattern whose image pixel coordinates equal Canvas coordinates.
-    pub const fn new(image: Image) -> Self {
+    /// Creates a pattern using the source's natural placement in Canvas space.
+    ///
+    /// An sRGBA8 image places one pixel per Canvas unit from the origin. A
+    /// CanvasImage returns to the Canvas region from which it was evaluated.
+    pub fn new(image: impl Into<Image>) -> Self {
+        let image = image.into();
+        let canvas_to_image = image.natural_canvas_to_image();
         Self {
             image,
-            canvas_to_image: Projective2::IDENTITY,
+            canvas_to_image,
             sampling: ImageSampling::Linear,
             extend_x: ImageExtend::Transparent,
             extend_y: ImageExtend::Transparent,
@@ -48,7 +53,10 @@ impl ImagePattern {
     }
 
     /// Places image pixel coordinates into Canvas space.
-    pub fn placed(image: Image, image_to_canvas: impl Into<Projective2>) -> Option<Self> {
+    pub fn placed(
+        image: impl Into<Image>,
+        image_to_canvas: impl Into<Projective2>,
+    ) -> Option<Self> {
         Some(Self::new(image).with_canvas_to_image(image_to_canvas.into().try_inverse()?))
     }
 

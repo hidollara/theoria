@@ -5,7 +5,7 @@ use std::{error::Error, sync::Arc};
 use ash::vk;
 
 use crate::{
-    image::Image,
+    image::Srgba8Image,
     vulkan::{
         host_buffer::HostBuffer, image_layout::transition_image, one_shot::OneShotCommands,
         presenter::RenderDevice,
@@ -16,8 +16,11 @@ use super::storage::VulkanImage;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-pub(super) fn upload_rgba8(device: RenderDevice, source: &Image) -> Result<Arc<VulkanImage>> {
-    let pixels = source.rgba8();
+pub(super) fn upload_srgba8(
+    device: RenderDevice,
+    source: &Srgba8Image,
+) -> Result<Arc<VulkanImage>> {
+    let pixels = source.pixels();
     let staging = HostBuffer::new(
         device.clone(),
         pixels.len() as vk::DeviceSize,
