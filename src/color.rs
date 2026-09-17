@@ -1,3 +1,7 @@
+mod white_point;
+
+pub use white_point::{WhitePoint, WhitePointError};
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Color {
     /// Straight-alpha, linear-sRGB components used for rendering calculations.
