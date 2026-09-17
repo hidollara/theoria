@@ -105,64 +105,7 @@ impl<'a> CanvasRecorder<'a> {
     }
 
     fn render_draw(&mut self, accumulator: usize, draw: &Draw, draw_to_root: Projective2) {
-        if draw.blend_mode != BlendMode::Normal || draw.composite != Composite::SourceOver {
-            if !matches!(draw.coverage.node(), CoverageNode::All) {
-                self.render_covered_composite(accumulator, draw, draw_to_root);
-                return;
-            }
-            self.commands.end_rendering();
-            let source_image = self.next_image;
-            self.next_image += 1;
-            self.commands
-                .begin_accumulator(source_image, vk::AttachmentLoadOp::CLEAR);
-            self.render_source_with_coverage(source_image, draw, draw_to_root);
-            self.commands.end_rendering();
-            self.commands.transition_to_sampled(source_image);
-            if draw.blend_mode == BlendMode::Normal {
-                self.commands.resume_accumulator(accumulator);
-                self.commands.draw_composite(source_image, draw.composite);
-            } else {
-                self.blend_composite(accumulator, source_image, draw.blend_mode, draw.composite);
-            }
-            return;
-        }
         self.render_source_with_coverage(accumulator, draw, draw_to_root);
-    }
-
-    fn render_covered_composite(
-        &mut self,
-        accumulator: usize,
-        draw: &Draw,
-        draw_to_root: Projective2,
-    ) {
-        self.commands.end_rendering();
-        let source = self.evaluate_color_field(&draw.source, draw_to_root);
-        let coverage = self
-            .evaluate_coverage(&draw.coverage, draw_to_root)
-            .expect("non-All coverage evaluates to an image");
-
-        self.commands.transition_to_sampled(accumulator);
-        let destination = self.next_image;
-        self.next_image += 1;
-        self.commands
-            .begin_accumulator(destination, vk::AttachmentLoadOp::CLEAR);
-        self.commands.draw_composite(accumulator, Composite::Copy);
-        self.commands.end_rendering();
-        self.commands.transition_to_sampled(destination);
-
-        let candidate = self.next_image;
-        self.next_image += 1;
-        self.commands
-            .begin_accumulator(candidate, vk::AttachmentLoadOp::CLEAR);
-        self.commands
-            .draw_blend_composite(destination, source, draw.blend_mode, draw.composite);
-        self.commands.end_rendering();
-        self.commands.transition_to_sampled(candidate);
-
-        self.commands
-            .begin_accumulator(accumulator, vk::AttachmentLoadOp::CLEAR);
-        self.commands
-            .draw_coverage(destination, candidate, coverage);
     }
 
     fn render_source_with_coverage(

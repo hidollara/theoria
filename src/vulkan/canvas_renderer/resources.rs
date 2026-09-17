@@ -91,7 +91,6 @@ impl CanvasGpuResources {
                     pipelines.mask,
                     pipelines.present,
                     pipelines.blend,
-                    pipelines.coverage,
                 ]
                 .into_iter()
                 .chain(pipelines.composites.into_values())

@@ -8,7 +8,6 @@ fn main() {
         ("shaders/vulkan/composite.wgsl", "composite"),
         ("shaders/vulkan/mask.wgsl", "mask"),
         ("shaders/vulkan/blend.wgsl", "blend"),
-        ("shaders/vulkan/coverage.wgsl", "coverage"),
     ] {
         println!("cargo:rerun-if-changed={source_file}");
         compile_shader(source_file, output_prefix, &output_dir);

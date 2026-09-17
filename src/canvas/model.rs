@@ -7,8 +7,6 @@ use super::{BlendMode, ColorField, Composite, Coverage};
 #[derive(Clone, Debug)]
 pub(crate) struct Draw {
     pub(crate) source: ColorField,
-    pub(crate) blend_mode: BlendMode,
-    pub(crate) composite: Composite,
     pub(crate) coverage: Coverage,
 }
 
@@ -48,21 +46,9 @@ impl Canvas {
 
     /// Forms a Canvas drawing by applying `source` through `coverage`.
     pub fn draw(source: impl Into<ColorField>, coverage: Coverage) -> Self {
-        Self::draw_with(source, BlendMode::Normal, Composite::default(), coverage)
-    }
-
-    /// Forms one semantic ColorField -> Blend -> Composite -> Coverage operation.
-    pub fn draw_with(
-        source: impl Into<ColorField>,
-        blend_mode: BlendMode,
-        composite: Composite,
-        coverage: Coverage,
-    ) -> Self {
         Self {
             node: Arc::new(CanvasNode::Draw(Draw {
                 source: source.into(),
-                blend_mode,
-                composite,
                 coverage,
             })),
         }

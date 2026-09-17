@@ -87,29 +87,6 @@ impl<'a> CanvasCommandEncoder<'a> {
         self.end_rendering();
     }
 
-    pub(super) fn draw_coverage(&self, destination: usize, candidate: usize, coverage: usize) {
-        unsafe {
-            self.device.cmd_bind_pipeline(
-                self.command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                self.pipelines.coverage.handle,
-            );
-            self.device.cmd_bind_descriptor_sets(
-                self.command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                self.pipelines.coverage.layout,
-                0,
-                &[
-                    self.scratch_images[destination].descriptor_set(),
-                    self.scratch_images[candidate].descriptor_set(),
-                    self.scratch_images[coverage].descriptor_set(),
-                ],
-                &[],
-            );
-            self.device.cmd_draw(self.command_buffer, 3, 1, 0, 0);
-        }
-    }
-
     pub(super) fn draw_blend_composite(
         &self,
         destination: usize,

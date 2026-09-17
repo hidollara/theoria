@@ -297,47 +297,22 @@ fn any_color_field_can_supply_an_alpha_coverage_field() {
 }
 
 #[test]
-fn draw_keeps_source_blend_composite_and_coverage_as_distinct_semantics() {
+fn draw_keeps_source_and_coverage_as_distinct_semantics() {
     let source = ColorField::Solid(Color::rgba(0.8, 0.2, 0.1, 0.4).unwrap());
     let coverage = Coverage::fill(Path::polygon([
         Point::new(0.0, 0.0),
         Point::new(1.0, 0.0),
         Point::new(0.0, 1.0),
     ]));
-    let canvas = Canvas::draw_with(
-        source.clone(),
-        BlendMode::Multiply,
-        Composite::Plus,
-        coverage.clone(),
-    );
+    let canvas = Canvas::draw(source.clone(), coverage.clone());
 
     assert!(matches!(
         canvas.node(),
         CanvasNode::Draw(Draw {
             source: ColorField::Solid(_),
-            blend_mode: BlendMode::Multiply,
-            composite: Composite::Plus,
             coverage: Coverage {
                 node: CoverageNode::Fill { .. }
             },
-        })
-    ));
-}
-
-#[test]
-fn draw_sugar_is_normal_source_over_without_erasing_coverage() {
-    let coverage = Coverage::all();
-    let canvas = Canvas::draw(Color::rgb8(1, 2, 3), coverage.clone());
-
-    assert!(matches!(
-        canvas.node(),
-        CanvasNode::Draw(Draw {
-            blend_mode: BlendMode::Normal,
-            composite: Composite::SourceOver,
-            coverage: Coverage {
-                node: CoverageNode::All
-            },
-            ..
         })
     ));
 }

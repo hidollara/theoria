@@ -44,45 +44,22 @@ pub(super) fn required_scratch_images(canvas: &Canvas) -> usize {
 fn additional_scratch_images(canvas: &Canvas) -> usize {
     match canvas.node() {
         CanvasNode::Empty => 0,
-        CanvasNode::Draw(draw) => {
-            if (draw.blend_mode != BlendMode::Normal || draw.composite != Composite::SourceOver)
-                && !matches!(draw.coverage.node(), CoverageNode::All)
-            {
-                // Full semantic lowering keeps the original destination, the
-                // composite candidate, the isolated source, and the coverage
-                // field alive until the final coverage interpolation.
-                return required_color_field_scratch_images(&draw.source)
-                    + required_coverage_scratch_images(&draw.coverage)
-                    + 2;
-            }
-            let source_work = match &draw.source {
-                ColorField::Canvas(content) => {
-                    required_scratch_images(content)
-                        + match draw.coverage.node() {
-                            CoverageNode::All => 0,
-                            CoverageNode::Fill { .. } | CoverageNode::Stroke { .. } => 1,
-                            CoverageNode::AlphaOf(source) => {
-                                required_color_field_scratch_images(source)
-                            }
+        CanvasNode::Draw(draw) => match &draw.source {
+            ColorField::Canvas(content) => {
+                required_scratch_images(content)
+                    + match draw.coverage.node() {
+                        CoverageNode::All => 0,
+                        CoverageNode::Fill { .. } | CoverageNode::Stroke { .. } => 1,
+                        CoverageNode::AlphaOf(source) => {
+                            required_color_field_scratch_images(source)
                         }
-                }
-                _ => match draw.coverage.node() {
-                    CoverageNode::AlphaOf(source) => {
-                        1 + required_color_field_scratch_images(source)
                     }
-                    CoverageNode::All | CoverageNode::Fill { .. } | CoverageNode::Stroke { .. } => {
-                        0
-                    }
-                },
-            };
-            if draw.blend_mode == BlendMode::Normal && draw.composite == Composite::SourceOver {
-                source_work
-            } else {
-                // A non-default draw is first evaluated as an isolated source.
-                // Destination-reading blends additionally preserve the accumulator.
-                source_work + 1 + usize::from(draw.blend_mode != BlendMode::Normal)
             }
-        }
+            _ => match draw.coverage.node() {
+                CoverageNode::AlphaOf(source) => 1 + required_color_field_scratch_images(source),
+                CoverageNode::All | CoverageNode::Fill { .. } | CoverageNode::Stroke { .. } => 0,
+            },
+        },
         CanvasNode::Transform { content, .. } => additional_scratch_images(content),
         CanvasNode::Composite {
             backdrop,
@@ -103,20 +80,10 @@ fn additional_scratch_images(canvas: &Canvas) -> usize {
     }
 }
 
-fn required_coverage_scratch_images(coverage: &crate::canvas::Coverage) -> usize {
-    match coverage.node() {
-        CoverageNode::All => 0,
-        CoverageNode::AlphaOf(source) => required_color_field_scratch_images(source),
-        CoverageNode::Fill { .. } | CoverageNode::Stroke { .. } => 1,
-    }
-}
-
 pub(super) fn can_record_directly(canvas: &Canvas) -> bool {
     match canvas.node() {
         CanvasNode::Empty => true,
-        CanvasNode::Draw(draw) => {
-            draw.blend_mode == BlendMode::Normal && draw.composite == Composite::SourceOver
-        }
+        CanvasNode::Draw(_) => true,
         CanvasNode::Transform { content, .. } => can_record_directly(content),
         CanvasNode::Composite {
             backdrop,

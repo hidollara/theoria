@@ -10,11 +10,10 @@ pub(crate) enum CoverageNode {
     AlphaOf(ColorField),
 }
 
-/// Describes how strongly a completed blend/composite candidate is applied at
-/// each Canvas point.
+/// Describes how strongly a draw's color field contributes at each Canvas point.
 ///
-/// Zero preserves the existing destination, one applies the candidate fully,
-/// and fractional values represent masks or antialiased sample coverage. Its
+/// Zero contributes nothing, one applies the field fully, and fractional
+/// values represent masks or antialiased sample coverage. Its
 /// representation is intentionally private so this semantic does not become a
 /// public rendering or expression graph.
 #[derive(Clone, Debug)]

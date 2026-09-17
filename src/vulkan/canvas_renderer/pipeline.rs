@@ -22,10 +22,6 @@ const MASK_VERTEX_SHADER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/mask
 const MASK_FRAGMENT_SHADER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/mask.frag.spv"));
 const BLEND_VERTEX_SHADER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/blend.vert.spv"));
 const BLEND_FRAGMENT_SHADER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/blend.frag.spv"));
-const COVERAGE_VERTEX_SHADER: &[u8] =
-    include_bytes!(concat!(env!("OUT_DIR"), "/coverage.vert.spv"));
-const COVERAGE_FRAGMENT_SHADER: &[u8] =
-    include_bytes!(concat!(env!("OUT_DIR"), "/coverage.frag.spv"));
 
 struct ShaderModule<'a> {
     device: &'a ash::Device,
@@ -85,7 +81,6 @@ pub(super) struct Pipelines {
     pub(super) mask: Pipeline,
     pub(super) present: Pipeline,
     pub(super) blend: Pipeline,
-    pub(super) coverage: Pipeline,
 }
 
 impl Pipelines {
@@ -198,23 +193,6 @@ pub(super) unsafe fn create_pipelines(
             Composite::Copy,
         )?
     };
-    let coverage = unsafe {
-        create_pipeline(
-            device,
-            color_format,
-            COVERAGE_VERTEX_SHADER,
-            COVERAGE_FRAGMENT_SHADER,
-            0,
-            vk::ShaderStageFlags::VERTEX,
-            &[
-                image_descriptor_set_layout,
-                image_descriptor_set_layout,
-                image_descriptor_set_layout,
-            ],
-            sample_count,
-            Composite::Copy,
-        )?
-    };
     Ok(Pipelines {
         format: color_format,
         sample_count,
@@ -227,7 +205,6 @@ pub(super) unsafe fn create_pipelines(
         mask: mask.into_pipeline(),
         present: present.into_pipeline(),
         blend: blend.into_pipeline(),
-        coverage: coverage.into_pipeline(),
     })
 }
 
