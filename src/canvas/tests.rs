@@ -18,6 +18,19 @@ fn filled_triangle(points: [Point; 3], source: ColorField) -> Canvas {
     Canvas::draw(source, Coverage::fill(Path::polygon(points)))
 }
 
+#[test]
+fn an_empty_canvas_is_an_all_transparent_draw() {
+    assert!(matches!(
+        Canvas::empty().node(),
+        CanvasNode::Draw(Draw {
+            source: ColorField::Transparent,
+            coverage: Coverage {
+                node: CoverageNode::All
+            },
+        })
+    ));
+}
+
 fn assert_point_near(actual: Option<Point>, expected: Point) {
     let actual = actual.unwrap();
     assert!((actual.x - expected.x).abs() < 0.001);

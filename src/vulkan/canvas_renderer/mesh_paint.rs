@@ -47,6 +47,7 @@ pub(super) fn paint_triangle_prepared(
     path_sampler: Option<&PathSampler>,
 ) -> Vec<PaintedTriangle> {
     match source {
+        ColorField::Transparent => Vec::new(),
         ColorField::Solid(color) => vec![PaintedTriangle {
             points,
             colors: [color.to_premultiplied_array(); 3],

@@ -19,6 +19,8 @@ pub use image_pattern::{ImageExtend, ImagePattern, ImageSampling};
 /// translucent gradient); it is not the amount by which a draw is applied.
 #[derive(Clone, Debug)]
 pub enum ColorField {
+    /// The color-space-independent field with no color contribution anywhere.
+    Transparent,
     Solid(Color),
     LinearGradient(LinearGradient),
     RadialGradient(RadialGradient),

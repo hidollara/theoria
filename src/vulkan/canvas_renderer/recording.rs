@@ -71,7 +71,6 @@ impl<'a> CanvasRecorder<'a> {
 
     fn render_node(&mut self, accumulator: usize, canvas: &Canvas, canvas_to_root: Projective2) {
         match canvas.node() {
-            CanvasNode::Empty => {}
             CanvasNode::Draw(draw) => {
                 self.render_draw(accumulator, draw, canvas_to_root);
             }

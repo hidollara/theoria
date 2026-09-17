@@ -12,7 +12,6 @@ pub(crate) struct Draw {
 
 #[derive(Clone, Debug)]
 pub(crate) enum CanvasNode {
-    Empty,
     Draw(Draw),
     Transform {
         content: Canvas,
@@ -37,11 +36,9 @@ pub struct Canvas {
 }
 
 impl Canvas {
-    /// Creates the transparent additive identity of Canvas composition.
+    /// Creates a Canvas with no color contribution anywhere.
     pub fn empty() -> Self {
-        Self {
-            node: Arc::new(CanvasNode::Empty),
-        }
+        Self::draw(ColorField::Transparent, Coverage::all())
     }
 
     /// Forms a Canvas drawing by applying `source` through `coverage`.

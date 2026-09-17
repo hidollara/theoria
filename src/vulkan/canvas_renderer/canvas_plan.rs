@@ -4,7 +4,6 @@ use crate::canvas::{
 
 pub(super) fn collect_images(canvas: &Canvas, images: &mut Vec<Image>) {
     match canvas.node() {
-        CanvasNode::Empty => {}
         CanvasNode::Draw(draw) => collect_draw_images(draw, images),
         CanvasNode::Transform { content, .. } => collect_images(content, images),
         CanvasNode::Composite {
@@ -25,6 +24,7 @@ fn collect_draw_images(draw: &Draw, images: &mut Vec<Image>) {
 
 fn collect_color_field_images(source: &ColorField, images: &mut Vec<Image>) {
     match source {
+        ColorField::Transparent => {}
         ColorField::Image(pattern) => images.push(pattern.image().clone()),
         ColorField::Canvas(canvas) => collect_images(canvas, images),
         ColorField::Solid(_)
@@ -43,7 +43,6 @@ pub(super) fn required_scratch_images(canvas: &Canvas) -> usize {
 
 fn additional_scratch_images(canvas: &Canvas) -> usize {
     match canvas.node() {
-        CanvasNode::Empty => 0,
         CanvasNode::Draw(draw) => match &draw.source {
             ColorField::Canvas(content) => {
                 required_scratch_images(content)
@@ -82,7 +81,6 @@ fn additional_scratch_images(canvas: &Canvas) -> usize {
 
 pub(super) fn can_record_directly(canvas: &Canvas) -> bool {
     match canvas.node() {
-        CanvasNode::Empty => true,
         CanvasNode::Draw(_) => true,
         CanvasNode::Transform { content, .. } => can_record_directly(content),
         CanvasNode::Composite {

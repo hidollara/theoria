@@ -9,6 +9,11 @@ use crate::{
 };
 
 #[test]
+fn a_transparent_field_produces_no_painted_geometry() {
+    assert!(paint_triangle([Point::new(0.0, 0.0); 3], &ColorField::Transparent).is_empty());
+}
+
+#[test]
 fn linear_gradient_splits_triangles_at_stop_boundaries() {
     let green = Color::rgb8(0, 255, 0).to_premultiplied_array();
     let gradient = LinearGradient::new(
