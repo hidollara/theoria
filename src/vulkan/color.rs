@@ -1,3 +1,10 @@
+//! Conversion boundaries for the Vulkan Canvas color pipeline.
+//!
+//! Public colors and CPU images use straight alpha. Vulkan Canvas evaluation
+//! lowers them into premultiplied linear sRGB exactly once, keeps that working
+//! representation through interpolation and compositing, and converts it back
+//! only when a CPU-readable image is requested.
+
 use crate::color::{Color, linear_to_srgb};
 
 /// Vulkan Canvas working color in premultiplied linear-sRGB form.

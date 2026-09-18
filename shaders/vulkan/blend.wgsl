@@ -3,6 +3,10 @@ struct VertexOutput {
     @location(0) uv: vec2<f32>,
 }
 
+// Both textures contain premultiplied linear-sRGB Canvas values. Blend modes
+// temporarily recover straight RGB; the result is associated again before the
+// Porter-Duff factors combine it with the destination.
+
 struct BlendComposite {
     blend_mode: u32,
     composite: u32,

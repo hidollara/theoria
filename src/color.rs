@@ -2,6 +2,11 @@ mod white_point;
 
 pub use white_point::{WhitePoint, WhitePointError};
 
+/// A backend-independent straight-alpha color in the sRGB gamut.
+///
+/// Constructors accept encoded sRGB components and linear alpha. The stored
+/// RGB values are decoded to linear sRGB for interpolation and rendering;
+/// associating RGB with alpha is a renderer-internal compositing step.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Color {
     /// Straight-alpha, linear-sRGB components used for rendering calculations.
@@ -146,6 +151,18 @@ mod tests {
             Color::rgb8(128, 128, 128),
             Color::rgb(128.0 / 255.0, 128.0 / 255.0, 128.0 / 255.0).unwrap()
         );
+    }
+
+    #[test]
+    fn encoded_srgba_round_trips_through_the_linear_representation() {
+        let encoded = [0.8, 0.4, 0.2, 0.6];
+        let round_trip = Color::rgba(encoded[0], encoded[1], encoded[2], encoded[3])
+            .unwrap()
+            .to_straight_srgba();
+
+        for (actual, expected) in round_trip.into_iter().zip(encoded) {
+            assert!((actual - expected).abs() < 0.000_001);
+        }
     }
 
     #[test]

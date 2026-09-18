@@ -23,7 +23,7 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 /// A finite offscreen Vulkan Surface that evaluates [`SurfaceContent`] into an sRGBA8 image.
 ///
 /// Unlike a presentation Surface, this Surface owns an independent rendering
-/// device and returns CPU-readable straight-alpha RGBA8 pixels. It is suitable
+/// device and returns CPU-readable straight-alpha sRGBA8 pixels. It is suitable
 /// for image generation, visual tests, and as the frame producer beneath a
 /// recorder. Rendering is synchronous: the returned image is complete when
 /// [`Self::render`] returns.

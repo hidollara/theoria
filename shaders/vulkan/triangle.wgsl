@@ -3,6 +3,8 @@ struct VertexOutput {
     @location(0) color: vec4<f32>,
 }
 
+// Vertex colors have already been lowered to premultiplied linear sRGB.
+
 // WGSL immediate data maps to Vulkan push constants. Arrays are not allowed in
 // the immediate address space, so the three vertices are laid out explicitly.
 struct Triangle {

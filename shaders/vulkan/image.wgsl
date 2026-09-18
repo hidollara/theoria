@@ -4,6 +4,9 @@ struct VertexOutput {
     @location(1) @interpolate(flat) rgb_is_premultiplied: f32,
 }
 
+// Sampled images may enter with straight or premultiplied RGB. This shader
+// normalizes both cases to the renderer's premultiplied linear working form.
+
 struct ImageTriangle {
     position_0: vec4<f32>,
     uv_0: vec4<f32>,
