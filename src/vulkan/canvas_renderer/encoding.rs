@@ -6,7 +6,7 @@ use crate::{
     transform::Projective2,
 };
 
-use super::view_space::transformed_point_to_clip;
+use super::{super::color::PremultipliedLinearSrgba, view_space::transformed_point_to_clip};
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -79,7 +79,7 @@ pub(super) struct TrianglePushConstants {
 impl TrianglePushConstants {
     pub(super) fn new(
         points: [Point; 3],
-        colors: [[f32; 4]; 3],
+        colors: [PremultipliedLinearSrgba; 3],
         canvas_to_root: Projective2,
         view: CanvasView,
     ) -> Self {
@@ -87,7 +87,7 @@ impl TrianglePushConstants {
         Self {
             vertices: std::array::from_fn(|index| GpuVertex {
                 position: transformed_point_to_clip(points[index], canvas_to_view),
-                color: colors[index],
+                color: colors[index].components(),
             }),
         }
     }

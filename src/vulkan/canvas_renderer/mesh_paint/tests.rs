@@ -6,7 +6,12 @@ use crate::{
     },
     color::Color,
     geometry::Point,
+    vulkan::color::PremultipliedLinearSrgba,
 };
+
+fn lowered(color: Color) -> PremultipliedLinearSrgba {
+    PremultipliedLinearSrgba::from_color(color)
+}
 
 #[test]
 fn a_transparent_field_produces_no_painted_geometry() {
@@ -15,7 +20,7 @@ fn a_transparent_field_produces_no_painted_geometry() {
 
 #[test]
 fn linear_gradient_splits_triangles_at_stop_boundaries() {
-    let green = Color::rgb8(0, 255, 0).to_premultiplied_array();
+    let green = lowered(Color::rgb8(0, 255, 0));
     let gradient = LinearGradient::new(
         Point::new(0.0, 0.0),
         Point::new(10.0, 0.0),
@@ -59,7 +64,7 @@ fn linear_gradient_splits_triangles_at_stop_boundaries() {
 
 #[test]
 fn linear_gradient_clamps_colors_outside_its_axis() {
-    let red = Color::rgb8(255, 0, 0).to_premultiplied_array();
+    let red = lowered(Color::rgb8(255, 0, 0));
     let gradient = LinearGradient::new(
         Point::new(0.0, 0.0),
         Point::new(10.0, 0.0),
@@ -107,7 +112,7 @@ fn triangular_mesh_gradient_reproduces_its_vertex_colors() {
             .iter()
             .position(|candidate| *candidate == point)
             .unwrap();
-        assert_eq!(triangles[0].colors[index], color.to_premultiplied_array());
+        assert_eq!(triangles[0].colors[index], lowered(color));
     }
 }
 
@@ -165,18 +170,14 @@ fn radial_gradient_samples_center_and_radius_colors() {
             .points
             .iter()
             .zip(triangle.colors)
-            .any(|(point, color)| {
-                *point == Point::new(0.0, 0.0) && color == red.to_premultiplied_array()
-            })
+            .any(|(point, color)| *point == Point::new(0.0, 0.0) && color == lowered(red))
     }));
     assert!(triangles.iter().any(|triangle| {
         triangle
             .points
             .iter()
             .zip(triangle.colors)
-            .any(|(point, color)| {
-                *point == Point::new(10.0, 0.0) && color == blue.to_premultiplied_array()
-            })
+            .any(|(point, color)| *point == Point::new(10.0, 0.0) && color == lowered(blue))
     }));
 }
 
@@ -206,7 +207,7 @@ fn two_circle_radial_gradient_is_transparent_where_no_circle_reaches() {
         triangles
             .iter()
             .flat_map(|triangle| triangle.colors)
-            .all(|color| color == [0.0; 4])
+            .all(|color| color == PremultipliedLinearSrgba::TRANSPARENT)
     );
 }
 
@@ -236,7 +237,7 @@ fn coincident_radial_circles_paint_nothing() {
         triangles
             .iter()
             .flat_map(|triangle| triangle.colors)
-            .all(|color| color == [0.0; 4])
+            .all(|color| color == PremultipliedLinearSrgba::TRANSPARENT)
     );
 }
 
@@ -274,9 +275,7 @@ fn signed_radial_gradient_uses_only_nonnegative_radius_solutions() {
                 .points
                 .iter()
                 .zip(triangle.colors)
-                .any(|(candidate, color)| {
-                    *candidate == point && color == blue.to_premultiplied_array()
-                })
+                .any(|(candidate, color)| *candidate == point && color == lowered(blue))
         }));
     }
 }
@@ -309,9 +308,7 @@ fn negative_radial_endpoints_can_reach_a_positive_extended_cone() {
             .points
             .iter()
             .zip(triangle.colors)
-            .any(|(point, color)| {
-                *point == Point::new(1.0, 0.0) && color == red.to_premultiplied_array()
-            })
+            .any(|(point, color)| *point == Point::new(1.0, 0.0) && color == lowered(red))
     }));
 }
 
@@ -345,18 +342,14 @@ fn conic_gradient_uses_positive_parameter_angle() {
             .points
             .iter()
             .zip(triangle.colors)
-            .any(|(point, color)| {
-                *point == Point::new(10.0, 0.0) && color == red.to_premultiplied_array()
-            })
+            .any(|(point, color)| *point == Point::new(10.0, 0.0) && color == lowered(red))
     }));
     assert!(triangles.iter().any(|triangle| {
         triangle
             .points
             .iter()
             .zip(triangle.colors)
-            .any(|(point, color)| {
-                *point == Point::new(-10.0, 0.0) && color == green.to_premultiplied_array()
-            })
+            .any(|(point, color)| *point == Point::new(-10.0, 0.0) && color == lowered(green))
     }));
 }
 
@@ -392,14 +385,8 @@ fn partial_conic_gradient_pads_on_the_absolute_turn() {
                 .map(|index| triangle.colors[index])
         })
     };
-    assert_eq!(
-        color_at(Point::new(10.0, 0.0)),
-        Some(red.to_premultiplied_array())
-    );
-    assert_eq!(
-        color_at(Point::new(-10.0, 0.0)),
-        Some(blue.to_premultiplied_array())
-    );
+    assert_eq!(color_at(Point::new(10.0, 0.0)), Some(lowered(red)));
+    assert_eq!(color_at(Point::new(-10.0, 0.0)), Some(lowered(blue)));
 }
 
 #[test]
@@ -430,18 +417,14 @@ fn coincident_conic_angles_form_a_pad_step() {
             .points
             .iter()
             .zip(triangle.colors)
-            .any(|(point, color)| {
-                *point == Point::new(10.0, 0.0) && color == red.to_premultiplied_array()
-            })
+            .any(|(point, color)| *point == Point::new(10.0, 0.0) && color == lowered(red))
     }));
     assert!(triangles.iter().any(|triangle| {
         triangle
             .points
             .iter()
             .zip(triangle.colors)
-            .any(|(point, color)| {
-                *point == Point::new(-10.0, 0.0) && color == blue.to_premultiplied_array()
-            })
+            .any(|(point, color)| *point == Point::new(-10.0, 0.0) && color == lowered(blue))
     }));
 }
 
@@ -471,6 +454,6 @@ fn coincident_repeating_conic_angles_paint_nothing() {
         triangles
             .iter()
             .flat_map(|triangle| triangle.colors)
-            .all(|color| color == [0.0; 4])
+            .all(|color| color == PremultipliedLinearSrgba::TRANSPARENT)
     );
 }

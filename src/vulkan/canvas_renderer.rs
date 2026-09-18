@@ -12,6 +12,7 @@ use crate::{
 };
 
 use super::{
+    color::PremultipliedLinearSrgba,
     image::VulkanImage,
     image_layout::transition_image,
     presenter::{RenderDevice, RenderTarget},
@@ -68,7 +69,7 @@ impl CanvasRenderer {
             viewport,
             canvas,
             view,
-            target.clear_color().to_premultiplied_array(),
+            PremultipliedLinearSrgba::from_color(target.clear_color()).components(),
         )
     }
 

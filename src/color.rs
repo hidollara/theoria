@@ -71,13 +71,9 @@ impl Color {
         }
     }
 
-    pub(crate) const fn to_premultiplied_array(self) -> [f32; 4] {
-        [
-            self.red * self.alpha,
-            self.green * self.alpha,
-            self.blue * self.alpha,
-            self.alpha,
-        ]
+    /// Returns straight-alpha linear-sRGB components for renderer lowering.
+    pub(crate) const fn to_linear_srgba(self) -> [f32; 4] {
+        [self.red, self.green, self.blue, self.alpha]
     }
 
     pub(crate) fn to_srgba(self) -> [f32; 4] {
@@ -129,19 +125,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn converts_straight_color_to_premultiplied_for_rendering() {
-        let color = Color {
-            red: 0.5,
-            green: 0.25,
-            blue: 1.0,
-            alpha: 0.5,
-        };
-        assert_eq!(color.to_premultiplied_array(), [0.25, 0.125, 0.5, 0.5]);
+    fn retains_straight_alpha_in_its_linear_representation() {
+        let color = Color::rgba8(255, 128, 64, 128);
+        let linear = color.to_linear_srgba();
+
+        assert_eq!(linear[3], 128.0 / 255.0);
+        assert_eq!(linear[0], 1.0);
     }
 
     #[test]
     fn converts_srgb_to_linear_for_rendering() {
-        let linear = Color::rgb(0.5, 0.5, 0.5).unwrap().to_premultiplied_array();
+        let linear = Color::rgb(0.5, 0.5, 0.5).unwrap().to_linear_srgba();
         for component in &linear[..3] {
             assert!((*component - 0.214_041_14).abs() < 0.000_001);
         }

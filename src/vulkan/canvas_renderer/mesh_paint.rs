@@ -3,6 +3,7 @@ use crate::{
         ColorField, GradientExtend, GradientPoint, GradientStop, LinearGradient, MeshGradient,
     },
     geometry::Point,
+    vulkan::color::PremultipliedLinearSrgba,
 };
 
 use super::path_sampling::PathSampler;
@@ -16,7 +17,7 @@ use crate::tessellation::DEFAULT_TESSELLATION_TOLERANCE;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct PaintedTriangle {
     pub(super) points: [Point; 3],
-    pub(super) colors: [[f32; 4]; 3],
+    pub(super) colors: [PremultipliedLinearSrgba; 3],
 }
 
 #[derive(Clone, Copy)]
@@ -50,20 +51,26 @@ pub(super) fn paint_triangle_prepared(
         ColorField::Transparent => Vec::new(),
         ColorField::Solid(color) => vec![PaintedTriangle {
             points,
-            colors: [color.to_premultiplied_array(); 3],
+            colors: [PremultipliedLinearSrgba::from_color(*color); 3],
         }],
         ColorField::LinearGradient(gradient) => paint_linear_gradient(points, gradient),
         ColorField::RadialGradient(gradient) => paint_sampled_gradient(points, |point| {
-            radial_parameter(point, gradient).map_or([0.0; 4], |parameter| {
-                let offset = extend_parameter(parameter, gradient.extend());
-                evaluate_gradient_stops(gradient.stops(), offset)
-            })
+            radial_parameter(point, gradient).map_or(
+                PremultipliedLinearSrgba::TRANSPARENT,
+                |parameter| {
+                    let offset = extend_parameter(parameter, gradient.extend());
+                    evaluate_gradient_stops(gradient.stops(), offset)
+                },
+            )
         }),
         ColorField::ConicGradient(gradient) => paint_sampled_gradient(points, |point| {
-            conic_parameter(point, gradient).map_or([0.0; 4], |parameter| {
-                let offset = extend_parameter(parameter, gradient.extend());
-                evaluate_gradient_stops(gradient.stops(), offset)
-            })
+            conic_parameter(point, gradient).map_or(
+                PremultipliedLinearSrgba::TRANSPARENT,
+                |parameter| {
+                    let offset = extend_parameter(parameter, gradient.extend());
+                    evaluate_gradient_stops(gradient.stops(), offset)
+                },
+            )
         }),
         ColorField::AlongPathGradient(gradient) => {
             let sampler = path_sampler.expect("along-Path sources prepare their Path once");
@@ -153,8 +160,8 @@ fn paint_linear_gradient(points: [Point; 3], gradient: &LinearGradient) -> Vec<P
         &before,
         first.offset(),
         first.offset(),
-        first.color().to_premultiplied_array(),
-        first.color().to_premultiplied_array(),
+        PremultipliedLinearSrgba::from_color(first.color()),
+        PremultipliedLinearSrgba::from_color(first.color()),
     );
     remaining = clip_gradient_polygon(&remaining, first.offset(), false);
 
@@ -166,8 +173,8 @@ fn paint_linear_gradient(points: [Point; 3], gradient: &LinearGradient) -> Vec<P
             &band,
             from.offset(),
             to.offset(),
-            from.color().to_premultiplied_array(),
-            to.color().to_premultiplied_array(),
+            PremultipliedLinearSrgba::from_color(from.color()),
+            PremultipliedLinearSrgba::from_color(to.color()),
         );
         remaining = clip_gradient_polygon(&remaining, to.offset(), false);
     }
@@ -178,8 +185,8 @@ fn paint_linear_gradient(points: [Point; 3], gradient: &LinearGradient) -> Vec<P
         &remaining,
         last.offset(),
         last.offset(),
-        last.color().to_premultiplied_array(),
-        last.color().to_premultiplied_array(),
+        PremultipliedLinearSrgba::from_color(last.color()),
+        PremultipliedLinearSrgba::from_color(last.color()),
     );
     output
 }
@@ -267,8 +274,8 @@ fn append_gradient_polygon(
     polygon: &[GradientVertex],
     start_offset: f32,
     end_offset: f32,
-    start_color: [f32; 4],
-    end_color: [f32; 4],
+    start_color: PremultipliedLinearSrgba,
+    end_color: PremultipliedLinearSrgba,
 ) {
     if polygon.len() < 3 {
         return;
@@ -289,36 +296,31 @@ fn append_gradient_polygon(
                 } else {
                     ((vertex.offset - start_offset) / (end_offset - start_offset)).clamp(0.0, 1.0)
                 };
-                std::array::from_fn(|component| {
-                    start_color[component]
-                        + (end_color[component] - start_color[component]) * amount
-                })
+                start_color.interpolate(end_color, amount)
             }),
         });
     }
 }
 
-fn evaluate_gradient_stops(stops: &[GradientStop], offset: f32) -> [f32; 4] {
+fn evaluate_gradient_stops(stops: &[GradientStop], offset: f32) -> PremultipliedLinearSrgba {
     if offset <= stops[0].offset() {
-        return stops[0].color().to_premultiplied_array();
+        return PremultipliedLinearSrgba::from_color(stops[0].color());
     }
     for pair in stops.windows(2) {
         let [from, to] = [pair[0], pair[1]];
         if offset < to.offset() {
             let amount = (offset - from.offset()) / (to.offset() - from.offset());
-            let from_color = from.color().to_premultiplied_array();
-            let to_color = to.color().to_premultiplied_array();
-            return std::array::from_fn(|component| {
-                from_color[component] + (to_color[component] - from_color[component]) * amount
-            });
+            let from_color = PremultipliedLinearSrgba::from_color(from.color());
+            let to_color = PremultipliedLinearSrgba::from_color(to.color());
+            return from_color.interpolate(to_color, amount);
         }
     }
-    stops.last().unwrap().color().to_premultiplied_array()
+    PremultipliedLinearSrgba::from_color(stops.last().unwrap().color())
 }
 
 fn paint_sampled_gradient(
     points: [Point; 3],
-    sample: impl Fn(Point) -> [f32; 4] + Copy,
+    sample: impl Fn(Point) -> PremultipliedLinearSrgba + Copy,
 ) -> Vec<PaintedTriangle> {
     let mut output = Vec::new();
     subdivide_sampled_gradient(points, sample, 0, &mut output);
@@ -327,7 +329,7 @@ fn paint_sampled_gradient(
 
 fn subdivide_sampled_gradient(
     points: [Point; 3],
-    sample: impl Fn(Point) -> [f32; 4] + Copy,
+    sample: impl Fn(Point) -> PremultipliedLinearSrgba + Copy,
     depth: u32,
     output: &mut Vec<PaintedTriangle>,
 ) {
@@ -348,15 +350,23 @@ fn subdivide_sampled_gradient(
     let mut error: f32 = 0.0;
     for edge in 0..3 {
         let actual = sample(midpoints[edge]);
-        let expected = std::array::from_fn(|component| {
-            (colors[edge][component] + colors[(edge + 1) % 3][component]) * 0.5
-        });
+        let first = colors[edge].components();
+        let second = colors[(edge + 1) % 3].components();
+        let expected =
+            PremultipliedLinearSrgba::from_components(std::array::from_fn(|component| {
+                (first[component] + second[component]) * 0.5
+            }));
         error = error.max(color_difference(actual, expected));
     }
     let actual_center = sample(center);
-    let expected_center = std::array::from_fn(|component| {
-        (colors[0][component] + colors[1][component] + colors[2][component]) / 3.0
-    });
+    let component_colors = colors.map(PremultipliedLinearSrgba::components);
+    let expected_center =
+        PremultipliedLinearSrgba::from_components(std::array::from_fn(|component| {
+            (component_colors[0][component]
+                + component_colors[1][component]
+                + component_colors[2][component])
+                / 3.0
+        }));
     error = error.max(color_difference(actual_center, expected_center));
 
     if depth >= MAX_DEPTH || (depth >= MIN_DEPTH && error <= COLOR_TOLERANCE) {
@@ -379,12 +389,8 @@ fn midpoint(first: Point, second: Point) -> Point {
     Point::new((first.x + second.x) * 0.5, (first.y + second.y) * 0.5)
 }
 
-fn color_difference(first: [f32; 4], second: [f32; 4]) -> f32 {
-    first
-        .into_iter()
-        .zip(second)
-        .map(|(first, second)| (first - second).abs())
-        .fold(0.0, f32::max)
+fn color_difference(first: PremultipliedLinearSrgba, second: PremultipliedLinearSrgba) -> f32 {
+    first.max_component_difference(second)
 }
 
 fn paint_mesh_gradient(points: [Point; 3], gradient: &MeshGradient) -> Vec<PaintedTriangle> {
@@ -450,7 +456,7 @@ fn clip_polygon_to_edge(
     output
 }
 
-fn mesh_color_at(point: Point, patch: [GradientPoint; 3]) -> [f32; 4] {
+fn mesh_color_at(point: Point, patch: [GradientPoint; 3]) -> PremultipliedLinearSrgba {
     let positions = patch.map(GradientPoint::position);
     let denominator = signed_area(positions);
     let weights = [
@@ -458,12 +464,13 @@ fn mesh_color_at(point: Point, patch: [GradientPoint; 3]) -> [f32; 4] {
         edge_side(positions[2], positions[0], point) / denominator,
         edge_side(positions[0], positions[1], point) / denominator,
     ];
-    let colors = patch.map(|vertex| vertex.color().to_premultiplied_array());
-    std::array::from_fn(|component| {
+    let colors =
+        patch.map(|vertex| PremultipliedLinearSrgba::from_color(vertex.color()).components());
+    PremultipliedLinearSrgba::from_components(std::array::from_fn(|component| {
         colors[0][component] * weights[0]
             + colors[1][component] * weights[1]
             + colors[2][component] * weights[2]
-    })
+    }))
 }
 
 fn signed_area(points: [Point; 3]) -> f32 {

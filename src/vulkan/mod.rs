@@ -1,4 +1,5 @@
 mod canvas_renderer;
+mod color;
 mod host_buffer;
 mod image;
 mod image_layout;
