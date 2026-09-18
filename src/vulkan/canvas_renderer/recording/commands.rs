@@ -8,7 +8,10 @@ use crate::{
     path::Path,
     tessellation::{DEFAULT_TESSELLATION_TOLERANCE, Mesh},
     transform::Projective2,
-    vulkan::{image::ImageCache, image_layout::transition_image, scratch_image::ScratchImage},
+    vulkan::{
+        color::PremultipliedLinearSrgba, image::ImageCache, image_layout::transition_image,
+        scratch_image::ScratchImage,
+    },
 };
 
 use crate::vulkan::canvas_renderer::{
@@ -61,7 +64,12 @@ impl<'a> CanvasCommandEncoder<'a> {
         );
     }
 
-    pub(super) fn present(&self, source: usize, image_view: vk::ImageView, clear_color: [f32; 4]) {
+    pub(super) fn present(
+        &self,
+        source: usize,
+        image_view: vk::ImageView,
+        clear_color: PremultipliedLinearSrgba,
+    ) {
         let color_attachment = vk::RenderingAttachmentInfo::default()
             .image_view(image_view)
             .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
@@ -69,7 +77,7 @@ impl<'a> CanvasCommandEncoder<'a> {
             .store_op(vk::AttachmentStoreOp::STORE)
             .clear_value(vk::ClearValue {
                 color: vk::ClearColorValue {
-                    float32: clear_color,
+                    float32: clear_color.components(),
                 },
             });
         let rendering_info = vk::RenderingInfo::default()

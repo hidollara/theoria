@@ -69,7 +69,7 @@ impl CanvasRenderer {
             viewport,
             canvas,
             view,
-            PremultipliedLinearSrgba::from_color(target.clear_color()).components(),
+            PremultipliedLinearSrgba::from_color(target.clear_color()),
         )
     }
 
@@ -112,7 +112,7 @@ impl CanvasRenderer {
             Viewport::new(0.0, 0.0, width as f32, height as f32),
             canvas,
             view,
-            [0.0; 4],
+            PremultipliedLinearSrgba::TRANSPARENT,
         )?;
         unsafe {
             transition_image(
@@ -190,7 +190,7 @@ impl CanvasRenderer {
         viewport: Viewport,
         canvas: &Canvas,
         view: CanvasView,
-        clear_color: [f32; 4],
+        clear_color: PremultipliedLinearSrgba,
     ) -> Result<()> {
         let sample_count = preferred_sample_count(&self.device, format);
         let target_region = target_region(viewport, extent);

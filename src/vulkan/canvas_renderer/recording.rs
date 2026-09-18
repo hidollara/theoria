@@ -14,7 +14,9 @@ use crate::{
 
 use self::commands::CanvasCommandEncoder;
 use super::{canvas_plan::can_record_directly, pipeline::Pipelines};
-use crate::vulkan::{image::ImageCache, scratch_image::ScratchImage};
+use crate::vulkan::{
+    color::PremultipliedLinearSrgba, image::ImageCache, scratch_image::ScratchImage,
+};
 
 pub(super) struct CanvasRecorder<'a> {
     commands: CanvasCommandEncoder<'a>,
@@ -52,7 +54,7 @@ impl<'a> CanvasRecorder<'a> {
         &mut self,
         canvas: &Canvas,
         image_view: vk::ImageView,
-        clear_color: [f32; 4],
+        clear_color: PremultipliedLinearSrgba,
     ) {
         let canvas_image = self.evaluate(canvas, Projective2::IDENTITY);
         self.commands.present(canvas_image, image_view, clear_color);
