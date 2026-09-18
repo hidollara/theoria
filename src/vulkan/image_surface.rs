@@ -9,6 +9,7 @@ use crate::{
     surface::{SurfaceContent, SurfaceSize, Viewport},
     vulkan::{
         CanvasRenderer,
+        color::encode_linear_premultiplied_rgba8_as_straight_srgba8,
         host_buffer::HostBuffer,
         image::VulkanImage,
         image_layout::transition_image,
@@ -149,7 +150,7 @@ impl ImageSurface {
         self.target_initialized = true;
 
         let mut pixels = self.readback.read()?;
-        linear_premultiplied_to_srgba_straight(&mut pixels);
+        encode_linear_premultiplied_rgba8_as_straight_srgba8(&mut pixels);
         Ok(Srgba8Image::new(size.width, size.height, pixels)?)
     }
 }
@@ -179,28 +180,9 @@ fn pixel_byte_len(size: SurfaceSize) -> Result<usize> {
         })
 }
 
-fn linear_premultiplied_to_srgba_straight(pixels: &mut [u8]) {
-    for pixel in pixels.chunks_exact_mut(4) {
-        let alpha = f32::from(pixel[3]) / 255.0;
-        if alpha == 0.0 {
-            pixel[..3].fill(0);
-            continue;
-        }
-        for component in &mut pixel[..3] {
-            let linear = (f32::from(*component) / 255.0 / alpha).clamp(0.0, 1.0);
-            let srgb = if linear <= 0.003_130_8 {
-                linear * 12.92
-            } else {
-                1.055 * linear.powf(1.0 / 2.4) - 0.055
-            };
-            *component = (srgb * 255.0).round() as u8;
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{linear_premultiplied_to_srgba_straight, pixel_byte_len};
+    use super::pixel_byte_len;
     use crate::surface::SurfaceSize;
 
     #[test]
@@ -226,14 +208,5 @@ mod tests {
             })
             .is_err()
         );
-    }
-
-    #[test]
-    fn readback_becomes_straight_alpha_srgba() {
-        let mut pixels = [128, 0, 0, 128, 0, 0, 0, 0];
-
-        linear_premultiplied_to_srgba_straight(&mut pixels);
-
-        assert_eq!(pixels, [255, 0, 0, 128, 0, 0, 0, 0]);
     }
 }

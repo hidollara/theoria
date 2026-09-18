@@ -34,6 +34,9 @@ pub(super) fn upload_srgba8(
     };
     let backing = Arc::new(VulkanImage::new(
         device.clone(),
+        // Vulkan decodes the sRGB channels to linear values when sampling.
+        // Alpha remains linear and straight until the image shader associates
+        // RGB with it at the Canvas working-color boundary.
         vk::Format::R8G8B8A8_SRGB,
         extent,
         vk::SampleCountFlags::TYPE_1,

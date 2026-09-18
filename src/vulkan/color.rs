@@ -47,6 +47,27 @@ impl PremultipliedLinearSrgba {
     }
 }
 
+/// Converts quantized linear premultiplied RGBA readback into the public
+/// straight-alpha sRGBA8 image representation.
+pub(super) fn encode_linear_premultiplied_rgba8_as_straight_srgba8(pixels: &mut [u8]) {
+    for pixel in pixels.chunks_exact_mut(4) {
+        let alpha = f32::from(pixel[3]) / 255.0;
+        if alpha == 0.0 {
+            pixel[..3].fill(0);
+            continue;
+        }
+        for component in &mut pixel[..3] {
+            let linear = (f32::from(*component) / 255.0 / alpha).clamp(0.0, 1.0);
+            let srgb = if linear <= 0.003_130_8 {
+                linear * 12.92
+            } else {
+                1.055 * linear.powf(1.0 / 2.4) - 0.055
+            };
+            *component = (srgb * 255.0).round() as u8;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -71,5 +92,23 @@ mod tests {
             transparent.interpolate(opaque, 0.5).components(),
             [0.5, 0.0, 0.0, 0.5]
         );
+    }
+
+    #[test]
+    fn readback_is_unassociated_and_encoded_as_srgb() {
+        let mut pixels = [128, 0, 0, 128];
+
+        encode_linear_premultiplied_rgba8_as_straight_srgba8(&mut pixels);
+
+        assert_eq!(pixels, [255, 0, 0, 128]);
+    }
+
+    #[test]
+    fn transparent_readback_discards_unobservable_rgb() {
+        let mut pixels = [255, 128, 64, 0];
+
+        encode_linear_premultiplied_rgba8_as_straight_srgba8(&mut pixels);
+
+        assert_eq!(pixels, [0; 4]);
     }
 }
