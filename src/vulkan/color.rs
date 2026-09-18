@@ -8,6 +8,14 @@ use crate::color::Color;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct PremultipliedLinearSrgba([f32; 4]);
 
+/// Describes whether sampled RGB components already contain their alpha
+/// contribution before they enter the premultiplied Canvas pipeline.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum RgbAlphaAssociation {
+    Straight,
+    Premultiplied,
+}
+
 impl PremultipliedLinearSrgba {
     pub(super) const TRANSPARENT: Self = Self([0.0; 4]);
 

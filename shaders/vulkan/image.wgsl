@@ -1,7 +1,7 @@
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) uvw: vec3<f32>,
-    @location(1) @interpolate(flat) premultiplied: f32,
+    @location(1) @interpolate(flat) rgb_is_premultiplied: f32,
 }
 
 struct ImageTriangle {
@@ -37,7 +37,7 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     var output: VertexOutput;
     output.position = positions[vertex_index];
     output.uvw = uvs[vertex_index].xyz;
-    output.premultiplied = uvs[vertex_index].w;
+    output.rgb_is_premultiplied = uvs[vertex_index].w;
     return output;
 }
 
@@ -47,7 +47,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let premultiplied_rgb = mix(
         sampled.rgb * sampled.a,
         sampled.rgb,
-        input.premultiplied,
+        input.rgb_is_premultiplied,
     );
     return vec4<f32>(premultiplied_rgb, sampled.a);
 }

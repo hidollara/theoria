@@ -61,7 +61,7 @@ impl BlendCompositePushConstants {
     }
 }
 
-use super::super::image::GpuAlphaMode;
+use super::super::color::RgbAlphaAssociation;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -106,7 +106,7 @@ pub(super) struct ImagePushConstants {
 impl ImagePushConstants {
     pub(super) fn new(
         pattern: &ImagePattern,
-        alpha_mode: GpuAlphaMode,
+        rgb_alpha_association: RgbAlphaAssociation,
         points: [Point; 3],
         image_to_root: Projective2,
         view: CanvasView,
@@ -115,7 +115,7 @@ impl ImagePushConstants {
             pattern.image().width(),
             pattern.image().height(),
             pattern.canvas_to_image(),
-            alpha_mode,
+            rgb_alpha_association,
             points,
             image_to_root,
             view,
@@ -127,16 +127,16 @@ impl ImagePushConstants {
         width: u32,
         height: u32,
         canvas_to_image: Projective2,
-        alpha_mode: GpuAlphaMode,
+        rgb_alpha_association: RgbAlphaAssociation,
         points: [Point; 3],
         image_to_root: Projective2,
         view: CanvasView,
     ) -> Self {
         let width = width as f32;
         let height = height as f32;
-        let premultiplied = match alpha_mode {
-            GpuAlphaMode::Straight => 0.0,
-            GpuAlphaMode::Premultiplied => 1.0,
+        let rgb_is_premultiplied = match rgb_alpha_association {
+            RgbAlphaAssociation::Straight => 0.0,
+            RgbAlphaAssociation::Premultiplied => 1.0,
         };
         let image_to_view = image_to_root.then(view.canvas_to_view);
         Self {
@@ -148,7 +148,7 @@ impl ImagePushConstants {
                         image_point.x / width,
                         image_point.y / height,
                         image_point.z,
-                        premultiplied,
+                        rgb_is_premultiplied,
                     ],
                 }
             }),

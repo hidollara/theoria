@@ -1,4 +1,4 @@
-use super::super::image::GpuAlphaMode;
+use super::super::color::RgbAlphaAssociation;
 use super::canvas_plan::{can_record_directly, collect_images, required_scratch_images};
 use super::encoding::ImagePushConstants;
 use super::pipeline::composite_blend_factors;
@@ -41,7 +41,7 @@ fn canvas_image_is_an_image_boundary_while_canvas_color_field_stays_semantic() {
 }
 
 #[test]
-fn image_sampling_respects_the_gpu_images_alpha_representation() {
+fn image_sampling_respects_the_sampled_rgb_alpha_association() {
     let straight = Srgba8Image::new(1, 1, vec![255, 128, 64, 128]).unwrap();
     let canvas_image = CanvasImage::new(
         Canvas::empty(),
@@ -55,14 +55,14 @@ fn image_sampling_respects_the_gpu_images_alpha_representation() {
 
     let straight_constants = ImagePushConstants::new(
         &ImagePattern::new(straight),
-        GpuAlphaMode::Straight,
+        RgbAlphaAssociation::Straight,
         points,
         Projective2::IDENTITY,
         view,
     );
     let premultiplied_constants = ImagePushConstants::new(
         &ImagePattern::new(canvas_image),
-        GpuAlphaMode::Premultiplied,
+        RgbAlphaAssociation::Premultiplied,
         points,
         Projective2::IDENTITY,
         view,

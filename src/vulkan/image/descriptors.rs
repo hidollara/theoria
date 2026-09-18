@@ -6,7 +6,7 @@ use ash::vk;
 
 use crate::{
     canvas::{ImageExtend, ImagePattern, ImageSampling},
-    vulkan::{image::storage::VulkanImage, presenter::RenderDevice},
+    vulkan::{color::RgbAlphaAssociation, image::storage::VulkanImage, presenter::RenderDevice},
 };
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
@@ -14,15 +14,9 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 pub(in crate::vulkan) struct GpuImage {
     _descriptor_pool: DescriptorPool,
     descriptor_sets: HashMap<SamplerKey, vk::DescriptorSet>,
-    alpha_mode: GpuAlphaMode,
+    rgb_alpha_association: RgbAlphaAssociation,
     // Fields drop in declaration order, so the sampled view outlives its pool.
     _backing: Arc<VulkanImage>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(in crate::vulkan) enum GpuAlphaMode {
-    Straight,
-    Premultiplied,
 }
 
 pub(in crate::vulkan) struct SampledImageBinding {
@@ -85,8 +79,8 @@ impl GpuImage {
         self.descriptor_sets[&SamplerKey::from_pattern(pattern)]
     }
 
-    pub(in crate::vulkan) fn alpha_mode(&self) -> GpuAlphaMode {
-        self.alpha_mode
+    pub(in crate::vulkan) fn rgb_alpha_association(&self) -> RgbAlphaAssociation {
+        self.rgb_alpha_association
     }
 }
 
@@ -202,7 +196,7 @@ impl ImageDescriptors {
     pub(super) fn bind_backing(
         &self,
         backing: Arc<VulkanImage>,
-        alpha_mode: GpuAlphaMode,
+        rgb_alpha_association: RgbAlphaAssociation,
     ) -> Result<GpuImage> {
         let device = self.device.raw();
         let descriptor_count = u32::try_from(self.samplers.len())?;
@@ -255,7 +249,7 @@ impl ImageDescriptors {
         Ok(GpuImage {
             _descriptor_pool: descriptor_pool,
             descriptor_sets: sets_by_sampler,
-            alpha_mode,
+            rgb_alpha_association,
             _backing: backing,
         })
     }

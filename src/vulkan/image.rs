@@ -10,14 +10,14 @@ use crate::{
     image::{Srgba8Image, Srgba8ImageInstanceKey},
 };
 
-use super::presenter::RenderDevice;
+use super::{color::RgbAlphaAssociation, presenter::RenderDevice};
 
 mod descriptors;
 mod storage;
 mod upload;
 
 use descriptors::ImageDescriptors;
-pub(super) use descriptors::{GpuAlphaMode, GpuImage, SampledImageBinding};
+pub(super) use descriptors::{GpuImage, SampledImageBinding};
 pub(super) use storage::VulkanImage;
 use upload::upload_srgba8;
 
@@ -65,7 +65,7 @@ impl ImageCache {
         self.prune_unused();
         let gpu_image = self
             .descriptors
-            .bind_backing(backing, GpuAlphaMode::Premultiplied)?;
+            .bind_backing(backing, RgbAlphaAssociation::Premultiplied)?;
         self.canvas.insert(image.instance_key(), gpu_image);
         Ok(())
     }
@@ -112,6 +112,6 @@ impl ImageCache {
     fn upload(&self, source: &Srgba8Image) -> Result<GpuImage> {
         let backing = upload_srgba8(self.device.clone(), source)?;
         self.descriptors
-            .bind_backing(backing, GpuAlphaMode::Straight)
+            .bind_backing(backing, RgbAlphaAssociation::Straight)
     }
 }
