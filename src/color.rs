@@ -72,23 +72,15 @@ impl Color {
     }
 
     /// Returns straight-alpha linear-sRGB components for renderer lowering.
-    pub(crate) const fn to_linear_srgba(self) -> [f32; 4] {
+    pub(crate) const fn to_straight_linear_srgba(self) -> [f32; 4] {
         [self.red, self.green, self.blue, self.alpha]
     }
 
-    pub(crate) fn to_srgba(self) -> [f32; 4] {
-        let encode = |component: f32| {
-            if component <= 0.003_130_8 {
-                component * 12.92
-            } else {
-                1.055 * component.powf(1.0 / 2.4) - 0.055
-            }
-            .clamp(0.0, 1.0)
-        };
+    pub(crate) fn to_straight_srgba(self) -> [f32; 4] {
         [
-            encode(self.red),
-            encode(self.green),
-            encode(self.blue),
+            linear_to_srgb(self.red).clamp(0.0, 1.0),
+            linear_to_srgb(self.green).clamp(0.0, 1.0),
+            linear_to_srgb(self.blue).clamp(0.0, 1.0),
             self.alpha.clamp(0.0, 1.0),
         ]
     }
@@ -104,6 +96,14 @@ fn srgb_to_linear(component: f32) -> f32 {
         component / 12.92
     } else {
         ((component + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+pub(crate) fn linear_to_srgb(component: f32) -> f32 {
+    if component <= 0.003_130_8 {
+        component * 12.92
+    } else {
+        1.055 * component.powf(1.0 / 2.4) - 0.055
     }
 }
 
@@ -127,7 +127,7 @@ mod tests {
     #[test]
     fn retains_straight_alpha_in_its_linear_representation() {
         let color = Color::rgba8(255, 128, 64, 128);
-        let linear = color.to_linear_srgba();
+        let linear = color.to_straight_linear_srgba();
 
         assert_eq!(linear[3], 128.0 / 255.0);
         assert_eq!(linear[0], 1.0);
@@ -135,7 +135,9 @@ mod tests {
 
     #[test]
     fn converts_srgb_to_linear_for_rendering() {
-        let linear = Color::rgb(0.5, 0.5, 0.5).unwrap().to_linear_srgba();
+        let linear = Color::rgb(0.5, 0.5, 0.5)
+            .unwrap()
+            .to_straight_linear_srgba();
         for component in &linear[..3] {
             assert!((*component - 0.214_041_14).abs() < 0.000_001);
         }

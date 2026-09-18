@@ -1,4 +1,4 @@
-use crate::color::Color;
+use crate::color::{Color, linear_to_srgb};
 
 /// Vulkan Canvas working color in premultiplied linear-sRGB form.
 ///
@@ -20,7 +20,7 @@ impl PremultipliedLinearSrgba {
     pub(super) const TRANSPARENT: Self = Self([0.0; 4]);
 
     pub(super) const fn from_color(color: Color) -> Self {
-        let [red, green, blue, alpha] = color.to_linear_srgba();
+        let [red, green, blue, alpha] = color.to_straight_linear_srgba();
         Self([red * alpha, green * alpha, blue * alpha, alpha])
     }
 
@@ -58,12 +58,7 @@ pub(super) fn encode_linear_premultiplied_rgba8_as_straight_srgba8(pixels: &mut 
         }
         for component in &mut pixel[..3] {
             let linear = (f32::from(*component) / 255.0 / alpha).clamp(0.0, 1.0);
-            let srgb = if linear <= 0.003_130_8 {
-                linear * 12.92
-            } else {
-                1.055 * linear.powf(1.0 / 2.4) - 0.055
-            };
-            *component = (srgb * 255.0).round() as u8;
+            *component = (linear_to_srgb(linear) * 255.0).round() as u8;
         }
     }
 }

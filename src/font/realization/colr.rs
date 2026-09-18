@@ -448,8 +448,8 @@ mod tests {
             ])
             .unwrap();
 
-        let first = stops[0].color().to_linear_srgba();
-        let last = stops[1].color().to_linear_srgba();
+        let first = stops[0].color().to_straight_linear_srgba();
+        let last = stops[1].color().to_straight_linear_srgba();
         assert!((first[3] - 64.0 / 255.0).abs() < 0.000_001);
         assert!((last[3] - 128.0 / 255.0).abs() < 0.000_001);
         for component in 0..3 {

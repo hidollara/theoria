@@ -37,7 +37,7 @@ pub(super) fn canvas(
 
     let document = prepared_document(font, data, palette_index)?;
     let foreground_color = match foreground {
-        ColorField::Solid(color) => Some(css_rgba_f32(color.to_srgba())),
+        ColorField::Solid(color) => Some(css_rgba_f32(color.to_straight_srgba())),
         _ => None,
     };
     if contains_ascii_case_insensitive(&document, "currentColor") && foreground_color.is_none() {
