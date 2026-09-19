@@ -4,12 +4,12 @@ pub use white_point::{WhitePoint, WhitePointError};
 
 /// A backend-independent straight-alpha color in the sRGB gamut.
 ///
-/// Constructors accept encoded sRGB components and linear alpha. The stored
-/// RGB values are decoded to linear sRGB for interpolation and rendering;
-/// associating RGB with alpha is a renderer-internal compositing step.
+/// Constructors accept and retain encoded sRGB components and linear alpha.
+/// Converting RGB into a renderer's working color representation and
+/// associating it with alpha are renderer responsibilities.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Color {
-    /// Straight-alpha, linear-sRGB components used for rendering calculations.
+    /// Straight-alpha, encoded-sRGB components supplied by the caller.
     pub(super) red: f32,
     pub(super) green: f32,
     pub(super) blue: f32,
@@ -67,48 +67,23 @@ impl Color {
         )
     }
 
-    fn from_valid_srgba(red: f32, green: f32, blue: f32, alpha: f32) -> Self {
+    const fn from_valid_srgba(red: f32, green: f32, blue: f32, alpha: f32) -> Self {
         Self {
-            red: srgb_to_linear(red),
-            green: srgb_to_linear(green),
-            blue: srgb_to_linear(blue),
+            red,
+            green,
+            blue,
             alpha,
         }
     }
 
-    /// Returns straight-alpha linear-sRGB components for renderer lowering.
-    pub(crate) const fn to_straight_linear_srgba(self) -> [f32; 4] {
+    /// Returns the retained straight-alpha encoded-sRGB components.
+    pub(crate) const fn to_straight_srgba(self) -> [f32; 4] {
         [self.red, self.green, self.blue, self.alpha]
-    }
-
-    pub(crate) fn to_straight_srgba(self) -> [f32; 4] {
-        [
-            linear_to_srgb(self.red).clamp(0.0, 1.0),
-            linear_to_srgb(self.green).clamp(0.0, 1.0),
-            linear_to_srgb(self.blue).clamp(0.0, 1.0),
-            self.alpha.clamp(0.0, 1.0),
-        ]
     }
 
     pub(crate) fn with_alpha_factor(mut self, factor: f32) -> Self {
         self.alpha *= factor.clamp(0.0, 1.0);
         self
-    }
-}
-
-fn srgb_to_linear(component: f32) -> f32 {
-    if component <= 0.04045 {
-        component / 12.92
-    } else {
-        ((component + 0.055) / 1.055).powf(2.4)
-    }
-}
-
-pub(crate) fn linear_to_srgb(component: f32) -> f32 {
-    if component <= 0.003_130_8 {
-        component * 12.92
-    } else {
-        1.055 * component.powf(1.0 / 2.4) - 0.055
     }
 }
 
@@ -130,23 +105,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn retains_straight_alpha_in_its_linear_representation() {
+    fn retains_straight_srgba_components() {
         let color = Color::rgba8(255, 128, 64, 128);
-        let linear = color.to_straight_linear_srgba();
-
-        assert_eq!(linear[3], 128.0 / 255.0);
-        assert_eq!(linear[0], 1.0);
-    }
-
-    #[test]
-    fn converts_srgb_to_linear_for_rendering() {
-        let linear = Color::rgb(0.5, 0.5, 0.5)
-            .unwrap()
-            .to_straight_linear_srgba();
-        for component in &linear[..3] {
-            assert!((*component - 0.214_041_14).abs() < 0.000_001);
-        }
-        assert_eq!(linear[3], 1.0);
+        assert_eq!(
+            color.to_straight_srgba(),
+            [1.0, 128.0 / 255.0, 64.0 / 255.0, 128.0 / 255.0]
+        );
         assert_eq!(
             Color::rgb8(128, 128, 128),
             Color::rgb(128.0 / 255.0, 128.0 / 255.0, 128.0 / 255.0).unwrap()
@@ -154,7 +118,7 @@ mod tests {
     }
 
     #[test]
-    fn encoded_srgba_round_trips_through_the_linear_representation() {
+    fn normalized_srgba_is_retained_exactly() {
         let encoded = [0.8, 0.4, 0.2, 0.6];
         let round_trip = Color::rgba(encoded[0], encoded[1], encoded[2], encoded[3])
             .unwrap()

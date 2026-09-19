@@ -5,7 +5,7 @@
 //! representation through interpolation and compositing, and converts it back
 //! only when a CPU-readable image is requested.
 
-use crate::color::{Color, linear_to_srgb};
+use crate::color::Color;
 
 /// Vulkan Canvas working color in premultiplied linear-sRGB form.
 ///
@@ -26,8 +26,9 @@ pub(super) enum RgbAlphaAssociation {
 impl PremultipliedLinearSrgba {
     pub(super) const TRANSPARENT: Self = Self([0.0; 4]);
 
-    pub(super) const fn from_color(color: Color) -> Self {
-        let [red, green, blue, alpha] = color.to_straight_linear_srgba();
+    pub(super) fn from_color(color: Color) -> Self {
+        let [red, green, blue, alpha] = color.to_straight_srgba();
+        let [red, green, blue] = [red, green, blue].map(srgb_to_linear);
         Self([red * alpha, green * alpha, blue * alpha, alpha])
     }
 
@@ -51,6 +52,22 @@ impl PremultipliedLinearSrgba {
             .zip(other.0)
             .map(|(first, second)| (first - second).abs())
             .fold(0.0, f32::max)
+    }
+}
+
+fn srgb_to_linear(component: f32) -> f32 {
+    if component <= 0.04045 {
+        component / 12.92
+    } else {
+        ((component + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+fn linear_to_srgb(component: f32) -> f32 {
+    if component <= 0.003_130_8 {
+        component * 12.92
+    } else {
+        1.055 * component.powf(1.0 / 2.4) - 0.055
     }
 }
 
@@ -83,6 +100,17 @@ mod tests {
         assert_eq!(red, alpha);
         assert!(green < red);
         assert!(blue < green);
+    }
+
+    #[test]
+    fn lowering_decodes_srgb_into_the_vulkan_working_space() {
+        let [red, green, blue, alpha] =
+            PremultipliedLinearSrgba::from_color(Color::rgb(0.5, 0.5, 0.5).unwrap()).components();
+
+        for component in [red, green, blue] {
+            assert!((component - 0.214_041_14).abs() < 0.000_001);
+        }
+        assert_eq!(alpha, 1.0);
     }
 
     #[test]
