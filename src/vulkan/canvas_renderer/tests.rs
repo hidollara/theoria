@@ -1,10 +1,12 @@
 use super::super::color::RgbAlphaAssociation;
-use super::canvas_plan::{can_record_directly, collect_images, required_scratch_images};
 use super::encoding::ImagePushConstants;
 use super::pipeline::composite_blend_factors;
 use super::*;
 use crate::canvas::{
     Composite, Coverage, ImagePattern, canvas_image::CanvasImage, image::ImageKind,
+};
+use crate::canvas_renderer::canvas_plan::{
+    can_record_directly, collect_images, required_scratch_images,
 };
 use crate::color::Color;
 use crate::geometry::Point;

@@ -18,17 +18,13 @@ use super::{
     presenter::{RenderDevice, RenderTarget},
 };
 
-mod canvas_plan;
 mod encoding;
-mod mesh_paint;
-mod path_sampling;
 mod pipeline;
 mod recording;
 mod resources;
-mod view_space;
 
+use crate::canvas_renderer::canvas_plan::{collect_images, required_scratch_images};
 use crate::vulkan::one_shot::OneShotCommands;
-use canvas_plan::{collect_images, required_scratch_images};
 use recording::CanvasRecorder;
 use resources::CanvasGpuResources;
 

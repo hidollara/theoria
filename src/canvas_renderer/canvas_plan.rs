@@ -2,7 +2,7 @@ use crate::canvas::{
     BlendMode, Canvas, CanvasNode, ColorField, Composite, CoverageNode, Draw, image::Image,
 };
 
-pub(super) fn collect_images(canvas: &Canvas, images: &mut Vec<Image>) {
+pub(crate) fn collect_images(canvas: &Canvas, images: &mut Vec<Image>) {
     match canvas.node() {
         CanvasNode::Draw(draw) => collect_draw_images(draw, images),
         CanvasNode::Transform { content, .. } => collect_images(content, images),
@@ -37,7 +37,7 @@ fn collect_color_field_images(source: &ColorField, images: &mut Vec<Image>) {
     }
 }
 
-pub(super) fn required_scratch_images(canvas: &Canvas) -> usize {
+pub(crate) fn required_scratch_images(canvas: &Canvas) -> usize {
     1 + additional_scratch_images(canvas)
 }
 
@@ -79,7 +79,7 @@ fn additional_scratch_images(canvas: &Canvas) -> usize {
     }
 }
 
-pub(super) fn can_record_directly(canvas: &Canvas) -> bool {
+pub(crate) fn can_record_directly(canvas: &Canvas) -> bool {
     match canvas.node() {
         CanvasNode::Draw(_) => true,
         CanvasNode::Transform { content, .. } => can_record_directly(content),

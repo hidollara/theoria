@@ -1,16 +1,16 @@
-use super::paint_triangle;
+use super::{TestWorkingColor, paint_triangle};
 use crate::{
     canvas::{
         ColorField, ConicGradient, GradientExtend, GradientPoint, GradientStop, LinearGradient,
         MeshGradient, RadialGradient,
     },
+    canvas_renderer::WorkingColor,
     color::Color,
     geometry::Point,
-    vulkan::color::PremultipliedLinearSrgba,
 };
 
-fn lowered(color: Color) -> PremultipliedLinearSrgba {
-    PremultipliedLinearSrgba::from_color(color)
+fn lowered(color: Color) -> TestWorkingColor {
+    TestWorkingColor::from_color(color)
 }
 
 #[test]
@@ -207,7 +207,7 @@ fn two_circle_radial_gradient_is_transparent_where_no_circle_reaches() {
         triangles
             .iter()
             .flat_map(|triangle| triangle.colors)
-            .all(|color| color == PremultipliedLinearSrgba::TRANSPARENT)
+            .all(|color| color == TestWorkingColor::TRANSPARENT)
     );
 }
 
@@ -237,7 +237,7 @@ fn coincident_radial_circles_paint_nothing() {
         triangles
             .iter()
             .flat_map(|triangle| triangle.colors)
-            .all(|color| color == PremultipliedLinearSrgba::TRANSPARENT)
+            .all(|color| color == TestWorkingColor::TRANSPARENT)
     );
 }
 
@@ -454,6 +454,6 @@ fn coincident_repeating_conic_angles_paint_nothing() {
         triangles
             .iter()
             .flat_map(|triangle| triangle.colors)
-            .all(|color| color == PremultipliedLinearSrgba::TRANSPARENT)
+            .all(|color| color == TestWorkingColor::TRANSPARENT)
     );
 }

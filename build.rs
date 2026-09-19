@@ -5,24 +5,45 @@ fn main() {
     for (source_file, output_prefix) in [
         ("shaders/vulkan/triangle.wgsl", "triangle"),
         ("shaders/vulkan/image.wgsl", "image"),
-        ("shaders/vulkan/composite.wgsl", "composite"),
-        ("shaders/vulkan/mask.wgsl", "mask"),
-        ("shaders/vulkan/blend.wgsl", "blend"),
+        ("shaders/canvas_renderer/composite.wgsl", "composite"),
+        ("shaders/canvas_renderer/mask.wgsl", "mask"),
     ] {
         println!("cargo:rerun-if-changed={source_file}");
         compile_shader(source_file, output_prefix, &output_dir);
     }
+
+    let blend_file = "shaders/canvas_renderer/blend.wgsl";
+    println!("cargo:rerun-if-changed={blend_file}");
+    let blend = fs::read_to_string(blend_file).expect("read blend WGSL shader");
+    compile_shader_source(
+        &blend.replace(
+            "__THEORIA_BLEND_OPERATION_BINDING__",
+            "var<immediate> operation: BlendComposite;",
+        ),
+        "blend",
+        &output_dir,
+    );
+
+    for source_file in ["shaders/webgpu/triangle.wgsl", "shaders/webgpu/image.wgsl"] {
+        println!("cargo:rerun-if-changed={source_file}");
+        let source = fs::read_to_string(source_file).expect("read WebGPU WGSL shader");
+        validate_shader(&source);
+    }
+
+    let webgpu_blend = blend.replace(
+        "__THEORIA_BLEND_OPERATION_BINDING__",
+        "@group(2) @binding(0) var<uniform> operation: BlendComposite;",
+    );
+    validate_shader(&webgpu_blend);
 }
 
 fn compile_shader(source_file: &str, output_prefix: &str, output_dir: &std::path::Path) {
     let source = fs::read_to_string(source_file).expect("read WGSL shader");
-    let module = naga::front::wgsl::parse_str(&source).expect("parse WGSL shader");
-    let info = naga::valid::Validator::new(
-        naga::valid::ValidationFlags::all(),
-        naga::valid::Capabilities::all(),
-    )
-    .validate(&module)
-    .expect("validate WGSL shader");
+    compile_shader_source(&source, output_prefix, output_dir);
+}
+
+fn compile_shader_source(source: &str, output_prefix: &str, output_dir: &std::path::Path) {
+    let (module, info) = validated_module(source);
     let options = naga::back::spv::Options::default();
 
     for (entry_point, stage, suffix) in [
@@ -34,7 +55,7 @@ fn compile_shader(source_file: &str, output_prefix: &str, output_dir: &std::path
             shader_stage: stage,
         };
         let words = naga::back::spv::write_vec(&module, &info, &options, Some(&pipeline_options))
-            .expect("compile triangle shader to SPIR-V");
+            .expect("compile shader to SPIR-V");
 
         let bytes: Vec<u8> = words.into_iter().flat_map(u32::to_le_bytes).collect();
         fs::write(
@@ -43,4 +64,19 @@ fn compile_shader(source_file: &str, output_prefix: &str, output_dir: &std::path
         )
         .expect("write compiled shader");
     }
+}
+
+fn validate_shader(source: &str) {
+    validated_module(source);
+}
+
+fn validated_module(source: &str) -> (naga::Module, naga::valid::ModuleInfo) {
+    let module = naga::front::wgsl::parse_str(source).expect("parse WGSL shader");
+    let info = naga::valid::Validator::new(
+        naga::valid::ValidationFlags::all(),
+        naga::valid::Capabilities::all(),
+    )
+    .validate(&module)
+    .expect("validate WGSL shader");
+    (module, info)
 }

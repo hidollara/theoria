@@ -2,7 +2,7 @@
 
 use crate::{geometry::Point, path::Path, path::flatten_subpaths};
 
-pub(super) struct PathSampler {
+pub(crate) struct PathSampler {
     subpaths: Vec<MeasuredSubpath>,
 }
 
@@ -19,13 +19,13 @@ struct MeasuredSegment {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(super) struct PathSample {
+pub(crate) struct PathSample {
     offset: f32,
-    pub(super) signed_distance: f32,
+    pub(crate) signed_distance: f32,
 }
 
 impl PathSampler {
-    pub(super) fn new(path: &Path, tolerance: f32) -> Self {
+    pub(crate) fn new(path: &Path, tolerance: f32) -> Self {
         let subpaths = flatten_subpaths(path, tolerance)
             .into_iter()
             .map(|points| {
@@ -56,11 +56,11 @@ impl PathSampler {
         Self { subpaths }
     }
 
-    pub(super) fn nearest_offset(&self, point: Point) -> Option<f32> {
+    pub(crate) fn nearest_offset(&self, point: Point) -> Option<f32> {
         self.nearest_sample(point).map(|sample| sample.offset)
     }
 
-    pub(super) fn nearest_sample(&self, point: Point) -> Option<PathSample> {
+    pub(crate) fn nearest_sample(&self, point: Point) -> Option<PathSample> {
         let mut nearest: Option<(f32, PathSample)> = None;
         for subpath in &self.subpaths {
             for segment in &subpath.segments {

@@ -1,5 +1,6 @@
 pub mod animation;
 pub mod canvas;
+mod canvas_renderer;
 pub mod color;
 mod component_execution;
 pub mod event_loop;
@@ -17,6 +18,7 @@ mod tessellation;
 pub mod text;
 pub mod transform;
 pub mod vulkan;
+pub mod webgpu;
 pub mod window;
 
 #[cfg(test)]

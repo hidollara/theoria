@@ -7,7 +7,7 @@ use crate::{
     transform::Projective2,
 };
 
-pub(super) fn transformed_point_to_clip(point: Point, canvas_to_view: Projective2) -> [f32; 4] {
+pub(crate) fn transformed_point_to_clip(point: Point, canvas_to_view: Projective2) -> [f32; 4] {
     let transformed = canvas_to_view.transform_homogeneous(point);
     [
         transformed.x * 2.0 - transformed.z,
@@ -17,7 +17,7 @@ pub(super) fn transformed_point_to_clip(point: Point, canvas_to_view: Projective
     ]
 }
 
-pub(super) fn screen_space_tolerance(
+pub(crate) fn screen_space_tolerance(
     path: &Path,
     path_to_view: Projective2,
     viewport_width: f32,

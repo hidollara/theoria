@@ -7,16 +7,15 @@ use crate::{
         BlendMode, Canvas, CanvasNode, CanvasView, ColorField, Composite, Coverage, CoverageNode,
         Draw,
     },
+    canvas_renderer::canvas_plan::can_record_directly,
     color::Color,
     tessellation::{Mesh, tessellate_fill_with_tolerance, tessellate_stroke_with_tolerance},
     transform::Projective2,
+    vulkan::{color::PremultipliedLinearSrgba, image::ImageCache, scratch_image::ScratchImage},
 };
 
 use self::commands::CanvasCommandEncoder;
-use super::{canvas_plan::can_record_directly, pipeline::Pipelines};
-use crate::vulkan::{
-    color::PremultipliedLinearSrgba, image::ImageCache, scratch_image::ScratchImage,
-};
+use super::pipeline::Pipelines;
 
 pub(super) struct CanvasRecorder<'a> {
     commands: CanvasCommandEncoder<'a>,

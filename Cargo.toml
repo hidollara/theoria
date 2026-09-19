@@ -13,6 +13,7 @@ resolver = "3"
 
 [dependencies]
 ash = "0.38.0"
+bytemuck = { version = "1.25.0", features = ["derive"] }
 flate2 = "1.1.2"
 harfrust = "0.13.2"
 icu_locale_core = "2.3.0"
@@ -26,6 +27,7 @@ theoria-component = { path = "crates/theoria-component" }
 theoria-event = { path = "crates/theoria-event" }
 theoria-reactive = { path = "crates/theoria-reactive" }
 unicode-bidi = { version = "0.3.18", default-features = false }
+wgpu = "30.0.1"
 windows = { version = "0.62.2", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",

@@ -4,22 +4,24 @@ use ash::vk;
 
 use crate::{
     canvas::{BlendMode, CanvasView, ColorField, Composite, ImagePattern},
+    canvas_renderer::{
+        mesh_paint::paint_triangle_prepared, path_sampling::PathSampler,
+        view_space::screen_space_tolerance,
+    },
     geometry::Point,
     path::Path,
     tessellation::{DEFAULT_TESSELLATION_TOLERANCE, Mesh},
     transform::Projective2,
     vulkan::{
-        color::PremultipliedLinearSrgba, image::ImageCache, image_layout::transition_image,
+        canvas_renderer::{
+            encoding::{BlendCompositePushConstants, ImagePushConstants, TrianglePushConstants},
+            pipeline::{Pipeline, Pipelines},
+        },
+        color::PremultipliedLinearSrgba,
+        image::ImageCache,
+        image_layout::transition_image,
         scratch_image::ScratchImage,
     },
-};
-
-use crate::vulkan::canvas_renderer::{
-    encoding::{BlendCompositePushConstants, ImagePushConstants, TrianglePushConstants},
-    mesh_paint::paint_triangle_prepared,
-    path_sampling::PathSampler,
-    pipeline::{Pipeline, Pipelines},
-    view_space::screen_space_tolerance,
 };
 
 pub(super) struct CanvasCommandEncoder<'a> {

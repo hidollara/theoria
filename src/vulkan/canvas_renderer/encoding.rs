@@ -2,11 +2,12 @@ use std::{mem::size_of, slice};
 
 use crate::{
     canvas::{BlendMode, CanvasView, Composite, ImagePattern},
+    canvas_renderer::view_space::transformed_point_to_clip,
     geometry::Point,
     transform::Projective2,
 };
 
-use super::{super::color::PremultipliedLinearSrgba, view_space::transformed_point_to_clip};
+use super::super::color::PremultipliedLinearSrgba;
 
 #[repr(C)]
 #[derive(Clone, Copy)]

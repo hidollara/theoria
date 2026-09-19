@@ -5,6 +5,7 @@
 //! representation through interpolation and compositing, and converts it back
 //! only when a CPU-readable image is requested.
 
+use crate::canvas_renderer::WorkingColor;
 use crate::color::Color;
 
 /// Vulkan Canvas working color in premultiplied linear-sRGB form.
@@ -39,19 +40,21 @@ impl PremultipliedLinearSrgba {
     pub(super) const fn components(self) -> [f32; 4] {
         self.0
     }
+}
 
-    pub(super) fn interpolate(self, other: Self, amount: f32) -> Self {
-        Self(std::array::from_fn(|component| {
-            self.0[component] + (other.0[component] - self.0[component]) * amount
-        }))
+impl WorkingColor for PremultipliedLinearSrgba {
+    const TRANSPARENT: Self = Self::TRANSPARENT;
+
+    fn from_color(color: Color) -> Self {
+        Self::from_color(color)
     }
 
-    pub(super) fn max_component_difference(self, other: Self) -> f32 {
-        self.0
-            .into_iter()
-            .zip(other.0)
-            .map(|(first, second)| (first - second).abs())
-            .fold(0.0, f32::max)
+    fn from_components(components: [f32; 4]) -> Self {
+        Self::from_components(components)
+    }
+
+    fn components(self) -> [f32; 4] {
+        self.components()
     }
 }
 
