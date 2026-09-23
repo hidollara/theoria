@@ -863,10 +863,7 @@ mod tests {
 
     #[test]
     fn custom_wgsl_blend_is_used_by_webgpu() {
-        let shader = crate::canvas::BlendShader::wgsl(
-            "fn theoria_blend(_backdrop: vec3<f32>, _source: vec3<f32>) -> vec3<f32> { return vec3<f32>(1.0, 0.0, 0.0); }",
-        )
-        .unwrap();
+        let shader = crate::canvas::BlendShader::wgsl("return vec3<f32>(1.0, 0.0, 0.0);").unwrap();
         let backdrop = Canvas::draw(Color::rgb8(0, 255, 0), Coverage::all());
         let source = Canvas::draw(Color::rgb8(0, 0, 255), Coverage::all());
         let canvas = backdrop.composite(

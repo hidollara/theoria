@@ -25,7 +25,8 @@ fn main() {
     compile_shader_source(
         &composition_shader::assemble(
             composition_shader::Binding::Vulkan,
-            composition_shader::IDENTITY,
+            "",
+            composition_shader::IDENTITY_BODY,
         ),
         "composition",
         &output_dir,
@@ -40,7 +41,8 @@ fn main() {
 
     let webgpu_blend = composition_shader::assemble(
         composition_shader::Binding::WebGpu,
-        composition_shader::IDENTITY,
+        "",
+        composition_shader::IDENTITY_BODY,
     );
     validate_shader(&webgpu_blend);
 }

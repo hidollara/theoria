@@ -9,7 +9,7 @@ pub(crate) mod image;
 mod model;
 mod view;
 
-pub use blend::{Blend, BlendMode, BlendOperation, BlendShader, BlendShaderError};
+pub use blend::{Blend, BlendMode, BlendOperation, BlendShader, BlendShaderError, WgslBlend};
 pub use canvas_image::{CanvasImage, CanvasImageError};
 pub use color::CanvasColor;
 pub use color_field::{

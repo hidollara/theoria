@@ -23,24 +23,65 @@ pub trait BlendOperation<P: ColorProfile<Model = Rgb>> {
     }
 }
 
-/// A backend-independent, immutable blend program definition.
+/// The WGSL body of a blend operation and its optional helper definitions.
+/// The `backdrop` and `source` arguments and the generated function name are supplied
+/// by the shader assembler, not by this definition.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct BlendShader(Arc<str>);
+pub struct WgslBlend {
+    helpers: Arc<str>,
+    body: Arc<str>,
+}
+
+impl WgslBlend {
+    pub fn new(body: impl Into<Arc<str>>) -> Self {
+        Self {
+            helpers: Arc::from(""),
+            body: body.into(),
+        }
+    }
+
+    /// Adds module-level helper functions used by the body.
+    pub fn with_helpers(mut self, helpers: impl Into<Arc<str>>) -> Self {
+        self.helpers = helpers.into();
+        self
+    }
+}
+
+impl From<&str> for WgslBlend {
+    fn from(body: &str) -> Self {
+        Self::new(body)
+    }
+}
+
+/// A validated, immutable WGSL blend program definition.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct BlendShader(WgslBlend);
 
 impl BlendShader {
-    /// Defines a pure WGSL `fn theoria_blend(backdrop: vec3<f32>, source:
-    /// vec3<f32>) -> vec3<f32>`. The code may contain helper functions, but
-    /// cannot declare entry points or global resources.
-    pub fn wgsl(source: impl Into<Arc<str>>) -> Result<Self, BlendShaderError> {
-        let source = source.into();
+    /// Defines the body of a pure RGB operation with `backdrop` and `source`
+    /// arguments. Helpers may be supplied separately. Neither the body nor
+    /// helpers may declare entry points or global resources.
+    pub fn wgsl(definition: impl Into<WgslBlend>) -> Result<Self, BlendShaderError> {
+        let definition = definition.into();
+        let helpers = naga::front::wgsl::parse_str(&definition.helpers)
+            .map_err(|error| BlendShaderError(error.emit_to_string(&definition.helpers)))?;
+        if !helpers.global_variables.is_empty() || !helpers.entry_points.is_empty() {
+            return Err(BlendShaderError(
+                "blend helpers must not declare entry points or global resources".into(),
+            ));
+        }
+        let source = composition_shader::operation(&definition.helpers, &definition.body);
         let validation = format!(
             "{source}\n@fragment fn theoria_validate() -> @location(0) vec4<f32> {{\n    return vec4<f32>(theoria_blend(vec3<f32>(0.0), vec3<f32>(0.0)), 1.0);\n}}"
         );
         let module = naga::front::wgsl::parse_str(&validation)
             .map_err(|error| BlendShaderError(error.emit_to_string(&validation)))?;
-        if !module.global_variables.is_empty() || module.entry_points.len() != 1 {
+        if !module.global_variables.is_empty()
+            || module.entry_points.len() != 1
+            || module.functions.len() != helpers.functions.len() + 1
+        {
             return Err(BlendShaderError(
-                "blend WGSL must not declare entry points or global resources".into(),
+                "blend body must not declare module-level functions, entry points, or global resources".into(),
             ));
         }
         naga::valid::Validator::new(
@@ -49,7 +90,7 @@ impl BlendShader {
         )
         .validate(&module)
         .map_err(|error| BlendShaderError(error.to_string()))?;
-        let shader = Self(source);
+        let shader = Self(definition);
         let complete = shader.wgsl_module(Binding::WebGpu);
         let module = naga::front::wgsl::parse_str(&complete)
             .map_err(|error| BlendShaderError(error.emit_to_string(&complete)))?;
@@ -64,11 +105,11 @@ impl BlendShader {
 
     pub(crate) fn identity() -> &'static Self {
         static IDENTITY: OnceLock<BlendShader> = OnceLock::new();
-        IDENTITY.get_or_init(|| Self(Arc::from(composition_shader::IDENTITY)))
+        IDENTITY.get_or_init(|| Self(WgslBlend::new(composition_shader::IDENTITY_BODY)))
     }
 
     pub(crate) fn wgsl_module(&self, binding: Binding) -> String {
-        composition_shader::assemble(binding, &self.0)
+        composition_shader::assemble(binding, &self.0.helpers, &self.0.body)
     }
 }
 
@@ -148,11 +189,12 @@ impl BlendMode {
                     Self::Color => "set_lum(cs, lum(cb))",
                     Self::Luminosity => "set_lum(cb, lum(cs))",
                 };
-                let source = format!(
-                    "{}\nfn theoria_blend(cb: vec3<f32>, cs: vec3<f32>) -> vec3<f32> {{ return clamp({expression}, vec3<f32>(0.0), vec3<f32>(1.0)); }}",
-                    include_str!("../../shaders/canvas_renderer/css_blend.wgsl"),
+                let body = format!(
+                    "let cb = backdrop; let cs = source; return clamp({expression}, vec3<f32>(0.0), vec3<f32>(1.0));"
                 );
-                BlendShader::wgsl(source)
+                let definition = WgslBlend::new(body)
+                    .with_helpers(include_str!("../../shaders/canvas_renderer/css_blend.wgsl"));
+                BlendShader::wgsl(definition)
                     .expect("the static CSS blend shader must satisfy its WGSL contract")
             })
             .clone()
@@ -208,26 +250,41 @@ mod tests {
     use super::*;
     use crate::{
         canvas::{Composite, Composition},
-        color::Srgb,
+        color::{DisplayP3, Srgb},
     };
 
     #[test]
     fn wgsl_blend_validates_its_pure_rgb_contract() {
-        let shader = BlendShader::wgsl(
-            "fn theoria_blend(backdrop: vec3<f32>, source: vec3<f32>) -> vec3<f32> { return backdrop * source; }",
-        )
-        .unwrap();
+        let shader = BlendShader::wgsl("return backdrop * source;").unwrap();
         let composition =
             Composition::new(Composite::SourceOver, Srgb).with_blend(shader.clone(), Srgb);
         assert_eq!(composition.blend().unwrap().shader(), &shader);
-        assert!(BlendShader::wgsl("fn other() -> f32 { return 1.0; }").is_err());
-        assert!(BlendShader::wgsl("var<private> hidden: f32; fn theoria_blend(a: vec3<f32>, b: vec3<f32>) -> vec3<f32> { return a + b; }").is_err());
+        assert!(BlendShader::wgsl("return missing(source);").is_err());
         assert!(BlendShader::wgsl(
-            "fn straight_rgb(a: vec4<f32>) -> vec3<f32> { return a.rgb; } fn theoria_blend(a: vec3<f32>, b: vec3<f32>) -> vec3<f32> { return a; }"
+            "return source; } fn leaked() {} fn trailing(backdrop: vec3<f32>, source: vec3<f32>) -> vec3<f32> { return source;"
         ).is_err());
-        assert!(BlendShader::wgsl(
-            "fn hard_light_component(a: f32, b: f32) -> f32 { return a * b; } fn theoria_blend(a: vec3<f32>, b: vec3<f32>) -> vec3<f32> { return vec3<f32>(hard_light_component(a.r, b.r)); }"
-        ).is_ok());
+        assert!(
+            BlendShader::wgsl(
+                WgslBlend::new("return source;").with_helpers("var<private> hidden: f32;")
+            )
+            .is_err()
+        );
+        assert!(
+            BlendShader::wgsl(
+                WgslBlend::new("return source;")
+                    .with_helpers("fn straight_rgb(a: vec4<f32>) -> vec3<f32> { return a.rgb; }")
+            )
+            .is_err()
+        );
+        assert!(
+            BlendShader::wgsl(
+                WgslBlend::new("return vec3<f32>(hard_light_component(backdrop.r, source.r));")
+                    .with_helpers(
+                        "fn hard_light_component(a: f32, b: f32) -> f32 { return a * b; }"
+                    )
+            )
+            .is_ok()
+        );
     }
 
     #[test]
@@ -246,10 +303,7 @@ mod tests {
 
     #[test]
     fn css_modes_and_custom_operations_use_the_same_shader_definition() {
-        let custom = BlendShader::wgsl(
-            "fn theoria_blend(cb: vec3<f32>, cs: vec3<f32>) -> vec3<f32> { return cb * cs; }",
-        )
-        .unwrap();
+        let custom = BlendShader::wgsl("return backdrop * source;").unwrap();
         let custom_composition =
             Composition::new(Composite::SourceOver, Srgb).with_blend(custom, Srgb);
         assert!(custom_composition.blend().is_some());
@@ -266,5 +320,13 @@ mod tests {
             }
         }
         assert_eq!(definitions.len(), BlendMode::ALL.len());
+    }
+
+    #[test]
+    fn evaluation_space_does_not_change_the_blend_program() {
+        let srgb = Blend::new(BlendMode::Multiply, Srgb);
+        let p3 = Blend::new(BlendMode::Multiply, DisplayP3);
+        assert_ne!(srgb.space(), p3.space());
+        assert_eq!(srgb.shader(), p3.shader());
     }
 }

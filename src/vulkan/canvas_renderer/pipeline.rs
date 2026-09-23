@@ -411,10 +411,7 @@ mod tests {
             assert!(!compile_fragment(&source).unwrap().is_empty(), "{mode:?}");
         }
 
-        let shader = BlendShader::wgsl(
-            "fn theoria_blend(backdrop: vec3<f32>, source: vec3<f32>) -> vec3<f32> { return backdrop * source; }",
-        )
-        .unwrap();
+        let shader = BlendShader::wgsl("return backdrop * source;").unwrap();
         let source = shader.wgsl_module(Binding::Vulkan);
         assert!(!compile_fragment(&source).unwrap().is_empty());
     }
