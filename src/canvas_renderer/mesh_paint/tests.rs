@@ -10,7 +10,7 @@ use crate::{
 };
 
 fn lowered(color: Color) -> TestWorkingColor {
-    TestWorkingColor::from_color(color)
+    TestWorkingColor::from_color(&color.into())
 }
 
 #[test]
@@ -20,7 +20,7 @@ fn a_transparent_field_produces_no_painted_geometry() {
 
 #[test]
 fn linear_gradient_splits_triangles_at_stop_boundaries() {
-    let green = lowered(Color::rgb8(0, 255, 0));
+    let green = TestWorkingColor::from_color(&Color::srgb8(0, 255, 0).into());
     let gradient = LinearGradient::new(
         Point::new(0.0, 0.0),
         Point::new(10.0, 0.0),

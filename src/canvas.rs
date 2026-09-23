@@ -1,4 +1,5 @@
 pub(crate) mod canvas_image;
+mod color;
 mod color_field;
 mod composition;
 mod coverage;
@@ -7,6 +8,7 @@ mod model;
 mod view;
 
 pub use canvas_image::{CanvasImage, CanvasImageError};
+pub use color::CanvasColor;
 pub use color_field::{
     AcrossPathGradient, AcrossPathGradientError, AlongPathGradient, ColorField, ColorRamp,
     ColorRampError, ConicGradient, ConicGradientError, GradientExtend, GradientPoint, GradientStop,

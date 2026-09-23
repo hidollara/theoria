@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::{color::Color, geometry::Point, path::Path};
+use crate::{canvas::CanvasColor, geometry::Point, path::Path};
 
 /// Defines how a gradient color line is evaluated outside its `[0, 1]` span.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -14,7 +14,7 @@ pub enum GradientExtend {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GradientStop {
     offset: f32,
-    color: Color,
+    color: CanvasColor,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -37,22 +37,25 @@ impl std::fmt::Display for GradientStopError {
 impl std::error::Error for GradientStopError {}
 
 impl GradientStop {
-    pub fn new(offset: f32, color: Color) -> Result<Self, GradientStopError> {
+    pub fn new(offset: f32, color: impl Into<CanvasColor>) -> Result<Self, GradientStopError> {
         if !offset.is_finite() {
             return Err(GradientStopError::NonFiniteOffset);
         }
         if !(0.0..=1.0).contains(&offset) {
             return Err(GradientStopError::OffsetOutOfRange);
         }
-        Ok(Self { offset, color })
+        Ok(Self {
+            offset,
+            color: color.into(),
+        })
     }
 
-    pub const fn offset(self) -> f32 {
+    pub const fn offset(&self) -> f32 {
         self.offset
     }
 
-    pub const fn color(self) -> Color {
-        self.color
+    pub const fn color(&self) -> &CanvasColor {
+        &self.color
     }
 }
 
@@ -512,20 +515,23 @@ fn validate_gradient_stops(stops: &[GradientStop]) -> Result<(), GradientStopsEr
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GradientPoint {
     position: Point,
-    color: Color,
+    color: CanvasColor,
 }
 
 impl GradientPoint {
-    pub const fn new(position: Point, color: Color) -> Self {
-        Self { position, color }
+    pub fn new(position: Point, color: impl Into<CanvasColor>) -> Self {
+        Self {
+            position,
+            color: color.into(),
+        }
     }
 
-    pub const fn position(self) -> Point {
+    pub const fn position(&self) -> Point {
         self.position
     }
 
-    pub const fn color(self) -> Color {
-        self.color
+    pub const fn color(&self) -> &CanvasColor {
+        &self.color
     }
 }
 

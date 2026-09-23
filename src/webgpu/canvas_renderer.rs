@@ -382,7 +382,7 @@ impl CanvasRecorder<'_> {
         self.render_mesh(
             image,
             mesh,
-            &ColorField::Solid(Color::rgb8(255, 255, 255)),
+            &ColorField::Solid(Color::rgb8(255, 255, 255).into()),
             mask_to_root,
         );
         image

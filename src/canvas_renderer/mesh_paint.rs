@@ -21,7 +21,7 @@ struct TestWorkingColor([f32; 4]);
 impl WorkingColor for TestWorkingColor {
     const TRANSPARENT: Self = Self([0.0; 4]);
 
-    fn from_color(color: crate::color::Color) -> Self {
+    fn from_color(color: &crate::canvas::CanvasColor) -> Self {
         let [red, green, blue, alpha] = color.to_straight_srgba();
         Self([red * alpha, green * alpha, blue * alpha, alpha])
     }
@@ -75,7 +75,7 @@ pub(crate) fn paint_triangle_prepared<C: WorkingColor>(
         ColorField::Transparent => Vec::new(),
         ColorField::Solid(color) => vec![PaintedTriangle {
             points,
-            colors: [C::from_color(*color); 3],
+            colors: [C::from_color(color); 3],
         }],
         ColorField::LinearGradient(gradient) => paint_linear_gradient(points, gradient),
         ColorField::RadialGradient(gradient) => paint_sampled_gradient(points, |point| {
@@ -174,7 +174,7 @@ fn paint_linear_gradient<C: WorkingColor>(
     let mut output = Vec::new();
     let mut remaining = original;
 
-    let first = stops[0];
+    let first = &stops[0];
     let before = clip_gradient_polygon(&remaining, first.offset(), true);
     append_gradient_polygon(
         &mut output,
@@ -187,7 +187,7 @@ fn paint_linear_gradient<C: WorkingColor>(
     remaining = clip_gradient_polygon(&remaining, first.offset(), false);
 
     for pair in stops.windows(2) {
-        let [from, to] = [pair[0], pair[1]];
+        let [from, to] = [&pair[0], &pair[1]];
         let band = clip_gradient_polygon(&remaining, to.offset(), true);
         append_gradient_polygon(
             &mut output,
@@ -200,7 +200,7 @@ fn paint_linear_gradient<C: WorkingColor>(
         remaining = clip_gradient_polygon(&remaining, to.offset(), false);
     }
 
-    let last = *stops.last().unwrap();
+    let last = stops.last().unwrap();
     append_gradient_polygon(
         &mut output,
         &remaining,
@@ -328,7 +328,7 @@ fn evaluate_gradient_stops<C: WorkingColor>(stops: &[GradientStop], offset: f32)
         return C::from_color(stops[0].color());
     }
     for pair in stops.windows(2) {
-        let [from, to] = [pair[0], pair[1]];
+        let [from, to] = [&pair[0], &pair[1]];
         if offset < to.offset() {
             let amount = (offset - from.offset()) / (to.offset() - from.offset());
             let from_color = C::from_color(from.color());
@@ -418,7 +418,7 @@ fn paint_mesh_gradient<C: WorkingColor>(
 ) -> Vec<PaintedTriangle<C>> {
     let mut output = Vec::new();
     for patch in gradient.triangles() {
-        let patch_points = patch.map(GradientPoint::position);
+        let patch_points = std::array::from_fn(|index| patch[index].position());
         let orientation = signed_area(patch_points);
         let mut polygon = points.to_vec();
         for edge in 0..3 {
@@ -439,7 +439,7 @@ fn paint_mesh_gradient<C: WorkingColor>(
             }
             output.push(PaintedTriangle {
                 points: triangle_points,
-                colors: triangle_points.map(|point| mesh_color_at(point, *patch)),
+                colors: triangle_points.map(|point| mesh_color_at(point, patch)),
             });
         }
     }
@@ -478,15 +478,16 @@ fn clip_polygon_to_edge(
     output
 }
 
-fn mesh_color_at<C: WorkingColor>(point: Point, patch: [GradientPoint; 3]) -> C {
-    let positions = patch.map(GradientPoint::position);
+fn mesh_color_at<C: WorkingColor>(point: Point, patch: &[GradientPoint; 3]) -> C {
+    let positions = std::array::from_fn(|index| patch[index].position());
     let denominator = signed_area(positions);
     let weights = [
         edge_side(positions[1], positions[2], point) / denominator,
         edge_side(positions[2], positions[0], point) / denominator,
         edge_side(positions[0], positions[1], point) / denominator,
     ];
-    let colors = patch.map(|vertex| C::from_color(vertex.color()).components());
+    let colors: [[f32; 4]; 3] =
+        std::array::from_fn(|index| C::from_color(patch[index].color()).components());
     C::from_components(std::array::from_fn(|component| {
         colors[0][component] * weights[0]
             + colors[1][component] * weights[1]

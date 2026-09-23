@@ -1,6 +1,6 @@
-use crate::{color::Color, image::Srgba8Image};
+use crate::image::Srgba8Image;
 
-use super::{Canvas, canvas_image::CanvasImage, image::Image};
+use super::{Canvas, CanvasColor, canvas_image::CanvasImage, image::Image};
 
 mod gradient;
 mod image_pattern;
@@ -21,7 +21,7 @@ pub use image_pattern::{ImageExtend, ImagePattern, ImageSampling};
 pub enum ColorField {
     /// The color-space-independent field with no color contribution anywhere.
     Transparent,
-    Solid(Color),
+    Solid(CanvasColor),
     LinearGradient(LinearGradient),
     RadialGradient(RadialGradient),
     ConicGradient(ConicGradient),
@@ -51,9 +51,12 @@ impl From<Image> for ColorField {
     }
 }
 
-impl From<Color> for ColorField {
-    fn from(color: Color) -> Self {
-        Self::Solid(color)
+impl<C> From<C> for ColorField
+where
+    C: Into<CanvasColor>,
+{
+    fn from(color: C) -> Self {
+        Self::Solid(color.into())
     }
 }
 

@@ -108,10 +108,13 @@ fn composes_color_fields_in_paint_order_without_a_size() {
         Point::new(9_990.0, 10_030.0),
     ];
 
-    let first = filled_triangle(first, ColorField::Solid(Color::rgb(1.0, 0.0, 0.0).unwrap()));
+    let first = filled_triangle(
+        first,
+        ColorField::Solid(Color::rgb(1.0, 0.0, 0.0).unwrap().into()),
+    );
     let second = filled_triangle(
         second,
-        ColorField::Solid(Color::rgb(0.0, 1.0, 0.0).unwrap()),
+        ColorField::Solid(Color::rgb(0.0, 1.0, 0.0).unwrap().into()),
     );
     let canvas = Canvas::empty()
         .composite(first.clone(), Composite::SourceOver)
@@ -136,7 +139,7 @@ fn fill_records_non_zero_by_default_and_accepts_even_odd_explicitly() {
         Point::new(2.0, 0.0),
         Point::new(1.0, 2.0),
     ]);
-    let source = ColorField::Solid(Color::rgb8(255, 255, 255));
+    let source = ColorField::Solid(Color::rgb8(255, 255, 255).into());
     let default_fill = Canvas::draw(source.clone(), Coverage::fill(path.clone()));
     let even_odd = Canvas::draw(source, Coverage::fill_with_rule(path, FillRule::EvenOdd));
 
@@ -225,7 +228,7 @@ fn cloned_canvases_diverge_without_changing_the_shared_value() {
         Point::new(1.0, 0.0),
         Point::new(0.0, 1.0),
     ];
-    let source = ColorField::Solid(Color::rgb8(255, 255, 255));
+    let source = ColorField::Solid(Color::rgb8(255, 255, 255).into());
     let base = filled_triangle(triangle, source.clone());
     let extended = base
         .clone()
@@ -245,7 +248,10 @@ fn transform_preserves_the_child_canvas_as_a_shared_value() {
         Point::new(1.0, 0.0),
         Point::new(0.0, 1.0),
     ];
-    let child = filled_triangle(triangle, ColorField::Solid(Color::rgb8(255, 255, 255)));
+    let child = filled_triangle(
+        triangle,
+        ColorField::Solid(Color::rgb8(255, 255, 255).into()),
+    );
     let child_to_parent =
         Projective2::from_rows([[1.0, 0.0, 20.0], [0.0, 1.0, 30.0], [0.001, 0.0, 1.0]]);
     let transformed = child.clone().transformed(child_to_parent);
@@ -263,7 +269,7 @@ fn coverage_pairs_a_lazy_canvas_color_field_with_a_canvas_alpha_field() {
         Point::new(1.0, 0.0),
         Point::new(0.0, 1.0),
     ];
-    let source = ColorField::Solid(Color::rgb8(255, 255, 255));
+    let source = ColorField::Solid(Color::rgb8(255, 255, 255).into());
     let content = filled_triangle(triangle, source.clone());
     let coverage_canvas = filled_triangle(triangle, source.clone());
     let overlay = filled_triangle(triangle, source);
@@ -311,7 +317,7 @@ fn any_color_field_can_supply_an_alpha_coverage_field() {
 
 #[test]
 fn draw_keeps_source_and_coverage_as_distinct_semantics() {
-    let source = ColorField::Solid(Color::rgba(0.8, 0.2, 0.1, 0.4).unwrap());
+    let source = ColorField::Solid(Color::rgba(0.8, 0.2, 0.1, 0.4).unwrap().into());
     let coverage = Coverage::fill(Path::polygon([
         Point::new(0.0, 0.0),
         Point::new(1.0, 0.0),
@@ -357,7 +363,10 @@ fn transformed_wraps_the_canvas_without_baking_primitive_coordinates() {
         Point::new(0.0, 1.0),
     ];
     let transform = Projective2::from_rows([[2.0, 0.0, 10.0], [0.0, 3.0, 20.0], [0.0, 0.0, 1.0]]);
-    let content = filled_triangle(triangle, ColorField::Solid(Color::rgb8(255, 255, 255)));
+    let content = filled_triangle(
+        triangle,
+        ColorField::Solid(Color::rgb8(255, 255, 255).into()),
+    );
     let transformed = content.clone().transformed(transform);
 
     assert!(matches!(transformed.node(), CanvasNode::Transform {

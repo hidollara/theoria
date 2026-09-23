@@ -113,7 +113,7 @@ impl Color {
     }
 
     /// Returns the retained straight-alpha encoded-sRGB components.
-    pub(crate) const fn to_straight_srgba(&self) -> [f32; 4] {
+    pub(crate) const fn to_straight_srgba(self) -> [f32; 4] {
         [
             self.coordinates[0],
             self.coordinates[1],
@@ -121,13 +121,19 @@ impl Color {
             self.opacity.sample().get(),
         ]
     }
+}
 
-    pub(crate) fn with_alpha_factor(mut self, factor: f32) -> Self {
-        self.opacity = Opacity::new(
-            UnitF32::new(self.opacity.sample().get() * factor.clamp(0.0, 1.0))
-                .expect("multiplying unit values produces a unit value"),
-        );
-        self
+impl Color<Srgb, u8, u8> {
+    /// Creates an opaque color while retaining its encoded-sRGB `u8` values.
+    pub fn srgb8(red: u8, green: u8, blue: u8) -> Self {
+        Self::srgba8(red, green, blue, u8::MAX)
+    }
+
+    /// Creates a color while retaining its encoded-sRGB and opacity `u8`
+    /// values.
+    pub fn srgba8(red: u8, green: u8, blue: u8, alpha: u8) -> Self {
+        Self::new(Srgb, [red, green, blue], Opacity::new(alpha))
+            .expect("integer samples always form a finite color")
     }
 }
 
@@ -222,7 +228,7 @@ mod tests {
 
     #[test]
     fn a_typed_color_retains_its_authored_representation() {
-        let color = Color::new(Srgb, [255_u8, 128, 64], Opacity::new(128_u8)).unwrap();
+        let color = Color::srgba8(255, 128, 64, 128);
 
         assert_eq!(color.coordinates(), &[255, 128, 64]);
         assert_eq!(color.opacity().sample(), 128);
