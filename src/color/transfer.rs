@@ -1,6 +1,6 @@
 use std::{error::Error, fmt, sync::Arc};
 
-use super::{RgbTransfer, RgbTransform, profile_data};
+use super::{RgbTransfer, RgbTransform, pcs, profile_data};
 
 /// A directed sequence of color-coordinate operations.
 ///
@@ -95,6 +95,8 @@ impl Transfer {
                     .into_iter()
                     .map(|value| value.clamp(0.0, 1.0))
                     .collect(),
+                TransferStage::XyzD50ToLabD50 => pcs::xyz_d50_to_lab_d50(&values),
+                TransferStage::LabD50ToXyzD50 => pcs::lab_d50_to_xyz_d50(&values),
             };
         }
         if values.iter().any(|value| !value.is_finite()) {
@@ -151,6 +153,20 @@ impl Transfer {
                 input_name = output_name;
                 continue;
             }
+            if matches!(
+                stage,
+                TransferStage::XyzD50ToLabD50 | TransferStage::LabD50ToXyzD50
+            ) {
+                let name = format!("{prefix}_pcs_{stage_index}");
+                helpers.push_str(&match stage {
+                    TransferStage::XyzD50ToLabD50 => pcs::xyz_d50_to_lab_d50_wgsl(&name),
+                    TransferStage::LabD50ToXyzD50 => pcs::lab_d50_to_xyz_d50_wgsl(&name),
+                    _ => unreachable!(),
+                });
+                body.push_str(&format!("    let {output_name} = {name}({input_name});\n"));
+                input_name = output_name;
+                continue;
+            }
             let mut expressions = Vec::with_capacity(stage.output_channels());
             match stage {
                 TransferStage::Curves(curves) => {
@@ -184,6 +200,9 @@ impl Transfer {
                     }
                 }
                 TransferStage::Clut(_) => unreachable!("CLUT stages are handled above"),
+                TransferStage::XyzD50ToLabD50 | TransferStage::LabD50ToXyzD50 => {
+                    unreachable!("PCS stages are handled above")
+                }
             }
             body.push_str(&format!(
                 "    let {output_name} = array<f32, {}>({});\n",
@@ -302,6 +321,10 @@ pub enum TransferStage {
     Clut(TransferClut),
     /// Restricts encoded channels to the ICC curve/CLUT domain.
     Clamp(usize),
+    /// Converts between actual ICC D50 PCS coordinates (not LUT encodings).
+    XyzD50ToLabD50,
+    /// Converts between actual ICC D50 PCS coordinates (not LUT encodings).
+    LabD50ToXyzD50,
 }
 
 impl TransferStage {
@@ -319,6 +342,7 @@ impl TransferStage {
             Self::Matrix(matrix) => matrix.input_channels,
             Self::Clut(clut) => clut.grid.len(),
             Self::Clamp(channels) => *channels,
+            Self::XyzD50ToLabD50 | Self::LabD50ToXyzD50 => 3,
         }
     }
 
@@ -328,6 +352,7 @@ impl TransferStage {
             Self::Matrix(matrix) => matrix.output_channels,
             Self::Clut(clut) => clut.output_channels,
             Self::Clamp(channels) => *channels,
+            Self::XyzD50ToLabD50 | Self::LabD50ToXyzD50 => 3,
         }
     }
 }

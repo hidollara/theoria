@@ -1,13 +1,14 @@
 use std::{error::Error, fmt};
 
-use super::{Transfer, TransferError};
+use super::{Transfer, TransferError, TransferStage};
 
 /// The D50 profile connection space declared by an ICC.1 profile.
 ///
 /// These are different coordinate systems even though each has three
 /// channels. The coordinates at an [`IccTransfer`] boundary are actual XYZ
 /// or Lab values, not the normalized integer encodings inside ICC LUT tags.
-/// Converting between the two spaces requires an explicit transfer.
+/// Converting between the two spaces requires a PCS transfer; [`IccTransfer::connect`]
+/// inserts one when the spaces differ.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum IccPcs {
     XyzD50,
@@ -80,20 +81,26 @@ impl IccTransfer {
 
     /// Connects a device-to-PCS transfer to a PCS-to-device transfer.
     ///
-    /// Profiles with different PCS representations must be bridged explicitly;
-    /// identical channel counts do not imply compatible coordinates.
+    /// Profiles with different PCS representations are bridged through actual
+    /// D50 XYZ/Lab coordinates; identical channel counts alone do not imply
+    /// compatible coordinates.
     pub fn connect(&self, destination: &Self) -> Result<Transfer, IccTransferError> {
         if self.direction != IccTransferDirection::DeviceToPcs
             || destination.direction != IccTransferDirection::PcsToDevice
         {
             return Err(IccTransferError::InvalidDirections);
         }
-        if self.pcs != destination.pcs {
-            return Err(IccTransferError::IncompatiblePcs);
-        }
-        self.transfer
-            .then(&destination.transfer)
-            .map_err(IccTransferError::Transfer)
+        let bridge = match (self.pcs, destination.pcs) {
+            (IccPcs::XyzD50, IccPcs::LabD50) => Some(TransferStage::XyzD50ToLabD50),
+            (IccPcs::LabD50, IccPcs::XyzD50) => Some(TransferStage::LabD50ToXyzD50),
+            _ => None,
+        };
+        let first = if let Some(stage) = bridge {
+            self.transfer.then(&Transfer::new(3, [stage])?)?
+        } else {
+            self.transfer.clone()
+        };
+        first.then(&destination.transfer).map_err(Into::into)
     }
 }
 
@@ -101,8 +108,13 @@ impl IccTransfer {
 pub enum IccTransferError {
     InvalidPcsChannels { actual: usize },
     InvalidDirections,
-    IncompatiblePcs,
     Transfer(TransferError),
+}
+
+impl From<TransferError> for IccTransferError {
+    fn from(error: TransferError) -> Self {
+        Self::Transfer(error)
+    }
 }
 
 impl fmt::Display for IccTransferError {
@@ -114,7 +126,6 @@ impl fmt::Display for IccTransferError {
             Self::InvalidDirections => {
                 formatter.write_str("ICC transfer directions cannot be connected")
             }
-            Self::IncompatiblePcs => formatter.write_str("ICC connection spaces differ"),
             Self::Transfer(error) => error.fmt(formatter),
         }
     }
@@ -153,11 +164,25 @@ mod tests {
     }
 
     #[test]
-    fn wrong_direction_and_incompatible_pcs_are_rejected() {
+    fn wrong_direction_is_rejected_and_different_pcs_is_converted() {
         let identity = Transfer::new(3, Vec::<TransferStage>::new()).unwrap();
         let xyz = IccTransfer::device_to_pcs(IccPcs::XyzD50, identity.clone()).unwrap();
         let lab = IccTransfer::pcs_to_device(IccPcs::LabD50, identity.clone()).unwrap();
-        assert_eq!(xyz.connect(&lab), Err(IccTransferError::IncompatiblePcs));
+        let connected = xyz.connect(&lab).unwrap();
+        let white = connected.evaluate(&[0.9642, 1.0, 0.8249]).unwrap();
+        assert!((white[0] - 100.0).abs() < 1e-12);
+        assert!(white[1].abs() < 1e-12);
+        assert!(white[2].abs() < 1e-12);
+        let lab_source = IccTransfer::device_to_pcs(IccPcs::LabD50, identity.clone()).unwrap();
+        let xyz_destination = IccTransfer::pcs_to_device(IccPcs::XyzD50, identity.clone()).unwrap();
+        let xyz_white = lab_source
+            .connect(&xyz_destination)
+            .unwrap()
+            .evaluate(&[100.0, 0.0, 0.0])
+            .unwrap();
+        for (actual, expected) in xyz_white.into_iter().zip([0.9642, 1.0, 0.8249]) {
+            assert!((actual - expected).abs() < 1e-12);
+        }
         assert_eq!(xyz.connect(&xyz), Err(IccTransferError::InvalidDirections));
         assert_eq!(lab.connect(&xyz), Err(IccTransferError::InvalidDirections));
         assert!(

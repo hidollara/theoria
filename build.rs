@@ -2,6 +2,9 @@ use std::{env, fs, path::PathBuf};
 
 #[path = "src/canvas/composition_shader.rs"]
 mod composition_shader;
+#[path = "src/color/pcs.rs"]
+#[allow(dead_code)] // Build-time WGSL generation only needs the source emitters.
+mod pcs;
 #[path = "src/color/profile_data.rs"]
 #[allow(dead_code)] // Build-time WGSL generation does not use the D50 adaptation constants.
 mod profile_data;
@@ -29,6 +32,7 @@ fn main() {
     for source_file in [
         "src/canvas/composition_shader.rs",
         "src/color/profile_data.rs",
+        "src/color/pcs.rs",
         "src/color/transfer.rs",
         "src/color/transform.rs",
         "src/rgb_shader.rs",

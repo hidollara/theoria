@@ -101,6 +101,7 @@ impl IccProfile {
             let mut stages = Vec::new();
             if direction == IccTransferDirection::PcsToDevice {
                 stages.push(pcs_encoding(self.pcs, tag)?);
+                stages.push(TransferStage::Clamp(3));
             }
             stages.extend(match tag {
                 LutWarehouse::Lut(lut) => legacy_lut(lut, direction, self.pcs)?,

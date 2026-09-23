@@ -2,6 +2,7 @@ mod connection;
 mod icc;
 mod icc_profile;
 mod model;
+mod pcs;
 mod profile;
 pub(crate) mod profile_data;
 mod rgb;
