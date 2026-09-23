@@ -1,3 +1,4 @@
+use super::pcs;
 use super::profile_data::{XYZ_D50_TO_XYZ_D65, XYZ_D65_TO_XYZ_D50};
 use super::transform::multiply_f64;
 use super::{
@@ -73,11 +74,11 @@ impl XyzD50Profile for XyzD65 {
 
 impl XyzD50Profile for LabD50 {
     fn coordinates_to_xyz_d50(&self, coordinates: &[f64; 3]) -> [f64; 3] {
-        lab_to_xyz_d50(*coordinates)
+        pcs::lab_to_xyz(*coordinates, WhitePoint::D50.normalized_xyz())
     }
 
     fn xyz_d50_to_coordinates(&self, xyz_d50: [f64; 3]) -> [f64; 3] {
-        xyz_d50_to_lab(xyz_d50)
+        pcs::xyz_to_lab(xyz_d50, WhitePoint::D50.normalized_xyz())
     }
 }
 
@@ -87,51 +88,6 @@ fn adapt_d65_to_d50(xyz: [f64; 3]) -> [f64; 3] {
 
 fn adapt_d50_to_d65(xyz: [f64; 3]) -> [f64; 3] {
     multiply_f64(XYZ_D50_TO_XYZ_D65, xyz)
-}
-
-const LAB_EPSILON: f64 = 216.0 / 24389.0;
-const LAB_KAPPA: f64 = 24389.0 / 27.0;
-
-fn xyz_d50_to_lab(xyz: [f64; 3]) -> [f64; 3] {
-    let white = WhitePoint::D50.normalized_xyz();
-    let scaled: [f64; 3] = std::array::from_fn(|index| xyz[index] / white[index]);
-    let f = scaled.map(|value| {
-        if value > LAB_EPSILON {
-            value.cbrt()
-        } else {
-            (LAB_KAPPA * value + 16.0) / 116.0
-        }
-    });
-    [
-        116.0 * f[1] - 16.0,
-        500.0 * (f[0] - f[1]),
-        200.0 * (f[1] - f[2]),
-    ]
-}
-
-fn lab_to_xyz_d50(lab: [f64; 3]) -> [f64; 3] {
-    let fy = (lab[0] + 16.0) / 116.0;
-    let fx = lab[1] / 500.0 + fy;
-    let fz = fy - lab[2] / 200.0;
-    let inverse = |value: f64| {
-        let cubed = value * value * value;
-        if cubed > LAB_EPSILON {
-            cubed
-        } else {
-            (116.0 * value - 16.0) / LAB_KAPPA
-        }
-    };
-    let scaled = [
-        inverse(fx),
-        if lab[0] > LAB_KAPPA * LAB_EPSILON {
-            fy * fy * fy
-        } else {
-            lab[0] / LAB_KAPPA
-        },
-        inverse(fz),
-    ];
-    let white = WhitePoint::D50.normalized_xyz();
-    std::array::from_fn(|index| scaled[index] * white[index])
 }
 
 #[cfg(test)]

@@ -1,5 +1,5 @@
 /// ICC D50 PCS white, expressed as actual XYZ tristimulus values.
-const D50: [f64; 3] = [0.9642, 1.0, 0.8249];
+const ICC_D50: [f64; 3] = [0.9642, 1.0, 0.8249];
 const DELTA: f64 = 6.0 / 29.0;
 const EPSILON: f64 = DELTA * DELTA * DELTA;
 
@@ -19,22 +19,30 @@ fn lab_f_inverse(value: f64) -> f64 {
     }
 }
 
-pub(super) fn xyz_d50_to_lab_d50(xyz: &[f64]) -> Vec<f64> {
-    let x = lab_f(xyz[0] / D50[0]);
-    let y = lab_f(xyz[1] / D50[1]);
-    let z = lab_f(xyz[2] / D50[2]);
-    vec![116.0 * y - 16.0, 500.0 * (x - y), 200.0 * (y - z)]
+pub(super) fn xyz_to_lab(xyz: [f64; 3], white: [f64; 3]) -> [f64; 3] {
+    let x = lab_f(xyz[0] / white[0]);
+    let y = lab_f(xyz[1] / white[1]);
+    let z = lab_f(xyz[2] / white[2]);
+    [116.0 * y - 16.0, 500.0 * (x - y), 200.0 * (y - z)]
 }
 
-pub(super) fn lab_d50_to_xyz_d50(lab: &[f64]) -> Vec<f64> {
+pub(super) fn lab_to_xyz(lab: [f64; 3], white: [f64; 3]) -> [f64; 3] {
     let y = (lab[0] + 16.0) / 116.0;
     let x = y + lab[1] / 500.0;
     let z = y - lab[2] / 200.0;
-    vec![
-        D50[0] * lab_f_inverse(x),
-        D50[1] * lab_f_inverse(y),
-        D50[2] * lab_f_inverse(z),
+    [
+        white[0] * lab_f_inverse(x),
+        white[1] * lab_f_inverse(y),
+        white[2] * lab_f_inverse(z),
     ]
+}
+
+pub(super) fn xyz_d50_to_lab_d50(xyz: &[f64]) -> Vec<f64> {
+    xyz_to_lab([xyz[0], xyz[1], xyz[2]], ICC_D50).to_vec()
+}
+
+pub(super) fn lab_d50_to_xyz_d50(lab: &[f64]) -> Vec<f64> {
+    lab_to_xyz([lab[0], lab[1], lab[2]], ICC_D50).to_vec()
 }
 
 pub(super) fn xyz_d50_to_lab_d50_wgsl(name: &str) -> String {
@@ -74,7 +82,7 @@ mod tests {
 
     #[test]
     fn d50_pcs_white_black_and_negative_roundtrip() {
-        let white = xyz_d50_to_lab_d50(&D50);
+        let white = xyz_d50_to_lab_d50(&ICC_D50);
         assert!((white[0] - 100.0).abs() < 1e-12);
         assert!(white[1].abs() < 1e-12);
         assert!(white[2].abs() < 1e-12);
@@ -83,7 +91,7 @@ mod tests {
                 .iter()
                 .all(|value| value.abs() < 1e-12)
         );
-        for xyz in [[0.1, 0.2, 0.4], [-0.01, 0.02, 0.03], D50] {
+        for xyz in [[0.1, 0.2, 0.4], [-0.01, 0.02, 0.03], ICC_D50] {
             let restored = lab_d50_to_xyz_d50(&xyz_d50_to_lab_d50(&xyz));
             for (actual, expected) in restored.into_iter().zip(xyz) {
                 assert!((actual - expected).abs() < 1e-12);
