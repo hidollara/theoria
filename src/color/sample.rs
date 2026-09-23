@@ -5,12 +5,33 @@ use std::{error::Error, fmt};
 /// Unsigned integer samples are interpreted as normalized code values by a renderer.
 /// Floating-point samples retain their supplied coordinate values and may extend
 /// outside the unit interval when their color profile permits it.
-pub trait Sample: Copy + fmt::Debug + PartialEq + 'static {}
+pub trait Sample: Copy + fmt::Debug + PartialEq + 'static {
+    fn is_finite(self) -> bool;
+}
 
-impl Sample for u8 {}
-impl Sample for u16 {}
-impl Sample for f32 {}
-impl Sample for f64 {}
+impl Sample for u8 {
+    fn is_finite(self) -> bool {
+        true
+    }
+}
+
+impl Sample for u16 {
+    fn is_finite(self) -> bool {
+        true
+    }
+}
+
+impl Sample for f32 {
+    fn is_finite(self) -> bool {
+        self.is_finite()
+    }
+}
+
+impl Sample for f64 {
+    fn is_finite(self) -> bool {
+        self.is_finite()
+    }
+}
 
 /// A [`Sample`] whose complete value domain denotes the closed unit interval.
 ///
@@ -45,7 +66,11 @@ impl UnitF32 {
     }
 }
 
-impl Sample for UnitF32 {}
+impl Sample for UnitF32 {
+    fn is_finite(self) -> bool {
+        true
+    }
+}
 impl UnitSample for UnitF32 {}
 
 /// A finite `f64` value in the closed unit interval.
@@ -72,7 +97,11 @@ impl UnitF64 {
     }
 }
 
-impl Sample for UnitF64 {}
+impl Sample for UnitF64 {
+    fn is_finite(self) -> bool {
+        true
+    }
+}
 impl UnitSample for UnitF64 {}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
