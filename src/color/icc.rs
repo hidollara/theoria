@@ -5,7 +5,9 @@ use super::{Transfer, TransferError};
 /// The D50 profile connection space declared by an ICC.1 profile.
 ///
 /// These are different coordinate systems even though each has three
-/// channels. Converting between them requires an explicit transfer.
+/// channels. The coordinates at an [`IccTransfer`] boundary are actual XYZ
+/// or Lab values, not the normalized integer encodings inside ICC LUT tags.
+/// Converting between the two spaces requires an explicit transfer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum IccPcs {
     XyzD50,
@@ -21,9 +23,11 @@ pub enum IccTransferDirection {
 
 /// A validated, directional ICC profile transfer.
 ///
-/// Parsing profile bytes and selecting a rendering intent happen before
-/// constructing this value. It associates the selected [`Transfer`] with its
-/// PCS meaning, which channel counts alone cannot express.
+/// This may be built directly or obtained from [`super::IccProfile`] after
+/// parsing profile bytes and selecting a rendering intent. It associates the
+/// selected [`Transfer`] with its PCS meaning, which channel counts alone
+/// cannot express. Direct construction requires the caller to supply actual
+/// D50 XYZ/Lab values at the PCS boundary.
 #[derive(Clone, Debug, PartialEq)]
 pub struct IccTransfer {
     pcs: IccPcs,

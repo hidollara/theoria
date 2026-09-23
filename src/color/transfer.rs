@@ -91,6 +91,10 @@ impl Transfer {
                     .collect(),
                 TransferStage::Matrix(matrix) => matrix.evaluate(&values),
                 TransferStage::Clut(clut) => clut.evaluate(&values),
+                TransferStage::Clamp(_) => values
+                    .into_iter()
+                    .map(|value| value.clamp(0.0, 1.0))
+                    .collect(),
             };
         }
         if values.iter().any(|value| !value.is_finite()) {
@@ -172,6 +176,11 @@ impl Transfer {
                             ));
                         }
                         expressions.push(expression);
+                    }
+                }
+                TransferStage::Clamp(channels) => {
+                    for channel in 0..*channels {
+                        expressions.push(format!("clamp({input_name}[{channel}], 0.0, 1.0)"));
                     }
                 }
                 TransferStage::Clut(_) => unreachable!("CLUT stages are handled above"),
@@ -291,6 +300,8 @@ pub enum TransferStage {
     Curves(Arc<[TransferCurve]>),
     Matrix(TransferMatrix),
     Clut(TransferClut),
+    /// Restricts encoded channels to the ICC curve/CLUT domain.
+    Clamp(usize),
 }
 
 impl TransferStage {
@@ -307,6 +318,7 @@ impl TransferStage {
             Self::Curves(curves) => curves.len(),
             Self::Matrix(matrix) => matrix.input_channels,
             Self::Clut(clut) => clut.grid.len(),
+            Self::Clamp(channels) => *channels,
         }
     }
 
@@ -315,6 +327,7 @@ impl TransferStage {
             Self::Curves(curves) => curves.len(),
             Self::Matrix(matrix) => matrix.output_channels,
             Self::Clut(clut) => clut.output_channels,
+            Self::Clamp(channels) => *channels,
         }
     }
 }

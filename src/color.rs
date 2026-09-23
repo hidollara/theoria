@@ -1,5 +1,6 @@
 mod connection;
 mod icc;
+mod icc_profile;
 mod model;
 mod profile;
 pub(crate) mod profile_data;
@@ -12,6 +13,7 @@ mod white_point;
 
 pub use connection::XyzD50Profile;
 pub use icc::{IccPcs, IccTransfer, IccTransferDirection, IccTransferError};
+pub use icc_profile::{IccProfile, IccProfileError, IccRenderingIntent};
 pub use model::{
     Cmyk, ColorCoordinates, ColorModel, DeviceN, Lab, ReferenceSample, Rgb, Xyz, Ycbcr,
 };
