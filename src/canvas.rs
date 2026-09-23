@@ -1,4 +1,5 @@
 mod blend;
+pub(crate) mod blend_source;
 pub(crate) mod canvas_image;
 mod color;
 mod color_field;

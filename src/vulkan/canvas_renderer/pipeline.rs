@@ -2,7 +2,7 @@ use std::{collections::HashMap, error::Error, ffi::CStr, io::Cursor, mem::size_o
 
 use ash::vk;
 
-use crate::canvas::{BlendShader, Composite};
+use crate::canvas::{BlendShader, Composite, blend_source::Binding};
 
 use super::encoding::{CompositionPushConstants, ImagePushConstants, TrianglePushConstants};
 
@@ -107,7 +107,7 @@ impl Pipelines {
             if self.custom_blends.contains_key(definition) {
                 continue;
             }
-            let source = definition.wgsl_module("var<immediate> operation: CompositionOperation;");
+            let source = definition.wgsl_module(Binding::Vulkan);
             let words = compile_fragment(&source)?;
             let bytes: Vec<u8> = words.into_iter().flat_map(u32::to_le_bytes).collect();
             let pipeline = unsafe {
@@ -424,7 +424,7 @@ mod tests {
             "fn theoria_blend(backdrop: vec3<f32>, source: vec3<f32>) -> vec3<f32> { return backdrop * source; }",
         )
         .unwrap();
-        let source = shader.wgsl_module("var<immediate> operation: CompositionOperation;");
+        let source = shader.wgsl_module(Binding::Vulkan);
         assert!(!compile_fragment(&source).unwrap().is_empty());
     }
 }

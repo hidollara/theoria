@@ -1,6 +1,6 @@
 use std::{borrow::Cow, collections::HashMap};
 
-use crate::canvas::{BlendMode, BlendShader, Composite};
+use crate::canvas::{BlendMode, BlendShader, Composite, blend_source::Binding};
 
 use super::encoding::{ImageVertex, TriangleVertex};
 
@@ -76,8 +76,7 @@ impl Pipelines {
             "theoria WebGPU mask shader",
             include_str!("../../../shaders/canvas_renderer/mask.wgsl"),
         );
-        let blend_source = BlendShader::builtin(BlendMode::Normal)
-            .wgsl_module("@group(2) @binding(0) var<uniform> operation: CompositionOperation;");
+        let blend_source = BlendShader::builtin(BlendMode::Normal).wgsl_module(Binding::WebGpu);
         let blend_shader = shader(
             device,
             "theoria WebGPU blend shader",
@@ -158,9 +157,7 @@ impl Pipelines {
             self.custom_blends
                 .entry(definition.clone())
                 .or_insert_with(|| {
-                    let source = definition.wgsl_module(
-                        "@group(2) @binding(0) var<uniform> operation: CompositionOperation;",
-                    );
+                    let source = definition.wgsl_module(Binding::WebGpu);
                     let module = shader(
                         device,
                         "theoria WebGPU custom blend shader",

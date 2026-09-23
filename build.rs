@@ -1,5 +1,8 @@
 use std::{env, fs, path::PathBuf};
 
+#[path = "src/canvas/blend_source.rs"]
+mod blend_source;
+
 fn main() {
     let output_dir = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR is set"));
     for (source_file, output_prefix) in [
@@ -12,18 +15,15 @@ fn main() {
         compile_shader(source_file, output_prefix, &output_dir);
     }
 
-    let blend_file = "shaders/canvas_renderer/blend.wgsl";
-    println!("cargo:rerun-if-changed={blend_file}");
-    let blend = fs::read_to_string(blend_file).expect("read blend WGSL shader");
-    let builtin_blend =
-        "fn theoria_blend(_backdrop: vec3<f32>, source: vec3<f32>) -> vec3<f32> { return source; }";
+    for source_file in [
+        "shaders/canvas_renderer/blend_common.wgsl",
+        "shaders/canvas_renderer/blend_builtin.wgsl",
+        "shaders/canvas_renderer/blend_fragment.wgsl",
+    ] {
+        println!("cargo:rerun-if-changed={source_file}");
+    }
     compile_shader_source(
-        &blend
-            .replace(
-                "__THEORIA_BLEND_OPERATION_BINDING__",
-                "var<immediate> operation: CompositionOperation;",
-            )
-            .replace("__THEORIA_CUSTOM_BLEND__", builtin_blend),
+        &blend_source::assemble(blend_source::Binding::Vulkan, blend_source::BUILTIN),
         "blend",
         &output_dir,
     );
@@ -34,12 +34,7 @@ fn main() {
         validate_shader(&source);
     }
 
-    let webgpu_blend = blend
-        .replace(
-            "__THEORIA_BLEND_OPERATION_BINDING__",
-            "@group(2) @binding(0) var<uniform> operation: CompositionOperation;",
-        )
-        .replace("__THEORIA_CUSTOM_BLEND__", builtin_blend);
+    let webgpu_blend = blend_source::assemble(blend_source::Binding::WebGpu, blend_source::BUILTIN);
     validate_shader(&webgpu_blend);
 }
 

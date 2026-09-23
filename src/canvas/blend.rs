@@ -2,6 +2,8 @@ use std::{error::Error, fmt, sync::Arc};
 
 use crate::color::{ColorProfile, Rgb, RgbColorSpace};
 
+use super::blend_source::{self, Binding};
+
 /// The straight-RGB operation evaluated where source and backdrop overlap.
 /// Alpha and Porter-Duff composition are separate from this operation.
 ///
@@ -49,8 +51,7 @@ impl BlendShader {
         .validate(&module)
         .map_err(|error| BlendShaderError(error.to_string()))?;
         let shader = Self(BlendShaderKind::Wgsl(source));
-        let complete = shader
-            .wgsl_module("@group(2) @binding(0) var<uniform> operation: CompositionOperation;");
+        let complete = shader.wgsl_module(Binding::WebGpu);
         let module = naga::front::wgsl::parse_str(&complete)
             .map_err(|error| BlendShaderError(error.emit_to_string(&complete)))?;
         naga::valid::Validator::new(
@@ -76,13 +77,8 @@ impl BlendShader {
         }
     }
 
-    pub(crate) fn wgsl_module(&self, binding: &str) -> String {
-        let blend_function = self.wgsl_source().unwrap_or(
-            "fn theoria_blend(_backdrop: vec3<f32>, source: vec3<f32>) -> vec3<f32> { return source; }",
-        );
-        include_str!("../../shaders/canvas_renderer/blend.wgsl")
-            .replace("__THEORIA_BLEND_OPERATION_BINDING__", binding)
-            .replace("__THEORIA_CUSTOM_BLEND__", blend_function)
+    pub(crate) fn wgsl_module(&self, binding: Binding) -> String {
+        blend_source::assemble(binding, self.wgsl_source().unwrap_or(blend_source::BUILTIN))
     }
 }
 
@@ -201,8 +197,11 @@ mod tests {
         assert!(BlendShader::wgsl("fn other() -> f32 { return 1.0; }").is_err());
         assert!(BlendShader::wgsl("var<private> hidden: f32; fn theoria_blend(a: vec3<f32>, b: vec3<f32>) -> vec3<f32> { return a + b; }").is_err());
         assert!(BlendShader::wgsl(
-            "fn blend_rgb(a: vec3<f32>, b: vec3<f32>) -> vec3<f32> { return a + b; } fn theoria_blend(a: vec3<f32>, b: vec3<f32>) -> vec3<f32> { return a; }"
+            "fn straight_rgb(a: vec4<f32>) -> vec3<f32> { return a.rgb; } fn theoria_blend(a: vec3<f32>, b: vec3<f32>) -> vec3<f32> { return a; }"
         ).is_err());
+        assert!(BlendShader::wgsl(
+            "fn hard_light_component(a: f32, b: f32) -> f32 { return a * b; } fn theoria_blend(a: vec3<f32>, b: vec3<f32>) -> vec3<f32> { return vec3<f32>(hard_light_component(a.r, b.r)); }"
+        ).is_ok());
     }
 
     #[test]
