@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 
 use theoria::{
-    canvas::{Canvas, Composite, Coverage},
+    canvas::{Canvas, CanvasColor, Composite, Coverage},
     color::Color,
     font::Font,
     geometry::Point,
@@ -164,7 +164,14 @@ fn rectangle(x: f32, y: f32, width: f32, height: f32) -> Path {
     ])
 }
 
-fn label(font: &Font, content: &str, size: f32, color: Color, x: f32, y: f32) -> Canvas {
+fn label(
+    font: &Font,
+    content: &str,
+    size: f32,
+    color: impl Into<CanvasColor>,
+    x: f32,
+    y: f32,
+) -> Canvas {
     Text::horizontal(TextStyle::new(std::slice::from_ref(font), size))
         .push(content)
         .layout()
@@ -190,16 +197,16 @@ fn stage_rgb(stage: MessageStage) -> (u8, u8, u8) {
     }
 }
 
-fn stage_color(stage: MessageStage) -> Color {
+fn stage_color(stage: MessageStage) -> CanvasColor {
     let (red, green, blue) = stage_rgb(stage);
-    Color::rgb8(red, green, blue)
+    Color::rgb8(red, green, blue).into()
 }
 
-fn lane_background(stage: MessageStage) -> Color {
+fn lane_background(stage: MessageStage) -> CanvasColor {
     match stage {
-        MessageStage::Queued => Color::rgba8(23, 92, 120, 64),
-        MessageStage::Thread => Color::rgba8(111, 31, 98, 64),
-        MessageStage::Window => Color::rgba8(112, 82, 18, 64),
+        MessageStage::Queued => Color::rgba8(23, 92, 120, 64).into(),
+        MessageStage::Thread => Color::rgba8(111, 31, 98, 64).into(),
+        MessageStage::Window => Color::rgba8(112, 82, 18, 64).into(),
     }
 }
 

@@ -1,4 +1,7 @@
-use crate::{canvas::CanvasColor, canvas_renderer::WorkingColor, color::Color};
+use crate::{canvas::CanvasColor, canvas_renderer::WorkingColor};
+
+#[cfg(test)]
+use crate::color::Color;
 
 /// WebGPU Canvas working color in premultiplied linear-sRGB form.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -7,8 +10,8 @@ pub(super) struct PremultipliedLinearSrgba([f32; 4]);
 impl PremultipliedLinearSrgba {
     pub(super) const TRANSPARENT: Self = Self([0.0; 4]);
 
-    pub(super) fn from_color(color: Color) -> Self {
-        Self::from_straight_srgba(color.to_straight_srgba())
+    pub(super) fn from_color(color: impl Into<CanvasColor>) -> Self {
+        Self::from_straight_srgba(color.into().to_straight_srgba())
     }
 
     fn from_straight_srgba([red, green, blue, alpha]: [f32; 4]) -> Self {

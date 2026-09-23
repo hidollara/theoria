@@ -4,7 +4,7 @@ use std::{error::Error, marker::PhantomData};
 
 use ash::vk;
 
-use crate::color::Color;
+use crate::canvas::CanvasColor;
 use crate::vulkan::image_layout::transition_image;
 
 use super::{device::PresentationDevice, swapchain::SwapchainResources};
@@ -48,7 +48,7 @@ pub struct RenderTarget<'a> {
     image_view: vk::ImageView,
     format: vk::Format,
     extent: vk::Extent2D,
-    clear_color: Color,
+    clear_color: CanvasColor,
     _frame: PhantomData<&'a ()>,
 }
 
@@ -58,7 +58,7 @@ impl RenderTarget<'_> {
         image_view: vk::ImageView,
         format: vk::Format,
         extent: vk::Extent2D,
-        clear_color: Color,
+        clear_color: CanvasColor,
     ) -> Self {
         Self {
             command_buffer,
@@ -74,7 +74,7 @@ impl RenderTarget<'_> {
         (self.image_view, self.format, self.extent)
     }
 
-    pub(crate) fn clear_color(&self) -> Color {
+    pub(crate) fn clear_color(&self) -> CanvasColor {
         self.clear_color
     }
 }
@@ -121,14 +121,14 @@ impl<'a> PresentFrame<'a> {
         }
     }
 
-    pub fn render_target(&self, clear_color: Color) -> RenderTarget<'_> {
+    pub fn render_target(&self, clear_color: impl Into<CanvasColor>) -> RenderTarget<'_> {
         let surface = self.swapchain.render_targets[self.image_index as usize];
         RenderTarget::new(
             self.command_buffer,
             surface.image_view,
             surface.format,
             surface.extent,
-            clear_color,
+            clear_color.into(),
         )
     }
 

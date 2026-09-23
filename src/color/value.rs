@@ -81,37 +81,6 @@ impl Color {
         Self::new(Srgb, coordinates, Opacity::new(opacity))
     }
 
-    /// Creates an opaque color from 8-bit sRGB code values.
-    ///
-    /// This compatibility constructor normalizes its inputs to the default
-    /// `f32` representation. Use [`Color::new`] with `u8` coordinates to retain
-    /// the authored representation exactly.
-    pub fn rgb8(red: u8, green: u8, blue: u8) -> Self {
-        Self::rgba8(red, green, blue, u8::MAX)
-    }
-
-    /// Creates a straight-alpha color from 8-bit sRGB and alpha code values.
-    ///
-    /// This compatibility constructor normalizes its inputs to the default
-    /// `f32` representation. Use [`Color::new`] with `u8` coordinates and
-    /// opacity to retain the authored representation exactly.
-    pub fn rgba8(red: u8, green: u8, blue: u8, alpha: u8) -> Self {
-        const BYTE_TO_UNIT: f32 = 1.0 / 255.0;
-        Self::new(
-            Srgb,
-            [
-                f32::from(red) * BYTE_TO_UNIT,
-                f32::from(green) * BYTE_TO_UNIT,
-                f32::from(blue) * BYTE_TO_UNIT,
-            ],
-            Opacity::new(
-                UnitF32::new(f32::from(alpha) * BYTE_TO_UNIT)
-                    .expect("a normalized u8 is a valid unit sample"),
-            ),
-        )
-        .expect("normalized u8 components form a valid color")
-    }
-
     /// Returns the retained straight-alpha encoded-sRGB components.
     pub(crate) const fn to_straight_srgba(self) -> [f32; 4] {
         [
@@ -125,13 +94,13 @@ impl Color {
 
 impl Color<Srgb, u8, u8> {
     /// Creates an opaque color while retaining its encoded-sRGB `u8` values.
-    pub fn srgb8(red: u8, green: u8, blue: u8) -> Self {
-        Self::srgba8(red, green, blue, u8::MAX)
+    pub fn rgb8(red: u8, green: u8, blue: u8) -> Self {
+        Self::rgba8(red, green, blue, u8::MAX)
     }
 
     /// Creates a color while retaining its encoded-sRGB and opacity `u8`
     /// values.
-    pub fn srgba8(red: u8, green: u8, blue: u8, alpha: u8) -> Self {
+    pub fn rgba8(red: u8, green: u8, blue: u8, alpha: u8) -> Self {
         Self::new(Srgb, [red, green, blue], Opacity::new(alpha))
             .expect("integer samples always form a finite color")
     }
@@ -228,23 +197,17 @@ mod tests {
 
     #[test]
     fn a_typed_color_retains_its_authored_representation() {
-        let color = Color::srgba8(255, 128, 64, 128);
+        let color = Color::rgba8(255, 128, 64, 128);
 
         assert_eq!(color.coordinates(), &[255, 128, 64]);
         assert_eq!(color.opacity().sample(), 128);
     }
 
     #[test]
-    fn default_srgba_constructors_retain_normalized_components() {
+    fn eight_bit_srgba_constructors_retain_integer_components() {
         let color = Color::rgba8(255, 128, 64, 128);
-        assert_eq!(
-            color.to_straight_srgba(),
-            [1.0, 128.0 / 255.0, 64.0 / 255.0, 128.0 / 255.0]
-        );
-        assert_eq!(
-            Color::rgb8(128, 128, 128),
-            Color::rgb(128.0 / 255.0, 128.0 / 255.0, 128.0 / 255.0).unwrap()
-        );
+        assert_eq!(color.coordinates(), &[255, 128, 64]);
+        assert_eq!(color.opacity().sample(), 128);
     }
 
     #[test]

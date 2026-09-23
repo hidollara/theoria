@@ -2,8 +2,8 @@ use wgpu::util::DeviceExt;
 
 use crate::{
     canvas::{
-        BlendMode, Canvas, CanvasNode, CanvasView, ColorField, Composite, Coverage, CoverageNode,
-        Draw, ImageExtend, ImagePattern, ImageSampling,
+        BlendMode, Canvas, CanvasColor, CanvasNode, CanvasView, ColorField, Composite, Coverage,
+        CoverageNode, Draw, ImageExtend, ImagePattern, ImageSampling,
         canvas_image::CanvasImage,
         image::{Image, ImageKind},
     },
@@ -41,21 +41,21 @@ pub struct RenderTarget<'a> {
     view: &'a wgpu::TextureView,
     format: wgpu::TextureFormat,
     size: SurfaceSize,
-    clear_color: Color,
+    clear_color: CanvasColor,
 }
 
 impl<'a> RenderTarget<'a> {
-    pub const fn new(
+    pub fn new(
         view: &'a wgpu::TextureView,
         format: wgpu::TextureFormat,
         size: SurfaceSize,
-        clear_color: Color,
+        clear_color: impl Into<CanvasColor>,
     ) -> Self {
         Self {
             view,
             format,
             size,
-            clear_color,
+            clear_color: clear_color.into(),
         }
     }
 }

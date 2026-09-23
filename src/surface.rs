@@ -1,8 +1,7 @@
 //! Platform-independent drawable-surface capabilities and content.
 
 use crate::{
-    canvas::{Canvas, CanvasView},
-    color::Color,
+    canvas::{Canvas, CanvasColor, CanvasView},
     event::ChannelSource,
     reactive::Value,
 };
@@ -60,15 +59,15 @@ impl Surface {
 pub struct SurfaceContent {
     canvas: Canvas,
     view: CanvasView,
-    clear_color: Color,
+    clear_color: CanvasColor,
 }
 
 impl SurfaceContent {
-    pub const fn new(canvas: Canvas, view: CanvasView, clear_color: Color) -> Self {
+    pub fn new(canvas: Canvas, view: CanvasView, clear_color: impl Into<CanvasColor>) -> Self {
         Self {
             canvas,
             view,
-            clear_color,
+            clear_color: clear_color.into(),
         }
     }
 
@@ -80,7 +79,7 @@ impl SurfaceContent {
         self.view
     }
 
-    pub const fn clear_color(&self) -> Color {
+    pub const fn clear_color(&self) -> CanvasColor {
         self.clear_color
     }
 }

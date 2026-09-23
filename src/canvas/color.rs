@@ -66,7 +66,7 @@ mod tests {
 
     #[test]
     fn erasing_a_color_does_not_normalize_its_storage() {
-        let color = CanvasColor::from(Color::srgba8(255, 128, 64, 128));
+        let color = CanvasColor::from(Color::rgba8(255, 128, 64, 128));
 
         assert!(matches!(color.representation, Representation::Srgb8(_)));
         assert_eq!(

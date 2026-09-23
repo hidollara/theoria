@@ -5,8 +5,11 @@
 //! representation through interpolation and compositing, and converts it back
 //! only when a CPU-readable image is requested.
 
+use crate::canvas::CanvasColor;
 use crate::canvas_renderer::WorkingColor;
-use crate::{canvas::CanvasColor, color::Color};
+
+#[cfg(test)]
+use crate::color::Color;
 
 /// Vulkan Canvas working color in premultiplied linear-sRGB form.
 ///
@@ -27,8 +30,8 @@ pub(super) enum RgbAlphaAssociation {
 impl PremultipliedLinearSrgba {
     pub(super) const TRANSPARENT: Self = Self([0.0; 4]);
 
-    pub(super) fn from_color(color: Color) -> Self {
-        Self::from_straight_srgba(color.to_straight_srgba())
+    pub(super) fn from_color(color: impl Into<CanvasColor>) -> Self {
+        Self::from_straight_srgba(color.into().to_straight_srgba())
     }
 
     fn from_straight_srgba([red, green, blue, alpha]: [f32; 4]) -> Self {
