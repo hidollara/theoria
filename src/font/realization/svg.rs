@@ -281,7 +281,9 @@ mod tests {
         let crate::canvas::image::ImageKind::Raster(image) = pattern.image().kind() else {
             panic!("the SVG glyph source must be a raster image");
         };
-        let crate::canvas::image::RasterImageView::Rgba8 { plane, .. } = image.view();
+        let crate::canvas::image::RasterImageView::Rgba8 { plane, .. } = image.view() else {
+            panic!("the SVG glyph source must retain its RGBA format");
+        };
         assert!(plane.samples().chunks_exact(4).any(|pixel| pixel[3] != 0));
     }
 
@@ -352,7 +354,9 @@ mod tests {
         let crate::canvas::image::ImageKind::Raster(image) = pattern.image().kind() else {
             panic!("the SVG glyph source must be a raster image");
         };
-        let crate::canvas::image::RasterImageView::Rgba8 { plane, .. } = image.view();
+        let crate::canvas::image::RasterImageView::Rgba8 { plane, .. } = image.view() else {
+            panic!("the SVG glyph source must retain its RGBA format");
+        };
         let pixel = &plane.samples()[..4];
         assert_eq!(pixel, [210, 30, 90, 255]);
     }

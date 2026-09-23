@@ -217,12 +217,40 @@ fn canvas_retains_typed_rgba8_raster_metadata_until_renderer_lowering() {
         plane,
         color_space,
         alpha,
-    } = source.view();
+    } = source.view()
+    else {
+        panic!("the source should retain its RGBA format");
+    };
 
     assert_eq!(source.instance_key(), image.instance_key());
     assert_eq!(plane.samples(), &[255, 128, 64, 128]);
     assert_eq!(color_space, RgbColorSpace::DisplayP3);
     assert_eq!(alpha, AlphaAssociation::Premultiplied);
+}
+
+#[test]
+fn canvas_retains_an_opaque_rgb8_raster_without_inventing_alpha_metadata() {
+    let image = RasterImage::<crate::image::Rgb8, DisplayP3>::from_planes(
+        1,
+        1,
+        vec![RasterPlane::new(3, vec![255, 128, 64])],
+        DisplayP3,
+        (),
+    )
+    .unwrap();
+    let field = ColorField::from(image);
+    let ColorField::Image(pattern) = field else {
+        panic!("an RGB8 raster should become an image field");
+    };
+    let image::ImageKind::Raster(source) = pattern.image().kind() else {
+        panic!("the image should retain a raster source");
+    };
+    let image::RasterImageView::Rgb8 { plane, color_space } = source.view() else {
+        panic!("the source should retain its RGB-only format");
+    };
+
+    assert_eq!(plane.samples(), &[255, 128, 64]);
+    assert_eq!(color_space, RgbColorSpace::DisplayP3);
 }
 
 #[test]

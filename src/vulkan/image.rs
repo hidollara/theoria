@@ -114,6 +114,17 @@ impl ImageCache {
 
     fn upload(&self, source: &dyn RasterImageSource) -> Result<GpuImage> {
         match source.view() {
+            RasterImageView::Rgb8 { plane, color_space } => {
+                let plane = crate::canvas_renderer::raster::expand_rgb8_to_rgba8(
+                    source.width(),
+                    source.height(),
+                    plane,
+                );
+                let backing =
+                    upload_rgba8(self.device.clone(), source.width(), source.height(), &plane)?;
+                self.descriptors
+                    .bind_backing(backing, RgbAlphaAssociation::Straight, color_space)
+            }
             RasterImageView::Rgba8 {
                 plane,
                 color_space,

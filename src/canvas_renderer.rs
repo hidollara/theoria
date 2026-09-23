@@ -8,6 +8,7 @@ pub(crate) mod color_space;
 pub(crate) mod composition_encoding;
 pub(crate) mod mesh_paint;
 pub(crate) mod path_sampling;
+pub(crate) mod raster;
 pub(crate) mod view_space;
 
 /// Color operations needed by CPU Canvas sampling without selecting a

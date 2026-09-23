@@ -1,6 +1,6 @@
 use crate::{
     color::{DisplayP3, LinearDisplayP3, LinearSrgb, Srgb},
-    image::{RasterImage, Rgba8},
+    image::{RasterImage, Rgb8, Rgba8},
 };
 
 use super::{Canvas, CanvasColor, canvas_image::CanvasImage, image::Image};
@@ -46,6 +46,20 @@ macro_rules! rgba8_image {
     };
 }
 
+macro_rules! rgb8_image {
+    ($profile:ty) => {
+        impl From<RasterImage<Rgb8, $profile>> for ColorField {
+            fn from(image: RasterImage<Rgb8, $profile>) -> Self {
+                Self::Image(ImagePattern::new(image))
+            }
+        }
+    };
+}
+
+rgb8_image!(Srgb);
+rgb8_image!(LinearSrgb);
+rgb8_image!(DisplayP3);
+rgb8_image!(LinearDisplayP3);
 rgba8_image!(Srgb);
 rgba8_image!(LinearSrgb);
 rgba8_image!(DisplayP3);

@@ -18,6 +18,20 @@ pub(super) struct GpuImage {
     pub(super) rgb_color_space: RgbColorSpace,
 }
 
+enum UploadPlane<'a> {
+    Borrowed(&'a crate::image::RasterPlane<u8>),
+    Expanded(crate::image::RasterPlane<u8>),
+}
+
+impl UploadPlane<'_> {
+    fn as_ref(&self) -> &crate::image::RasterPlane<u8> {
+        match self {
+            Self::Borrowed(plane) => plane,
+            Self::Expanded(plane) => plane,
+        }
+    }
+}
+
 pub(super) struct ImageCache {
     raster: HashMap<RasterImageInstanceKey, GpuImage>,
     canvas: HashMap<CanvasImageInstanceKey, GpuImage>,
@@ -40,11 +54,26 @@ impl ImageCache {
         self.prune_unused();
         let key = image.instance_key();
         self.raster.entry(key).or_insert_with(|| {
-            let RasterImageView::Rgba8 {
-                plane,
-                color_space,
-                alpha,
-            } = image.view();
+            let (plane, color_space, rgb_is_premultiplied) = match image.view() {
+                RasterImageView::Rgb8 { plane, color_space } => {
+                    let expanded = crate::canvas_renderer::raster::expand_rgb8_to_rgba8(
+                        image.width(),
+                        image.height(),
+                        plane,
+                    );
+                    (UploadPlane::Expanded(expanded), color_space, false)
+                }
+                RasterImageView::Rgba8 {
+                    plane,
+                    color_space,
+                    alpha,
+                } => (
+                    UploadPlane::Borrowed(plane),
+                    color_space,
+                    alpha == AlphaAssociation::Premultiplied,
+                ),
+            };
+            let plane = plane.as_ref();
             let size = extent(image.width(), image.height());
             let texture = device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("theoria WebGPU RGBA8 image"),
@@ -75,7 +104,7 @@ impl ImageCache {
             GpuImage {
                 _texture: texture,
                 view,
-                rgb_is_premultiplied: alpha == AlphaAssociation::Premultiplied,
+                rgb_is_premultiplied,
                 rgb_color_space: color_space,
             }
         });

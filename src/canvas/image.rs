@@ -2,7 +2,7 @@ use std::{fmt, sync::Arc};
 
 use crate::{
     color::{DisplayP3, LinearDisplayP3, LinearSrgb, RgbColorSpace, Srgb},
-    image::{AlphaAssociation, RasterImage, RasterImageInstanceKey, RasterPlane, Rgba8},
+    image::{AlphaAssociation, RasterImage, RasterImageInstanceKey, RasterPlane, Rgb8, Rgba8},
     transform::Projective2,
 };
 
@@ -25,11 +25,48 @@ pub(crate) enum ImageKind {
 }
 
 pub(crate) enum RasterImageView<'a> {
+    Rgb8 {
+        plane: &'a RasterPlane<u8>,
+        color_space: RgbColorSpace,
+    },
     Rgba8 {
         plane: &'a RasterPlane<u8>,
         color_space: RgbColorSpace,
         alpha: AlphaAssociation,
     },
+}
+
+#[derive(Debug)]
+struct Rgb8Source<P>
+where
+    P: crate::color::ColorProfile<Model = crate::color::Rgb>,
+{
+    image: RasterImage<Rgb8, P>,
+    color_space: RgbColorSpace,
+}
+
+impl<P> RasterImageSource for Rgb8Source<P>
+where
+    P: crate::color::ColorProfile<Model = crate::color::Rgb> + fmt::Debug + Send + Sync,
+{
+    fn width(&self) -> u32 {
+        self.image.width()
+    }
+
+    fn height(&self) -> u32 {
+        self.image.height()
+    }
+
+    fn instance_key(&self) -> RasterImageInstanceKey {
+        self.image.instance_key()
+    }
+
+    fn view(&self) -> RasterImageView<'_> {
+        RasterImageView::Rgb8 {
+            plane: &self.image.planes()[0],
+            color_space: self.color_space,
+        }
+    }
 }
 
 pub(crate) trait RasterImageSource: fmt::Debug + Send + Sync {
@@ -122,6 +159,25 @@ macro_rules! rgba8_image {
     };
 }
 
+macro_rules! rgb8_image {
+    ($profile:ty, $space:expr) => {
+        impl From<RasterImage<Rgb8, $profile>> for Image {
+            fn from(image: RasterImage<Rgb8, $profile>) -> Self {
+                Self {
+                    kind: ImageKind::Raster(Arc::new(Rgb8Source {
+                        image,
+                        color_space: $space,
+                    })),
+                }
+            }
+        }
+    };
+}
+
+rgb8_image!(Srgb, RgbColorSpace::Srgb);
+rgb8_image!(LinearSrgb, RgbColorSpace::LinearSrgb);
+rgb8_image!(DisplayP3, RgbColorSpace::DisplayP3);
+rgb8_image!(LinearDisplayP3, RgbColorSpace::LinearDisplayP3);
 rgba8_image!(Srgb, RgbColorSpace::Srgb);
 rgba8_image!(LinearSrgb, RgbColorSpace::LinearSrgb);
 rgba8_image!(DisplayP3, RgbColorSpace::DisplayP3);
