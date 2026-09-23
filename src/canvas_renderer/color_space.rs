@@ -1,10 +1,10 @@
-use crate::color::{RgbColorSpace, from_linear_srgb, to_linear_srgb};
+use crate::{
+    canvas::CanvasColor,
+    color::{LinearSrgb, RgbColorSpace, from_linear_srgb, to_linear_srgb},
+};
 
-pub(crate) fn lower_straight_rgba(
-    [red, green, blue, alpha]: [f32; 4],
-    space: RgbColorSpace,
-) -> [f32; 4] {
-    let [red, green, blue] = to_linear_srgb([red, green, blue], space);
+pub(crate) fn lower_straight_color(color: CanvasColor) -> [f32; 4] {
+    let [red, green, blue, alpha] = color.straight_rgba_in(LinearSrgb.into());
     [red * alpha, green * alpha, blue * alpha, alpha]
 }
 

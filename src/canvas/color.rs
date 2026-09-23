@@ -1,14 +1,23 @@
 use crate::color::{
-    Color, ColorProfile, Opacity, Rgb, RgbColorSpace, Sample, UnitF32, UnitF64, UnitSample,
+    Color, ColorProfile, LabD50, Opacity, ReferenceSample, Rgb, RgbColorSpace, Sample, UnitF32,
+    UnitF64, UnitSample, XyzD50, XyzD50Profile, XyzD65,
 };
 
 /// A logical color whose concrete representation has been erased at the
 /// Canvas boundary without converting its coordinates.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CanvasColor {
-    color_space: RgbColorSpace,
+    profile: CanvasProfile,
     coordinates: Coordinates,
     opacity: Alpha,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CanvasProfile {
+    Rgb(RgbColorSpace),
+    XyzD50,
+    XyzD65,
+    LabD50,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -19,6 +28,28 @@ enum Coordinates {
     U16([u16; 3]),
 }
 
+impl Coordinates {
+    fn as_f32(self) -> [f32; 3] {
+        match self {
+            Self::F32(coordinates) => coordinates,
+            Self::F64(coordinates) => coordinates.map(|value| value as f32),
+            Self::U8(coordinates) => coordinates.map(|value| f32::from(value) / f32::from(u8::MAX)),
+            Self::U16(coordinates) => {
+                coordinates.map(|value| f32::from(value) / f32::from(u16::MAX))
+            }
+        }
+    }
+
+    fn as_f64(self) -> [f64; 3] {
+        match self {
+            Self::F32(coordinates) => coordinates.map(Sample::to_f64),
+            Self::F64(coordinates) => coordinates,
+            Self::U8(coordinates) => coordinates.map(Sample::to_f64),
+            Self::U16(coordinates) => coordinates.map(Sample::to_f64),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Alpha {
     F32(UnitF32),
@@ -27,36 +58,38 @@ enum Alpha {
     U16(u16),
 }
 
-impl CanvasColor {
-    /// Returns normalized straight-alpha coordinates in their authored RGB
-    /// space. Renderer lowering decides how and at what precision to convert
-    /// them into its working representation.
-    pub(crate) fn authored_straight_rgba(self) -> ([f32; 4], RgbColorSpace) {
-        const BYTE_TO_UNIT: f32 = 1.0 / 255.0;
-        let [red, green, blue] = match self.coordinates {
-            Coordinates::F32(coordinates) => coordinates,
-            Coordinates::F64(coordinates) => coordinates.map(|value| value as f32),
-            Coordinates::U8(coordinates) => {
-                coordinates.map(|value| f32::from(value) * BYTE_TO_UNIT)
-            }
-            Coordinates::U16(coordinates) => {
-                coordinates.map(|value| f32::from(value) / f32::from(u16::MAX))
-            }
-        };
-        let alpha = match self.opacity {
-            Alpha::F32(opacity) => opacity.get(),
-            Alpha::F64(opacity) => opacity.get() as f32,
-            Alpha::U8(opacity) => f32::from(opacity) * BYTE_TO_UNIT,
-            Alpha::U16(opacity) => f32::from(opacity) / f32::from(u16::MAX),
-        };
-        ([red, green, blue, alpha], self.color_space)
+impl Alpha {
+    fn as_f32(self) -> f32 {
+        match self {
+            Self::F32(opacity) => opacity.get(),
+            Self::F64(opacity) => opacity.get() as f32,
+            Self::U8(opacity) => f32::from(opacity) / f32::from(u8::MAX),
+            Self::U16(opacity) => f32::from(opacity) / f32::from(u16::MAX),
+        }
     }
+}
 
+impl CanvasColor {
+    /// Converts authored coordinates only when a consumer selects its RGB
+    /// evaluation space. Canvas retains the original profile and samples.
     pub(crate) fn straight_rgba_in(self, space: RgbColorSpace) -> [f32; 4] {
-        let ([red, green, blue, alpha], authored_space) = self.authored_straight_rgba();
-        let [red, green, blue] =
-            crate::color::convert_rgb([red, green, blue], authored_space, space);
-        [red, green, blue, alpha]
+        let rgb = match self.profile {
+            CanvasProfile::Rgb(authored_space) => {
+                crate::color::convert_rgb(self.coordinates.as_f32(), authored_space, space)
+            }
+            CanvasProfile::XyzD50 => space
+                .xyz_d50_to_coordinates(self.coordinates.as_f64())
+                .map(|value| value as f32),
+            CanvasProfile::XyzD65 => {
+                let xyz = XyzD65.coordinates_to_xyz_d50(&self.coordinates.as_f64());
+                space.xyz_d50_to_coordinates(xyz).map(|value| value as f32)
+            }
+            CanvasProfile::LabD50 => {
+                let xyz = LabD50.coordinates_to_xyz_d50(&self.coordinates.as_f64());
+                space.xyz_d50_to_coordinates(xyz).map(|value| value as f32)
+            }
+        };
+        [rgb[0], rgb[1], rgb[2], self.opacity.as_f32()]
     }
 
     pub(crate) fn with_alpha_factor(&self, factor: f32) -> Self {
@@ -80,7 +113,7 @@ impl CanvasColor {
             ),
         };
         Self {
-            color_space: self.color_space,
+            profile: self.profile,
             coordinates: self.coordinates,
             opacity,
         }
@@ -97,9 +130,21 @@ impl CanvasCoordinates for f32 {
     }
 }
 
+impl CanvasCoordinates for UnitF32 {
+    fn erase(coordinates: [Self; 3]) -> Coordinates {
+        Coordinates::F32(coordinates.map(UnitF32::get))
+    }
+}
+
 impl CanvasCoordinates for f64 {
     fn erase(coordinates: [Self; 3]) -> Coordinates {
         Coordinates::F64(coordinates)
+    }
+}
+
+impl CanvasCoordinates for UnitF64 {
+    fn erase(coordinates: [Self; 3]) -> Coordinates {
+        Coordinates::F64(coordinates.map(UnitF64::get))
     }
 }
 
@@ -152,12 +197,35 @@ where
     fn from(color: Color<P, S, A>) -> Self {
         let (profile, coordinates, opacity) = color.into_parts();
         Self {
-            color_space: profile.into(),
+            profile: CanvasProfile::Rgb(profile.into()),
             coordinates: S::erase(coordinates),
             opacity: A::erase(opacity),
         }
     }
 }
+
+macro_rules! canvas_reference_color {
+    ($profile:ty, $variant:ident) => {
+        impl<S, A> From<Color<$profile, S, A>> for CanvasColor
+        where
+            S: CanvasCoordinates + ReferenceSample<<$profile as ColorProfile>::Model>,
+            A: CanvasOpacity,
+        {
+            fn from(color: Color<$profile, S, A>) -> Self {
+                let (_, coordinates, opacity) = color.into_parts();
+                Self {
+                    profile: CanvasProfile::$variant,
+                    coordinates: S::erase(coordinates),
+                    opacity: A::erase(opacity),
+                }
+            }
+        }
+    };
+}
+
+canvas_reference_color!(XyzD50, XyzD50);
+canvas_reference_color!(XyzD65, XyzD65);
+canvas_reference_color!(LabD50, LabD50);
 
 impl From<&CanvasColor> for CanvasColor {
     fn from(color: &CanvasColor) -> Self {
@@ -175,12 +243,10 @@ mod tests {
         let color = CanvasColor::from(Color::rgba8(255, 128, 64, 128));
 
         assert!(matches!(color.coordinates, Coordinates::U8(_)));
+        assert_eq!(color.profile, CanvasProfile::Rgb(RgbColorSpace::Srgb));
         assert_eq!(
-            color.authored_straight_rgba(),
-            (
-                [1.0, 128.0 / 255.0, 64.0 / 255.0, 128.0 / 255.0],
-                RgbColorSpace::Srgb
-            )
+            color.straight_rgba_in(RgbColorSpace::Srgb),
+            [1.0, 128.0 / 255.0, 64.0 / 255.0, 128.0 / 255.0]
         );
     }
 
@@ -193,9 +259,11 @@ mod tests {
         )
         .unwrap();
 
+        let canvas = CanvasColor::from(color);
+        assert_eq!(canvas.profile, CanvasProfile::Rgb(RgbColorSpace::DisplayP3));
         assert_eq!(
-            CanvasColor::from(color).authored_straight_rgba(),
-            ([1.0, 0.5, 0.25, 0.75], RgbColorSpace::DisplayP3)
+            canvas.straight_rgba_in(RgbColorSpace::DisplayP3),
+            [1.0, 0.5, 0.25, 0.75]
         );
     }
 
@@ -213,8 +281,11 @@ mod tests {
         let adjusted = color.with_alpha_factor(0.5);
 
         assert_eq!(adjusted.coordinates, Coordinates::U8([255, 128, 64]));
-        assert_eq!(adjusted.color_space, RgbColorSpace::LinearDisplayP3);
-        assert!((adjusted.authored_straight_rgba().0[3] - 64.0 / 255.0).abs() < 0.000_001);
+        assert_eq!(
+            adjusted.profile,
+            CanvasProfile::Rgb(RgbColorSpace::LinearDisplayP3)
+        );
+        assert!((adjusted.opacity.as_f32() - 64.0 / 255.0).abs() < 0.000_001);
     }
 
     #[test]
@@ -225,7 +296,10 @@ mod tests {
 
         assert!(matches!(canvas.coordinates, Coordinates::F64(_)));
         assert!(matches!(canvas.opacity, Alpha::F32(_)));
-        assert_eq!(canvas.color_space, RgbColorSpace::LinearSrgb);
+        assert_eq!(
+            canvas.profile,
+            CanvasProfile::Rgb(RgbColorSpace::LinearSrgb)
+        );
         let rgba = canvas.straight_rgba_in(RgbColorSpace::Srgb);
         for (actual, expected) in rgba.into_iter().zip([0.25, 0.5, 0.75, 0.4]) {
             assert!((actual - expected).abs() < 0.000_01);
@@ -253,5 +327,47 @@ mod tests {
         let canvas = CanvasColor::from(color);
         assert!(matches!(canvas.coordinates, Coordinates::U16(_)));
         assert!(matches!(canvas.opacity, Alpha::U8(_)));
+    }
+
+    #[test]
+    fn xyz_and_lab_colors_remain_authored_until_renderer_lowering() {
+        let source = Color::rgba(0.25, 0.5, 0.75, 0.4).unwrap();
+        let original = CanvasColor::from(source);
+        let lowered_original = crate::canvas_renderer::color_space::lower_straight_color(original);
+
+        for (canvas, profile) in [
+            (
+                CanvasColor::from(source.convert_to(XyzD50).unwrap()),
+                CanvasProfile::XyzD50,
+            ),
+            (
+                CanvasColor::from(source.convert_to(XyzD65).unwrap()),
+                CanvasProfile::XyzD65,
+            ),
+            (
+                CanvasColor::from(source.convert_to(LabD50).unwrap()),
+                CanvasProfile::LabD50,
+            ),
+        ] {
+            assert_eq!(canvas.profile, profile);
+            assert!(matches!(canvas.coordinates, Coordinates::F64(_)));
+            assert!(matches!(canvas.opacity, Alpha::F32(_)));
+            let lowered = crate::canvas_renderer::color_space::lower_straight_color(canvas);
+            for (actual, expected) in lowered.into_iter().zip(lowered_original) {
+                assert!((actual - expected).abs() < 0.000_01);
+            }
+        }
+    }
+
+    #[test]
+    fn converted_lab_color_can_be_used_as_a_gradient_stop() {
+        let source = Color::rgba(0.25, 0.5, 0.75, 0.4).unwrap();
+        let stop =
+            crate::canvas::GradientStop::new(0.5, source.convert_to(LabD50).unwrap()).unwrap();
+
+        let rgba = stop.color().straight_rgba_in(RgbColorSpace::Srgb);
+        for (actual, expected) in rgba.into_iter().zip([0.25, 0.5, 0.75, 0.4]) {
+            assert!((actual - expected).abs() < 0.000_01);
+        }
     }
 }

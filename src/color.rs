@@ -9,7 +9,9 @@ mod value;
 mod white_point;
 
 pub use connection::XyzD50Profile;
-pub use model::{Cmyk, ColorCoordinates, ColorModel, DeviceN, Lab, Rgb, Xyz, Ycbcr};
+pub use model::{
+    Cmyk, ColorCoordinates, ColorModel, DeviceN, Lab, ReferenceSample, Rgb, Xyz, Ycbcr,
+};
 pub use profile::{
     ColorProfile, DisplayP3, LabD50, LinearDisplayP3, LinearSrgb, MatrixRgbProfile, RgbColorSpace,
     Srgb, XyzD50, XyzD65,

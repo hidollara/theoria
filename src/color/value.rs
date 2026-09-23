@@ -1,8 +1,8 @@
 use std::{error::Error, fmt};
 
 use super::{
-    ColorCoordinates, ColorModel, ColorProfile, Opacity, Sample, Srgb, UnitF32, UnitSample,
-    XyzD50Profile,
+    ColorCoordinates, ColorModel, ColorProfile, Opacity, ReferenceSample, Sample, Srgb, UnitF32,
+    UnitSample, XyzD50Profile,
 };
 
 /// A logical color retaining its authored profile, coordinate representation,
@@ -67,7 +67,7 @@ where
 impl<P, S, A> Color<P, S, A>
 where
     P: XyzD50Profile,
-    S: Sample,
+    S: ReferenceSample<P::Model>,
     A: UnitSample,
 {
     /// Explicitly converts an authored color through D50-adapted CIE XYZ.

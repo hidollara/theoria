@@ -35,8 +35,7 @@ impl PremultipliedLinearSrgba {
     }
 
     fn from_canvas_color(color: CanvasColor) -> Self {
-        let (components, space) = color.authored_straight_rgba();
-        Self(color_space::lower_straight_rgba(components, space))
+        Self(color_space::lower_straight_color(color))
     }
 
     pub(super) const fn from_components(components: [f32; 4]) -> Self {

@@ -85,6 +85,10 @@ pub enum RgbColorSpace {
     LinearDisplayP3,
 }
 
+impl ColorProfile for RgbColorSpace {
+    type Model = Rgb;
+}
+
 impl RgbColorSpace {
     /// Whether straight RGB coordinates in this space are linear-light.
     pub const fn is_linear(self) -> bool {

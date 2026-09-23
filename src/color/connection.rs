@@ -2,7 +2,7 @@ use super::profile_data::{XYZ_D50_TO_XYZ_D65, XYZ_D65_TO_XYZ_D50};
 use super::transform::multiply_f64;
 use super::{
     ColorModel, ColorProfile, DisplayP3, LabD50, LinearDisplayP3, LinearSrgb, MatrixRgbProfile,
-    Srgb, WhitePoint, XyzD50, XyzD65,
+    RgbColorSpace, Srgb, WhitePoint, XyzD50, XyzD65,
 };
 
 /// A profile with a reference conversion to and from D50-adapted CIE XYZ.
@@ -39,6 +39,17 @@ macro_rules! rgb_profile {
 }
 
 rgb_profile!(Srgb, LinearSrgb, DisplayP3, LinearDisplayP3);
+
+impl XyzD50Profile for RgbColorSpace {
+    fn coordinates_to_xyz_d50(&self, coordinates: &[f64; 3]) -> [f64; 3] {
+        adapt_d65_to_d50(self.transform().rgb_to_xyz_d65_f64(*coordinates))
+    }
+
+    fn xyz_d50_to_coordinates(&self, xyz_d50: [f64; 3]) -> [f64; 3] {
+        self.transform()
+            .xyz_d65_to_rgb_f64(adapt_d50_to_d65(xyz_d50))
+    }
+}
 
 impl XyzD50Profile for XyzD50 {
     fn coordinates_to_xyz_d50(&self, coordinates: &[f64; 3]) -> [f64; 3] {
@@ -182,6 +193,7 @@ mod tests {
         check(XyzD50, [0.23, 0.51, 0.79]);
         check(XyzD65, [0.23, 0.51, 0.79]);
         check(LabD50, [42.0, 15.0, -30.0]);
+        check(RgbColorSpace::Srgb, [0.23, 0.51, 0.79]);
     }
 
     #[test]

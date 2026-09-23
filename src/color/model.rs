@@ -1,4 +1,4 @@
-use super::Sample;
+use super::{Sample, UnitF32, UnitF64};
 
 /// An ordered set of scalar coordinates belonging to a [`ColorModel`].
 pub trait ColorCoordinates: 'static {
@@ -60,6 +60,18 @@ fixed_model!(Cmyk, 4);
 fixed_model!(Xyz, 3);
 fixed_model!(Lab, 3);
 fixed_model!(Ycbcr, 3);
+
+/// A sample representation with a defined expansion to reference coordinates
+/// for this model. Floating-point values are already coordinates; integer
+/// code values are currently defined only for RGB, where they are normalized.
+pub trait ReferenceSample<M: ColorModel>: Sample {}
+
+impl<M: ColorModel> ReferenceSample<M> for f32 {}
+impl<M: ColorModel> ReferenceSample<M> for f64 {}
+impl<M: ColorModel> ReferenceSample<M> for UnitF32 {}
+impl<M: ColorModel> ReferenceSample<M> for UnitF64 {}
+impl ReferenceSample<Rgb> for u8 {}
+impl ReferenceSample<Rgb> for u16 {}
 
 /// A device color model with a statically known number of channels.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
