@@ -2,9 +2,25 @@ use std::{env, fs, path::PathBuf};
 
 #[path = "src/canvas/composition_shader.rs"]
 mod composition_shader;
+#[path = "src/color/profile_data.rs"]
+#[allow(dead_code)] // Build-time WGSL generation does not use the D50 adaptation constants.
+mod profile_data;
+#[path = "src/rgb_shader.rs"]
+mod rgb_shader;
+
+mod color {
+    pub(crate) use crate::profile_data;
+}
 
 fn main() {
     let output_dir = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR is set"));
+    for source_file in [
+        "src/canvas/composition_shader.rs",
+        "src/color/profile_data.rs",
+        "src/rgb_shader.rs",
+    ] {
+        println!("cargo:rerun-if-changed={source_file}");
+    }
     for (source_file, output_prefix) in [
         ("shaders/vulkan/triangle.wgsl", "triangle"),
         ("shaders/vulkan/image.wgsl", "image"),
@@ -36,7 +52,11 @@ fn main() {
     for source_file in ["shaders/webgpu/triangle.wgsl", "shaders/webgpu/image.wgsl"] {
         println!("cargo:rerun-if-changed={source_file}");
         let source = fs::read_to_string(source_file).expect("read WebGPU WGSL shader");
-        validate_shader(&source);
+        if source_file.ends_with("/image.wgsl") {
+            validate_shader(&rgb_shader::assemble(&source));
+        } else {
+            validate_shader(&source);
+        }
     }
 
     let webgpu_blend = composition_shader::assemble(
@@ -49,6 +69,11 @@ fn main() {
 
 fn compile_shader(source_file: &str, output_prefix: &str, output_dir: &std::path::Path) {
     let source = fs::read_to_string(source_file).expect("read WGSL shader");
+    let source = if source_file.ends_with("/image.wgsl") {
+        rgb_shader::assemble(&source)
+    } else {
+        source
+    };
     compile_shader_source(
         &source,
         output_prefix,

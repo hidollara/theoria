@@ -60,11 +60,9 @@ impl Pipelines {
             "theoria WebGPU triangle shader",
             include_str!("../../../shaders/webgpu/triangle.wgsl"),
         );
-        let image_shader = shader(
-            device,
-            "theoria WebGPU image shader",
-            include_str!("../../../shaders/webgpu/image.wgsl"),
-        );
+        let image_source =
+            crate::rgb_shader::assemble(include_str!("../../../shaders/webgpu/image.wgsl"));
+        let image_shader = shader(device, "theoria WebGPU image shader", &image_source);
         let composite_shader = shader(
             device,
             "theoria WebGPU composite shader",

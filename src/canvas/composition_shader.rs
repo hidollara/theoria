@@ -41,7 +41,8 @@ pub(crate) fn operation(helpers: &str, body: &str) -> String {
 
 pub(crate) fn assemble(binding: Binding, helpers: &str, body: &str) -> String {
     let operation = operation(helpers, body);
-    let fragments = [CONTEXT, binding.declaration(), &operation, FRAGMENT];
+    let context = crate::rgb_shader::assemble(CONTEXT);
+    let fragments = [&*context, binding.declaration(), &operation, FRAGMENT];
     let capacity = fragments.iter().map(|fragment| fragment.len() + 1).sum();
     let mut source = String::with_capacity(capacity);
     for fragment in fragments {

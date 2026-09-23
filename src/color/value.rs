@@ -2,6 +2,7 @@ use std::{error::Error, fmt};
 
 use super::{
     ColorCoordinates, ColorModel, ColorProfile, Opacity, Sample, Srgb, UnitF32, UnitSample,
+    XyzD50Profile,
 };
 
 /// A logical color retaining its authored profile, coordinate representation,
@@ -60,6 +61,23 @@ where
 
     pub fn into_parts(self) -> (P, <P::Model as ColorModel>::Coordinates<S>, Opacity<A>) {
         (self.profile, self.coordinates, self.opacity)
+    }
+}
+
+impl<P, A> Color<P, f64, A>
+where
+    P: XyzD50Profile,
+    A: UnitSample,
+{
+    /// Explicitly converts an authored color through D50-adapted CIE XYZ.
+    ///
+    /// The original color is unchanged; its opacity is carried separately.
+    /// This reference conversion does not perform gamut mapping or select an
+    /// ICC rendering intent, and it does not set renderer working precision.
+    pub fn convert_to<Q: XyzD50Profile>(&self, profile: Q) -> Result<Color<Q, f64, A>, ColorError> {
+        let xyz = self.profile.coordinates_to_xyz_d50(&self.coordinates);
+        let coordinates = profile.xyz_d50_to_coordinates(xyz);
+        Color::new(profile, coordinates, self.opacity)
     }
 }
 

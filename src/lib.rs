@@ -13,6 +13,7 @@ pub mod interaction;
 pub mod math;
 pub mod path;
 pub mod recording;
+mod rgb_shader;
 pub mod surface;
 mod tessellation;
 pub mod text;
