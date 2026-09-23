@@ -237,6 +237,7 @@ impl<'a> CanvasCommandEncoder<'a> {
                 let constants = ImagePushConstants::new(
                     pattern,
                     gpu_image.rgb_alpha_association(),
+                    gpu_image.rgb_color_space(),
                     points,
                     mesh_to_root,
                     self.view,

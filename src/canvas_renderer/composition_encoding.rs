@@ -56,7 +56,7 @@ fn encode_composite(composite: Composite) -> u32 {
     }
 }
 
-fn encode_space(space: RgbColorSpace) -> u32 {
+pub(crate) fn encode_space(space: RgbColorSpace) -> u32 {
     match space {
         RgbColorSpace::Srgb => 0,
         RgbColorSpace::LinearSrgb => 1,

@@ -5,7 +5,7 @@ use std::{error::Error, sync::Arc};
 use ash::vk;
 
 use crate::{
-    image::Srgba8Image,
+    image::RasterPlane,
     vulkan::{
         host_buffer::HostBuffer, image_layout::transition_image, one_shot::OneShotCommands,
         presenter::RenderDevice,
@@ -16,11 +16,13 @@ use super::storage::VulkanImage;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-pub(super) fn upload_srgba8(
+pub(super) fn upload_rgba8(
     device: RenderDevice,
-    source: &Srgba8Image,
+    width: u32,
+    height: u32,
+    plane: &RasterPlane<u8>,
 ) -> Result<Arc<VulkanImage>> {
-    let pixels = source.pixels();
+    let pixels = plane.samples();
     let staging = HostBuffer::new(
         device.clone(),
         pixels.len() as vk::DeviceSize,
@@ -28,16 +30,12 @@ pub(super) fn upload_srgba8(
     )?;
     staging.write(pixels)?;
 
-    let extent = vk::Extent2D {
-        width: source.width(),
-        height: source.height(),
-    };
+    let extent = vk::Extent2D { width, height };
     let backing = Arc::new(VulkanImage::new(
         device.clone(),
-        // Vulkan decodes the sRGB channels to linear values when sampling.
-        // Alpha remains linear and straight until the image shader associates
-        // RGB with it at the Canvas working-color boundary.
-        vk::Format::R8G8B8A8_SRGB,
+        // Preserve stored coordinates exactly. Transfer decoding happens in
+        // the image shader after straight/premultiplied alpha is interpreted.
+        vk::Format::R8G8B8A8_UNORM,
         extent,
         vk::SampleCountFlags::TYPE_1,
         vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
@@ -58,6 +56,7 @@ pub(super) fn upload_srgba8(
             vk::AccessFlags2::TRANSFER_WRITE,
         );
         let region = vk::BufferImageCopy::default()
+            .buffer_row_length(u32::try_from(plane.row_stride() / 4)?)
             .image_subresource(
                 vk::ImageSubresourceLayers::default()
                     .aspect_mask(vk::ImageAspectFlags::COLOR)

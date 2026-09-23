@@ -276,10 +276,11 @@ mod tests {
         };
 
         assert_eq!((pattern.image().width(), pattern.image().height()), (6, 14));
-        let crate::canvas::image::ImageKind::Srgba8(image) = pattern.image().kind() else {
-            panic!("the SVG glyph source must be an sRGBA8 image");
+        let crate::canvas::image::ImageKind::Raster(image) = pattern.image().kind() else {
+            panic!("the SVG glyph source must be a raster image");
         };
-        assert!(image.pixels().chunks_exact(4).any(|pixel| pixel[3] != 0));
+        let crate::canvas::image::RasterImageView::Rgba8 { plane, .. } = image.view();
+        assert!(plane.samples().chunks_exact(4).any(|pixel| pixel[3] != 0));
     }
 
     #[test]
@@ -346,10 +347,11 @@ mod tests {
         let crate::canvas::ColorField::Image(pattern) = &draw.source else {
             panic!("SVG realization should use an image color field");
         };
-        let crate::canvas::image::ImageKind::Srgba8(image) = pattern.image().kind() else {
-            panic!("the SVG glyph source must be an sRGBA8 image");
+        let crate::canvas::image::ImageKind::Raster(image) = pattern.image().kind() else {
+            panic!("the SVG glyph source must be a raster image");
         };
-        let pixel = &image.pixels()[..4];
+        let crate::canvas::image::RasterImageView::Rgba8 { plane, .. } = image.view();
+        let pixel = &plane.samples()[..4];
         assert_eq!(pixel, [210, 30, 90, 255]);
     }
 

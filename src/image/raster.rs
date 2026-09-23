@@ -38,6 +38,7 @@ where
     F: PixelFormat,
     P: ColorProfile<Model = F::Model>,
 {
+    identity: Arc<()>,
     width: u32,
     height: u32,
     planes: Vec<RasterPlane<F::Storage>>,
@@ -82,6 +83,7 @@ where
         F::validate(width, height, &planes)?;
         Ok(Self {
             inner: Arc::new(RasterImageInner {
+                identity: Arc::new(()),
                 width,
                 height,
                 planes,
@@ -111,8 +113,8 @@ where
         self.inner.alpha
     }
 
-    pub(crate) fn instance_key(&self) -> RasterImageInstanceKey<F, P> {
-        RasterImageInstanceKey(Arc::downgrade(&self.inner))
+    pub(crate) fn instance_key(&self) -> RasterImageInstanceKey {
+        RasterImageInstanceKey(Arc::downgrade(&self.inner.identity))
     }
 }
 
@@ -168,63 +170,35 @@ where
 }
 
 /// A non-owning identity used by renderer caches.
-pub(crate) struct RasterImageInstanceKey<F, P>(Weak<RasterImageInner<F, P>>)
-where
-    F: PixelFormat,
-    P: ColorProfile<Model = F::Model>;
+pub(crate) struct RasterImageInstanceKey(Weak<()>);
 
-impl<F, P> RasterImageInstanceKey<F, P>
-where
-    F: PixelFormat,
-    P: ColorProfile<Model = F::Model>,
-{
+impl RasterImageInstanceKey {
     pub(crate) fn is_alive(&self) -> bool {
         self.0.strong_count() != 0
     }
 }
 
-impl<F, P> Clone for RasterImageInstanceKey<F, P>
-where
-    F: PixelFormat,
-    P: ColorProfile<Model = F::Model>,
-{
+impl Clone for RasterImageInstanceKey {
     fn clone(&self) -> Self {
         Self(self.0.clone())
     }
 }
 
-impl<F, P> PartialEq for RasterImageInstanceKey<F, P>
-where
-    F: PixelFormat,
-    P: ColorProfile<Model = F::Model>,
-{
+impl PartialEq for RasterImageInstanceKey {
     fn eq(&self, other: &Self) -> bool {
         self.0.ptr_eq(&other.0)
     }
 }
 
-impl<F, P> Eq for RasterImageInstanceKey<F, P>
-where
-    F: PixelFormat,
-    P: ColorProfile<Model = F::Model>,
-{
-}
+impl Eq for RasterImageInstanceKey {}
 
-impl<F, P> Hash for RasterImageInstanceKey<F, P>
-where
-    F: PixelFormat,
-    P: ColorProfile<Model = F::Model>,
-{
+impl Hash for RasterImageInstanceKey {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.0.as_ptr().hash(state);
     }
 }
 
-impl<F, P> fmt::Debug for RasterImageInstanceKey<F, P>
-where
-    F: PixelFormat,
-    P: ColorProfile<Model = F::Model>,
-{
+impl fmt::Debug for RasterImageInstanceKey {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_tuple("RasterImageInstanceKey")
@@ -232,8 +206,6 @@ where
             .finish()
     }
 }
-
-pub(crate) type Srgba8ImageInstanceKey = RasterImageInstanceKey<Rgba8, Srgb>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RasterImageError {
@@ -252,6 +224,11 @@ pub enum RasterImageError {
     InvalidRowStride {
         plane: usize,
         minimum: usize,
+        actual: usize,
+    },
+    MisalignedRowStride {
+        plane: usize,
+        alignment: usize,
         actual: usize,
     },
     InvalidDataLength {
@@ -297,6 +274,14 @@ impl fmt::Display for RasterImageError {
             } => write!(
                 formatter,
                 "image plane {plane} has {actual} samples, but requires {expected}"
+            ),
+            Self::MisalignedRowStride {
+                plane,
+                alignment,
+                actual,
+            } => write!(
+                formatter,
+                "image plane {plane} has row stride {actual}, which is not aligned to its {alignment}-sample pixels"
             ),
         }
     }
@@ -379,5 +364,26 @@ mod tests {
 
         assert_eq!(image.planes()[0].row_stride(), 8);
         assert_eq!(image.alpha_association(), AlphaAssociation::Premultiplied);
+    }
+
+    #[test]
+    fn interleaved_rows_end_at_pixel_boundaries() {
+        let error = RasterImage::<Rgba8, Srgb>::from_planes(
+            1,
+            1,
+            vec![RasterPlane::new(5, vec![0; 5])],
+            Srgb,
+            AlphaAssociation::Straight,
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            RasterImageError::MisalignedRowStride {
+                plane: 0,
+                alignment: 4,
+                actual: 5,
+            }
+        );
     }
 }

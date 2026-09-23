@@ -3,6 +3,7 @@ use std::{mem::size_of, slice};
 use crate::{
     canvas::{CanvasView, Composition, ImagePattern},
     canvas_renderer::{composition_encoding, view_space::transformed_point_to_clip},
+    color::RgbColorSpace,
     geometry::Point,
     transform::Projective2,
 };
@@ -67,12 +68,14 @@ impl TrianglePushConstants {
 #[derive(Clone, Copy)]
 pub(super) struct ImagePushConstants {
     pub(super) vertices: [ImageVertex; 3],
+    metadata: [u32; 4],
 }
 
 impl ImagePushConstants {
     pub(super) fn new(
         pattern: &ImagePattern,
         rgb_alpha_association: RgbAlphaAssociation,
+        rgb_color_space: RgbColorSpace,
         points: [Point; 3],
         image_to_root: Projective2,
         view: CanvasView,
@@ -82,6 +85,7 @@ impl ImagePushConstants {
             pattern.image().height(),
             pattern.canvas_to_image(),
             rgb_alpha_association,
+            rgb_color_space,
             points,
             image_to_root,
             view,
@@ -94,6 +98,7 @@ impl ImagePushConstants {
         height: u32,
         canvas_to_image: Projective2,
         rgb_alpha_association: RgbAlphaAssociation,
+        rgb_color_space: RgbColorSpace,
         points: [Point; 3],
         image_to_root: Projective2,
         view: CanvasView,
@@ -118,6 +123,7 @@ impl ImagePushConstants {
                     ],
                 }
             }),
+            metadata: [composition_encoding::encode_space(rgb_color_space), 0, 0, 0],
         }
     }
 

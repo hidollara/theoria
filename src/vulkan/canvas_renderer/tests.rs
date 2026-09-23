@@ -38,7 +38,7 @@ fn canvas_image_is_an_image_boundary_while_canvas_color_field_stays_semantic() {
     assert_eq!(canvas_dependencies.len(), 1);
     assert!(matches!(
         canvas_dependencies[0].kind(),
-        ImageKind::Srgba8(source) if source.instance_key() == pixels.instance_key()
+        ImageKind::Raster(source) if source.instance_key() == pixels.instance_key()
     ));
 }
 
@@ -58,6 +58,7 @@ fn image_sampling_respects_the_sampled_rgb_alpha_association() {
     let straight_constants = ImagePushConstants::new(
         &ImagePattern::new(straight),
         RgbAlphaAssociation::Straight,
+        LinearSrgb.into(),
         points,
         Projective2::IDENTITY,
         view,
@@ -65,6 +66,7 @@ fn image_sampling_respects_the_sampled_rgb_alpha_association() {
     let premultiplied_constants = ImagePushConstants::new(
         &ImagePattern::new(canvas_image),
         RgbAlphaAssociation::Premultiplied,
+        LinearSrgb.into(),
         points,
         Projective2::IDENTITY,
         view,

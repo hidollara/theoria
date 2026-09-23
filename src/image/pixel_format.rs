@@ -125,6 +125,13 @@ fn validate_interleaved<T>(
             actual: plane.row_stride(),
         });
     }
+    if !plane.row_stride().is_multiple_of(channels) {
+        return Err(RasterImageError::MisalignedRowStride {
+            plane: 0,
+            alignment: channels,
+            actual: plane.row_stride(),
+        });
+    }
 
     let row_count = usize::try_from(height)
         .map_err(|_| RasterImageError::DimensionsTooLarge { width, height })?;

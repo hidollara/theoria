@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use crate::{
-    color::{Color, LinearSrgb, Srgb},
+    color::{Color, DisplayP3, LinearSrgb, RgbColorSpace, Srgb},
     geometry::Point,
-    image::Srgba8Image,
+    image::{AlphaAssociation, RasterImage, RasterPlane, Rgba8, Srgba8Image},
     math::Vector2,
     path::{
         DashPattern, DashPatternError, FillRule, LineCap, LineJoin, Path, StrokeStyle,
@@ -194,6 +194,35 @@ fn an_image_can_be_used_as_an_unbounded_color_field_explicitly() {
     };
     assert!(matches!(source, ColorField::Image(pattern)
             if pattern.image().width() == 2 && pattern.image().height() == 3));
+}
+
+#[test]
+fn canvas_retains_typed_rgba8_raster_metadata_until_renderer_lowering() {
+    let image = RasterImage::<Rgba8, DisplayP3>::from_planes(
+        1,
+        1,
+        vec![RasterPlane::new(4, vec![255, 128, 64, 128])],
+        DisplayP3,
+        AlphaAssociation::Premultiplied,
+    )
+    .unwrap();
+    let field = ColorField::from(image.clone());
+    let ColorField::Image(pattern) = field else {
+        panic!("an RGBA8 raster should become an image field");
+    };
+    let image::ImageKind::Raster(source) = pattern.image().kind() else {
+        panic!("the image should retain a raster source");
+    };
+    let image::RasterImageView::Rgba8 {
+        plane,
+        color_space,
+        alpha,
+    } = source.view();
+
+    assert_eq!(source.instance_key(), image.instance_key());
+    assert_eq!(plane.samples(), &[255, 128, 64, 128]);
+    assert_eq!(color_space, RgbColorSpace::DisplayP3);
+    assert_eq!(alpha, AlphaAssociation::Premultiplied);
 }
 
 #[test]

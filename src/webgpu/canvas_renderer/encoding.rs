@@ -54,13 +54,14 @@ impl TriangleVertex {
 pub(super) struct ImageVertex {
     position: [f32; 4],
     uvw_and_association: [f32; 4],
-    transparent_extension: [u32; 2],
+    metadata: [u32; 4],
 }
 
 impl ImageVertex {
     pub(super) fn encode(
         pattern: &ImagePattern,
         rgb_is_premultiplied: bool,
+        rgb_color_space: crate::color::RgbColorSpace,
         points: [Point; 3],
         image_to_root: Projective2,
         view: CanvasView,
@@ -78,9 +79,11 @@ impl ImageVertex {
                     image_point.z,
                     u32::from(rgb_is_premultiplied) as f32,
                 ],
-                transparent_extension: [
+                metadata: [
                     u32::from(pattern.extend_x() == ImageExtend::Transparent),
                     u32::from(pattern.extend_y() == ImageExtend::Transparent),
+                    crate::canvas_renderer::composition_encoding::encode_space(rgb_color_space),
+                    0,
                 ],
             }
         })
@@ -102,7 +105,7 @@ impl ImageVertex {
                     shader_location: 1,
                 },
                 wgpu::VertexAttribute {
-                    format: wgpu::VertexFormat::Uint32x2,
+                    format: wgpu::VertexFormat::Uint32x4,
                     offset: 32,
                     shader_location: 2,
                 },

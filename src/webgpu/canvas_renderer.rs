@@ -122,9 +122,9 @@ impl CanvasRenderer {
 
     fn materialize_image(&mut self, image: &Image) {
         match image.kind() {
-            ImageKind::Srgba8(image) => {
+            ImageKind::Raster(image) => {
                 self.images
-                    .ensure_uploaded(&self.device, &self.queue, image);
+                    .ensure_uploaded(&self.device, &self.queue, image.as_ref());
             }
             ImageKind::Canvas(image) => self.materialize_canvas_image(image),
         }
@@ -553,6 +553,7 @@ impl CanvasRecorder<'_> {
             vertices.extend(ImageVertex::encode(
                 pattern,
                 image.rgb_is_premultiplied,
+                image.rgb_color_space,
                 points,
                 mesh_to_root,
                 self.view,

@@ -138,13 +138,13 @@ impl CanvasRenderer {
 
     fn materialize_image(&mut self, image: &Image) -> Result<()> {
         match image.kind() {
-            ImageKind::Srgba8(image) => {
+            ImageKind::Raster(image) => {
                 self.gpu.ensure_image_cache(&self.device)?;
                 self.gpu
                     .image_cache
                     .as_mut()
                     .unwrap()
-                    .ensure_uploaded(image)
+                    .ensure_uploaded(image.as_ref())
             }
             ImageKind::Canvas(image) => self.materialize_canvas_image(image),
         }

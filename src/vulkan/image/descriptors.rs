@@ -6,6 +6,7 @@ use ash::vk;
 
 use crate::{
     canvas::{ImageExtend, ImagePattern, ImageSampling},
+    color::RgbColorSpace,
     vulkan::{color::RgbAlphaAssociation, image::storage::VulkanImage, presenter::RenderDevice},
 };
 
@@ -15,6 +16,7 @@ pub(in crate::vulkan) struct GpuImage {
     _descriptor_pool: DescriptorPool,
     descriptor_sets: HashMap<SamplerKey, vk::DescriptorSet>,
     rgb_alpha_association: RgbAlphaAssociation,
+    rgb_color_space: RgbColorSpace,
     // Fields drop in declaration order, so the sampled view outlives its pool.
     _backing: Arc<VulkanImage>,
 }
@@ -81,6 +83,10 @@ impl GpuImage {
 
     pub(in crate::vulkan) fn rgb_alpha_association(&self) -> RgbAlphaAssociation {
         self.rgb_alpha_association
+    }
+
+    pub(in crate::vulkan) fn rgb_color_space(&self) -> RgbColorSpace {
+        self.rgb_color_space
     }
 }
 
@@ -197,6 +203,7 @@ impl ImageDescriptors {
         &self,
         backing: Arc<VulkanImage>,
         rgb_alpha_association: RgbAlphaAssociation,
+        rgb_color_space: RgbColorSpace,
     ) -> Result<GpuImage> {
         let device = self.device.raw();
         let descriptor_count = u32::try_from(self.samplers.len())?;
@@ -250,6 +257,7 @@ impl ImageDescriptors {
             _descriptor_pool: descriptor_pool,
             descriptor_sets: sets_by_sampler,
             rgb_alpha_association,
+            rgb_color_space,
             _backing: backing,
         })
     }

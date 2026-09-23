@@ -4,7 +4,7 @@ mod raster;
 pub use pixel_format::{
     AlphaAssociation, AlphaLayout, HasAlpha, NoAlpha, PixelFormat, Rgb8, Rgba8,
 };
-pub(crate) use raster::Srgba8ImageInstanceKey;
+pub(crate) use raster::RasterImageInstanceKey;
 pub use raster::{RasterImage, RasterImageError, RasterPlane};
 
 use crate::color::Srgb;

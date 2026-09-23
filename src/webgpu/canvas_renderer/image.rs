@@ -3,9 +3,10 @@ use std::collections::HashMap;
 use crate::{
     canvas::{
         canvas_image::{CanvasImage, CanvasImageInstanceKey},
-        image::{Image, ImageKind},
+        image::{Image, ImageKind, RasterImageSource, RasterImageView},
     },
-    image::{Srgba8Image, Srgba8ImageInstanceKey},
+    color::{LinearSrgb, RgbColorSpace},
+    image::{AlphaAssociation, RasterImageInstanceKey},
 };
 
 use super::pipeline::WORKING_FORMAT;
@@ -14,17 +15,18 @@ pub(super) struct GpuImage {
     _texture: wgpu::Texture,
     pub(super) view: wgpu::TextureView,
     pub(super) rgb_is_premultiplied: bool,
+    pub(super) rgb_color_space: RgbColorSpace,
 }
 
 pub(super) struct ImageCache {
-    srgba8: HashMap<Srgba8ImageInstanceKey, GpuImage>,
+    raster: HashMap<RasterImageInstanceKey, GpuImage>,
     canvas: HashMap<CanvasImageInstanceKey, GpuImage>,
 }
 
 impl ImageCache {
     pub(super) fn new() -> Self {
         Self {
-            srgba8: HashMap::new(),
+            raster: HashMap::new(),
             canvas: HashMap::new(),
         }
     }
@@ -33,19 +35,24 @@ impl ImageCache {
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        image: &Srgba8Image,
+        image: &dyn RasterImageSource,
     ) {
         self.prune_unused();
         let key = image.instance_key();
-        self.srgba8.entry(key).or_insert_with(|| {
+        self.raster.entry(key).or_insert_with(|| {
+            let RasterImageView::Rgba8 {
+                plane,
+                color_space,
+                alpha,
+            } = image.view();
             let size = extent(image.width(), image.height());
             let texture = device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("theoria WebGPU sRGBA8 image"),
+                label: Some("theoria WebGPU RGBA8 image"),
                 size,
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                format: wgpu::TextureFormat::Rgba8Unorm,
                 usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
                 view_formats: &[],
             });
@@ -56,10 +63,10 @@ impl ImageCache {
                     origin: wgpu::Origin3d::ZERO,
                     aspect: wgpu::TextureAspect::All,
                 },
-                image.pixels(),
+                plane.samples(),
                 wgpu::TexelCopyBufferLayout {
                     offset: 0,
-                    bytes_per_row: Some(image.width() * 4),
+                    bytes_per_row: Some(u32::try_from(plane.row_stride()).unwrap()),
                     rows_per_image: Some(image.height()),
                 },
                 size,
@@ -68,7 +75,8 @@ impl ImageCache {
             GpuImage {
                 _texture: texture,
                 view,
-                rgb_is_premultiplied: false,
+                rgb_is_premultiplied: alpha == AlphaAssociation::Premultiplied,
+                rgb_color_space: color_space,
             }
         });
     }
@@ -85,13 +93,13 @@ impl ImageCache {
 
     pub(super) fn get(&self, image: &Image) -> Option<&GpuImage> {
         match image.kind() {
-            ImageKind::Srgba8(image) => self.srgba8.get(&image.instance_key()),
+            ImageKind::Raster(image) => self.raster.get(&image.instance_key()),
             ImageKind::Canvas(image) => self.canvas.get(&image.instance_key()),
         }
     }
 
     fn prune_unused(&mut self) {
-        self.srgba8.retain(|key, _| key.is_alive());
+        self.raster.retain(|key, _| key.is_alive());
         self.canvas.retain(|key, _| key.is_alive());
     }
 }
@@ -117,6 +125,7 @@ pub(super) fn create_working_image(
         _texture: texture,
         view,
         rgb_is_premultiplied: true,
+        rgb_color_space: LinearSrgb.into(),
     }
 }
 

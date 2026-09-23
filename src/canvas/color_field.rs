@@ -1,4 +1,7 @@
-use crate::image::Srgba8Image;
+use crate::{
+    color::{DisplayP3, LinearDisplayP3, LinearSrgb, Srgb},
+    image::{RasterImage, Rgba8},
+};
 
 use super::{Canvas, CanvasColor, canvas_image::CanvasImage, image::Image};
 
@@ -33,11 +36,20 @@ pub enum ColorField {
     Canvas(Canvas),
 }
 
-impl From<Srgba8Image> for ColorField {
-    fn from(image: Srgba8Image) -> Self {
-        Self::Image(ImagePattern::new(image))
-    }
+macro_rules! rgba8_image {
+    ($profile:ty) => {
+        impl From<RasterImage<Rgba8, $profile>> for ColorField {
+            fn from(image: RasterImage<Rgba8, $profile>) -> Self {
+                Self::Image(ImagePattern::new(image))
+            }
+        }
+    };
 }
+
+rgba8_image!(Srgb);
+rgba8_image!(LinearSrgb);
+rgba8_image!(DisplayP3);
+rgba8_image!(LinearDisplayP3);
 
 impl From<CanvasImage> for ColorField {
     fn from(image: CanvasImage) -> Self {
