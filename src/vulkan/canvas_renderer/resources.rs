@@ -4,6 +4,7 @@ use std::error::Error;
 
 use ash::vk;
 
+use crate::canvas::BlendShader;
 use crate::vulkan::{image::ImageCache, presenter::RenderDevice, scratch_image::ScratchImage};
 
 use super::pipeline::{Pipelines, create_pipelines};
@@ -76,6 +77,21 @@ impl CanvasGpuResources {
         Ok(())
     }
 
+    pub(super) fn ensure_blend_shaders(
+        &mut self,
+        device: &RenderDevice,
+        shaders: &[BlendShader],
+    ) -> Result<()> {
+        let descriptor_layout = self.image_cache.as_ref().unwrap().descriptor_set_layout();
+        unsafe {
+            self.pipelines.as_mut().unwrap().ensure_custom_blends(
+                device.raw(),
+                descriptor_layout,
+                shaders,
+            )
+        }
+    }
+
     pub(super) fn destroy(&mut self, device: &RenderDevice) {
         self.scratch_images.clear();
         self.destroy_pipelines(device);
@@ -94,6 +110,7 @@ impl CanvasGpuResources {
                 ]
                 .into_iter()
                 .chain(pipelines.composites.into_values())
+                .chain(pipelines.custom_blends.into_values())
                 {
                     device.raw().destroy_pipeline(pipeline.handle, None);
                     device.raw().destroy_pipeline_layout(pipeline.layout, None);

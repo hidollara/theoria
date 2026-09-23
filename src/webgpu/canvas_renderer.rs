@@ -8,7 +8,9 @@ use crate::{
         image::{Image, ImageKind},
     },
     canvas_renderer::{
-        canvas_plan::{can_record_directly, collect_images, required_scratch_images},
+        canvas_plan::{
+            can_record_directly, collect_blend_shaders, collect_images, required_scratch_images,
+        },
         mesh_paint::paint_triangle_prepared,
         path_sampling::PathSampler,
         view_space::screen_space_tolerance,
@@ -165,6 +167,10 @@ impl CanvasRenderer {
         canvas: &Canvas,
         view: CanvasView,
     ) {
+        let mut blend_shaders = Vec::new();
+        collect_blend_shaders(canvas, &mut blend_shaders);
+        self.pipelines
+            .ensure_custom_blends(&self.device, &blend_shaders);
         self.ensure_scratch_images(target.size, required_scratch_images(canvas));
         let target_region = target_region(viewport, target.size);
         let mut encoder = self
@@ -291,7 +297,7 @@ impl CanvasRecorder<'_> {
                     if !composition.requires_destination_read() {
                         self.draw_composite(accumulator, source_image, composition.composite());
                     } else {
-                        self.compose_with_destination(accumulator, source_image, *composition);
+                        self.compose_with_destination(accumulator, source_image, composition);
                     }
                 }
             }
@@ -392,7 +398,7 @@ impl CanvasRecorder<'_> {
         &mut self,
         accumulator: usize,
         source: usize,
-        composition: Composition,
+        composition: &Composition,
     ) {
         let destination = self.allocate_image();
         self.clear(destination);
@@ -425,7 +431,11 @@ impl CanvasRecorder<'_> {
             ..Default::default()
         });
         set_full_region(&mut pass, self.size);
-        pass.set_pipeline(&self.pipelines.blend);
+        let pipeline = composition
+            .blend()
+            .map(|blend| self.pipelines.blend(blend.shader()))
+            .unwrap_or(&self.pipelines.blend);
+        pass.set_pipeline(pipeline);
         pass.set_bind_group(0, &destination_binding, &[]);
         pass.set_bind_group(1, &source_binding, &[]);
         pass.set_bind_group(2, &operation_binding, &[]);
@@ -820,19 +830,73 @@ mod tests {
 
     #[test]
     fn canvas_renderer_submits_an_offscreen_webgpu_render() {
+        let backdrop = Canvas::draw(Color::rgb8(255, 0, 0), Coverage::all());
+        let source = Canvas::draw(
+            Srgba8Image::new(1, 1, vec![0, 255, 0, 255]).unwrap(),
+            Coverage::from_alpha(Color::rgb8(255, 255, 255)),
+        );
+        let canvas = backdrop.composite(
+            source,
+            Composition::new(Composite::SourceOver, crate::color::LinearSrgb)
+                .with_blend(crate::canvas::BlendMode::Multiply, crate::color::LinearSrgb),
+        );
+        if let Some(pixel) = render_pixel(&canvas) {
+            assert_eq!(pixel, [0, 0, 0, 255]);
+        }
+    }
+
+    #[test]
+    fn blend_is_converted_to_composition_space_before_alpha_weighting() {
+        let backdrop = Canvas::draw(Color::rgba8(51, 51, 51, 128), Coverage::all());
+        let source = Canvas::draw(Color::rgb8(204, 204, 204), Coverage::all());
+        let canvas = backdrop.composite(
+            source,
+            Composition::new(Composite::SourceOver, crate::color::LinearSrgb)
+                .with_blend(crate::canvas::BlendMode::Multiply, crate::color::Srgb),
+        );
+        if let Some(pixel) = render_pixel(&canvas) {
+            // Weighting the source and blend results in sRGB instead yields
+            // approximately 127; linear-light composition is much brighter.
+            assert!(
+                (145..=165).contains(&pixel[0]),
+                "unexpected pixel: {pixel:?}"
+            );
+            assert_eq!([pixel[0], pixel[0], pixel[0], 255], pixel);
+        }
+    }
+
+    #[test]
+    fn custom_wgsl_blend_is_used_by_webgpu() {
+        let shader = crate::canvas::BlendShader::wgsl(
+            "fn theoria_blend(_backdrop: vec3<f32>, _source: vec3<f32>) -> vec3<f32> { return vec3<f32>(1.0, 0.0, 0.0); }",
+        )
+        .unwrap();
+        let backdrop = Canvas::draw(Color::rgb8(0, 255, 0), Coverage::all());
+        let source = Canvas::draw(Color::rgb8(0, 0, 255), Coverage::all());
+        let canvas = backdrop.composite(
+            source,
+            Composition::new(Composite::SourceOver, crate::color::LinearSrgb)
+                .with_blend(shader, crate::color::LinearSrgb),
+        );
+        if let Some(pixel) = render_pixel(&canvas) {
+            assert_eq!(pixel, [255, 0, 0, 255]);
+        }
+    }
+
+    fn render_pixel(canvas: &Canvas) -> Option<[u8; 4]> {
         block_on(async {
             let instance = wgpu::Instance::default();
             let Ok(adapter) = instance
                 .request_adapter(&wgpu::RequestAdapterOptions::default())
                 .await
             else {
-                return;
+                return None;
             };
             let Ok((device, queue)) = adapter
                 .request_device(&wgpu::DeviceDescriptor::default())
                 .await
             else {
-                return;
+                return None;
             };
             let size = SurfaceSize {
                 width: 2,
@@ -854,16 +918,6 @@ mod tests {
             });
             let target_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
             let mut renderer = CanvasRenderer::new(device.clone(), queue);
-            let backdrop = Canvas::draw(Color::rgb8(255, 0, 0), Coverage::all());
-            let source = Canvas::draw(
-                Srgba8Image::new(1, 1, vec![0, 255, 0, 255]).unwrap(),
-                Coverage::from_alpha(Color::rgb8(255, 255, 255)),
-            );
-            let canvas = backdrop.composite(
-                source,
-                Composition::new(Composite::SourceOver, crate::color::LinearSrgb)
-                    .with_blend(crate::canvas::BlendMode::Multiply, crate::color::LinearSrgb),
-            );
             let view =
                 CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(1.0, 1.0)).unwrap();
 
@@ -875,7 +929,7 @@ mod tests {
                     Color::rgba8(0, 0, 0, 0),
                 ),
                 Viewport::new(0.0, 0.0, size.width as f32, size.height as f32),
-                &canvas,
+                canvas,
                 view,
             );
 
@@ -919,8 +973,8 @@ mod tests {
             device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
             completed.recv().unwrap().unwrap();
             let bytes = readback.get_mapped_range(..).unwrap();
-            assert_eq!(&bytes[..4], &[0, 0, 0, 255]);
-        });
+            Some(bytes[..4].try_into().unwrap())
+        })
     }
 
     struct ThreadWaker(thread::Thread);

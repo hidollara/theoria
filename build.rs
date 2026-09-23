@@ -15,11 +15,15 @@ fn main() {
     let blend_file = "shaders/canvas_renderer/blend.wgsl";
     println!("cargo:rerun-if-changed={blend_file}");
     let blend = fs::read_to_string(blend_file).expect("read blend WGSL shader");
+    let builtin_blend =
+        "fn theoria_blend(_backdrop: vec3<f32>, source: vec3<f32>) -> vec3<f32> { return source; }";
     compile_shader_source(
-        &blend.replace(
-            "__THEORIA_BLEND_OPERATION_BINDING__",
-            "var<immediate> operation: CompositionOperation;",
-        ),
+        &blend
+            .replace(
+                "__THEORIA_BLEND_OPERATION_BINDING__",
+                "var<immediate> operation: CompositionOperation;",
+            )
+            .replace("__THEORIA_CUSTOM_BLEND__", builtin_blend),
         "blend",
         &output_dir,
     );
@@ -30,10 +34,12 @@ fn main() {
         validate_shader(&source);
     }
 
-    let webgpu_blend = blend.replace(
-        "__THEORIA_BLEND_OPERATION_BINDING__",
-        "@group(2) @binding(0) var<uniform> operation: CompositionOperation;",
-    );
+    let webgpu_blend = blend
+        .replace(
+            "__THEORIA_BLEND_OPERATION_BINDING__",
+            "@group(2) @binding(0) var<uniform> operation: CompositionOperation;",
+        )
+        .replace("__THEORIA_CUSTOM_BLEND__", builtin_blend);
     validate_shader(&webgpu_blend);
 }
 

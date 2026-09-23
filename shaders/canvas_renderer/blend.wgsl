@@ -196,7 +196,12 @@ fn set_sat(c: vec3<f32>, s: f32) -> vec3<f32> {
     return (c - vec3<f32>(cmin)) * (s / (cmax - cmin));
 }
 
+__THEORIA_CUSTOM_BLEND__
+
 fn blend_rgb(cb: vec3<f32>, cs: vec3<f32>) -> vec3<f32> {
+    if operation.blend_mode == 16u {
+        return theoria_blend(cb, cs);
+    }
     var result = cs;
     if operation.blend_mode == 1u {
         result = cb * cs;
@@ -259,17 +264,24 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let destination_working = straight_rgb(d);
     let source_working = straight_rgb(s);
 
-    var blended_working = source_working;
+    let source_composite = from_working(source_working, operation.composite_space);
+    let destination_composite = from_working(destination_working, operation.composite_space);
+    var blended_composite = source_composite;
     if operation.blend_mode != 0u {
         let destination_blend = from_working(destination_working, operation.blend_space);
         let source_blend = from_working(source_working, operation.blend_space);
-        let blended = (1.0 - d.a) * source_blend
-            + d.a * blend_rgb(destination_blend, source_blend);
-        blended_working = to_working(blended, operation.blend_space);
+        let blended = blend_rgb(destination_blend, source_blend);
+        blended_composite = from_working(
+            to_working(blended, operation.blend_space),
+            operation.composite_space,
+        );
     }
 
-    let source_composite = from_working(blended_working, operation.composite_space) * s.a;
-    let destination_composite = from_working(destination_working, operation.composite_space) * d.a;
+    // Blend operates on straight RGB. Alpha weighting belongs to composition,
+    // so source and blend results must be in the same composition space first.
+    let effective_source = (1.0 - d.a) * source_composite + d.a * blended_composite;
+    let source_premultiplied = effective_source * s.a;
+    let destination_premultiplied = destination_composite * d.a;
 
     var fa = 1.0;
     var fb = 1.0 - s.a;
@@ -286,7 +298,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     else if operation.composite == 11u { fa = 1.0 - d.a; fb = 1.0 - s.a; }
 
     let output_alpha = fa * s.a + fb * d.a;
-    let output_composite = fa * source_composite + fb * destination_composite;
+    let output_composite = fa * source_premultiplied + fb * destination_premultiplied;
     if output_alpha <= 0.0 {
         return vec4<f32>(0.0);
     }

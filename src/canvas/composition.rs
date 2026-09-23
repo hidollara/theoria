@@ -1,78 +1,6 @@
-use crate::color::RgbColorSpace;
+use crate::color::{ColorProfile, Rgb, RgbColorSpace};
 
-/// Determines the RGB color in regions where source and destination overlap.
-///
-/// Blend modes do not define alpha, compositing, or geometric coverage.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub enum BlendMode {
-    #[default]
-    Normal,
-    Multiply,
-    Screen,
-    Overlay,
-    Darken,
-    Lighten,
-    ColorDodge,
-    ColorBurn,
-    HardLight,
-    SoftLight,
-    Difference,
-    Exclusion,
-    Hue,
-    Saturation,
-    Color,
-    Luminosity,
-}
-
-impl BlendMode {
-    /// All blend modes defined by W3C Compositing and Blending Level 1.
-    pub const ALL: [Self; 16] = [
-        Self::Normal,
-        Self::Multiply,
-        Self::Screen,
-        Self::Overlay,
-        Self::Darken,
-        Self::Lighten,
-        Self::ColorDodge,
-        Self::ColorBurn,
-        Self::HardLight,
-        Self::SoftLight,
-        Self::Difference,
-        Self::Exclusion,
-        Self::Hue,
-        Self::Saturation,
-        Self::Color,
-        Self::Luminosity,
-    ];
-}
-
-/// A blend-mode evaluation and the RGB space in which it is performed.
-///
-/// Canvas blend modes are deliberately defined for RGB coordinates. A color
-/// using another model is converted to this space by the renderer before the
-/// blend function is evaluated.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct Blend {
-    mode: BlendMode,
-    space: RgbColorSpace,
-}
-
-impl Blend {
-    pub fn new(mode: BlendMode, space: impl Into<RgbColorSpace>) -> Self {
-        Self {
-            mode,
-            space: space.into(),
-        }
-    }
-
-    pub const fn mode(self) -> BlendMode {
-        self.mode
-    }
-
-    pub const fn space(self) -> RgbColorSpace {
-        self.space
-    }
-}
+use super::{Blend, BlendMode, BlendOperation};
 
 /// Determines how source and destination RGBA values become a candidate result.
 ///
@@ -133,7 +61,7 @@ impl Composite {
 
 /// One binary RGBA Canvas composition with independently selected blend and
 /// Porter-Duff evaluation spaces.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Composition {
     composite: Composite,
     composite_space: RgbColorSpace,
@@ -149,24 +77,29 @@ impl Composition {
         }
     }
 
-    pub fn with_blend(mut self, mode: BlendMode, space: impl Into<RgbColorSpace>) -> Self {
-        self.blend = (mode != BlendMode::Normal).then(|| Blend::new(mode, space));
+    pub fn with_blend<P, O>(mut self, operation: O, space: P) -> Self
+    where
+        P: ColorProfile<Model = Rgb> + Into<RgbColorSpace>,
+        O: BlendOperation<P>,
+    {
+        let blend = Blend::new(operation, space);
+        self.blend = (blend.shader().builtin_mode() != Some(BlendMode::Normal)).then_some(blend);
         self
     }
 
-    pub const fn composite(self) -> Composite {
+    pub const fn composite(&self) -> Composite {
         self.composite
     }
 
-    pub const fn composite_space(self) -> RgbColorSpace {
+    pub const fn composite_space(&self) -> RgbColorSpace {
         self.composite_space
     }
 
-    pub const fn blend(self) -> Option<Blend> {
-        self.blend
+    pub const fn blend(&self) -> Option<&Blend> {
+        self.blend.as_ref()
     }
 
-    pub(crate) const fn requires_destination_read(self) -> bool {
+    pub(crate) const fn requires_destination_read(&self) -> bool {
         self.blend.is_some() || !self.composite_space.is_linear()
     }
 }

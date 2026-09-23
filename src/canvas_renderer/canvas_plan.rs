@@ -1,4 +1,40 @@
-use crate::canvas::{Canvas, CanvasNode, ColorField, Composite, CoverageNode, Draw, image::Image};
+use crate::canvas::{
+    BlendShader, Canvas, CanvasNode, ColorField, Composite, CoverageNode, Draw, image::Image,
+};
+
+/// Collects custom programs needed to record this Canvas. Canvas images are
+/// materialized separately and therefore run their own collection pass.
+pub(crate) fn collect_blend_shaders(canvas: &Canvas, shaders: &mut Vec<BlendShader>) {
+    match canvas.node() {
+        CanvasNode::Draw(draw) => {
+            collect_color_field_blend_shaders(&draw.source, shaders);
+            if let CoverageNode::AlphaOf(source) = draw.coverage.node() {
+                collect_color_field_blend_shaders(source, shaders);
+            }
+        }
+        CanvasNode::Transform { content, .. } => collect_blend_shaders(content, shaders),
+        CanvasNode::Composite {
+            backdrop,
+            source,
+            composition,
+        } => {
+            if let Some(shader) = composition.blend().map(|blend| blend.shader())
+                && shader.wgsl_source().is_some()
+                && !shaders.contains(shader)
+            {
+                shaders.push(shader.clone());
+            }
+            collect_blend_shaders(backdrop, shaders);
+            collect_blend_shaders(source, shaders);
+        }
+    }
+}
+
+fn collect_color_field_blend_shaders(source: &ColorField, shaders: &mut Vec<BlendShader>) {
+    if let ColorField::Canvas(canvas) = source {
+        collect_blend_shaders(canvas, shaders);
+    }
+}
 
 pub(crate) fn collect_images(canvas: &Canvas, images: &mut Vec<Image>) {
     match canvas.node() {

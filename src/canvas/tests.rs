@@ -408,7 +408,9 @@ fn destination_over_keeps_source_and_backdrop_roles_in_the_ir() {
     let source = Canvas::draw(Color::rgb8(40, 50, 60), Coverage::all());
     let composition = Composition::new(Composite::DestinationOver, LinearSrgb)
         .with_blend(BlendMode::Screen, Srgb);
-    let canvas = backdrop.clone().composite(source.clone(), composition);
+    let canvas = backdrop
+        .clone()
+        .composite(source.clone(), composition.clone());
 
     assert!(matches!(canvas.node(), CanvasNode::Composite {
         backdrop: recorded_backdrop,

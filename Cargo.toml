@@ -20,6 +20,7 @@ icu_locale_core = "2.3.0"
 icu_properties = { version = "2.3.0", features = ["unicode_bidi"] }
 icu_segmenter = { version = "2.3.0", features = ["unstable"] }
 lyon_tessellation = "1.0.20"
+naga = { version = "30.0.0", features = ["wgsl-in", "spv-out"] }
 png = "0.18.0"
 resvg = { version = "0.48.1", default-features = false, features = ["text", "raster-images"] }
 skrifa = "0.46.2"

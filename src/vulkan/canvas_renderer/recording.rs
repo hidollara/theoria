@@ -98,7 +98,7 @@ impl<'a> CanvasRecorder<'a> {
                         self.commands
                             .draw_composite(source_image, composition.composite());
                     } else {
-                        self.compose_with_destination(accumulator, source_image, *composition);
+                        self.compose_with_destination(accumulator, source_image, composition);
                     }
                 }
             }
@@ -154,7 +154,7 @@ impl<'a> CanvasRecorder<'a> {
         &mut self,
         accumulator: usize,
         source: usize,
-        composition: Composition,
+        composition: &Composition,
     ) {
         self.commands.transition_to_sampled(accumulator);
         let destination = self.next_image;

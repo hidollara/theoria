@@ -121,7 +121,7 @@ pub(super) struct CompositionUniform {
 }
 
 impl CompositionUniform {
-    pub(super) fn new(composition: crate::canvas::Composition) -> Self {
+    pub(super) fn new(composition: &crate::canvas::Composition) -> Self {
         Self {
             values: crate::canvas_renderer::composition_encoding::encode(composition),
         }

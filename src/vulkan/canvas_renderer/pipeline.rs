@@ -2,7 +2,7 @@ use std::{collections::HashMap, error::Error, ffi::CStr, io::Cursor, mem::size_o
 
 use ash::vk;
 
-use crate::canvas::Composite;
+use crate::canvas::{BlendShader, Composite};
 
 use super::encoding::{CompositionPushConstants, ImagePushConstants, TrianglePushConstants};
 
@@ -81,12 +81,75 @@ pub(super) struct Pipelines {
     pub(super) mask: Pipeline,
     pub(super) present: Pipeline,
     pub(super) blend: Pipeline,
+    pub(super) custom_blends: HashMap<BlendShader, Pipeline>,
 }
 
 impl Pipelines {
     pub(super) fn composite(&self, composite: Composite) -> &Pipeline {
         &self.composites[&composite]
     }
+
+    pub(super) fn blend(&self, shader: &BlendShader) -> &Pipeline {
+        if shader.wgsl_source().is_some() {
+            &self.custom_blends[shader]
+        } else {
+            &self.blend
+        }
+    }
+
+    pub(super) unsafe fn ensure_custom_blends(
+        &mut self,
+        device: &ash::Device,
+        image_descriptor_set_layout: vk::DescriptorSetLayout,
+        shaders: &[BlendShader],
+    ) -> Result<()> {
+        for definition in shaders {
+            if self.custom_blends.contains_key(definition) {
+                continue;
+            }
+            let source = definition.wgsl_module("var<immediate> operation: CompositionOperation;");
+            let words = compile_fragment(&source)?;
+            let bytes: Vec<u8> = words.into_iter().flat_map(u32::to_le_bytes).collect();
+            let pipeline = unsafe {
+                create_pipeline(
+                    device,
+                    self.format,
+                    BLEND_VERTEX_SHADER,
+                    &bytes,
+                    size_of::<CompositionPushConstants>() as u32,
+                    vk::ShaderStageFlags::FRAGMENT,
+                    &[image_descriptor_set_layout, image_descriptor_set_layout],
+                    self.sample_count,
+                    Composite::Copy,
+                )?
+            };
+            self.custom_blends
+                .insert(definition.clone(), pipeline.into_pipeline());
+        }
+        Ok(())
+    }
+}
+
+fn compile_fragment(source: &str) -> Result<Vec<u32>> {
+    let module = naga::front::wgsl::parse_str(source)
+        .map_err(|error| std::io::Error::other(error.emit_to_string(source)))?;
+    let info = naga::valid::Validator::new(
+        naga::valid::ValidationFlags::all(),
+        naga::valid::Capabilities::all(),
+    )
+    .validate(&module)
+    .map_err(|error| std::io::Error::other(error.to_string()))?;
+    let options = naga::back::spv::PipelineOptions {
+        entry_point: "fs_main".into(),
+        shader_stage: naga::ShaderStage::Fragment,
+    };
+    naga::back::spv::write_vec(
+        &module,
+        &info,
+        &naga::back::spv::Options::default(),
+        Some(&options),
+    )
+    .map_err(|error| std::io::Error::other(error.to_string()).into())
 }
 
 pub(super) unsafe fn create_pipelines(
@@ -205,6 +268,7 @@ pub(super) unsafe fn create_pipelines(
         mask: mask.into_pipeline(),
         present: present.into_pipeline(),
         blend: blend.into_pipeline(),
+        custom_blends: HashMap::new(),
     })
 }
 
@@ -348,4 +412,19 @@ unsafe fn create_pipeline<'a>(
             handle: pipeline,
         }),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn custom_blend_compiles_for_vulkan() {
+        let shader = BlendShader::wgsl(
+            "fn theoria_blend(backdrop: vec3<f32>, source: vec3<f32>) -> vec3<f32> { return backdrop * source; }",
+        )
+        .unwrap();
+        let source = shader.wgsl_module("var<immediate> operation: CompositionOperation;");
+        assert!(!compile_fragment(&source).unwrap().is_empty());
+    }
 }

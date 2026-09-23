@@ -1,3 +1,4 @@
+mod blend;
 pub(crate) mod canvas_image;
 mod color;
 mod color_field;
@@ -7,6 +8,7 @@ pub(crate) mod image;
 mod model;
 mod view;
 
+pub use blend::{Blend, BlendMode, BlendOperation, BlendShader, BlendShaderError};
 pub use canvas_image::{CanvasImage, CanvasImageError};
 pub use color::CanvasColor;
 pub use color_field::{
@@ -15,7 +17,7 @@ pub use color_field::{
     GradientStopError, ImageExtend, ImagePattern, ImageSampling, LinearGradient,
     LinearGradientError, MeshGradient, MeshGradientError, RadialGradient, RadialGradientError,
 };
-pub use composition::{Blend, BlendMode, Composite, Composition};
+pub use composition::{Composite, Composition};
 pub use coverage::Coverage;
 pub use image::Image;
 pub use model::Canvas;

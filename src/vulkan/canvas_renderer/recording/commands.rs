@@ -101,19 +101,23 @@ impl<'a> CanvasCommandEncoder<'a> {
         &self,
         destination: usize,
         source: usize,
-        composition: Composition,
+        composition: &Composition,
     ) {
         let constants = CompositionPushConstants::new(composition);
+        let pipeline = composition
+            .blend()
+            .map(|blend| self.pipelines.blend(blend.shader()))
+            .unwrap_or(&self.pipelines.blend);
         unsafe {
             self.device.cmd_bind_pipeline(
                 self.command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
-                self.pipelines.blend.handle,
+                pipeline.handle,
             );
             self.device.cmd_bind_descriptor_sets(
                 self.command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
-                self.pipelines.blend.layout,
+                pipeline.layout,
                 0,
                 &[
                     self.scratch_images[destination].descriptor_set(),
@@ -123,7 +127,7 @@ impl<'a> CanvasCommandEncoder<'a> {
             );
             self.device.cmd_push_constants(
                 self.command_buffer,
-                self.pipelines.blend.layout,
+                pipeline.layout,
                 vk::ShaderStageFlags::FRAGMENT,
                 0,
                 constants.as_bytes(),

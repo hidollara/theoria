@@ -23,7 +23,9 @@ mod pipeline;
 mod recording;
 mod resources;
 
-use crate::canvas_renderer::canvas_plan::{collect_images, required_scratch_images};
+use crate::canvas_renderer::canvas_plan::{
+    collect_blend_shaders, collect_images, required_scratch_images,
+};
 use crate::vulkan::one_shot::OneShotCommands;
 use recording::CanvasRecorder;
 use resources::CanvasGpuResources;
@@ -193,6 +195,10 @@ impl CanvasRenderer {
         self.gpu.ensure_image_cache(&self.device)?;
         self.gpu
             .ensure_pipelines(&self.device, format, sample_count)?;
+        let mut blend_shaders = Vec::new();
+        collect_blend_shaders(canvas, &mut blend_shaders);
+        self.gpu
+            .ensure_blend_shaders(&self.device, &blend_shaders)?;
         self.gpu.ensure_scratch_images(
             &self.device,
             format,

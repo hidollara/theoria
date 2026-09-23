@@ -17,7 +17,7 @@ pub(super) struct CompositionPushConstants {
 }
 
 impl CompositionPushConstants {
-    pub(super) fn new(composition: Composition) -> Self {
+    pub(super) fn new(composition: &Composition) -> Self {
         Self {
             values: composition_encoding::encode(composition),
         }

@@ -4,10 +4,19 @@ use crate::{
 };
 
 /// Encodes a Canvas composition for the shared Vulkan/WebGPU shader.
-pub(crate) fn encode(composition: Composition) -> [u32; 4] {
+pub(crate) fn encode(composition: &Composition) -> [u32; 4] {
     let (blend_mode, blend_space) = composition
         .blend()
-        .map(|blend| (encode_blend(blend.mode()), encode_space(blend.space())))
+        .map(|blend| {
+            (
+                blend
+                    .shader()
+                    .builtin_mode()
+                    .map(encode_blend)
+                    .unwrap_or(16),
+                encode_space(blend.space()),
+            )
+        })
         .unwrap_or((0, 0));
     [
         blend_mode,
@@ -75,7 +84,7 @@ mod tests {
         for (expected, mode) in BlendMode::ALL.into_iter().enumerate() {
             let composition =
                 Composition::new(Composite::SourceOver, LinearSrgb).with_blend(mode, Srgb);
-            assert_eq!(encode(composition)[0], expected as u32);
+            assert_eq!(encode(&composition)[0], expected as u32);
         }
     }
 
@@ -83,6 +92,6 @@ mod tests {
     fn blend_and_composite_spaces_are_encoded_independently() {
         let composition = Composition::new(Composite::SourceIn, LinearDisplayP3)
             .with_blend(BlendMode::Screen, DisplayP3);
-        assert_eq!(encode(composition), [2, 5, 2, 3]);
+        assert_eq!(encode(&composition), [2, 5, 2, 3]);
     }
 }
