@@ -1,6 +1,6 @@
 use std::{borrow::Cow, collections::HashMap};
 
-use crate::canvas::{BlendMode, BlendShader, Composite, blend_source::Binding};
+use crate::canvas::{BlendShader, Composite, composition_shader::Binding};
 
 use super::encoding::{ImageVertex, TriangleVertex};
 
@@ -13,8 +13,7 @@ pub(super) struct Pipelines {
     pub(super) image: wgpu::RenderPipeline,
     pub(super) composites: HashMap<Composite, wgpu::RenderPipeline>,
     pub(super) mask: wgpu::RenderPipeline,
-    pub(super) blend: wgpu::RenderPipeline,
-    custom_blends: HashMap<BlendShader, wgpu::RenderPipeline>,
+    blend_shaders: HashMap<BlendShader, wgpu::RenderPipeline>,
     presents: HashMap<wgpu::TextureFormat, wgpu::RenderPipeline>,
 }
 
@@ -76,13 +75,6 @@ impl Pipelines {
             "theoria WebGPU mask shader",
             include_str!("../../../shaders/canvas_renderer/mask.wgsl"),
         );
-        let blend_source = BlendShader::builtin(BlendMode::Normal).wgsl_module(Binding::WebGpu);
-        let blend_shader = shader(
-            device,
-            "theoria WebGPU blend shader",
-            Cow::Owned(blend_source),
-        );
-
         let triangle = create_pipeline(
             device,
             "theoria WebGPU triangle pipeline",
@@ -125,20 +117,6 @@ impl Pipelines {
             &[Some(&texture_layout)],
             composite_blend_state(Composite::DestinationIn),
         );
-        let blend = create_pipeline(
-            device,
-            "theoria WebGPU blend pipeline",
-            WORKING_FORMAT,
-            &blend_shader,
-            &[],
-            &[
-                Some(&texture_layout),
-                Some(&texture_layout),
-                Some(&blend_uniform_layout),
-            ],
-            composite_blend_state(Composite::Copy),
-        );
-
         Self {
             texture_layout,
             blend_uniform_layout,
@@ -146,26 +124,21 @@ impl Pipelines {
             image,
             composites,
             mask,
-            blend,
-            custom_blends: HashMap::new(),
+            blend_shaders: HashMap::new(),
             presents: HashMap::new(),
         }
     }
 
-    pub(super) fn ensure_custom_blends(&mut self, device: &wgpu::Device, shaders: &[BlendShader]) {
+    pub(super) fn ensure_blend_shaders(&mut self, device: &wgpu::Device, shaders: &[BlendShader]) {
         for definition in shaders {
-            self.custom_blends
+            self.blend_shaders
                 .entry(definition.clone())
                 .or_insert_with(|| {
                     let source = definition.wgsl_module(Binding::WebGpu);
-                    let module = shader(
-                        device,
-                        "theoria WebGPU custom blend shader",
-                        Cow::Owned(source),
-                    );
+                    let module = shader(device, "theoria WebGPU blend shader", Cow::Owned(source));
                     create_pipeline(
                         device,
-                        "theoria WebGPU custom blend pipeline",
+                        "theoria WebGPU blend pipeline",
                         WORKING_FORMAT,
                         &module,
                         &[],
@@ -181,11 +154,7 @@ impl Pipelines {
     }
 
     pub(super) fn blend(&self, shader: &BlendShader) -> &wgpu::RenderPipeline {
-        if shader.wgsl_source().is_some() {
-            &self.custom_blends[shader]
-        } else {
-            &self.blend
-        }
+        &self.blend_shaders[shader]
     }
 
     pub(super) fn present(

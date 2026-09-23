@@ -1,7 +1,7 @@
 use std::{env, fs, path::PathBuf};
 
-#[path = "src/canvas/blend_source.rs"]
-mod blend_source;
+#[path = "src/canvas/composition_shader.rs"]
+mod composition_shader;
 
 fn main() {
     let output_dir = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR is set"));
@@ -16,16 +16,20 @@ fn main() {
     }
 
     for source_file in [
-        "shaders/canvas_renderer/blend_common.wgsl",
-        "shaders/canvas_renderer/blend_builtin.wgsl",
-        "shaders/canvas_renderer/blend_fragment.wgsl",
+        "shaders/canvas_renderer/composition_context.wgsl",
+        "shaders/canvas_renderer/composition_fragment.wgsl",
+        "shaders/canvas_renderer/css_blend.wgsl",
     ] {
         println!("cargo:rerun-if-changed={source_file}");
     }
     compile_shader_source(
-        &blend_source::assemble(blend_source::Binding::Vulkan, blend_source::BUILTIN),
-        "blend",
+        &composition_shader::assemble(
+            composition_shader::Binding::Vulkan,
+            composition_shader::IDENTITY,
+        ),
+        "composition",
         &output_dir,
+        &[("vs_main", naga::ShaderStage::Vertex, "vert")],
     );
 
     for source_file in ["shaders/webgpu/triangle.wgsl", "shaders/webgpu/image.wgsl"] {
@@ -34,23 +38,36 @@ fn main() {
         validate_shader(&source);
     }
 
-    let webgpu_blend = blend_source::assemble(blend_source::Binding::WebGpu, blend_source::BUILTIN);
+    let webgpu_blend = composition_shader::assemble(
+        composition_shader::Binding::WebGpu,
+        composition_shader::IDENTITY,
+    );
     validate_shader(&webgpu_blend);
 }
 
 fn compile_shader(source_file: &str, output_prefix: &str, output_dir: &std::path::Path) {
     let source = fs::read_to_string(source_file).expect("read WGSL shader");
-    compile_shader_source(&source, output_prefix, output_dir);
+    compile_shader_source(
+        &source,
+        output_prefix,
+        output_dir,
+        &[
+            ("vs_main", naga::ShaderStage::Vertex, "vert"),
+            ("fs_main", naga::ShaderStage::Fragment, "frag"),
+        ],
+    );
 }
 
-fn compile_shader_source(source: &str, output_prefix: &str, output_dir: &std::path::Path) {
+fn compile_shader_source(
+    source: &str,
+    output_prefix: &str,
+    output_dir: &std::path::Path,
+    stages: &[(&str, naga::ShaderStage, &str)],
+) {
     let (module, info) = validated_module(source);
     let options = naga::back::spv::Options::default();
 
-    for (entry_point, stage, suffix) in [
-        ("vs_main", naga::ShaderStage::Vertex, "vert"),
-        ("fs_main", naga::ShaderStage::Fragment, "frag"),
-    ] {
+    for &(entry_point, stage, suffix) in stages {
         let pipeline_options = naga::back::spv::PipelineOptions {
             entry_point: entry_point.into(),
             shader_stage: stage,

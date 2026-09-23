@@ -9,7 +9,7 @@ struct VertexOutput {
 // renderer working representation.
 
 struct CompositionOperation {
-    blend_mode: u32,
+    has_blend: u32,
     composite: u32,
     blend_space: u32,
     composite_space: u32,

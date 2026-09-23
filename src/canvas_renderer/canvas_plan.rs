@@ -2,7 +2,7 @@ use crate::canvas::{
     BlendShader, Canvas, CanvasNode, ColorField, Composite, CoverageNode, Draw, image::Image,
 };
 
-/// Collects custom programs needed to record this Canvas. Canvas images are
+/// Collects the blend programs needed to record this Canvas. Canvas images are
 /// materialized separately and therefore run their own collection pass.
 pub(crate) fn collect_blend_shaders(canvas: &Canvas, shaders: &mut Vec<BlendShader>) {
     match canvas.node() {
@@ -18,11 +18,11 @@ pub(crate) fn collect_blend_shaders(canvas: &Canvas, shaders: &mut Vec<BlendShad
             source,
             composition,
         } => {
-            if let Some(shader) = composition.blend().map(|blend| blend.shader())
-                && shader.wgsl_source().is_some()
-                && !shaders.contains(shader)
-            {
-                shaders.push(shader.clone());
+            if composition.requires_destination_read() {
+                let shader = composition.blend_shader();
+                if !shaders.contains(shader) {
+                    shaders.push(shader.clone());
+                }
             }
             collect_blend_shaders(backdrop, shaders);
             collect_blend_shaders(source, shaders);
@@ -136,5 +136,33 @@ fn required_color_field_scratch_images(source: &ColorField) -> usize {
     match source {
         ColorField::Canvas(canvas) => required_scratch_images(canvas),
         _ => 1,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        canvas::{Blend, BlendMode, Composition, Coverage},
+        color::{Color, LinearSrgb, Srgb},
+    };
+
+    #[test]
+    fn destination_reading_compositions_collect_their_shader() {
+        let leaf = || Canvas::draw(Color::rgb8(64, 128, 255), Coverage::all());
+        let nonlinear = leaf().composite(leaf(), Composition::new(Composite::SourceOver, Srgb));
+        let blended = leaf().composite(
+            leaf(),
+            Composition::new(Composite::SourceOver, LinearSrgb)
+                .with_blend(BlendMode::Multiply, Srgb),
+        );
+        let canvas =
+            nonlinear.composite(blended, Composition::new(Composite::SourceOver, LinearSrgb));
+
+        let mut shaders = Vec::new();
+        collect_blend_shaders(&canvas, &mut shaders);
+        assert_eq!(shaders.len(), 2);
+        assert!(shaders.contains(BlendShader::identity()));
+        assert!(shaders.contains(Blend::new(BlendMode::Multiply, Srgb).shader()));
     }
 }

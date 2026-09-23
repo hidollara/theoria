@@ -8,7 +8,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let source_composite = from_working(source_working, operation.composite_space);
     let destination_composite = from_working(destination_working, operation.composite_space);
     var blended_composite = source_composite;
-    if operation.blend_mode != 0u {
+    if operation.has_blend != 0u {
         let destination_blend = from_working(destination_working, operation.blend_space);
         let source_blend = from_working(source_working, operation.blend_space);
         let blended = theoria_blend(destination_blend, source_blend);

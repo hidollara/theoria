@@ -1,8 +1,12 @@
-use std::{error::Error, fmt, sync::Arc};
+use std::{
+    error::Error,
+    fmt,
+    sync::{Arc, OnceLock},
+};
 
 use crate::color::{ColorProfile, Rgb, RgbColorSpace};
 
-use super::blend_source::{self, Binding};
+use super::composition_shader::{self, Binding};
 
 /// The straight-RGB operation evaluated where source and backdrop overlap.
 /// Alpha and Porter-Duff composition are separate from this operation.
@@ -12,23 +16,18 @@ use super::blend_source::{self, Binding};
 /// each renderer when first needed.
 pub trait BlendOperation<P: ColorProfile<Model = Rgb>> {
     fn shader(self) -> BlendShader;
+
+    /// Whether this operation returns the source unchanged for every input.
+    fn is_identity(&self) -> bool {
+        false
+    }
 }
 
 /// A backend-independent, immutable blend program definition.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct BlendShader(BlendShaderKind);
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-enum BlendShaderKind {
-    Builtin(BlendMode),
-    Wgsl(Arc<str>),
-}
+pub struct BlendShader(Arc<str>);
 
 impl BlendShader {
-    pub fn builtin(mode: BlendMode) -> Self {
-        Self(BlendShaderKind::Builtin(mode))
-    }
-
     /// Defines a pure WGSL `fn theoria_blend(backdrop: vec3<f32>, source:
     /// vec3<f32>) -> vec3<f32>`. The code may contain helper functions, but
     /// cannot declare entry points or global resources.
@@ -50,7 +49,7 @@ impl BlendShader {
         )
         .validate(&module)
         .map_err(|error| BlendShaderError(error.to_string()))?;
-        let shader = Self(BlendShaderKind::Wgsl(source));
+        let shader = Self(source);
         let complete = shader.wgsl_module(Binding::WebGpu);
         let module = naga::front::wgsl::parse_str(&complete)
             .map_err(|error| BlendShaderError(error.emit_to_string(&complete)))?;
@@ -63,22 +62,13 @@ impl BlendShader {
         Ok(shader)
     }
 
-    pub(crate) fn builtin_mode(&self) -> Option<BlendMode> {
-        match self.0 {
-            BlendShaderKind::Builtin(mode) => Some(mode),
-            BlendShaderKind::Wgsl(_) => None,
-        }
-    }
-
-    pub(crate) fn wgsl_source(&self) -> Option<&str> {
-        match &self.0 {
-            BlendShaderKind::Builtin(_) => None,
-            BlendShaderKind::Wgsl(source) => Some(source),
-        }
+    pub(crate) fn identity() -> &'static Self {
+        static IDENTITY: OnceLock<BlendShader> = OnceLock::new();
+        IDENTITY.get_or_init(|| Self(Arc::from(composition_shader::IDENTITY)))
     }
 
     pub(crate) fn wgsl_module(&self, binding: Binding) -> String {
-        blend_source::assemble(binding, self.wgsl_source().unwrap_or(blend_source::BUILTIN))
+        composition_shader::assemble(binding, &self.0)
     }
 }
 
@@ -135,11 +125,47 @@ impl BlendMode {
         Self::Color,
         Self::Luminosity,
     ];
+
+    fn shader_definition(self) -> BlendShader {
+        static SHADERS: [OnceLock<BlendShader>; 16] = [const { OnceLock::new() }; 16];
+        SHADERS[self as usize]
+            .get_or_init(|| {
+                let expression = match self {
+                    Self::Normal => "cs",
+                    Self::Multiply => "cb * cs",
+                    Self::Screen => "1.0 - (1.0 - cb) * (1.0 - cs)",
+                    Self::Overlay => "vec3<f32>(hard_light_component(cs.r, cb.r), hard_light_component(cs.g, cb.g), hard_light_component(cs.b, cb.b))",
+                    Self::Darken => "min(cb, cs)",
+                    Self::Lighten => "max(cb, cs)",
+                    Self::ColorDodge => "vec3<f32>(color_dodge_component(cb.r, cs.r), color_dodge_component(cb.g, cs.g), color_dodge_component(cb.b, cs.b))",
+                    Self::ColorBurn => "vec3<f32>(color_burn_component(cb.r, cs.r), color_burn_component(cb.g, cs.g), color_burn_component(cb.b, cs.b))",
+                    Self::HardLight => "vec3<f32>(hard_light_component(cb.r, cs.r), hard_light_component(cb.g, cs.g), hard_light_component(cb.b, cs.b))",
+                    Self::SoftLight => "vec3<f32>(soft_light_component(cb.r, cs.r), soft_light_component(cb.g, cs.g), soft_light_component(cb.b, cs.b))",
+                    Self::Difference => "abs(cb - cs)",
+                    Self::Exclusion => "cb + cs - 2.0 * cb * cs",
+                    Self::Hue => "set_lum(set_sat(cs, sat(cb)), lum(cb))",
+                    Self::Saturation => "set_lum(set_sat(cb, sat(cs)), lum(cb))",
+                    Self::Color => "set_lum(cs, lum(cb))",
+                    Self::Luminosity => "set_lum(cb, lum(cs))",
+                };
+                let source = format!(
+                    "{}\nfn theoria_blend(cb: vec3<f32>, cs: vec3<f32>) -> vec3<f32> {{ return clamp({expression}, vec3<f32>(0.0), vec3<f32>(1.0)); }}",
+                    include_str!("../../shaders/canvas_renderer/css_blend.wgsl"),
+                );
+                BlendShader::wgsl(source)
+                    .expect("the static CSS blend shader must satisfy its WGSL contract")
+            })
+            .clone()
+    }
 }
 
 impl<P: ColorProfile<Model = Rgb>> BlendOperation<P> for BlendMode {
     fn shader(self) -> BlendShader {
-        BlendShader::builtin(self)
+        self.shader_definition()
+    }
+
+    fn is_identity(&self) -> bool {
+        *self == Self::Normal
     }
 }
 
@@ -209,12 +235,36 @@ mod tests {
         struct SrgbOnly;
         impl BlendOperation<Srgb> for SrgbOnly {
             fn shader(self) -> BlendShader {
-                BlendShader::builtin(BlendMode::Screen)
+                BlendMode::Screen.shader_definition()
             }
         }
 
         let blend = Blend::new(SrgbOnly, Srgb);
         assert_eq!(blend.space(), RgbColorSpace::Srgb);
-        assert_eq!(blend.shader().builtin_mode(), Some(BlendMode::Screen));
+        assert_eq!(blend.shader(), &BlendMode::Screen.shader_definition());
+    }
+
+    #[test]
+    fn css_modes_and_custom_operations_use_the_same_shader_definition() {
+        let custom = BlendShader::wgsl(
+            "fn theoria_blend(cb: vec3<f32>, cs: vec3<f32>) -> vec3<f32> { return cb * cs; }",
+        )
+        .unwrap();
+        let custom_composition =
+            Composition::new(Composite::SourceOver, Srgb).with_blend(custom, Srgb);
+        assert!(custom_composition.blend().is_some());
+
+        let mut definitions = std::collections::HashSet::new();
+        for mode in BlendMode::ALL {
+            let shader = mode.shader_definition();
+            assert!(definitions.insert(shader.clone()));
+            let composition = Composition::new(Composite::SourceOver, Srgb).with_blend(mode, Srgb);
+            if mode == BlendMode::Normal {
+                assert!(composition.blend().is_none());
+            } else {
+                assert_eq!(composition.blend().unwrap().shader(), &shader);
+            }
+        }
+        assert_eq!(definitions.len(), BlendMode::ALL.len());
     }
 }

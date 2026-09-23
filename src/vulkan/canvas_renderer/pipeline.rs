@@ -2,7 +2,7 @@ use std::{collections::HashMap, error::Error, ffi::CStr, io::Cursor, mem::size_o
 
 use ash::vk;
 
-use crate::canvas::{BlendShader, Composite, blend_source::Binding};
+use crate::canvas::{BlendShader, Composite, composition_shader::Binding};
 
 use super::encoding::{CompositionPushConstants, ImagePushConstants, TrianglePushConstants};
 
@@ -20,8 +20,8 @@ const COMPOSITE_FRAGMENT_SHADER: &[u8] =
     include_bytes!(concat!(env!("OUT_DIR"), "/composite.frag.spv"));
 const MASK_VERTEX_SHADER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/mask.vert.spv"));
 const MASK_FRAGMENT_SHADER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/mask.frag.spv"));
-const BLEND_VERTEX_SHADER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/blend.vert.spv"));
-const BLEND_FRAGMENT_SHADER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/blend.frag.spv"));
+const COMPOSITION_VERTEX_SHADER: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/composition.vert.spv"));
 
 struct ShaderModule<'a> {
     device: &'a ash::Device,
@@ -80,8 +80,7 @@ pub(super) struct Pipelines {
     pub(super) composites: HashMap<Composite, Pipeline>,
     pub(super) mask: Pipeline,
     pub(super) present: Pipeline,
-    pub(super) blend: Pipeline,
-    pub(super) custom_blends: HashMap<BlendShader, Pipeline>,
+    pub(super) blend_shaders: HashMap<BlendShader, Pipeline>,
 }
 
 impl Pipelines {
@@ -90,21 +89,17 @@ impl Pipelines {
     }
 
     pub(super) fn blend(&self, shader: &BlendShader) -> &Pipeline {
-        if shader.wgsl_source().is_some() {
-            &self.custom_blends[shader]
-        } else {
-            &self.blend
-        }
+        &self.blend_shaders[shader]
     }
 
-    pub(super) unsafe fn ensure_custom_blends(
+    pub(super) unsafe fn ensure_blend_shaders(
         &mut self,
         device: &ash::Device,
         image_descriptor_set_layout: vk::DescriptorSetLayout,
         shaders: &[BlendShader],
     ) -> Result<()> {
         for definition in shaders {
-            if self.custom_blends.contains_key(definition) {
+            if self.blend_shaders.contains_key(definition) {
                 continue;
             }
             let source = definition.wgsl_module(Binding::Vulkan);
@@ -114,7 +109,7 @@ impl Pipelines {
                 create_pipeline(
                     device,
                     self.format,
-                    BLEND_VERTEX_SHADER,
+                    COMPOSITION_VERTEX_SHADER,
                     &bytes,
                     size_of::<CompositionPushConstants>() as u32,
                     vk::ShaderStageFlags::FRAGMENT,
@@ -123,7 +118,7 @@ impl Pipelines {
                     Composite::Copy,
                 )?
             };
-            self.custom_blends
+            self.blend_shaders
                 .insert(definition.clone(), pipeline.into_pipeline());
         }
         Ok(())
@@ -243,19 +238,6 @@ pub(super) unsafe fn create_pipelines(
             Composite::SourceOver,
         )?
     };
-    let blend = unsafe {
-        create_pipeline(
-            device,
-            color_format,
-            BLEND_VERTEX_SHADER,
-            BLEND_FRAGMENT_SHADER,
-            size_of::<CompositionPushConstants>() as u32,
-            vk::ShaderStageFlags::FRAGMENT,
-            &[image_descriptor_set_layout, image_descriptor_set_layout],
-            sample_count,
-            Composite::Copy,
-        )?
-    };
     Ok(Pipelines {
         format: color_format,
         sample_count,
@@ -267,8 +249,7 @@ pub(super) unsafe fn create_pipelines(
             .collect(),
         mask: mask.into_pipeline(),
         present: present.into_pipeline(),
-        blend: blend.into_pipeline(),
-        custom_blends: HashMap::new(),
+        blend_shaders: HashMap::new(),
     })
 }
 
@@ -417,9 +398,19 @@ unsafe fn create_pipeline<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        canvas::{Blend, BlendMode},
+        color::Srgb,
+    };
 
     #[test]
-    fn custom_blend_compiles_for_vulkan() {
+    fn css_and_custom_blends_compile_for_vulkan() {
+        for mode in BlendMode::ALL {
+            let blend = Blend::new(mode, Srgb);
+            let source = blend.shader().wgsl_module(Binding::Vulkan);
+            assert!(!compile_fragment(&source).unwrap().is_empty(), "{mode:?}");
+        }
+
         let shader = BlendShader::wgsl(
             "fn theoria_blend(backdrop: vec3<f32>, source: vec3<f32>) -> vec3<f32> { return backdrop * source; }",
         )

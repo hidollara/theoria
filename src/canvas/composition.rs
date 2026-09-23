@@ -1,6 +1,6 @@
 use crate::color::{ColorProfile, Rgb, RgbColorSpace};
 
-use super::{Blend, BlendMode, BlendOperation};
+use super::{Blend, BlendOperation, BlendShader};
 
 /// Determines how source and destination RGBA values become a candidate result.
 ///
@@ -82,8 +82,7 @@ impl Composition {
         P: ColorProfile<Model = Rgb> + Into<RgbColorSpace>,
         O: BlendOperation<P>,
     {
-        let blend = Blend::new(operation, space);
-        self.blend = (blend.shader().builtin_mode() != Some(BlendMode::Normal)).then_some(blend);
+        self.blend = (!operation.is_identity()).then(|| Blend::new(operation, space));
         self
     }
 
@@ -97,6 +96,13 @@ impl Composition {
 
     pub const fn blend(&self) -> Option<&Blend> {
         self.blend.as_ref()
+    }
+
+    pub(crate) fn blend_shader(&self) -> &BlendShader {
+        match &self.blend {
+            Some(blend) => blend.shader(),
+            None => BlendShader::identity(),
+        }
     }
 
     pub(crate) const fn requires_destination_read(&self) -> bool {

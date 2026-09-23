@@ -104,10 +104,7 @@ impl<'a> CanvasCommandEncoder<'a> {
         composition: &Composition,
     ) {
         let constants = CompositionPushConstants::new(composition);
-        let pipeline = composition
-            .blend()
-            .map(|blend| self.pipelines.blend(blend.shader()))
-            .unwrap_or(&self.pipelines.blend);
+        let pipeline = self.pipelines.blend(composition.blend_shader());
         unsafe {
             self.device.cmd_bind_pipeline(
                 self.command_buffer,

@@ -1,9 +1,9 @@
 mod blend;
-pub(crate) mod blend_source;
 pub(crate) mod canvas_image;
 mod color;
 mod color_field;
 mod composition;
+pub(crate) mod composition_shader;
 mod coverage;
 pub(crate) mod image;
 mod model;

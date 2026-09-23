@@ -170,7 +170,7 @@ impl CanvasRenderer {
         let mut blend_shaders = Vec::new();
         collect_blend_shaders(canvas, &mut blend_shaders);
         self.pipelines
-            .ensure_custom_blends(&self.device, &blend_shaders);
+            .ensure_blend_shaders(&self.device, &blend_shaders);
         self.ensure_scratch_images(target.size, required_scratch_images(canvas));
         let target_region = target_region(viewport, target.size);
         let mut encoder = self
@@ -431,11 +431,7 @@ impl CanvasRecorder<'_> {
             ..Default::default()
         });
         set_full_region(&mut pass, self.size);
-        let pipeline = composition
-            .blend()
-            .map(|blend| self.pipelines.blend(blend.shader()))
-            .unwrap_or(&self.pipelines.blend);
-        pass.set_pipeline(pipeline);
+        pass.set_pipeline(self.pipelines.blend(composition.blend_shader()));
         pass.set_bind_group(0, &destination_binding, &[]);
         pass.set_bind_group(1, &source_binding, &[]);
         pass.set_bind_group(2, &operation_binding, &[]);

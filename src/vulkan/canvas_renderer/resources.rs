@@ -84,7 +84,7 @@ impl CanvasGpuResources {
     ) -> Result<()> {
         let descriptor_layout = self.image_cache.as_ref().unwrap().descriptor_set_layout();
         unsafe {
-            self.pipelines.as_mut().unwrap().ensure_custom_blends(
+            self.pipelines.as_mut().unwrap().ensure_blend_shaders(
                 device.raw(),
                 descriptor_layout,
                 shaders,
@@ -106,11 +106,10 @@ impl CanvasGpuResources {
                     pipelines.image,
                     pipelines.mask,
                     pipelines.present,
-                    pipelines.blend,
                 ]
                 .into_iter()
                 .chain(pipelines.composites.into_values())
-                .chain(pipelines.custom_blends.into_values())
+                .chain(pipelines.blend_shaders.into_values())
                 {
                     device.raw().destroy_pipeline(pipeline.handle, None);
                     device.raw().destroy_pipeline_layout(pipeline.layout, None);
