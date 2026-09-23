@@ -1,5 +1,6 @@
 mod model;
 mod profile;
+mod rgb;
 mod sample;
 mod value;
 mod white_point;
@@ -12,3 +13,5 @@ pub use profile::{
 pub use sample::{Opacity, Sample, UnitF32, UnitF64, UnitSample, UnitSampleError};
 pub use value::{Color, ColorError};
 pub use white_point::{WhitePoint, WhitePointError};
+
+pub(crate) use rgb::{convert_rgb, encode_srgb, from_linear_srgb, to_linear_srgb};

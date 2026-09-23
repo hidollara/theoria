@@ -77,6 +77,9 @@ impl Blend {
 /// Determines how source and destination RGBA values become a candidate result.
 ///
 /// The region-selecting variants are the standard Porter-Duff operators.
+/// Porter-Duff coefficients are alpha-derived and mathematically apply to any
+/// component vector; Canvas deliberately supplies RGB coordinates in the
+/// selected composition space so the result remains an RGBA color field.
 /// Coverage is applied after this operation. `Plus` adds premultiplied
 /// compositing values, including alpha, without imposing a semantic clamp.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]

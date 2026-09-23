@@ -80,16 +80,6 @@ impl Color {
         })?;
         Self::new(Srgb, coordinates, Opacity::new(opacity))
     }
-
-    /// Returns the retained straight-alpha encoded-sRGB components.
-    pub(crate) const fn to_straight_srgba(self) -> [f32; 4] {
-        [
-            self.coordinates[0],
-            self.coordinates[1],
-            self.coordinates[2],
-            self.opacity.sample().get(),
-        ]
-    }
 }
 
 impl Color<Srgb, u8, u8> {
@@ -213,9 +203,13 @@ mod tests {
     #[test]
     fn normalized_srgba_is_retained_exactly() {
         let encoded = [0.8, 0.4, 0.2, 0.6];
-        let round_trip = Color::rgba(encoded[0], encoded[1], encoded[2], encoded[3])
-            .unwrap()
-            .to_straight_srgba();
+        let color = Color::rgba(encoded[0], encoded[1], encoded[2], encoded[3]).unwrap();
+        let round_trip = [
+            color.coordinates()[0],
+            color.coordinates()[1],
+            color.coordinates()[2],
+            color.opacity().sample().get(),
+        ];
 
         for (actual, expected) in round_trip.into_iter().zip(encoded) {
             assert!((actual - expected).abs() < 0.000_001);

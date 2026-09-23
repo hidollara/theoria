@@ -22,9 +22,8 @@ impl WorkingColor for TestWorkingColor {
     const TRANSPARENT: Self = Self([0.0; 4]);
 
     fn from_color(color: &crate::canvas::CanvasColor) -> Self {
-        Self(super::color_space::lower_straight_srgba(
-            color.to_straight_srgba(),
-        ))
+        let (components, space) = color.authored_straight_rgba();
+        Self(super::color_space::lower_straight_rgba(components, space))
     }
 
     fn from_components(components: [f32; 4]) -> Self {

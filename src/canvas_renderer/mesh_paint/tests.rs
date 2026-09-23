@@ -5,12 +5,22 @@ use crate::{
         MeshGradient, RadialGradient,
     },
     canvas_renderer::WorkingColor,
-    color::{Color, LinearSrgb},
+    color::{Color, DisplayP3, LinearSrgb, Opacity, UnitF32},
     geometry::Point,
 };
 
 fn lowered(color: impl Into<crate::canvas::CanvasColor>) -> TestWorkingColor {
     TestWorkingColor::from_color(&color.into())
+}
+
+#[test]
+fn logical_colors_are_lowered_from_their_authored_rgb_profile() {
+    let srgb = lowered(Color::rgb(1.0, 0.0, 0.0).unwrap());
+    let display_p3 =
+        lowered(Color::new(DisplayP3, [1.0, 0.0, 0.0], Opacity::new(UnitF32::ONE)).unwrap());
+
+    assert_ne!(display_p3, srgb);
+    assert!(display_p3.components()[0] > srgb.components()[0]);
 }
 
 #[test]

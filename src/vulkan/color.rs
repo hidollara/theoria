@@ -31,11 +31,12 @@ impl PremultipliedLinearSrgba {
     pub(super) const TRANSPARENT: Self = Self([0.0; 4]);
 
     pub(super) fn from_color(color: impl Into<CanvasColor>) -> Self {
-        Self::from_straight_srgba(color.into().to_straight_srgba())
+        Self::from_canvas_color(color.into())
     }
 
-    fn from_straight_srgba([red, green, blue, alpha]: [f32; 4]) -> Self {
-        Self(color_space::lower_straight_srgba([red, green, blue, alpha]))
+    fn from_canvas_color(color: CanvasColor) -> Self {
+        let (components, space) = color.authored_straight_rgba();
+        Self(color_space::lower_straight_rgba(components, space))
     }
 
     pub(super) const fn from_components(components: [f32; 4]) -> Self {
@@ -51,7 +52,7 @@ impl WorkingColor for PremultipliedLinearSrgba {
     const TRANSPARENT: Self = Self::TRANSPARENT;
 
     fn from_color(color: &CanvasColor) -> Self {
-        Self::from_straight_srgba(color.to_straight_srgba())
+        Self::from_canvas_color(*color)
     }
 
     fn from_components(components: [f32; 4]) -> Self {
