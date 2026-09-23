@@ -105,6 +105,35 @@ impl Transfer {
     /// limited to three-channel RGB. Numeric data are rounded to `f32` only
     /// here; the CPU evaluator retains the authored `f64` coefficients.
     pub fn wgsl(&self, id: u32) -> Result<String, TransferError> {
+        self.lower_wgsl(id, &mut ShaderTables::Inline)
+    }
+
+    /// Lowers a transfer to WGSL with all sampled curves and CLUTs packed into
+    /// one read-only storage buffer at `(group, binding)`.
+    ///
+    /// The caller uploads [`TransferShader::table_values`] as contiguous
+    /// `f32` values and binds them for the shader stage that calls the generated
+    /// function. A transfer without tables needs no binding.
+    pub fn wgsl_with_storage(
+        &self,
+        id: u32,
+        group: u32,
+        binding: u32,
+    ) -> Result<TransferShader, TransferError> {
+        let mut tables = ShaderTables::Storage {
+            name: format!("theoria_transfer_{id}_tables"),
+            group,
+            binding,
+            values: Vec::new(),
+        };
+        let source = self.lower_wgsl(id, &mut tables)?;
+        let ShaderTables::Storage { values, .. } = tables else {
+            unreachable!()
+        };
+        Ok(TransferShader { source, values })
+    }
+
+    fn lower_wgsl(&self, id: u32, tables: &mut ShaderTables) -> Result<String, TransferError> {
         let prefix = format!("theoria_transfer_{id}");
         let mut helpers = String::new();
         let mut body = String::new();
@@ -113,7 +142,7 @@ impl Transfer {
             let output_name = format!("stage_{stage_index}");
             if let TransferStage::Clut(clut) = stage {
                 let name = format!("{prefix}_clut_{stage_index}");
-                helpers.push_str(&clut.wgsl(&name)?);
+                helpers.push_str(&clut.wgsl(&name, tables)?);
                 body.push_str(&format!("    let {output_name} = {name}({input_name});\n"));
                 input_name = output_name;
                 continue;
@@ -127,6 +156,7 @@ impl Transfer {
                             &source,
                             &format!("{prefix}_curve_{stage_index}_{channel}"),
                             &mut helpers,
+                            tables,
                         )?);
                     }
                 }
@@ -154,10 +184,103 @@ impl Transfer {
             input_name = output_name;
         }
         let source = format!(
-            "{helpers}\nfn {prefix}(value: array<f32, {}>) -> array<f32, {}> {{\n{body}    return {input_name};\n}}\n",
-            self.input_channels, self.output_channels
+            "{}{helpers}\nfn {prefix}(value: array<f32, {}>) -> array<f32, {}> {{\n{body}    return {input_name};\n}}\n",
+            tables.declaration(),
+            self.input_channels,
+            self.output_channels
         );
         Ok(source)
+    }
+}
+
+/// Generated WGSL and the packed storage-buffer contents it expects.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TransferShader {
+    source: String,
+    values: Vec<f32>,
+}
+
+impl TransferShader {
+    pub fn source(&self) -> &str {
+        &self.source
+    }
+
+    /// Empty when the generated WGSL has no storage-buffer binding.
+    pub fn table_values(&self) -> &[f32] {
+        &self.values
+    }
+}
+
+enum ShaderTables {
+    Inline,
+    Storage {
+        name: String,
+        group: u32,
+        binding: u32,
+        values: Vec<f32>,
+    },
+}
+
+const MAX_INLINE_TABLE_VALUES: usize = 4096;
+
+impl ShaderTables {
+    fn add(
+        &mut self,
+        name: &str,
+        samples: &[f64],
+        helpers: &mut String,
+        inline_limit: Option<usize>,
+    ) -> Result<(String, usize), TransferError> {
+        match self {
+            Self::Inline => {
+                if inline_limit.is_some_and(|limit| samples.len() > limit) {
+                    return Err(TransferError::ShaderTableTooLarge);
+                }
+                let literals = samples
+                    .iter()
+                    .copied()
+                    .map(wgsl_literal)
+                    .collect::<Result<Vec<_>, _>>()?;
+                let table_name = format!("{name}_table");
+                helpers.push_str(&format!(
+                    "const {table_name} = array<f32, {}>({});\n",
+                    samples.len(),
+                    literals.join(", ")
+                ));
+                Ok((table_name, 0))
+            }
+            Self::Storage { name, values, .. } => {
+                let offset = values.len();
+                values.extend(
+                    samples
+                        .iter()
+                        .copied()
+                        .map(|sample| {
+                            let rounded = sample as f32;
+                            rounded
+                                .is_finite()
+                                .then_some(rounded)
+                                .ok_or(TransferError::NotRepresentableInF32)
+                        })
+                        .collect::<Result<Vec<_>, _>>()?,
+                );
+                Ok((name.clone(), offset))
+            }
+        }
+    }
+
+    fn declaration(&self) -> String {
+        match self {
+            Self::Storage {
+                name,
+                group,
+                binding,
+                values,
+            } if !values.is_empty() => format!(
+                "@group({group}) @binding({binding}) var<storage, read> {name}: array<f32>;\n"
+            ),
+            _ => String::new(),
+        }
     }
 }
 
@@ -337,23 +460,16 @@ impl TransferClut {
         output
     }
 
-    fn wgsl(&self, name: &str) -> Result<String, TransferError> {
-        // Larger ICC tables need a renderer-owned storage buffer or texture;
-        // generating enormous WGSL constants would be impractical.
-        const MAX_INLINE_VALUES: usize = 4096;
-        if self.values.len() > MAX_INLINE_VALUES {
-            return Err(TransferError::ShaderTableTooLarge);
-        }
-        let literals = self
-            .values
-            .iter()
-            .copied()
-            .map(wgsl_literal)
-            .collect::<Result<Vec<_>, _>>()?;
+    fn wgsl(&self, name: &str, tables: &mut ShaderTables) -> Result<String, TransferError> {
+        let mut declarations = String::new();
+        let (table, offset) = tables.add(
+            name,
+            &self.values,
+            &mut declarations,
+            Some(MAX_INLINE_TABLE_VALUES),
+        )?;
         let mut source = format!(
-            "const {name}_table = array<f32, {}>({});\nfn {name}(value: array<f32, {}>) -> array<f32, {}> {{\n    var result: array<f32, {}>;\n    for (var corner = 0u; corner < {}u; corner = corner + 1u) {{\n        var index = 0u;\n        var weight = 1.0;\n",
-            self.values.len(),
-            literals.join(", "),
+            "{declarations}fn {name}(value: array<f32, {}>) -> array<f32, {}> {{\n    var result: array<f32, {}>;\n    for (var corner = 0u; corner < {}u; corner = corner + 1u) {{\n        var index = 0u;\n        var weight = 1.0;\n",
             self.grid.len(),
             self.output_channels,
             self.output_channels,
@@ -370,8 +486,8 @@ impl TransferClut {
         }
         for channel in 0..self.output_channels {
             source.push_str(&format!(
-                "        result[{channel}] = result[{channel}] + weight * {name}_table[index * {}u + {channel}u];\n",
-                self.output_channels
+                "        result[{channel}] = result[{channel}] + weight * {table}[{}u + index * {}u + {channel}u];\n",
+                offset, self.output_channels
             ));
         }
         source.push_str("    }\n    return result;\n}\n");
@@ -506,6 +622,7 @@ impl TransferCurve {
         source: &str,
         name: &str,
         helpers: &mut String,
+        tables: &mut ShaderTables,
     ) -> Result<String, TransferError> {
         match &self.0 {
             CurveKind::Identity => Ok(source.to_owned()),
@@ -514,22 +631,18 @@ impl TransferCurve {
                 wgsl_literal(*exponent)?
             )),
             CurveKind::Sampled(values) => {
-                let literals = values
-                    .iter()
-                    .copied()
-                    .map(wgsl_literal)
-                    .collect::<Result<Vec<_>, _>>()?;
+                let (table, offset) =
+                    tables.add(name, values, helpers, Some(MAX_INLINE_TABLE_VALUES))?;
                 helpers.push_str(&format!(
-                    "const {name}_table = array<f32, {}>({});\n\
-                     fn {name}(value: f32) -> f32 {{\n\
+                    "fn {name}(value: f32) -> f32 {{\n\
                          let position = clamp(value, 0.0, 1.0) * {}.0;\n\
                          let index = min(u32(floor(position)), {}u);\n\
-                         return mix({name}_table[index], {name}_table[index + 1u], position - f32(index));\n\
+                         return mix({table}[{}u + index], {table}[{}u + index + 1u], position - f32(index));\n\
                      }}\n",
-                    values.len(),
-                    literals.join(", "),
                     values.len() - 1,
                     values.len() - 2,
+                    offset,
+                    offset,
                 ));
                 Ok(format!("{name}({source})"))
             }
@@ -663,7 +776,7 @@ impl fmt::Display for TransferError {
                 formatter.write_str("transfer data cannot be represented by a f32 shader")
             }
             Self::ShaderTableTooLarge => {
-                formatter.write_str("CLUT requires a GPU resource rather than inline WGSL")
+                formatter.write_str("sample table requires GPU storage rather than inline WGSL")
             }
         }
     }
@@ -776,6 +889,7 @@ mod tests {
         )
         .validate(&module)
         .unwrap();
+
         assert_eq!(
             transfer.evaluate(&[0.2, 0.3, 0.4, 0.5]).unwrap(),
             vec![0.5; 3]
@@ -784,6 +898,68 @@ mod tests {
         let large = TransferClut::new([17, 17, 17], 1, vec![0.0; 4913]).unwrap();
         let transfer = Transfer::new(3, [TransferStage::Clut(large)]).unwrap();
         assert_eq!(transfer.wgsl(12), Err(TransferError::ShaderTableTooLarge));
+
+        let shader = transfer.wgsl_with_storage(12, 2, 5).unwrap();
+        assert_eq!(shader.table_values().len(), 4913);
+        assert!(
+            shader
+                .source()
+                .contains("@group(2) @binding(5) var<storage, read>")
+        );
+        let module = naga::front::wgsl::parse_str(shader.source())
+            .unwrap_or_else(|error| panic!("{}", error.emit_to_string(shader.source())));
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::all(),
+        )
+        .validate(&module)
+        .unwrap();
+
+        let fragment = format!(
+            "{}\n@fragment fn fs_main() -> @location(0) vec4<f32> {{\n    let value = theoria_transfer_12(array<f32, 3>(0.2, 0.3, 0.4));\n    return vec4<f32>(value[0], value[0], value[0], 1.0);\n}}",
+            shader.source()
+        );
+        let module = naga::front::wgsl::parse_str(&fragment)
+            .unwrap_or_else(|error| panic!("{}", error.emit_to_string(&fragment)));
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::all(),
+        )
+        .validate(&module)
+        .unwrap();
+        let pipeline = naga::back::spv::PipelineOptions {
+            entry_point: "fs_main".into(),
+            shader_stage: naga::ShaderStage::Fragment,
+        };
+        assert!(
+            !naga::back::spv::write_vec(
+                &module,
+                &info,
+                &naga::back::spv::Options::default(),
+                Some(&pipeline),
+            )
+            .unwrap()
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn storage_shader_packs_multiple_tables_into_one_binding() {
+        let first = TransferCurve::sampled([0.0, 0.5, 1.0]).unwrap();
+        let second = TransferCurve::sampled([0.0, 1.0]).unwrap();
+        let transfer = Transfer::new(2, [TransferStage::curves([first, second]).unwrap()]).unwrap();
+        let shader = transfer.wgsl_with_storage(8, 0, 1).unwrap();
+        assert_eq!(shader.table_values(), &[0.0, 0.5, 1.0, 0.0, 1.0]);
+        assert_eq!(shader.source().matches("@binding(1)").count(), 1);
+        assert!(shader.source().contains("[3u + index]"));
+        let module = naga::front::wgsl::parse_str(shader.source())
+            .unwrap_or_else(|error| panic!("{}", error.emit_to_string(shader.source())));
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::all(),
+        )
+        .validate(&module)
+        .unwrap();
     }
 
     #[test]

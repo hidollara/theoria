@@ -1,4 +1,5 @@
 mod connection;
+mod icc;
 mod model;
 mod profile;
 pub(crate) mod profile_data;
@@ -10,6 +11,7 @@ mod value;
 mod white_point;
 
 pub use connection::XyzD50Profile;
+pub use icc::{IccPcs, IccTransfer, IccTransferDirection, IccTransferError};
 pub use model::{
     Cmyk, ColorCoordinates, ColorModel, DeviceN, Lab, ReferenceSample, Rgb, Xyz, Ycbcr,
 };
@@ -19,7 +21,8 @@ pub use profile::{
 };
 pub use sample::{Opacity, Sample, UnitF32, UnitF64, UnitSample, UnitSampleError};
 pub use transfer::{
-    Transfer, TransferClut, TransferCurve, TransferError, TransferMatrix, TransferStage,
+    Transfer, TransferClut, TransferCurve, TransferError, TransferMatrix, TransferShader,
+    TransferStage,
 };
 pub use transform::{RgbTransfer, RgbTransform};
 pub use value::{Color, ColorError};
