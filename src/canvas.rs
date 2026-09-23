@@ -15,7 +15,7 @@ pub use color_field::{
     GradientStopError, ImageExtend, ImagePattern, ImageSampling, LinearGradient,
     LinearGradientError, MeshGradient, MeshGradientError, RadialGradient, RadialGradientError,
 };
-pub use composition::{BlendMode, Composite};
+pub use composition::{Blend, BlendMode, Composite, Composition};
 pub use coverage::Coverage;
 pub use image::Image;
 pub use model::Canvas;

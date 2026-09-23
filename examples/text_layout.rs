@@ -1,6 +1,7 @@
 use theoria::{
-    canvas::{CanvasView, Composite},
+    canvas::{CanvasView, Composite, Composition},
     color::Color,
+    color::LinearSrgb,
     font::Font,
     geometry::Point,
     math::Vector2,
@@ -78,7 +79,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         height * 0.12,
                     )));
 
-                let canvas = horizontal.composite(vertical, Composite::SourceOver);
+                let canvas = horizontal.composite(
+                    vertical,
+                    Composition::new(Composite::SourceOver, LinearSrgb),
+                );
                 let view =
                     CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(width, height))
                         .expect("a positive surface extent has a non-degenerate view");

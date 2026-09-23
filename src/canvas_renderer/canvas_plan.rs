@@ -1,6 +1,4 @@
-use crate::canvas::{
-    BlendMode, Canvas, CanvasNode, ColorField, Composite, CoverageNode, Draw, image::Image,
-};
+use crate::canvas::{Canvas, CanvasNode, ColorField, Composite, CoverageNode, Draw, image::Image};
 
 pub(crate) fn collect_images(canvas: &Canvas, images: &mut Vec<Image>) {
     match canvas.node() {
@@ -63,17 +61,18 @@ fn additional_scratch_images(canvas: &Canvas) -> usize {
         CanvasNode::Composite {
             backdrop,
             source,
-            blend_mode,
-            composite,
+            composition,
         } => {
             additional_scratch_images(backdrop)
-                + if *blend_mode == BlendMode::Normal
-                    && *composite == Composite::SourceOver
+                + if composition.blend().is_none()
+                    && composition.composite() == Composite::SourceOver
+                    && composition.composite_space().is_linear()
                     && can_record_directly(source)
                 {
                     additional_scratch_images(source)
                 } else {
-                    required_scratch_images(source) + usize::from(*blend_mode != BlendMode::Normal)
+                    required_scratch_images(source)
+                        + usize::from(composition.requires_destination_read())
                 }
         }
     }
@@ -86,9 +85,13 @@ pub(crate) fn can_record_directly(canvas: &Canvas) -> bool {
         CanvasNode::Composite {
             backdrop,
             source,
-            blend_mode: BlendMode::Normal,
-            composite: Composite::SourceOver,
-        } => can_record_directly(backdrop) && can_record_directly(source),
+            composition,
+        } if composition.blend().is_none()
+            && composition.composite() == Composite::SourceOver
+            && composition.composite_space().is_linear() =>
+        {
+            can_record_directly(backdrop) && can_record_directly(source)
+        }
         CanvasNode::Composite { .. } => false,
     }
 }

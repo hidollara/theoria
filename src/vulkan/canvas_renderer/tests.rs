@@ -3,12 +3,12 @@ use super::encoding::ImagePushConstants;
 use super::pipeline::composite_blend_factors;
 use super::*;
 use crate::canvas::{
-    Composite, Coverage, ImagePattern, canvas_image::CanvasImage, image::ImageKind,
+    Composite, Composition, Coverage, ImagePattern, canvas_image::CanvasImage, image::ImageKind,
 };
 use crate::canvas_renderer::canvas_plan::{
     can_record_directly, collect_images, required_scratch_images,
 };
-use crate::color::Color;
+use crate::color::{Color, LinearSrgb, Srgb};
 use crate::geometry::Point;
 use crate::image::Srgba8Image;
 use crate::transform::Projective2;
@@ -94,7 +94,8 @@ fn four_sample_msaa_is_preferred_with_a_single_sample_fallback() {
 fn only_coverage_boundaries_reserve_independent_results() {
     let masked = Canvas::draw(Canvas::empty(), Coverage::from_alpha(Canvas::empty()))
         .transformed(Projective2::IDENTITY);
-    let root = Canvas::empty().composite(masked, Composite::SourceOver);
+    let root =
+        Canvas::empty().composite(masked, Composition::new(Composite::SourceOver, LinearSrgb));
 
     assert_eq!(required_scratch_images(&root), 3);
 }
@@ -102,8 +103,13 @@ fn only_coverage_boundaries_reserve_independent_results() {
 #[test]
 fn non_source_over_composites_create_group_boundaries() {
     let leaf = Canvas::draw(Color::rgb8(255, 255, 255), Coverage::all());
-    let grouped = leaf.clone().composite(leaf, Composite::SourceIn);
-    let root = Canvas::empty().composite(grouped.clone(), Composite::SourceOver);
+    let grouped = leaf
+        .clone()
+        .composite(leaf, Composition::new(Composite::SourceIn, LinearSrgb));
+    let root = Canvas::empty().composite(
+        grouped.clone(),
+        Composition::new(Composite::SourceOver, LinearSrgb),
+    );
 
     assert!(!can_record_directly(&grouped));
     assert_eq!(required_scratch_images(&grouped), 2);
@@ -114,14 +120,30 @@ fn non_source_over_composites_create_group_boundaries() {
 fn destination_reading_blends_reserve_source_and_backdrop_images() {
     let backdrop = Canvas::draw(Color::rgb8(64, 128, 255), Coverage::all());
     let source = Canvas::draw(Color::rgb8(255, 128, 64), Coverage::all());
-    let blended = backdrop.blend_composite(
+    let blended = backdrop.composite(
         source,
-        crate::canvas::BlendMode::Multiply,
-        Composite::SourceOver,
+        Composition::new(Composite::SourceOver, LinearSrgb)
+            .with_blend(crate::canvas::BlendMode::Multiply, LinearSrgb),
     );
 
     assert!(!can_record_directly(&blended));
     assert_eq!(required_scratch_images(&blended), 3);
+}
+
+#[test]
+fn nonlinear_composition_uses_the_destination_reading_path() {
+    let backdrop = Canvas::draw(Color::rgb8(64, 128, 255), Coverage::all());
+    let source = Canvas::draw(Color::rgb8(255, 128, 64), Coverage::all());
+    let nonlinear = backdrop.clone().composite(
+        source.clone(),
+        Composition::new(Composite::SourceOver, Srgb),
+    );
+    let linear = backdrop.composite(source, Composition::new(Composite::SourceOver, LinearSrgb));
+
+    assert!(!can_record_directly(&nonlinear));
+    assert_eq!(required_scratch_images(&nonlinear), 3);
+    assert!(can_record_directly(&linear));
+    assert_eq!(required_scratch_images(&linear), 1);
 }
 
 #[test]

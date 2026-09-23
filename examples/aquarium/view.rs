@@ -1,8 +1,8 @@
 use std::time::{Duration, Instant};
 
 use theoria::{
-    canvas::{Canvas, CanvasColor, Composite, Coverage},
-    color::Color,
+    canvas::{Canvas, CanvasColor, Composite, Composition, Coverage},
+    color::{Color, LinearSrgb},
     font::Font,
     geometry::Point,
     math::Vector2,
@@ -51,7 +51,7 @@ pub fn render(
                 lane_background(stage),
                 Coverage::fill(rectangle(x, lane_top, lane_width, lane_height)),
             ),
-            Composite::SourceOver,
+            Composition::new(Composite::SourceOver, LinearSrgb),
         );
         canvas = canvas.composite(
             label(
@@ -62,7 +62,7 @@ pub fn render(
                 x + 14.0,
                 118.0,
             ),
-            Composite::SourceOver,
+            Composition::new(Composite::SourceOver, LinearSrgb),
         );
     }
 
@@ -90,7 +90,7 @@ pub fn render(
                     radius * 2.0,
                 )),
             ),
-            Composite::Plus,
+            Composition::new(Composite::Plus, LinearSrgb),
         );
     }
 
@@ -104,7 +104,7 @@ pub fn render(
                 margin,
                 8.0,
             ),
-            Composite::SourceOver,
+            Composition::new(Composite::SourceOver, LinearSrgb),
         )
         .composite(
             label(
@@ -115,7 +115,7 @@ pub fn render(
                 margin,
                 height - 42.0,
             ),
-            Composite::SourceOver,
+            Composition::new(Composite::SourceOver, LinearSrgb),
         );
 
     if let Some(latest) = history.entries().next_back() {
@@ -148,7 +148,7 @@ pub fn render(
                 margin,
                 55.0,
             ),
-            Composite::SourceOver,
+            Composition::new(Composite::SourceOver, LinearSrgb),
         );
     }
 

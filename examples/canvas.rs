@@ -1,8 +1,8 @@
 use theoria::{
     canvas::{
         AcrossPathGradient, AlongPathGradient, BlendMode, Canvas, CanvasImage, CanvasView,
-        ColorRamp, Composite, ConicGradient, Coverage, GradientPoint, GradientStop, ImageExtend,
-        ImagePattern, LinearGradient, MeshGradient, RadialGradient,
+        ColorRamp, Composite, Composition, ConicGradient, Coverage, GradientPoint, GradientStop,
+        ImageExtend, ImagePattern, LinearGradient, MeshGradient, RadialGradient,
     },
     color::{Color, LinearSrgb},
     geometry::Point,
@@ -88,7 +88,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         ])),
                     );
                     let masked_content = Canvas::draw(
-                        image_layer.composite(linear_layer, Composite::SourceOver),
+                        image_layer.composite(
+                            linear_layer,
+                            Composition::new(Composite::SourceOver, LinearSrgb),
+                        ),
                         Coverage::from_alpha(coverage_canvas),
                     );
                     let mesh_layer = Canvas::draw(
@@ -214,11 +217,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         ),
                     );
                     let content = masked_content
-                        .blend_composite(mesh_layer, BlendMode::Multiply, Composite::SourceOver)
-                        .composite(radial_layer, Composite::Plus)
-                        .composite(conic_layer, Composite::SourceOver)
-                        .composite(across_layer, Composite::DestinationOver)
-                        .composite(stroke_layer, Composite::SourceOver);
+                        .composite(
+                            mesh_layer,
+                            Composition::new(Composite::SourceOver, LinearSrgb)
+                                .with_blend(BlendMode::Multiply, LinearSrgb),
+                        )
+                        .composite(radial_layer, Composition::new(Composite::Plus, LinearSrgb))
+                        .composite(
+                            conic_layer,
+                            Composition::new(Composite::SourceOver, LinearSrgb),
+                        )
+                        .composite(
+                            across_layer,
+                            Composition::new(Composite::DestinationOver, LinearSrgb),
+                        )
+                        .composite(
+                            stroke_layer,
+                            Composition::new(Composite::SourceOver, LinearSrgb),
+                        );
                     // Deliberately use a non-parallelogram Canvas region here so
                     // the sample exercises the projective path all the way to the
                     // GPU's homogeneous divide.

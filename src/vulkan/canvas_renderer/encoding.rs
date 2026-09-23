@@ -1,8 +1,8 @@
 use std::{mem::size_of, slice};
 
 use crate::{
-    canvas::{BlendMode, CanvasView, Composite, ImagePattern},
-    canvas_renderer::view_space::transformed_point_to_clip,
+    canvas::{CanvasView, Composition, ImagePattern},
+    canvas_renderer::{composition_encoding, view_space::transformed_point_to_clip},
     geometry::Point,
     transform::Projective2,
 };
@@ -11,49 +11,14 @@ use super::super::color::PremultipliedLinearSrgba;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub(super) struct BlendCompositePushConstants {
-    blend_mode: u32,
-    composite: u32,
+pub(super) struct CompositionPushConstants {
+    values: [u32; 4],
 }
 
-impl BlendCompositePushConstants {
-    pub(super) fn new(blend_mode: BlendMode, composite: Composite) -> Self {
-        let blend_mode = match blend_mode {
-            BlendMode::Normal => 0,
-            BlendMode::Multiply => 1,
-            BlendMode::Screen => 2,
-            BlendMode::Overlay => 3,
-            BlendMode::Darken => 4,
-            BlendMode::Lighten => 5,
-            BlendMode::ColorDodge => 6,
-            BlendMode::ColorBurn => 7,
-            BlendMode::HardLight => 8,
-            BlendMode::SoftLight => 9,
-            BlendMode::Difference => 10,
-            BlendMode::Exclusion => 11,
-            BlendMode::Hue => 12,
-            BlendMode::Saturation => 13,
-            BlendMode::Color => 14,
-            BlendMode::Luminosity => 15,
-        };
-        let composite = match composite {
-            Composite::Clear => 0,
-            Composite::Copy => 1,
-            Composite::Destination => 2,
-            Composite::SourceOver => 3,
-            Composite::DestinationOver => 4,
-            Composite::SourceIn => 5,
-            Composite::DestinationIn => 6,
-            Composite::SourceOut => 7,
-            Composite::DestinationOut => 8,
-            Composite::SourceAtop => 9,
-            Composite::DestinationAtop => 10,
-            Composite::Xor => 11,
-            Composite::Plus => 12,
-        };
+impl CompositionPushConstants {
+    pub(super) fn new(composition: Composition) -> Self {
         Self {
-            blend_mode,
-            composite,
+            values: composition_encoding::encode(composition),
         }
     }
 
@@ -166,17 +131,4 @@ impl ImagePushConstants {
 pub(super) struct ImageVertex {
     position: [f32; 4],
     pub(super) uv: [f32; 4],
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn every_w3c_blend_mode_has_a_stable_unique_shader_identity() {
-        for (expected, blend_mode) in BlendMode::ALL.into_iter().enumerate() {
-            let encoded = BlendCompositePushConstants::new(blend_mode, Composite::SourceOver);
-            assert_eq!(encoded.blend_mode, expected as u32);
-        }
-    }
 }

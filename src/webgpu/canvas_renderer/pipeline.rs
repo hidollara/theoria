@@ -77,7 +77,7 @@ impl Pipelines {
         );
         let blend_source = include_str!("../../../shaders/canvas_renderer/blend.wgsl").replace(
             "__THEORIA_BLEND_OPERATION_BINDING__",
-            "@group(2) @binding(0) var<uniform> operation: BlendComposite;",
+            "@group(2) @binding(0) var<uniform> operation: CompositionOperation;",
         );
         let blend_shader = shader(
             device,

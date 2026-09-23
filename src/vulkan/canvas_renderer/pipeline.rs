@@ -4,7 +4,7 @@ use ash::vk;
 
 use crate::canvas::Composite;
 
-use super::encoding::{BlendCompositePushConstants, ImagePushConstants, TrianglePushConstants};
+use super::encoding::{CompositionPushConstants, ImagePushConstants, TrianglePushConstants};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -186,7 +186,7 @@ pub(super) unsafe fn create_pipelines(
             color_format,
             BLEND_VERTEX_SHADER,
             BLEND_FRAGMENT_SHADER,
-            size_of::<BlendCompositePushConstants>() as u32,
+            size_of::<CompositionPushConstants>() as u32,
             vk::ShaderStageFlags::FRAGMENT,
             &[image_descriptor_set_layout, image_descriptor_set_layout],
             sample_count,

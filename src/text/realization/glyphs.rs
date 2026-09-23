@@ -1,8 +1,8 @@
 use std::ops::Range;
 
 use crate::{
-    canvas::{Canvas, ColorField, Composite, Coverage},
-    color::Color,
+    canvas::{Canvas, ColorField, Composite, Composition, Coverage},
+    color::{Color, LinearSrgb},
     font::{GlyphPresentationError, GlyphRealizationRequest, RealizedGlyph},
     math::Vector2,
     transform::Affine2,
@@ -65,7 +65,10 @@ impl LayoutRun {
                     let placement = glyph_placement(scale, pen + positioned.offset);
                     let glyph_mask = Canvas::draw(Color::rgb8(255, 255, 255), Coverage::fill(path))
                         .transformed(placement);
-                    mask = mask.composite(glyph_mask, Composite::SourceOver);
+                    mask = mask.composite(
+                        glyph_mask,
+                        Composition::new(Composite::SourceOver, LinearSrgb),
+                    );
                 }
                 RealizedGlyph::Empty => {}
                 RealizedGlyph::Intrinsic(_) => {
@@ -131,7 +134,10 @@ impl LayoutRun {
                 }
             }
             .transformed(placement);
-            canvas = canvas.composite(glyph_canvas, Composite::SourceOver);
+            canvas = canvas.composite(
+                glyph_canvas,
+                Composition::new(Composite::SourceOver, LinearSrgb),
+            );
             pen = pen + positioned.advance;
         }
         Ok(canvas)
@@ -149,7 +155,10 @@ impl TextLine {
                 .run
                 .coverage_canvas(source_range)?
                 .transformed(positioned.placement);
-            mask = mask.composite(run_mask, Composite::SourceOver);
+            mask = mask.composite(
+                run_mask,
+                Composition::new(Composite::SourceOver, LinearSrgb),
+            );
         }
         Ok(mask)
     }
@@ -166,7 +175,7 @@ impl TextLine {
                 .run
                 .realized_canvas(foreground, palette_index, source_range)?
                 .transformed(positioned.placement);
-            canvas = canvas.composite(run, Composite::SourceOver);
+            canvas = canvas.composite(run, Composition::new(Composite::SourceOver, LinearSrgb));
         }
         Ok(canvas)
     }

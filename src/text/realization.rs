@@ -1,5 +1,6 @@
 use crate::{
-    canvas::{Canvas, ColorField, Composite, Coverage},
+    canvas::{Canvas, ColorField, Composite, Composition, Coverage},
+    color::LinearSrgb,
     geometry::Point,
     math::Vector2,
     transform::Affine2,
@@ -73,7 +74,10 @@ impl Text {
                 .line
                 .coverage_canvas(source_range)?
                 .transformed(Affine2::from_translation(positioned.baseline));
-            mask = mask.composite(line_mask, Composite::SourceOver);
+            mask = mask.composite(
+                line_mask,
+                Composition::new(Composite::SourceOver, LinearSrgb),
+            );
         }
         Ok(Coverage::from_alpha(mask))
     }
@@ -90,7 +94,7 @@ impl Text {
                 .line
                 .realized_canvas(foreground, palette_index, source_range)?
                 .transformed(Affine2::from_translation(positioned.baseline));
-            canvas = canvas.composite(line, Composite::SourceOver);
+            canvas = canvas.composite(line, Composition::new(Composite::SourceOver, LinearSrgb));
         }
         Ok(canvas)
     }
@@ -121,17 +125,17 @@ impl Text {
                         let coverage = decoration_coverage(region, self.writing_mode, decoration)?;
                         decorations = decorations.composite(
                             Canvas::draw(decoration_source.clone(), coverage),
-                            Composite::SourceOver,
+                            Composition::new(Composite::SourceOver, LinearSrgb),
                         );
                     }
                 }
             }
             glyphs = glyphs.composite(
                 self.realized_canvas_for_range(&source, palette_index, Some(&range.source_range))?,
-                Composite::SourceOver,
+                Composition::new(Composite::SourceOver, LinearSrgb),
             );
         }
-        Ok(decorations.composite(glyphs, Composite::SourceOver))
+        Ok(decorations.composite(glyphs, Composition::new(Composite::SourceOver, LinearSrgb)))
     }
 }
 

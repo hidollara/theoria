@@ -1,8 +1,8 @@
 use std::f32::consts::TAU;
 
 use theoria::{
-    canvas::{Canvas, CanvasView, Composite, Coverage},
-    color::Color,
+    canvas::{Canvas, CanvasView, Composite, Composition, Coverage},
+    color::{Color, LinearSrgb},
     event::OwningSink,
     geometry::Point,
     input::pointer::{PointerButton, PointerEvent, PointerPhase},
@@ -91,8 +91,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ),
                 );
                 let canvas = glow
-                    .composite(fill, Composite::SourceOver)
-                    .composite(outline, Composite::SourceOver)
+                    .composite(fill, Composition::new(Composite::SourceOver, LinearSrgb))
+                    .composite(outline, Composition::new(Composite::SourceOver, LinearSrgb))
                     .transformed(transform);
                 let view =
                     CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(width, height))

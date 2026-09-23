@@ -2,7 +2,7 @@ use wgpu::util::DeviceExt;
 
 use crate::{
     canvas::{
-        BlendMode, Canvas, CanvasColor, CanvasNode, CanvasView, ColorField, Composite, Coverage,
+        Canvas, CanvasColor, CanvasNode, CanvasView, ColorField, Composite, Composition, Coverage,
         CoverageNode, Draw, ImageExtend, ImagePattern, ImageSampling,
         canvas_image::CanvasImage,
         image::{Image, ImageKind},
@@ -30,7 +30,7 @@ mod encoding;
 mod image;
 mod pipeline;
 
-use encoding::{BlendCompositeUniform, ImageVertex, TriangleVertex, bytes_of, bytes_of_slice};
+use encoding::{CompositionUniform, ImageVertex, TriangleVertex, bytes_of, bytes_of_slice};
 use image::{GpuImage, ImageCache, create_working_image};
 use pipeline::{Pipelines, WORKING_FORMAT};
 
@@ -277,21 +277,21 @@ impl CanvasRecorder<'_> {
             CanvasNode::Composite {
                 backdrop,
                 source,
-                blend_mode,
-                composite,
+                composition,
             } => {
                 self.render_node(accumulator, backdrop, canvas_to_root);
-                if *blend_mode == BlendMode::Normal
-                    && *composite == Composite::SourceOver
+                if composition.blend().is_none()
+                    && composition.composite() == Composite::SourceOver
+                    && composition.composite_space().is_linear()
                     && can_record_directly(source)
                 {
                     self.render_node(accumulator, source, canvas_to_root);
                 } else {
                     let source_image = self.evaluate(source, canvas_to_root);
-                    if *blend_mode == BlendMode::Normal {
-                        self.draw_composite(accumulator, source_image, *composite);
+                    if !composition.requires_destination_read() {
+                        self.draw_composite(accumulator, source_image, composition.composite());
                     } else {
-                        self.blend_composite(accumulator, source_image, *blend_mode, *composite);
+                        self.compose_with_destination(accumulator, source_image, *composition);
                     }
                 }
             }
@@ -388,12 +388,11 @@ impl CanvasRecorder<'_> {
         image
     }
 
-    fn blend_composite(
+    fn compose_with_destination(
         &mut self,
         accumulator: usize,
         source: usize,
-        blend_mode: BlendMode,
-        composite: Composite,
+        composition: Composition,
     ) {
         let destination = self.allocate_image();
         self.clear(destination);
@@ -403,7 +402,7 @@ impl CanvasRecorder<'_> {
         let destination_binding =
             self.scratch_binding(destination, "theoria WebGPU blend backdrop");
         let source_binding = self.scratch_binding(source, "theoria WebGPU blend source");
-        let operation = BlendCompositeUniform::new(blend_mode, composite);
+        let operation = CompositionUniform::new(composition);
         let uniform = self
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -787,7 +786,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        canvas::{BlendMode, Composite, Coverage},
+        canvas::{Composite, Coverage},
         geometry::Point,
         image::Srgba8Image,
     };
@@ -859,8 +858,11 @@ mod tests {
                 Srgba8Image::new(1, 1, vec![0, 255, 0, 255]).unwrap(),
                 Coverage::from_alpha(Color::rgb8(255, 255, 255)),
             );
-            let canvas =
-                backdrop.blend_composite(source, BlendMode::Multiply, Composite::SourceOver);
+            let canvas = backdrop.composite(
+                source,
+                Composition::new(Composite::SourceOver, crate::color::LinearSrgb)
+                    .with_blend(crate::canvas::BlendMode::Multiply, crate::color::LinearSrgb),
+            );
             let view =
                 CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(1.0, 1.0)).unwrap();
 

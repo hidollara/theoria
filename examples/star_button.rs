@@ -1,8 +1,8 @@
 use std::{cell::RefCell, f32::consts::PI, rc::Rc};
 
 use theoria::{
-    canvas::{Canvas, CanvasView, Composite, Coverage},
-    color::Color,
+    canvas::{Canvas, CanvasView, Composite, Composition, Coverage},
+    color::{Color, LinearSrgb},
     component::{Component, MountContext},
     event::ChannelSource,
     font::Font,
@@ -211,10 +211,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .expect("the hint glyphs can be realized")
                     .transformed(Affine2::from_translation(Vector2::new(375.0, 535.0)));
 
-                fill.composite(outline, Composite::SourceOver)
+                fill.composite(outline, Composition::new(Composite::SourceOver, LinearSrgb))
                     .transformed(Affine2::from_translation(Vector2::new(center.x, center.y)))
-                    .composite(counter, Composite::SourceOver)
-                    .composite(hint, Composite::SourceOver)
+                    .composite(counter, Composition::new(Composite::SourceOver, LinearSrgb))
+                    .composite(hint, Composition::new(Composite::SourceOver, LinearSrgb))
             });
             let size = window.surface().size();
             context.create_computed(move |context| {

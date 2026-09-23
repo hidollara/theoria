@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    color::{Color, LinearSrgb},
+    color::{Color, LinearSrgb, Srgb},
     geometry::Point,
     image::Srgba8Image,
     math::Vector2,
@@ -117,15 +117,23 @@ fn composes_color_fields_in_paint_order_without_a_size() {
         ColorField::Solid(Color::rgb(0.0, 1.0, 0.0).unwrap().into()),
     );
     let canvas = Canvas::empty()
-        .composite(first.clone(), Composite::SourceOver)
-        .composite(second.clone(), Composite::SourceOver);
+        .composite(
+            first.clone(),
+            Composition::new(Composite::SourceOver, LinearSrgb),
+        )
+        .composite(
+            second.clone(),
+            Composition::new(Composite::SourceOver, LinearSrgb),
+        );
 
     assert!(matches!(canvas.node(), CanvasNode::Composite {
         backdrop,
         source,
-        blend_mode: BlendMode::Normal,
-        composite: Composite::SourceOver,
+        composition,
     } if Arc::ptr_eq(&source.node, &second.node)
+        && composition.blend().is_none()
+        && composition.composite() == Composite::SourceOver
+        && composition.composite_space() == LinearSrgb.into()
         && matches!(backdrop.node(), CanvasNode::Composite {
             source,
             ..
@@ -230,9 +238,10 @@ fn cloned_canvases_diverge_without_changing_the_shared_value() {
     ];
     let source = ColorField::Solid(Color::rgb8(255, 255, 255).into());
     let base = filled_triangle(triangle, source.clone());
-    let extended = base
-        .clone()
-        .composite(filled_triangle(triangle, source), Composite::SourceOver);
+    let extended = base.clone().composite(
+        filled_triangle(triangle, source),
+        Composition::new(Composite::SourceOver, LinearSrgb),
+    );
 
     assert!(matches!(extended.node(), CanvasNode::Composite {
         backdrop,
@@ -277,7 +286,7 @@ fn coverage_pairs_a_lazy_canvas_color_field_with_a_canvas_alpha_field() {
         content.clone(),
         Coverage::from_alpha(coverage_canvas.clone()),
     );
-    let canvas = masked.composite(overlay, Composite::SourceOver);
+    let canvas = masked.composite(overlay, Composition::new(Composite::SourceOver, LinearSrgb));
 
     assert!(matches!(canvas.node(), CanvasNode::Composite {
         backdrop,
@@ -340,19 +349,17 @@ fn draw_keeps_source_and_coverage_as_distinct_semantics() {
 fn destination_over_keeps_source_and_backdrop_roles_in_the_ir() {
     let backdrop = Canvas::draw(Color::rgb8(10, 20, 30), Coverage::all());
     let source = Canvas::draw(Color::rgb8(40, 50, 60), Coverage::all());
-    let canvas = backdrop.clone().blend_composite(
-        source.clone(),
-        BlendMode::Screen,
-        Composite::DestinationOver,
-    );
+    let composition = Composition::new(Composite::DestinationOver, LinearSrgb)
+        .with_blend(BlendMode::Screen, Srgb);
+    let canvas = backdrop.clone().composite(source.clone(), composition);
 
     assert!(matches!(canvas.node(), CanvasNode::Composite {
         backdrop: recorded_backdrop,
         source: recorded_source,
-        blend_mode: BlendMode::Screen,
-        composite: Composite::DestinationOver,
+        composition: recorded_composition,
     } if Arc::ptr_eq(&recorded_backdrop.node, &backdrop.node)
-        && Arc::ptr_eq(&recorded_source.node, &source.node)));
+        && Arc::ptr_eq(&recorded_source.node, &source.node)
+        && *recorded_composition == composition));
 }
 
 #[test]

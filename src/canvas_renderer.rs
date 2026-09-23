@@ -5,6 +5,7 @@ use crate::color::RgbColorSpace;
 
 pub(crate) mod canvas_plan;
 pub(crate) mod color_space;
+pub(crate) mod composition_encoding;
 pub(crate) mod mesh_paint;
 pub(crate) mod path_sampling;
 pub(crate) mod view_space;

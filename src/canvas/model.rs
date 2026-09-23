@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::transform::Projective2;
 
-use super::{BlendMode, ColorField, Composite, Coverage};
+use super::{ColorField, Composition, Coverage};
 
 #[derive(Clone, Debug)]
 pub(crate) struct Draw {
@@ -20,8 +20,7 @@ pub(crate) enum CanvasNode {
     Composite {
         backdrop: Canvas,
         source: Canvas,
-        blend_mode: BlendMode,
-        composite: Composite,
+        composition: Composition,
     },
 }
 
@@ -51,24 +50,13 @@ impl Canvas {
         }
     }
 
-    /// Combines this backdrop with `source` using Normal blend and `composite`.
-    pub fn composite(self, source: Canvas, composite: Composite) -> Self {
-        self.blend_composite(source, BlendMode::Normal, composite)
-    }
-
-    /// Combines two complete Canvas fields while preserving source/destination roles.
-    pub fn blend_composite(
-        self,
-        source: Canvas,
-        blend_mode: BlendMode,
-        composite: Composite,
-    ) -> Self {
+    /// Combines two complete Canvas fields with one explicit composition.
+    pub fn composite(self, source: Canvas, composition: Composition) -> Self {
         Self {
             node: Arc::new(CanvasNode::Composite {
                 backdrop: self,
                 source,
-                blend_mode,
-                composite,
+                composition,
             }),
         }
     }

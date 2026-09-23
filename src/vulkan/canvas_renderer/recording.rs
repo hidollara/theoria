@@ -4,7 +4,7 @@ mod commands;
 
 use crate::{
     canvas::{
-        BlendMode, Canvas, CanvasNode, CanvasView, ColorField, Composite, Coverage, CoverageNode,
+        Canvas, CanvasNode, CanvasView, ColorField, Composite, Composition, Coverage, CoverageNode,
         Draw,
     },
     canvas_renderer::canvas_plan::can_record_directly,
@@ -81,23 +81,24 @@ impl<'a> CanvasRecorder<'a> {
             CanvasNode::Composite {
                 backdrop,
                 source,
-                blend_mode,
-                composite,
+                composition,
             } => {
                 self.render_node(accumulator, backdrop, canvas_to_root);
-                if *blend_mode == BlendMode::Normal
-                    && *composite == Composite::SourceOver
+                if composition.blend().is_none()
+                    && composition.composite() == Composite::SourceOver
+                    && composition.composite_space().is_linear()
                     && can_record_directly(source)
                 {
                     self.render_node(accumulator, source, canvas_to_root);
                 } else {
                     self.commands.end_rendering();
                     let source_image = self.evaluate(source, canvas_to_root);
-                    if *blend_mode == BlendMode::Normal {
+                    if !composition.requires_destination_read() {
                         self.commands.resume_accumulator(accumulator);
-                        self.commands.draw_composite(source_image, *composite);
+                        self.commands
+                            .draw_composite(source_image, composition.composite());
                     } else {
-                        self.blend_composite(accumulator, source_image, *blend_mode, *composite);
+                        self.compose_with_destination(accumulator, source_image, *composition);
                     }
                 }
             }
@@ -149,12 +150,11 @@ impl<'a> CanvasRecorder<'a> {
         }
     }
 
-    fn blend_composite(
+    fn compose_with_destination(
         &mut self,
         accumulator: usize,
         source: usize,
-        blend_mode: BlendMode,
-        composite: Composite,
+        composition: Composition,
     ) {
         self.commands.transition_to_sampled(accumulator);
         let destination = self.next_image;
@@ -168,7 +168,7 @@ impl<'a> CanvasRecorder<'a> {
         self.commands
             .begin_accumulator(accumulator, vk::AttachmentLoadOp::CLEAR);
         self.commands
-            .draw_blend_composite(destination, source, blend_mode, composite);
+            .draw_composition(destination, source, composition);
     }
 
     fn evaluate_coverage(

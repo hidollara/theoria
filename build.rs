@@ -18,7 +18,7 @@ fn main() {
     compile_shader_source(
         &blend.replace(
             "__THEORIA_BLEND_OPERATION_BINDING__",
-            "var<immediate> operation: BlendComposite;",
+            "var<immediate> operation: CompositionOperation;",
         ),
         "blend",
         &output_dir,
@@ -32,7 +32,7 @@ fn main() {
 
     let webgpu_blend = blend.replace(
         "__THEORIA_BLEND_OPERATION_BINDING__",
-        "@group(2) @binding(0) var<uniform> operation: BlendComposite;",
+        "@group(2) @binding(0) var<uniform> operation: CompositionOperation;",
     );
     validate_shader(&webgpu_blend);
 }

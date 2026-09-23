@@ -1,8 +1,8 @@
 use std::f32::consts::PI;
 
 use theoria::{
-    canvas::{Canvas, CanvasView, Composite, Coverage},
-    color::Color,
+    canvas::{Canvas, CanvasView, Composite, Composition, Coverage},
+    color::{Color, LinearSrgb},
     event::OwningSink,
     font::Font,
     geometry::Point,
@@ -95,12 +95,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .expect("the counter glyphs can be realized")
                         .transformed(Affine2::from_translation(Vector2::new(210.0, 390.0)));
 
-                    fill.composite(outline, Composite::SourceOver)
+                    fill.composite(outline, Composition::new(Composite::SourceOver, LinearSrgb))
                         .transformed(Affine2::from_translation(Vector2::new(
                             STAR_CENTER.x,
                             STAR_CENTER.y,
                         )))
-                        .composite(label, Composite::SourceOver)
+                        .composite(label, Composition::new(Composite::SourceOver, LinearSrgb))
                 });
                 window_content(context, window.surface().size(), canvas)
             },
@@ -148,8 +148,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .expect("the lifecycle status glyphs can be realized")
                         .transformed(Affine2::from_translation(Vector2::new(110.0, 380.0)));
                     heading
-                        .composite(value, Composite::SourceOver)
-                        .composite(status, Composite::SourceOver)
+                        .composite(value, Composition::new(Composite::SourceOver, LinearSrgb))
+                        .composite(status, Composition::new(Composite::SourceOver, LinearSrgb))
                 });
                 window_content(context, window.surface().size(), canvas)
             },

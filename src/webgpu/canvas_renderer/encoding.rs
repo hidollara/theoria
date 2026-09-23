@@ -113,52 +113,14 @@ impl ImageVertex {
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-pub(super) struct BlendCompositeUniform {
+pub(super) struct CompositionUniform {
     values: [u32; 4],
 }
 
-impl BlendCompositeUniform {
-    pub(super) fn new(
-        blend_mode: crate::canvas::BlendMode,
-        composite: crate::canvas::Composite,
-    ) -> Self {
-        use crate::canvas::{BlendMode, Composite};
-
-        let blend_mode = match blend_mode {
-            BlendMode::Normal => 0,
-            BlendMode::Multiply => 1,
-            BlendMode::Screen => 2,
-            BlendMode::Overlay => 3,
-            BlendMode::Darken => 4,
-            BlendMode::Lighten => 5,
-            BlendMode::ColorDodge => 6,
-            BlendMode::ColorBurn => 7,
-            BlendMode::HardLight => 8,
-            BlendMode::SoftLight => 9,
-            BlendMode::Difference => 10,
-            BlendMode::Exclusion => 11,
-            BlendMode::Hue => 12,
-            BlendMode::Saturation => 13,
-            BlendMode::Color => 14,
-            BlendMode::Luminosity => 15,
-        };
-        let composite = match composite {
-            Composite::Clear => 0,
-            Composite::Copy => 1,
-            Composite::Destination => 2,
-            Composite::SourceOver => 3,
-            Composite::DestinationOver => 4,
-            Composite::SourceIn => 5,
-            Composite::DestinationIn => 6,
-            Composite::SourceOut => 7,
-            Composite::DestinationOut => 8,
-            Composite::SourceAtop => 9,
-            Composite::DestinationAtop => 10,
-            Composite::Xor => 11,
-            Composite::Plus => 12,
-        };
+impl CompositionUniform {
+    pub(super) fn new(composition: crate::canvas::Composition) -> Self {
         Self {
-            values: [blend_mode, composite, 0, 0],
+            values: crate::canvas_renderer::composition_encoding::encode(composition),
         }
     }
 }

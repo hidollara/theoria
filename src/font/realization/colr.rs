@@ -12,10 +12,10 @@ use skrifa::{
 
 use crate::{
     canvas::{
-        BlendMode, Canvas, ColorField, Composite, ConicGradient, Coverage, GradientExtend,
-        GradientStop, LinearGradient, RadialGradient,
+        BlendMode, Canvas, ColorField, Composite, Composition, ConicGradient, Coverage,
+        GradientExtend, GradientStop, LinearGradient, RadialGradient,
     },
-    color::Color,
+    color::{Color, LinearSrgb},
     geometry::Point,
     math::{Matrix2, Vector2},
     path::Path,
@@ -264,7 +264,10 @@ impl<'font, 'palette> CanvasColorPainter<'font, 'palette> {
     }
 
     fn append(&mut self, source: Canvas) {
-        self.canvas = self.canvas.clone().composite(source, Composite::SourceOver);
+        self.canvas = self
+            .canvas
+            .clone()
+            .composite(source, Composition::new(Composite::SourceOver, LinearSrgb));
     }
 }
 
@@ -342,9 +345,10 @@ impl ColorPainter for CanvasColorPainter<'_, '_> {
             return;
         };
         let source = std::mem::take(&mut self.canvas);
-        self.canvas = layer
-            .backdrop
-            .blend_composite(source, layer.blend_mode, layer.composite);
+        self.canvas = layer.backdrop.composite(
+            source,
+            Composition::new(layer.composite, LinearSrgb).with_blend(layer.blend_mode, LinearSrgb),
+        );
     }
 }
 

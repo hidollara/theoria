@@ -3,7 +3,7 @@
 use ash::vk;
 
 use crate::{
-    canvas::{BlendMode, CanvasView, ColorField, Composite, ImagePattern},
+    canvas::{CanvasView, ColorField, Composite, Composition, ImagePattern},
     canvas_renderer::{
         mesh_paint::paint_triangle_prepared, path_sampling::PathSampler,
         view_space::screen_space_tolerance,
@@ -14,7 +14,7 @@ use crate::{
     transform::Projective2,
     vulkan::{
         canvas_renderer::{
-            encoding::{BlendCompositePushConstants, ImagePushConstants, TrianglePushConstants},
+            encoding::{CompositionPushConstants, ImagePushConstants, TrianglePushConstants},
             pipeline::{Pipeline, Pipelines},
         },
         color::PremultipliedLinearSrgba,
@@ -97,14 +97,13 @@ impl<'a> CanvasCommandEncoder<'a> {
         self.end_rendering();
     }
 
-    pub(super) fn draw_blend_composite(
+    pub(super) fn draw_composition(
         &self,
         destination: usize,
         source: usize,
-        blend_mode: BlendMode,
-        composite: Composite,
+        composition: Composition,
     ) {
-        let constants = BlendCompositePushConstants::new(blend_mode, composite);
+        let constants = CompositionPushConstants::new(composition);
         unsafe {
             self.device.cmd_bind_pipeline(
                 self.command_buffer,
