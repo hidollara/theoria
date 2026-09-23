@@ -6,7 +6,7 @@
 //! only when a CPU-readable image is requested.
 
 use crate::canvas::CanvasColor;
-use crate::canvas_renderer::WorkingColor;
+use crate::canvas_renderer::{WorkingColor, color_space};
 
 #[cfg(test)]
 use crate::color::Color;
@@ -35,8 +35,7 @@ impl PremultipliedLinearSrgba {
     }
 
     fn from_straight_srgba([red, green, blue, alpha]: [f32; 4]) -> Self {
-        let [red, green, blue] = [red, green, blue].map(srgb_to_linear);
-        Self([red * alpha, green * alpha, blue * alpha, alpha])
+        Self(color_space::lower_straight_srgba([red, green, blue, alpha]))
     }
 
     pub(super) const fn from_components(components: [f32; 4]) -> Self {
@@ -64,22 +63,6 @@ impl WorkingColor for PremultipliedLinearSrgba {
     }
 }
 
-fn srgb_to_linear(component: f32) -> f32 {
-    if component <= 0.04045 {
-        component / 12.92
-    } else {
-        ((component + 0.055) / 1.055).powf(2.4)
-    }
-}
-
-fn linear_to_srgb(component: f32) -> f32 {
-    if component <= 0.003_130_8 {
-        component * 12.92
-    } else {
-        1.055 * component.powf(1.0 / 2.4) - 0.055
-    }
-}
-
 /// Converts quantized linear premultiplied RGBA readback into the public
 /// straight-alpha sRGBA8 image representation.
 pub(super) fn encode_linear_premultiplied_rgba8_as_straight_srgba8(pixels: &mut [u8]) {
@@ -91,7 +74,7 @@ pub(super) fn encode_linear_premultiplied_rgba8_as_straight_srgba8(pixels: &mut 
         }
         for component in &mut pixel[..3] {
             let linear = (f32::from(*component) / 255.0 / alpha).clamp(0.0, 1.0);
-            *component = (linear_to_srgb(linear) * 255.0).round() as u8;
+            *component = (color_space::encode_linear_srgb_component(linear) * 255.0).round() as u8;
         }
     }
 }
@@ -128,7 +111,9 @@ mod tests {
         let opaque = PremultipliedLinearSrgba::from_color(Color::rgb8(255, 0, 0));
 
         assert_eq!(
-            transparent.interpolate(opaque, 0.5).components(),
+            transparent
+                .interpolate(opaque, 0.5, crate::color::LinearSrgb.into())
+                .components(),
             [0.5, 0.0, 0.0, 0.5]
         );
     }

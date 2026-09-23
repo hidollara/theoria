@@ -143,10 +143,15 @@ impl<'font, 'palette> CanvasColorPainter<'font, 'palette> {
                 if stops.len() == 1 {
                     return Ok(stops[0].color().into());
                 }
-                LinearGradient::new(Point::new(p0.x, p0.y), Point::new(p1.x, p1.y), stops)
-                    .map(|gradient| gradient.with_extend(extend))
-                    .map(Into::into)
-                    .map_err(|_| GlyphPresentationError::InvalidColorGlyph)
+                LinearGradient::new(
+                    Point::new(p0.x, p0.y),
+                    Point::new(p1.x, p1.y),
+                    stops,
+                    crate::color::LinearSrgb,
+                )
+                .map(|gradient| gradient.with_extend(extend))
+                .map(Into::into)
+                .map_err(|_| GlyphPresentationError::InvalidColorGlyph)
             }
             Brush::RadialGradient {
                 c0,
@@ -167,6 +172,7 @@ impl<'font, 'palette> CanvasColorPainter<'font, 'palette> {
                     Point::new(c1.x, c1.y),
                     r1,
                     stops,
+                    crate::color::LinearSrgb,
                 )
                 .map(|gradient| gradient.with_extend(extend))
                 .map(Into::into)
@@ -189,6 +195,7 @@ impl<'font, 'palette> CanvasColorPainter<'font, 'palette> {
                     -start_angle.to_radians(),
                     -end_angle.to_radians(),
                     stops,
+                    crate::color::LinearSrgb,
                 )
                 .map(|gradient| gradient.with_extend(extend))
                 .map(Into::into)

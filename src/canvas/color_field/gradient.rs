@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::{canvas::CanvasColor, geometry::Point, path::Path};
+use crate::{canvas::CanvasColor, color::RgbColorSpace, geometry::Point, path::Path};
 
 /// Defines how a gradient color line is evaluated outside its `[0, 1]` span.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -63,6 +63,7 @@ impl GradientStop {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ColorRamp {
     stops: Arc<[GradientStop]>,
+    interpolation_space: RgbColorSpace,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -87,7 +88,10 @@ impl std::fmt::Display for ColorRampError {
 impl std::error::Error for ColorRampError {}
 
 impl ColorRamp {
-    pub fn new(stops: impl IntoIterator<Item = GradientStop>) -> Result<Self, ColorRampError> {
+    pub fn new(
+        stops: impl IntoIterator<Item = GradientStop>,
+        interpolation_space: impl Into<RgbColorSpace>,
+    ) -> Result<Self, ColorRampError> {
         let stops: Vec<_> = stops.into_iter().collect();
         validate_gradient_stops(&stops).map_err(|error| match error {
             GradientStopsError::TooFew => ColorRampError::TooFewStops,
@@ -95,11 +99,16 @@ impl ColorRamp {
         })?;
         Ok(Self {
             stops: stops.into(),
+            interpolation_space: interpolation_space.into(),
         })
     }
 
     pub fn stops(&self) -> &[GradientStop] {
         &self.stops
+    }
+
+    pub const fn interpolation_space(&self) -> RgbColorSpace {
+        self.interpolation_space
     }
 }
 
@@ -203,6 +212,7 @@ pub struct LinearGradient {
     end: Point,
     stops: Arc<[GradientStop]>,
     extend: GradientExtend,
+    interpolation_space: RgbColorSpace,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -231,6 +241,7 @@ impl LinearGradient {
         start: Point,
         end: Point,
         stops: impl IntoIterator<Item = GradientStop>,
+        interpolation_space: impl Into<RgbColorSpace>,
     ) -> Result<Self, LinearGradientError> {
         if !start.is_finite() || !end.is_finite() {
             return Err(LinearGradientError::NonFinitePoint);
@@ -250,6 +261,7 @@ impl LinearGradient {
             end,
             stops: stops.into(),
             extend: GradientExtend::Pad,
+            interpolation_space: interpolation_space.into(),
         })
     }
 
@@ -273,6 +285,10 @@ impl LinearGradient {
     pub const fn extend(&self) -> GradientExtend {
         self.extend
     }
+
+    pub const fn interpolation_space(&self) -> RgbColorSpace {
+        self.interpolation_space
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -283,6 +299,7 @@ pub struct RadialGradient {
     end_radius: f32,
     stops: Arc<[GradientStop]>,
     extend: GradientExtend,
+    interpolation_space: RgbColorSpace,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -315,11 +332,12 @@ impl RadialGradient {
         center: Point,
         radius: f32,
         stops: impl IntoIterator<Item = GradientStop>,
+        interpolation_space: impl Into<RgbColorSpace>,
     ) -> Result<Self, RadialGradientError> {
         if radius <= 0.0 {
             return Err(RadialGradientError::NonPositiveRadius);
         }
-        Self::between_circles(center, 0.0, center, radius, stops)
+        Self::between_circles(center, 0.0, center, radius, stops, interpolation_space)
     }
 
     /// Creates a two-point conical gradient from its signed endpoint radii.
@@ -333,6 +351,7 @@ impl RadialGradient {
         end_center: Point,
         end_radius: f32,
         stops: impl IntoIterator<Item = GradientStop>,
+        interpolation_space: impl Into<RgbColorSpace>,
     ) -> Result<Self, RadialGradientError> {
         if !start_center.is_finite() || !end_center.is_finite() {
             return Err(RadialGradientError::NonFiniteCenter);
@@ -352,6 +371,7 @@ impl RadialGradient {
             end_radius,
             stops: stops.into(),
             extend: GradientExtend::Pad,
+            interpolation_space: interpolation_space.into(),
         })
     }
 
@@ -387,6 +407,10 @@ impl RadialGradient {
     pub const fn extend(&self) -> GradientExtend {
         self.extend
     }
+
+    pub const fn interpolation_space(&self) -> RgbColorSpace {
+        self.interpolation_space
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -396,6 +420,7 @@ pub struct ConicGradient {
     end_angle: f32,
     stops: Arc<[GradientStop]>,
     extend: GradientExtend,
+    interpolation_space: RgbColorSpace,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -431,12 +456,14 @@ impl ConicGradient {
         center: Point,
         start_angle: f32,
         stops: impl IntoIterator<Item = GradientStop>,
+        interpolation_space: impl Into<RgbColorSpace>,
     ) -> Result<Self, ConicGradientError> {
         Self::sweeping(
             center,
             start_angle,
             start_angle + std::f32::consts::TAU,
             stops,
+            interpolation_space,
         )
     }
 
@@ -447,6 +474,7 @@ impl ConicGradient {
         start_angle: f32,
         end_angle: f32,
         stops: impl IntoIterator<Item = GradientStop>,
+        interpolation_space: impl Into<RgbColorSpace>,
     ) -> Result<Self, ConicGradientError> {
         if !center.is_finite() {
             return Err(ConicGradientError::NonFiniteCenter);
@@ -468,6 +496,7 @@ impl ConicGradient {
             end_angle,
             stops: stops.into(),
             extend: GradientExtend::Pad,
+            interpolation_space: interpolation_space.into(),
         })
     }
 
@@ -493,6 +522,10 @@ impl ConicGradient {
     }
     pub const fn extend(&self) -> GradientExtend {
         self.extend
+    }
+
+    pub const fn interpolation_space(&self) -> RgbColorSpace {
+        self.interpolation_space
     }
 }
 
@@ -539,6 +572,7 @@ impl GradientPoint {
 #[derive(Clone, Debug, PartialEq)]
 pub struct MeshGradient {
     triangles: Arc<[[GradientPoint; 3]]>,
+    interpolation_space: RgbColorSpace,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -561,7 +595,10 @@ impl std::fmt::Display for MeshGradientError {
 impl std::error::Error for MeshGradientError {}
 
 impl MeshGradient {
-    pub fn from_triangle(points: [GradientPoint; 3]) -> Result<Self, MeshGradientError> {
+    pub fn from_triangle(
+        points: [GradientPoint; 3],
+        interpolation_space: impl Into<RgbColorSpace>,
+    ) -> Result<Self, MeshGradientError> {
         if !points.iter().all(|point| point.position.is_finite()) {
             return Err(MeshGradientError::NonFinitePoint);
         }
@@ -574,10 +611,15 @@ impl MeshGradient {
         }
         Ok(Self {
             triangles: Arc::new([points]),
+            interpolation_space: interpolation_space.into(),
         })
     }
 
     pub(crate) fn triangles(&self) -> &[[GradientPoint; 3]] {
         &self.triangles
+    }
+
+    pub const fn interpolation_space(&self) -> RgbColorSpace {
+        self.interpolation_space
     }
 }

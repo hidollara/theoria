@@ -5,7 +5,7 @@ use crate::{
         MeshGradient, RadialGradient,
     },
     canvas_renderer::WorkingColor,
-    color::Color,
+    color::{Color, LinearSrgb},
     geometry::Point,
 };
 
@@ -29,6 +29,7 @@ fn linear_gradient_splits_triangles_at_stop_boundaries() {
             GradientStop::new(0.5, Color::rgb8(0, 255, 0)).unwrap(),
             GradientStop::new(1.0, Color::rgb8(0, 0, 255)).unwrap(),
         ],
+        LinearSrgb,
     )
     .unwrap();
     let triangles = paint_triangle(
@@ -72,6 +73,7 @@ fn linear_gradient_clamps_colors_outside_its_axis() {
             GradientStop::new(0.2, Color::rgb8(255, 0, 0)).unwrap(),
             GradientStop::new(0.8, Color::rgb8(0, 0, 255)).unwrap(),
         ],
+        LinearSrgb,
     )
     .unwrap();
     let triangles = paint_triangle(
@@ -88,6 +90,38 @@ fn linear_gradient_clamps_colors_outside_its_axis() {
 }
 
 #[test]
+fn nonlinear_gradient_interpolation_is_resolved_before_gpu_interpolation() {
+    let gradient = LinearGradient::new(
+        Point::new(0.0, 0.0),
+        Point::new(10.0, 0.0),
+        [
+            GradientStop::new(0.0, Color::rgb8(0, 0, 0)).unwrap(),
+            GradientStop::new(1.0, Color::rgb8(255, 255, 255)).unwrap(),
+        ],
+        crate::color::Srgb,
+    )
+    .unwrap();
+    let triangles = paint_triangle(
+        [
+            Point::new(0.0, 0.0),
+            Point::new(10.0, 0.0),
+            Point::new(0.0, 10.0),
+        ],
+        &ColorField::LinearGradient(gradient),
+    );
+    let midpoint = triangles.iter().find_map(|triangle| {
+        triangle
+            .points
+            .iter()
+            .position(|point| *point == Point::new(5.0, 0.0))
+            .map(|index| triangle.colors[index].components()[0])
+    });
+
+    assert!(triangles.len() > 1);
+    assert!((midpoint.unwrap() - 0.214_041_14).abs() < 0.000_001);
+}
+
+#[test]
 fn triangular_mesh_gradient_reproduces_its_vertex_colors() {
     let positions = [
         Point::new(0.0, 0.0),
@@ -99,9 +133,10 @@ fn triangular_mesh_gradient_reproduces_its_vertex_colors() {
         Color::rgb8(0, 255, 0),
         Color::rgb8(0, 0, 255),
     ];
-    let gradient = MeshGradient::from_triangle(std::array::from_fn(|index| {
-        GradientPoint::new(positions[index], colors[index])
-    }))
+    let gradient = MeshGradient::from_triangle(
+        std::array::from_fn(|index| GradientPoint::new(positions[index], colors[index])),
+        LinearSrgb,
+    )
     .unwrap();
     let triangles = paint_triangle(positions, &ColorField::MeshGradient(gradient));
 
@@ -123,7 +158,7 @@ fn mesh_gradient_clips_painted_geometry_to_its_patch() {
         GradientPoint::new(Point::new(4.0, 0.0), Color::rgb8(0, 255, 0)),
         GradientPoint::new(Point::new(0.0, 4.0), Color::rgb8(0, 0, 255)),
     ];
-    let gradient = MeshGradient::from_triangle(patch).unwrap();
+    let gradient = MeshGradient::from_triangle(patch, LinearSrgb).unwrap();
     let triangles = paint_triangle(
         [
             Point::new(-10.0, -10.0),
@@ -153,6 +188,7 @@ fn radial_gradient_samples_center_and_radius_colors() {
             GradientStop::new(0.0, red).unwrap(),
             GradientStop::new(1.0, blue).unwrap(),
         ],
+        LinearSrgb,
     )
     .unwrap();
     let triangles = paint_triangle(
@@ -192,6 +228,7 @@ fn two_circle_radial_gradient_is_transparent_where_no_circle_reaches() {
             GradientStop::new(0.0, Color::rgb8(255, 0, 0)).unwrap(),
             GradientStop::new(1.0, Color::rgb8(0, 0, 255)).unwrap(),
         ],
+        LinearSrgb,
     )
     .unwrap();
     let triangles = paint_triangle(
@@ -222,6 +259,7 @@ fn coincident_radial_circles_paint_nothing() {
             GradientStop::new(0.0, Color::rgb8(255, 0, 0)).unwrap(),
             GradientStop::new(1.0, Color::rgb8(0, 0, 255)).unwrap(),
         ],
+        LinearSrgb,
     )
     .unwrap();
     let triangles = paint_triangle(
@@ -254,6 +292,7 @@ fn signed_radial_gradient_uses_only_nonnegative_radius_solutions() {
             GradientStop::new(0.0, red).unwrap(),
             GradientStop::new(1.0, blue).unwrap(),
         ],
+        LinearSrgb,
     )
     .unwrap();
     let triangles = paint_triangle(
@@ -292,6 +331,7 @@ fn negative_radial_endpoints_can_reach_a_positive_extended_cone() {
             GradientStop::new(0.0, red).unwrap(),
             GradientStop::new(1.0, Color::rgb8(0, 0, 255)).unwrap(),
         ],
+        LinearSrgb,
     )
     .unwrap();
     let triangles = paint_triangle(
@@ -325,6 +365,7 @@ fn conic_gradient_uses_positive_parameter_angle() {
             GradientStop::new(0.5, green).unwrap(),
             GradientStop::new(1.0, blue).unwrap(),
         ],
+        LinearSrgb,
     )
     .unwrap();
     let triangles = paint_triangle(
@@ -365,6 +406,7 @@ fn partial_conic_gradient_pads_on_the_absolute_turn() {
             GradientStop::new(0.0, red).unwrap(),
             GradientStop::new(1.0, blue).unwrap(),
         ],
+        LinearSrgb,
     )
     .unwrap();
     let triangles = paint_triangle(
@@ -401,6 +443,7 @@ fn coincident_conic_angles_form_a_pad_step() {
             GradientStop::new(0.0, red).unwrap(),
             GradientStop::new(1.0, blue).unwrap(),
         ],
+        LinearSrgb,
     )
     .unwrap();
     let triangles = paint_triangle(
@@ -438,6 +481,7 @@ fn coincident_repeating_conic_angles_paint_nothing() {
             GradientStop::new(0.0, Color::rgb8(255, 0, 0)).unwrap(),
             GradientStop::new(1.0, Color::rgb8(0, 0, 255)).unwrap(),
         ],
+        LinearSrgb,
     )
     .unwrap()
     .with_extend(GradientExtend::Repeat);

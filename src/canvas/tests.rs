@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    color::Color,
+    color::{Color, LinearSrgb},
     geometry::Point,
     image::Srgba8Image,
     math::Vector2,
@@ -551,12 +551,18 @@ fn linear_gradient_keeps_ordered_stops_in_canvas_coordinates() {
         GradientStop::new(0.4, Color::rgb8(0, 255, 0)).unwrap(),
         GradientStop::new(1.0, Color::rgb8(0, 0, 255)).unwrap(),
     ];
-    let gradient =
-        LinearGradient::new(Point::new(10.0, 20.0), Point::new(110.0, 20.0), stops).unwrap();
+    let gradient = LinearGradient::new(
+        Point::new(10.0, 20.0),
+        Point::new(110.0, 20.0),
+        stops,
+        LinearSrgb,
+    )
+    .unwrap();
 
     assert_eq!(gradient.start(), Point::new(10.0, 20.0));
     assert_eq!(gradient.end(), Point::new(110.0, 20.0));
     assert_eq!(gradient.stops(), stops);
+    assert_eq!(gradient.interpolation_space(), LinearSrgb.into());
 }
 
 #[test]
@@ -566,10 +572,13 @@ fn along_path_gradient_keeps_a_path_and_reusable_color_ramp() {
         Point::new(10.0, 0.0),
         Point::new(10.0, 10.0),
     ]);
-    let ramp = ColorRamp::new([
-        GradientStop::new(0.0, Color::rgb8(255, 0, 0)).unwrap(),
-        GradientStop::new(1.0, Color::rgb8(0, 0, 255)).unwrap(),
-    ])
+    let ramp = ColorRamp::new(
+        [
+            GradientStop::new(0.0, Color::rgb8(255, 0, 0)).unwrap(),
+            GradientStop::new(1.0, Color::rgb8(0, 0, 255)).unwrap(),
+        ],
+        LinearSrgb,
+    )
     .unwrap();
     let gradient = AlongPathGradient::new(path.clone(), ramp.clone());
 
@@ -584,10 +593,13 @@ fn along_path_gradient_keeps_a_path_and_reusable_color_ramp() {
 #[test]
 fn across_path_gradient_keeps_explicit_signed_distance_bounds() {
     let path = Path::polyline([Point::new(0.0, 0.0), Point::new(10.0, 0.0)]);
-    let ramp = ColorRamp::new([
-        GradientStop::new(0.0, Color::rgb8(255, 0, 0)).unwrap(),
-        GradientStop::new(1.0, Color::rgb8(0, 0, 255)).unwrap(),
-    ])
+    let ramp = ColorRamp::new(
+        [
+            GradientStop::new(0.0, Color::rgb8(255, 0, 0)).unwrap(),
+            GradientStop::new(1.0, Color::rgb8(0, 0, 255)).unwrap(),
+        ],
+        LinearSrgb,
+    )
     .unwrap();
     let gradient = AcrossPathGradient::new(path.clone(), -2.0, 3.0, ramp.clone()).unwrap();
 
@@ -614,9 +626,12 @@ fn color_ramp_rejects_too_few_or_unordered_stops() {
     let red = GradientStop::new(0.8, Color::rgb8(255, 0, 0)).unwrap();
     let blue = GradientStop::new(0.2, Color::rgb8(0, 0, 255)).unwrap();
 
-    assert_eq!(ColorRamp::new([red]), Err(ColorRampError::TooFewStops));
     assert_eq!(
-        ColorRamp::new([red, blue]),
+        ColorRamp::new([red], LinearSrgb),
+        Err(ColorRampError::TooFewStops)
+    );
+    assert_eq!(
+        ColorRamp::new([red, blue], LinearSrgb),
         Err(ColorRampError::UnorderedStops)
     );
 }
@@ -634,11 +649,21 @@ fn rejects_invalid_linear_gradient_structure_without_panicking() {
         Err(GradientStopError::OffsetOutOfRange)
     );
     assert_eq!(
-        LinearGradient::new(Point::new(0.0, 0.0), Point::new(0.0, 0.0), [red, blue]),
+        LinearGradient::new(
+            Point::new(0.0, 0.0),
+            Point::new(0.0, 0.0),
+            [red, blue],
+            LinearSrgb,
+        ),
         Err(LinearGradientError::CoincidentPoints)
     );
     assert_eq!(
-        LinearGradient::new(Point::new(0.0, 0.0), Point::new(1.0, 0.0), [red, blue]),
+        LinearGradient::new(
+            Point::new(0.0, 0.0),
+            Point::new(1.0, 0.0),
+            [red, blue],
+            LinearSrgb,
+        ),
         Err(LinearGradientError::UnorderedStops)
     );
 }
@@ -650,28 +675,35 @@ fn mesh_gradient_records_a_colored_triangle_patch() {
         GradientPoint::new(Point::new(4.0, 0.0), Color::rgb8(0, 255, 0)),
         GradientPoint::new(Point::new(0.0, 4.0), Color::rgb8(0, 0, 255)),
     ];
-    let gradient = MeshGradient::from_triangle(points).unwrap();
+    let gradient = MeshGradient::from_triangle(points, LinearSrgb).unwrap();
 
     assert_eq!(gradient.triangles(), &[points]);
+    assert_eq!(gradient.interpolation_space(), LinearSrgb.into());
 }
 
 #[test]
 fn mesh_gradient_rejects_invalid_triangle_geometry() {
     let color = Color::rgb8(255, 255, 255);
     assert_eq!(
-        MeshGradient::from_triangle([
-            GradientPoint::new(Point::new(0.0, 0.0), color),
-            GradientPoint::new(Point::new(1.0, 1.0), color),
-            GradientPoint::new(Point::new(2.0, 2.0), color),
-        ]),
+        MeshGradient::from_triangle(
+            [
+                GradientPoint::new(Point::new(0.0, 0.0), color),
+                GradientPoint::new(Point::new(1.0, 1.0), color),
+                GradientPoint::new(Point::new(2.0, 2.0), color),
+            ],
+            LinearSrgb
+        ),
         Err(MeshGradientError::DegenerateTriangle)
     );
     assert_eq!(
-        MeshGradient::from_triangle([
-            GradientPoint::new(Point::new(f32::NAN, 0.0), color),
-            GradientPoint::new(Point::new(1.0, 0.0), color),
-            GradientPoint::new(Point::new(0.0, 1.0), color),
-        ]),
+        MeshGradient::from_triangle(
+            [
+                GradientPoint::new(Point::new(f32::NAN, 0.0), color),
+                GradientPoint::new(Point::new(1.0, 0.0), color),
+                GradientPoint::new(Point::new(0.0, 1.0), color),
+            ],
+            LinearSrgb
+        ),
         Err(MeshGradientError::NonFinitePoint)
     );
 }
@@ -683,8 +715,8 @@ fn radial_and_conic_gradients_keep_their_canvas_coordinates() {
         GradientStop::new(1.0, Color::rgb8(0, 0, 0)).unwrap(),
     ];
     let center = Point::new(20.0, 30.0);
-    let radial = RadialGradient::new(center, 40.0, stops).unwrap();
-    let conic = ConicGradient::new(center, 0.75, stops).unwrap();
+    let radial = RadialGradient::new(center, 40.0, stops, LinearSrgb).unwrap();
+    let conic = ConicGradient::new(center, 0.75, stops, LinearSrgb).unwrap();
 
     assert_eq!(radial.center(), center);
     assert_eq!(radial.radius(), 40.0);
@@ -706,10 +738,11 @@ fn gradients_retain_extended_color_line_geometry() {
         Point::new(8.0, 9.0),
         12.0,
         stops,
+        LinearSrgb,
     )
     .unwrap()
     .with_extend(GradientExtend::Reflect);
-    let conic = ConicGradient::sweeping(Point::new(4.0, 5.0), -0.5, 1.25, stops)
+    let conic = ConicGradient::sweeping(Point::new(4.0, 5.0), -0.5, 1.25, stops, LinearSrgb)
         .unwrap()
         .with_extend(GradientExtend::Repeat);
 
@@ -734,6 +767,7 @@ fn two_circle_radial_gradient_preserves_signed_radii() {
         Point::new(8.0, 9.0),
         12.0,
         stops,
+        LinearSrgb,
     )
     .unwrap();
 
@@ -749,8 +783,9 @@ fn degenerate_gradients_remain_representable() {
     ];
     let circle = Point::new(1.0, 2.0);
 
-    let radial = RadialGradient::between_circles(circle, 3.0, circle, 3.0, stops).unwrap();
-    let conic = ConicGradient::sweeping(circle, 0.5, 0.5, stops).unwrap();
+    let radial =
+        RadialGradient::between_circles(circle, 3.0, circle, 3.0, stops, LinearSrgb).unwrap();
+    let conic = ConicGradient::sweeping(circle, 0.5, 0.5, stops, LinearSrgb).unwrap();
 
     assert_eq!(radial.start_center(), radial.end_center());
     assert_eq!(radial.start_radius(), radial.end_radius());
@@ -764,15 +799,15 @@ fn radial_and_conic_gradients_reject_invalid_geometry() {
         GradientStop::new(1.0, Color::rgb8(0, 0, 0)).unwrap(),
     ];
     assert_eq!(
-        RadialGradient::new(Point::new(0.0, 0.0), 0.0, stops),
+        RadialGradient::new(Point::new(0.0, 0.0), 0.0, stops, LinearSrgb),
         Err(RadialGradientError::NonPositiveRadius)
     );
     assert_eq!(
-        RadialGradient::new(Point::new(0.0, 0.0), f32::NAN, stops),
+        RadialGradient::new(Point::new(0.0, 0.0), f32::NAN, stops, LinearSrgb),
         Err(RadialGradientError::NonFiniteRadius)
     );
     assert_eq!(
-        ConicGradient::new(Point::new(0.0, 0.0), f32::INFINITY, stops),
+        ConicGradient::new(Point::new(0.0, 0.0), f32::INFINITY, stops, LinearSrgb),
         Err(ConicGradientError::NonFiniteStartAngle)
     );
 }

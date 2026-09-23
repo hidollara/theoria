@@ -1,4 +1,7 @@
-use crate::{canvas::CanvasColor, canvas_renderer::WorkingColor};
+use crate::{
+    canvas::CanvasColor,
+    canvas_renderer::{WorkingColor, color_space},
+};
 
 #[cfg(test)]
 use crate::color::Color;
@@ -15,8 +18,7 @@ impl PremultipliedLinearSrgba {
     }
 
     fn from_straight_srgba([red, green, blue, alpha]: [f32; 4]) -> Self {
-        let [red, green, blue] = [red, green, blue].map(srgb_to_linear);
-        Self([red * alpha, green * alpha, blue * alpha, alpha])
+        Self(color_space::lower_straight_srgba([red, green, blue, alpha]))
     }
 
     pub(super) const fn from_components(components: [f32; 4]) -> Self {
@@ -41,14 +43,6 @@ impl WorkingColor for PremultipliedLinearSrgba {
 
     fn components(self) -> [f32; 4] {
         self.components()
-    }
-}
-
-fn srgb_to_linear(component: f32) -> f32 {
-    if component <= 0.04045 {
-        component / 12.92
-    } else {
-        ((component + 0.055) / 1.055).powf(2.4)
     }
 }
 

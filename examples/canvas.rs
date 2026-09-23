@@ -4,7 +4,7 @@ use theoria::{
         ColorRamp, Composite, ConicGradient, Coverage, GradientPoint, GradientStop, ImageExtend,
         ImagePattern, LinearGradient, MeshGradient, RadialGradient,
     },
-    color::Color,
+    color::{Color, LinearSrgb},
     geometry::Point,
     image::{Srgba8Image, Srgba8ImageError},
     math::Vector2,
@@ -79,6 +79,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 GradientStop::new(0.45, Color::rgba(0.35, 0.38, 1.0, 0.72)?)?,
                                 GradientStop::new(1.0, Color::rgba(1.0, 0.18, 0.72, 0.68)?)?,
                             ],
+                            LinearSrgb,
                         )?,
                         Coverage::fill(Path::polygon([
                             Point::new(width * 0.38, height * 0.14),
@@ -91,20 +92,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Coverage::from_alpha(coverage_canvas),
                     );
                     let mesh_layer = Canvas::draw(
-                        MeshGradient::from_triangle([
-                            GradientPoint::new(
-                                Point::new(width * 0.62, height * 0.16),
-                                Color::rgba(1.0, 0.12, 0.42, 0.78)?,
-                            ),
-                            GradientPoint::new(
-                                Point::new(width * 0.92, height * 0.72),
-                                Color::rgba(0.15, 1.0, 0.58, 0.72)?,
-                            ),
-                            GradientPoint::new(
-                                Point::new(width * 0.50, height * 0.88),
-                                Color::rgba(0.20, 0.32, 1.0, 0.72)?,
-                            ),
-                        ])?,
+                        MeshGradient::from_triangle(
+                            [
+                                GradientPoint::new(
+                                    Point::new(width * 0.62, height * 0.16),
+                                    Color::rgba(1.0, 0.12, 0.42, 0.78)?,
+                                ),
+                                GradientPoint::new(
+                                    Point::new(width * 0.92, height * 0.72),
+                                    Color::rgba(0.15, 1.0, 0.58, 0.72)?,
+                                ),
+                                GradientPoint::new(
+                                    Point::new(width * 0.50, height * 0.88),
+                                    Color::rgba(0.20, 0.32, 1.0, 0.72)?,
+                                ),
+                            ],
+                            LinearSrgb,
+                        )?,
                         Coverage::fill(Path::polygon([
                             Point::new(width * 0.62, height * 0.16),
                             Point::new(width * 0.92, height * 0.72),
@@ -120,6 +124,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 GradientStop::new(0.45, Color::rgba(0.1, 0.9, 1.0, 0.78)?)?,
                                 GradientStop::new(1.0, Color::rgba(0.08, 0.2, 0.8, 0.15)?)?,
                             ],
+                            LinearSrgb,
                         )?,
                         Coverage::fill(ellipse_path(
                             Point::new(width * 0.22, height * 0.23),
@@ -137,6 +142,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 GradientStop::new(0.75, Color::rgba(0.2, 0.4, 1.0, 0.82)?)?,
                                 GradientStop::new(1.0, Color::rgba(1.0, 0.15, 0.25, 0.82)?)?,
                             ],
+                            LinearSrgb,
                         )?,
                         Coverage::fill(ellipse_path(
                             Point::new(width * 0.76, height * 0.70),
@@ -168,11 +174,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             stroke_path.clone(),
                             -ribbon_width * 0.5,
                             ribbon_width * 0.5,
-                            ColorRamp::new([
-                                GradientStop::new(0.0, Color::rgba(0.35, 0.10, 1.0, 0.48)?)?,
-                                GradientStop::new(0.5, Color::rgba(0.15, 0.75, 1.0, 0.28)?)?,
-                                GradientStop::new(1.0, Color::rgba(0.10, 1.0, 0.55, 0.48)?)?,
-                            ])?,
+                            ColorRamp::new(
+                                [
+                                    GradientStop::new(0.0, Color::rgba(0.35, 0.10, 1.0, 0.48)?)?,
+                                    GradientStop::new(0.5, Color::rgba(0.15, 0.75, 1.0, 0.28)?)?,
+                                    GradientStop::new(1.0, Color::rgba(0.10, 1.0, 0.55, 0.48)?)?,
+                                ],
+                                LinearSrgb,
+                            )?,
                         )?,
                         Coverage::stroke(
                             stroke_path.clone(),
@@ -184,11 +193,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let stroke_layer = Canvas::draw(
                         AlongPathGradient::new(
                             stroke_path.clone(),
-                            ColorRamp::new([
-                                GradientStop::new(0.0, Color::rgba(1.0, 0.25, 0.72, 0.95)?)?,
-                                GradientStop::new(0.45, Color::rgba(1.0, 0.90, 0.12, 0.95)?)?,
-                                GradientStop::new(1.0, Color::rgba(0.10, 0.90, 1.0, 0.95)?)?,
-                            ])?,
+                            ColorRamp::new(
+                                [
+                                    GradientStop::new(0.0, Color::rgba(1.0, 0.25, 0.72, 0.95)?)?,
+                                    GradientStop::new(0.45, Color::rgba(1.0, 0.90, 0.12, 0.95)?)?,
+                                    GradientStop::new(1.0, Color::rgba(0.10, 0.90, 1.0, 0.95)?)?,
+                                ],
+                                LinearSrgb,
+                            )?,
                         ),
                         Coverage::stroke(
                             stroke_path,

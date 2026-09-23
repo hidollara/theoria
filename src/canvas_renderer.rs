@@ -1,8 +1,10 @@
 //! Backend-internal Canvas evaluation helpers shared by physical renderers.
 
 use crate::canvas::CanvasColor;
+use crate::color::RgbColorSpace;
 
 pub(crate) mod canvas_plan;
+pub(crate) mod color_space;
 pub(crate) mod mesh_paint;
 pub(crate) mod path_sampling;
 pub(crate) mod view_space;
@@ -16,12 +18,21 @@ pub(crate) trait WorkingColor: Copy {
     fn from_components(components: [f32; 4]) -> Self;
     fn components(self) -> [f32; 4];
 
-    fn interpolate(self, other: Self, amount: f32) -> Self {
-        let first = self.components();
-        let second = other.components();
-        Self::from_components(std::array::from_fn(|component| {
-            first[component] + (second[component] - first[component]) * amount
-        }))
+    fn interpolate(self, other: Self, amount: f32, space: RgbColorSpace) -> Self {
+        Self::from_components(color_space::interpolate_premultiplied_linear_srgba(
+            self.components(),
+            other.components(),
+            amount,
+            space,
+        ))
+    }
+
+    fn mix(colors: [Self; 3], weights: [f32; 3], space: RgbColorSpace) -> Self {
+        Self::from_components(color_space::mix_premultiplied_linear_srgba(
+            colors.map(Self::components),
+            weights,
+            space,
+        ))
     }
 
     fn max_component_difference(self, other: Self) -> f32 {
