@@ -27,6 +27,12 @@ pub trait ColorModel: 'static {
     type Coordinates<S: Sample>: ColorCoordinates<Sample = S>;
 
     const COMPONENTS: usize;
+
+    /// Maps coordinate samples without changing their model or channel order.
+    fn map_samples<S: Sample, T: Sample>(
+        coordinates: &Self::Coordinates<S>,
+        map: impl FnMut(S) -> T,
+    ) -> Self::Coordinates<T>;
 }
 
 macro_rules! fixed_model {
@@ -38,6 +44,13 @@ macro_rules! fixed_model {
             type Coordinates<S: Sample> = [S; $components];
 
             const COMPONENTS: usize = $components;
+
+            fn map_samples<S: Sample, T: Sample>(
+                coordinates: &Self::Coordinates<S>,
+                map: impl FnMut(S) -> T,
+            ) -> Self::Coordinates<T> {
+                coordinates.map(map)
+            }
         }
     };
 }
@@ -56,6 +69,13 @@ impl<const N: usize> ColorModel for DeviceN<N> {
     type Coordinates<S: Sample> = [S; N];
 
     const COMPONENTS: usize = N;
+
+    fn map_samples<S: Sample, T: Sample>(
+        coordinates: &Self::Coordinates<S>,
+        map: impl FnMut(S) -> T,
+    ) -> Self::Coordinates<T> {
+        coordinates.map(map)
+    }
 }
 
 #[cfg(test)]
@@ -70,5 +90,17 @@ mod tests {
         assert_eq!(rgb.as_slice(), &[1, 2, 3]);
         assert_eq!(cmyk.as_slice(), &[0.1, 0.2, 0.3, 0.4]);
         assert_eq!(<DeviceN<7> as ColorModel>::COMPONENTS, 7);
+    }
+
+    #[test]
+    fn mapping_samples_preserves_model_and_channel_order() {
+        assert_eq!(
+            Rgb::map_samples(&[0_u8, 128, 255], Sample::to_f64),
+            [0.0, 128.0 / 255.0, 1.0]
+        );
+        assert_eq!(
+            DeviceN::<4>::map_samples(&[1_u8, 2, 3, 4], f64::from),
+            [1.0, 2.0, 3.0, 4.0]
+        );
     }
 }

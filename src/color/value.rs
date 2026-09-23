@@ -64,9 +64,10 @@ where
     }
 }
 
-impl<P, A> Color<P, f64, A>
+impl<P, S, A> Color<P, S, A>
 where
     P: XyzD50Profile,
+    S: Sample,
     A: UnitSample,
 {
     /// Explicitly converts an authored color through D50-adapted CIE XYZ.
@@ -75,7 +76,8 @@ where
     /// This reference conversion does not perform gamut mapping or select an
     /// ICC rendering intent, and it does not set renderer working precision.
     pub fn convert_to<Q: XyzD50Profile>(&self, profile: Q) -> Result<Color<Q, f64, A>, ColorError> {
-        let xyz = self.profile.coordinates_to_xyz_d50(&self.coordinates);
+        let source = <P::Model as ColorModel>::map_samples(&self.coordinates, Sample::to_f64);
+        let xyz = self.profile.coordinates_to_xyz_d50(&source);
         let coordinates = profile.xyz_d50_to_coordinates(xyz);
         Color::new(profile, coordinates, self.opacity)
     }
@@ -202,6 +204,7 @@ fn validate_srgb(coordinates: [f32; 3]) -> Result<(), ColorError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::color::{LinearSrgb, XyzD50};
 
     #[test]
     fn a_typed_color_retains_its_authored_representation() {
@@ -248,5 +251,32 @@ mod tests {
             Color::rgba(1.0, 0.0, 0.0, -0.1),
             Err(ColorError::ComponentOutOfRange)
         );
+    }
+
+    #[test]
+    fn default_f32_color_converts_without_changing_its_authored_samples() {
+        let source = Color::rgba(0.25, 0.5, 0.75, 0.4).unwrap();
+        let xyz = source.convert_to(XyzD50).unwrap();
+        let restored = xyz.convert_to(Srgb).unwrap();
+
+        assert_eq!(*source.coordinates(), [0.25, 0.5, 0.75]);
+        assert_eq!(xyz.opacity(), source.opacity());
+        for (actual, expected) in restored.coordinates().iter().zip(source.coordinates()) {
+            assert!((actual - f64::from(*expected)).abs() < 0.000_01);
+        }
+    }
+
+    #[test]
+    fn integer_color_samples_are_normalized_only_when_converted() {
+        let source = Color::rgba8(255, 128, 0, 64);
+        let converted = source.convert_to(LinearSrgb).unwrap();
+        let restored = converted.convert_to(Srgb).unwrap();
+
+        assert_eq!(*source.coordinates(), [255, 128, 0]);
+        assert_eq!(source.opacity().sample(), 64);
+        assert_eq!(converted.opacity().sample(), 64);
+        for (actual, expected) in restored.coordinates().iter().zip([1.0, 128.0 / 255.0, 0.0]) {
+            assert!((actual - expected).abs() < 0.000_01);
+        }
     }
 }
