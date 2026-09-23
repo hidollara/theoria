@@ -4,6 +4,7 @@ mod profile;
 pub(crate) mod profile_data;
 mod rgb;
 mod sample;
+mod transfer;
 mod transform;
 mod value;
 mod white_point;
@@ -17,6 +18,9 @@ pub use profile::{
     Srgb, XyzD50, XyzD65,
 };
 pub use sample::{Opacity, Sample, UnitF32, UnitF64, UnitSample, UnitSampleError};
+pub use transfer::{
+    Transfer, TransferClut, TransferCurve, TransferError, TransferMatrix, TransferStage,
+};
 pub use transform::{RgbTransfer, RgbTransform};
 pub use value::{Color, ColorError};
 pub use white_point::{WhitePoint, WhitePointError};

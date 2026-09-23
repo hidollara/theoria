@@ -43,7 +43,7 @@ impl RgbTransfer {
         }
     }
 
-    fn decode_f64(self, value: f64) -> f64 {
+    pub(crate) fn decode_f64(self, value: f64) -> f64 {
         match self {
             Self::Linear => value,
             Self::Srgb => {
@@ -58,7 +58,7 @@ impl RgbTransfer {
         }
     }
 
-    fn encode_f64(self, value: f64) -> f64 {
+    pub(crate) fn encode_f64(self, value: f64) -> f64 {
         match self {
             Self::Linear => value,
             Self::Srgb => {
@@ -111,7 +111,7 @@ impl RgbTransform {
         self.to_xyz_d65
     }
 
-    pub const fn from_xyz_d65_matrix(self) -> [[f64; 3]; 3] {
+    pub const fn xyz_d65_to_rgb_matrix(self) -> [[f64; 3]; 3] {
         self.from_xyz_d65
     }
 
