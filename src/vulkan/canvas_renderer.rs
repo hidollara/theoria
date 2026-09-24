@@ -24,7 +24,7 @@ mod recording;
 mod resources;
 
 use crate::canvas_renderer::canvas_plan::{
-    collect_blend_shaders, collect_images, required_scratch_images,
+    collect_blend_shaders, collect_images, prepare_colors, required_scratch_images,
 };
 use crate::vulkan::one_shot::OneShotCommands;
 use recording::CanvasRecorder;
@@ -57,6 +57,9 @@ impl CanvasRenderer {
         canvas: &Canvas,
         view: CanvasView,
     ) -> Result<()> {
+        prepare_colors(canvas)?;
+        let clear_color = target.clear_color();
+        clear_color.prepare_linear_srgb()?;
         self.materialize_canvas_resources(canvas)?;
         let (image_view, format, extent) = target.surface();
         self.record_to_image_view(
@@ -67,7 +70,7 @@ impl CanvasRenderer {
             viewport,
             canvas,
             view,
-            PremultipliedLinearSrgba::from_color(target.clear_color()),
+            PremultipliedLinearSrgba::from_color(clear_color),
         )
     }
 
@@ -78,6 +81,7 @@ impl CanvasRenderer {
         canvas: &Canvas,
         view: CanvasView,
     ) -> Result<Arc<VulkanImage>> {
+        prepare_colors(canvas)?;
         let extent = vk::Extent2D { width, height };
         let format = vk::Format::R8G8B8A8_SRGB;
         self.gpu.ensure_image_cache(&self.device)?;

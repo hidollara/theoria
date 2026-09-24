@@ -1,5 +1,5 @@
 use crate::{
-    canvas::{CanvasColor, CanvasProfile, Coordinates},
+    canvas::{CanvasColor, CanvasIccColorError, CanvasProfile, Coordinates},
     color::{
         ColorTransform, LabD50, LinearSrgb, RgbColorSpace, XyzD50Profile, XyzD65, from_linear_srgb,
         to_linear_srgb,
@@ -7,8 +7,23 @@ use crate::{
 };
 
 impl CanvasColor {
+    /// Performs fallible ICC lowering once before a renderer records commands.
+    /// Clones of a Canvas color share the prepared coordinates, while the
+    /// original profile and device coordinates remain available on the Canvas.
+    pub(crate) fn prepare_linear_srgb(&self) -> Result<(), CanvasIccColorError> {
+        self.try_straight_rgba_in(LinearSrgb.into()).map(|_| ())
+    }
+
     /// Resolves the declared source color into a renderer-selected RGB space.
     pub(crate) fn straight_rgba_in(&self, space: RgbColorSpace) -> [f32; 4] {
+        self.try_straight_rgba_in(space)
+            .expect("ICC colors must be prepared before infallible rendering")
+    }
+
+    pub(crate) fn try_straight_rgba_in(
+        &self,
+        space: RgbColorSpace,
+    ) -> Result<[f32; 4], CanvasIccColorError> {
         let rgb = match &self.profile {
             CanvasProfile::Rgb(authored_space) => {
                 crate::color::convert_rgb(self.coordinates.as_f32(), *authored_space, space)
@@ -24,31 +39,46 @@ impl CanvasColor {
                 let xyz = LabD50.coordinates_to_xyz_d50(&self.coordinates.as_f64());
                 space.xyz_d50_to_coordinates(xyz).map(|value| value as f32)
             }
-            CanvasProfile::Icc { profile, intent } => {
+            CanvasProfile::Icc {
+                profile,
+                intent,
+                prepared_linear_srgb,
+            } => {
                 let Coordinates::Dynamic(coordinates) = &self.coordinates else {
                     unreachable!("ICC profile always stores dynamic device coordinates")
                 };
-                let source = profile
-                    .to_pcs(*intent)
-                    .expect("ICC transfer was validated when the Canvas color was declared");
-                let target = ColorTransform::pcs_to_rgb(profile.pcs(), space)
-                    .expect("predefined renderer RGB conversion is valid");
-                let transfer = source
-                    .then(&target)
-                    .expect("media-relative ICC PCS matches the renderer RGB conversion");
-                let converted = transfer
-                    .transfer()
-                    .evaluate(coordinates)
-                    .expect("validated ICC coordinates can be converted for rendering");
-                [
-                    converted[0] as f32,
-                    converted[1] as f32,
-                    converted[2] as f32,
-                ]
+                if space == RgbColorSpace::LinearSrgb {
+                    if let Some(cached) = prepared_linear_srgb.get() {
+                        *cached
+                    } else {
+                        let converted = convert_icc_color(profile, *intent, coordinates, space)?;
+                        let _ = prepared_linear_srgb.set(converted);
+                        converted
+                    }
+                } else {
+                    convert_icc_color(profile, *intent, coordinates, space)?
+                }
             }
         };
-        [rgb[0], rgb[1], rgb[2], self.opacity.as_f32()]
+        Ok([rgb[0], rgb[1], rgb[2], self.opacity.as_f32()])
     }
+}
+
+fn convert_icc_color(
+    profile: &crate::color::IccProfile,
+    intent: crate::color::IccRenderingIntent,
+    coordinates: &[f64],
+    space: RgbColorSpace,
+) -> Result<[f32; 3], CanvasIccColorError> {
+    let source = profile.to_pcs(intent)?;
+    let target = ColorTransform::pcs_to_rgb(profile.pcs(), space)?;
+    let transfer = source.then(&target)?;
+    let converted = transfer.transfer().evaluate(coordinates)?;
+    Ok([
+        converted[0] as f32,
+        converted[1] as f32,
+        converted[2] as f32,
+    ])
 }
 
 pub(crate) fn lower_straight_color(color: &CanvasColor) -> [f32; 4] {

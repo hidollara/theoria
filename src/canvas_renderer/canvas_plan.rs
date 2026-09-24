@@ -1,6 +1,69 @@
 use crate::canvas::{
-    BlendShader, Canvas, CanvasNode, ColorField, Composite, CoverageNode, Draw, image::Image,
+    BlendShader, Canvas, CanvasIccColorError, CanvasNode, ColorField, Composite, CoverageNode,
+    Draw, image::Image,
 };
+
+/// Resolves fallible authored colors before either backend starts recording.
+/// The prepared linear-sRGB values are shared with the Canvas's cloned colors.
+pub(crate) fn prepare_colors(canvas: &Canvas) -> Result<(), CanvasIccColorError> {
+    match canvas.node() {
+        CanvasNode::Draw(draw) => {
+            prepare_color_field(&draw.source)?;
+            if let CoverageNode::AlphaOf(source) = draw.coverage.node() {
+                prepare_color_field(source)?;
+            }
+        }
+        CanvasNode::Transform { content, .. } => prepare_colors(content)?,
+        CanvasNode::Composite {
+            backdrop, source, ..
+        } => {
+            prepare_colors(backdrop)?;
+            prepare_colors(source)?;
+        }
+    }
+    Ok(())
+}
+
+fn prepare_color_field(source: &ColorField) -> Result<(), CanvasIccColorError> {
+    match source {
+        ColorField::Solid(color) => color.prepare_linear_srgb()?,
+        ColorField::LinearGradient(gradient) => {
+            for stop in gradient.stops() {
+                stop.color().prepare_linear_srgb()?;
+            }
+        }
+        ColorField::RadialGradient(gradient) => {
+            for stop in gradient.stops() {
+                stop.color().prepare_linear_srgb()?;
+            }
+        }
+        ColorField::ConicGradient(gradient) => {
+            for stop in gradient.stops() {
+                stop.color().prepare_linear_srgb()?;
+            }
+        }
+        ColorField::AlongPathGradient(gradient) => {
+            for stop in gradient.ramp().stops() {
+                stop.color().prepare_linear_srgb()?;
+            }
+        }
+        ColorField::AcrossPathGradient(gradient) => {
+            for stop in gradient.ramp().stops() {
+                stop.color().prepare_linear_srgb()?;
+            }
+        }
+        ColorField::MeshGradient(gradient) => {
+            for triangle in gradient.triangles() {
+                for point in triangle {
+                    point.color().prepare_linear_srgb()?;
+                }
+            }
+        }
+        ColorField::Canvas(canvas) => prepare_colors(canvas)?,
+        ColorField::Image(_) | ColorField::Transparent => {}
+    }
+    Ok(())
+}
 
 /// Collects the blend programs needed to record this Canvas. Canvas images are
 /// materialized separately and therefore run their own collection pass.
@@ -164,5 +227,22 @@ mod tests {
         assert_eq!(shaders.len(), 2);
         assert!(shaders.contains(BlendShader::identity()));
         assert!(shaders.contains(Blend::new(BlendMode::Multiply, Srgb).shader()));
+    }
+
+    #[test]
+    fn renderer_prepares_icc_colors_before_recording() {
+        let profile =
+            crate::color::IccProfile::from_bytes(include_bytes!("../color/fixtures/sRGB-v4.icc"))
+                .unwrap();
+        let color = crate::canvas::CanvasColor::from_icc(
+            &profile,
+            vec![0.25, 0.5, 0.75],
+            crate::color::UnitF32::ONE,
+            crate::color::IccRenderingIntent::RelativeColorimetric,
+        )
+        .unwrap();
+        let canvas = Canvas::draw(color.clone(), Coverage::all());
+        prepare_colors(&canvas).unwrap();
+        assert!(color.straight_rgba_in(crate::color::RgbColorSpace::LinearSrgb)[0] > 0.0);
     }
 }

@@ -9,7 +9,8 @@ use crate::{
     },
     canvas_renderer::{
         canvas_plan::{
-            can_record_directly, collect_blend_shaders, collect_images, required_scratch_images,
+            can_record_directly, collect_blend_shaders, collect_images, prepare_colors,
+            required_scratch_images,
         },
         mesh_paint::paint_triangle_prepared,
         path_sampling::PathSampler,
@@ -110,6 +111,8 @@ impl CanvasRenderer {
         if target.size.width == 0 || target.size.height == 0 {
             return Ok(());
         }
+        prepare_colors(canvas)?;
+        target.clear_color.prepare_linear_srgb()?;
         self.materialize_canvas_resources(canvas)?;
         self.render_to_view(target, viewport, canvas, view);
         Ok(())
@@ -145,6 +148,7 @@ impl CanvasRenderer {
         if self.images.contains_canvas(image) {
             return Ok(());
         }
+        prepare_colors(image.content())?;
         self.materialize_canvas_resources(image.content())?;
         let backing = create_working_image(
             &self.device,

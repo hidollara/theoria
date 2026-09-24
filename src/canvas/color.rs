@@ -1,9 +1,13 @@
-use std::{error::Error, fmt, sync::Arc};
+use std::{
+    error::Error,
+    fmt,
+    sync::{Arc, OnceLock},
+};
 
 use crate::color::{
-    Color, ColorProfile, IccProfile, IccProfileError, IccRenderingIntent, LabD50, Opacity,
-    ReferenceSample, Rgb, RgbColorSpace, Sample, TransferError, UnitF32, UnitF64, UnitSample,
-    XyzD50, XyzD65,
+    Color, ColorProfile, ColorTransformError, IccProfile, IccProfileError, IccRenderingIntent,
+    LabD50, Opacity, ReferenceSample, Rgb, RgbColorSpace, Sample, TransferError, UnitF32, UnitF64,
+    UnitSample, XyzD50, XyzD65,
 };
 
 /// A logical color whose concrete representation has been erased at the
@@ -24,6 +28,7 @@ pub(crate) enum CanvasProfile {
     Icc {
         profile: Arc<IccProfile>,
         intent: IccRenderingIntent,
+        prepared_linear_srgb: Arc<OnceLock<[f32; 3]>>,
     },
 }
 
@@ -38,10 +43,12 @@ impl PartialEq for CanvasProfile {
                 Self::Icc {
                     profile: left,
                     intent: left_intent,
+                    ..
                 },
                 Self::Icc {
                     profile: right,
                     intent: right_intent,
+                    ..
                 },
             ) => left.device_space() == right.device_space() && left_intent == right_intent,
             _ => false,
@@ -119,11 +126,11 @@ impl CanvasColor {
         {
             return Err(CanvasIccColorError::InvalidCoordinates);
         }
-        profile.to_pcs(intent)?.transfer().evaluate(&coordinates)?;
         Ok(Self {
             profile: CanvasProfile::Icc {
                 profile: Arc::new(profile.clone()),
                 intent,
+                prepared_linear_srgb: Arc::new(OnceLock::new()),
             },
             coordinates: Coordinates::Dynamic(coordinates),
             opacity: Alpha::F32(opacity),
@@ -276,7 +283,14 @@ pub enum CanvasIccColorError {
     AbsoluteIntent,
     InvalidCoordinates,
     Profile(IccProfileError),
+    Transform(ColorTransformError),
     Transfer(TransferError),
+}
+
+impl From<ColorTransformError> for CanvasIccColorError {
+    fn from(error: ColorTransformError) -> Self {
+        Self::Transform(error)
+    }
 }
 
 impl From<IccProfileError> for CanvasIccColorError {
@@ -299,6 +313,7 @@ impl fmt::Display for CanvasIccColorError {
             }
             Self::InvalidCoordinates => formatter.write_str("ICC device coordinates are invalid"),
             Self::Profile(error) => error.fmt(formatter),
+            Self::Transform(error) => error.fmt(formatter),
             Self::Transfer(error) => error.fmt(formatter),
         }
     }
@@ -308,6 +323,7 @@ impl Error for CanvasIccColorError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Profile(error) => Some(error),
+            Self::Transform(error) => Some(error),
             Self::Transfer(error) => Some(error),
             _ => None,
         }
@@ -338,6 +354,7 @@ mod tests {
         let CanvasProfile::Icc {
             profile: stored_profile,
             intent,
+            ..
         } = &color.profile
         else {
             panic!("Canvas must retain the declared ICC profile, not a conversion plan")
@@ -383,6 +400,51 @@ mod tests {
             ),
             Err(CanvasIccColorError::AbsoluteIntent)
         ));
+    }
+
+    #[test]
+    fn icc_transfer_failure_is_reported_during_renderer_preparation() {
+        let mut raw = moxcms::ColorProfile::new_srgb();
+        raw.red_trc = None;
+        raw.green_trc = None;
+        raw.blue_trc = None;
+        let profile = IccProfile::from_bytes(&raw.encode().unwrap()).unwrap();
+        let color = CanvasColor::from_icc(
+            &profile,
+            vec![0.25, 0.5, 0.75],
+            UnitF32::ONE,
+            IccRenderingIntent::RelativeColorimetric,
+        )
+        .unwrap();
+
+        assert!(color.prepare_linear_srgb().is_err());
+    }
+
+    #[test]
+    fn prepared_icc_color_is_shared_by_clones_without_rewriting_authored_data() {
+        let profile =
+            IccProfile::from_bytes(include_bytes!("../color/fixtures/sRGB-v4.icc")).unwrap();
+        let color = CanvasColor::from_icc(
+            &profile,
+            vec![0.25, 0.5, 0.75],
+            UnitF32::ONE,
+            IccRenderingIntent::RelativeColorimetric,
+        )
+        .unwrap();
+        let clone = color.clone();
+        color.prepare_linear_srgb().unwrap();
+        let CanvasProfile::Icc {
+            prepared_linear_srgb,
+            ..
+        } = &clone.profile
+        else {
+            unreachable!()
+        };
+        assert!(prepared_linear_srgb.get().is_some());
+        assert_eq!(
+            clone.coordinates,
+            Coordinates::Dynamic(vec![0.25, 0.5, 0.75].into())
+        );
     }
 
     #[test]
