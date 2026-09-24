@@ -45,6 +45,7 @@ static ABSOLUTE_LAB_D50_KEY: LazyLock<ColorSpaceKey> =
 #[derive(Clone, Debug)]
 pub struct IccProfile {
     parsed: Arc<ParsedProfile>,
+    original_bytes: Option<Arc<[u8]>>,
     pcs: IccPcs,
     device_space: ColorSpaceKey,
     mpe: MpeTags,
@@ -84,6 +85,7 @@ impl IccProfile {
         };
         let mpe = MpeTags::parse(bytes).map_err(|_| IccProfileError::MalformedTransfer)?;
         let mut profile = Self::from_parsed(parsed, pcs);
+        profile.original_bytes = Some(Arc::from(bytes));
         profile.mpe = mpe;
         Ok(profile)
     }
@@ -92,6 +94,7 @@ impl IccProfile {
         let channels = NonZeroUsize::new(color_space_channels(parsed.color_space)).unwrap();
         Self {
             parsed: Arc::new(parsed),
+            original_bytes: None,
             pcs,
             device_space: ColorSpaceKey::new(channels),
             mpe: MpeTags::default(),
@@ -100,6 +103,12 @@ impl IccProfile {
 
     pub const fn pcs(&self) -> IccPcs {
         self.pcs
+    }
+
+    /// Returns the exact loaded ICC payload for embedding in an encoded image.
+    /// Profiles synthesized internally for tests do not have source bytes.
+    pub fn original_bytes(&self) -> Option<&[u8]> {
+        self.original_bytes.as_deref()
     }
 
     pub fn device_channels(&self) -> usize {
@@ -747,6 +756,14 @@ mod tests {
                 assert!((actual - expected).abs() < 0.01, "{actual} != {expected}");
             }
         }
+    }
+
+    #[test]
+    fn loaded_profile_retains_exact_bytes_for_image_metadata() {
+        let bytes = include_bytes!("fixtures/DisplayP3-v4.icc");
+        let profile = IccProfile::from_bytes(bytes).unwrap();
+        assert_eq!(profile.original_bytes(), Some(bytes.as_slice()));
+        assert_eq!(profile.clone().original_bytes(), Some(bytes.as_slice()));
     }
 
     fn simple_lut(curve: ToneReprCurve) -> LutWarehouse {
