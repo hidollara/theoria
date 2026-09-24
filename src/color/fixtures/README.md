@@ -5,6 +5,7 @@ released under [CC0 1.0](https://github.com/saucecontrol/Compact-ICC-Profiles/bl
 - `sRGB-v4.icc`
 - `DisplayP3-v4.icc`
 - `sGrey-v4.icc`
+- `CGATS001Compat-v2-micro.icc` (CMYK, perceptual input transform only)
 
 They exercise profile parsing and color conversion against real ICC v4 files,
 in addition to the generated profiles used by the other tests.

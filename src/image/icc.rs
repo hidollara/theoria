@@ -197,4 +197,33 @@ mod tests {
         assert_eq!(encoded.pixels().len(), 2);
         assert_eq!(encoded.pixels()[1], 255);
     }
+
+    #[test]
+    fn real_cmyk_profile_can_enter_the_canvas_image_pipeline() {
+        let profile = IccProfile::from_bytes(include_bytes!(
+            "../color/fixtures/CGATS001Compat-v2-micro.icc"
+        ))
+        .unwrap();
+        assert_eq!(profile.device_channels(), 4);
+        let image = IccRasterImage::new(
+            1,
+            1,
+            vec![32, 64, 96, 128, 200],
+            profile,
+            IccRenderingIntent::Perceptual,
+            true,
+        )
+        .unwrap();
+        let converted = convert_icc8_to_rgba8(
+            1,
+            image.pixels(),
+            image.profile(),
+            image.intent(),
+            image.has_alpha(),
+        )
+        .unwrap();
+        assert_eq!(converted.samples().len(), 4);
+        assert_eq!(converted.samples()[3], 200);
+        assert!(converted.samples()[..3].iter().any(|&value| value != 0));
+    }
 }
