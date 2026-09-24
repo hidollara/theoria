@@ -83,7 +83,9 @@ impl IccTransfer {
     ///
     /// Profiles with different PCS representations are bridged through actual
     /// D50 XYZ/Lab coordinates; identical channel counts alone do not imply
-    /// compatible coordinates.
+    /// compatible coordinates. This low-level method returns only the
+    /// operation sequence. Use [`super::IccProfile::connect_to`] when the
+    /// resulting transform must retain both device-space identities.
     pub fn connect(&self, destination: &Self) -> Result<Transfer, IccTransferError> {
         if self.direction != IccTransferDirection::DeviceToPcs
             || destination.direction != IccTransferDirection::PcsToDevice

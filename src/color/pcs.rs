@@ -1,5 +1,5 @@
 /// ICC D50 PCS white, expressed as actual XYZ tristimulus values.
-const ICC_D50: [f64; 3] = [0.9642, 1.0, 0.8249];
+pub(super) const ICC_D50: [f64; 3] = [0.9642, 1.0, 0.8249];
 const DELTA: f64 = 6.0 / 29.0;
 const EPSILON: f64 = DELTA * DELTA * DELTA;
 

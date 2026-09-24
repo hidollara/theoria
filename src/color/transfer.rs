@@ -413,12 +413,13 @@ impl TransferMatrix {
     }
 }
 
-/// An ICC-style multidimensional lookup table with normalized samples.
+/// An ICC-style multidimensional lookup table.
 ///
 /// The first input channel varies least rapidly in `values`; output channels
 /// are interleaved at each grid point. Evaluation uses multilinear
 /// interpolation. This representation is independent of ICC's 8-/16-bit
 /// storage encoding, which a profile decoder must normalize when loading.
+/// Float32 MPE tables may contain values outside the normalized range.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TransferClut {
     grid: Arc<[u8]>,
@@ -444,11 +445,7 @@ impl TransferClut {
             }
             entries = entries.and_then(|count| count.checked_mul(usize::from(points)));
         }
-        if entries != Some(values.len())
-            || values
-                .iter()
-                .any(|value| !value.is_finite() || !(0.0..=1.0).contains(value))
-        {
+        if entries != Some(values.len()) || values.iter().any(|value| !value.is_finite()) {
             return Err(TransferError::InvalidClutShape);
         }
         Ok(Self {
@@ -550,14 +547,86 @@ enum CurveKind {
         function: u16,
         parameters: Arc<[f64]>,
     },
+    Mpe(Arc<[MpeSegment]>),
     SrgbDecode,
     SrgbEncode,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct MpeSegment {
+    pub upper: f64,
+    pub kind: MpeSegmentKind,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(super) enum MpeSegmentKind {
+    Formula { function: u16, parameters: Vec<f64> },
+    Sampled { lower: f64, samples: Vec<f64> },
+}
+
+impl MpeSegment {
+    pub(super) fn evaluate(&self, value: f64) -> f64 {
+        match &self.kind {
+            MpeSegmentKind::Formula {
+                function,
+                parameters,
+            } => match function {
+                0 => (parameters[1] * value + parameters[2]).powf(parameters[0]) + parameters[3],
+                1 => {
+                    parameters[1]
+                        * (parameters[2] * value.powf(parameters[0]) + parameters[3]).log10()
+                        + parameters[4]
+                }
+                2 => {
+                    parameters[0] * parameters[1].powf(parameters[2] * value + parameters[3])
+                        + parameters[4]
+                }
+                _ => unreachable!(),
+            },
+            MpeSegmentKind::Sampled { lower, samples } => {
+                let position = (value - lower) / (self.upper - lower) * (samples.len() - 1) as f64;
+                let index = (position.floor() as usize).min(samples.len() - 2);
+                let amount = position - index as f64;
+                samples[index] + (samples[index + 1] - samples[index]) * amount
+            }
+        }
+    }
 }
 
 impl TransferCurve {
     pub const IDENTITY: Self = Self(CurveKind::Identity);
     pub const SRGB_DECODE: Self = Self(CurveKind::SrgbDecode);
     pub const SRGB_ENCODE: Self = Self(CurveKind::SrgbEncode);
+
+    pub(super) fn mpe(segments: Vec<MpeSegment>) -> Result<Self, TransferError> {
+        if segments.is_empty()
+            || segments.iter().any(|segment| match &segment.kind {
+                MpeSegmentKind::Formula {
+                    function,
+                    parameters,
+                } => {
+                    let expected = match function {
+                        0 => 4,
+                        1 | 2 => 5,
+                        _ => 0,
+                    };
+                    expected == 0
+                        || parameters.len() != expected
+                        || parameters.iter().any(|value| !value.is_finite())
+                }
+                MpeSegmentKind::Sampled { lower, samples } => {
+                    !lower.is_finite()
+                        || !segment.upper.is_finite()
+                        || segment.upper <= *lower
+                        || samples.len() < 2
+                        || samples.iter().any(|value| !value.is_finite())
+                }
+            })
+        {
+            return Err(TransferError::InvalidCurve);
+        }
+        Ok(Self(CurveKind::Mpe(segments.into())))
+    }
 
     pub fn gamma(exponent: f64) -> Result<Self, TransferError> {
         if !exponent.is_finite() || exponent <= 0.0 {
@@ -650,6 +719,11 @@ impl TransferCurve {
                 };
                 result.clamp(0.0, 1.0)
             }
+            CurveKind::Mpe(segments) => segments
+                .iter()
+                .find(|segment| value <= segment.upper)
+                .unwrap_or_else(|| segments.last().unwrap())
+                .evaluate(value),
             CurveKind::SrgbDecode => RgbTransfer::Srgb.decode_f64(value),
             CurveKind::SrgbEncode => RgbTransfer::Srgb.encode_f64(value),
         }
@@ -734,6 +808,70 @@ impl TransferCurve {
                 helpers.push_str(&format!(
                     "fn {name}(value: f32) -> f32 {{\n    let x = clamp(value, 0.0, 1.0);\n    if {condition} {{ return clamp({high}, 0.0, 1.0); }}\n    return clamp({low}, 0.0, 1.0);\n}}\n"
                 ));
+                Ok(format!("{name}({source})"))
+            }
+            CurveKind::Mpe(segments) => {
+                let mut body = String::new();
+                for (index, segment) in segments.iter().enumerate() {
+                    let expression = match &segment.kind {
+                        MpeSegmentKind::Formula {
+                            function,
+                            parameters,
+                        } => {
+                            let p = parameters
+                                .iter()
+                                .copied()
+                                .map(wgsl_literal)
+                                .collect::<Result<Vec<_>, _>>()?;
+                            match function {
+                                0 => {
+                                    format!("pow({} * value + {}, {}) + {}", p[1], p[2], p[0], p[3])
+                                }
+                                1 => format!(
+                                    "{} * log({} * pow(value, {}) + {}) / 2.302585092994046 + {}",
+                                    p[1], p[2], p[0], p[3], p[4]
+                                ),
+                                2 => format!(
+                                    "{} * pow({}, {} * value + {}) + {}",
+                                    p[0], p[1], p[2], p[3], p[4]
+                                ),
+                                _ => unreachable!(),
+                            }
+                        }
+                        MpeSegmentKind::Sampled { lower, samples } => {
+                            let table_name = format!("{name}_segment_{index}");
+                            let (table, offset) = tables.add(
+                                &table_name,
+                                samples,
+                                helpers,
+                                Some(MAX_INLINE_TABLE_VALUES),
+                            )?;
+                            let lower = wgsl_literal(*lower)?;
+                            let upper = wgsl_literal(segment.upper)?;
+                            let count = samples.len() - 1;
+                            helpers.push_str(&format!(
+                                "fn {table_name}_read(value: f32) -> f32 {{\n\
+                                 let position = clamp((value - {lower}) / ({upper} - {lower}) * {count}.0, 0.0, {count}.0);\n\
+                                 let index = min(u32(floor(position)), {}u);\n\
+                                 return mix({table}[{}u + index], {table}[{}u + index + 1u], position - f32(index));\n\
+                                 }}\n",
+                                count - 1,
+                                offset,
+                                offset,
+                            ));
+                            format!("{table_name}_read(value)")
+                        }
+                    };
+                    if segment.upper.is_finite() {
+                        body.push_str(&format!(
+                            "    if value <= {} {{ return {expression}; }}\n",
+                            wgsl_literal(segment.upper)?
+                        ));
+                    } else {
+                        body.push_str(&format!("    return {expression};\n"));
+                    }
+                }
+                helpers.push_str(&format!("fn {name}(value: f32) -> f32 {{\n{body}}}\n"));
                 Ok(format!("{name}({source})"))
             }
             CurveKind::SrgbDecode | CurveKind::SrgbEncode => {

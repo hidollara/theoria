@@ -1,3 +1,10 @@
+use std::{
+    fmt,
+    hash::{Hash, Hasher},
+    num::NonZeroUsize,
+    sync::{Arc, LazyLock},
+};
+
 use super::profile_data::{
     LINEAR_P3_TO_XYZ_D65, LINEAR_SRGB_TO_XYZ_D65, XYZ_D65_TO_LINEAR_P3, XYZ_D65_TO_LINEAR_SRGB,
 };
@@ -121,11 +128,116 @@ rgb_color_space!(LinearSrgb, LinearSrgb);
 rgb_color_space!(DisplayP3, DisplayP3);
 rgb_color_space!(LinearDisplayP3, LinearDisplayP3);
 
+#[derive(Debug)]
+struct ColorSpaceIdentity {
+    channels: NonZeroUsize,
+}
+
+/// An opaque identity for one coordinate space, independent of its profile data.
+///
+/// Clone a key to label another transform with the same coordinates. Creating
+/// another key, even with the same channel count, denotes a different space.
+/// A key keeps only this small identity alive, not an ICC profile or its LUTs.
+#[derive(Clone)]
+pub struct ColorSpaceKey(Arc<ColorSpaceIdentity>);
+
+impl ColorSpaceKey {
+    /// Creates a distinct space with the specified number of channels.
+    pub fn new(channels: NonZeroUsize) -> Self {
+        Self(Arc::new(ColorSpaceIdentity { channels }))
+    }
+
+    pub fn channels(&self) -> usize {
+        self.0.channels.get()
+    }
+}
+
+impl PartialEq for ColorSpaceKey {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for ColorSpaceKey {}
+
+impl Hash for ColorSpaceKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        Arc::as_ptr(&self.0).hash(state);
+    }
+}
+
+impl fmt::Debug for ColorSpaceKey {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ColorSpaceKey")
+            .field("identity", &Arc::as_ptr(&self.0))
+            .field("channels", &self.channels())
+            .finish()
+    }
+}
+
+macro_rules! predefined_space {
+    ($profile:ty, $key:ident) => {
+        static $key: LazyLock<ColorSpaceKey> =
+            LazyLock::new(|| ColorSpaceKey::new(NonZeroUsize::new(3).unwrap()));
+
+        impl From<$profile> for ColorSpaceKey {
+            fn from(_: $profile) -> Self {
+                (*$key).clone()
+            }
+        }
+    };
+}
+
+predefined_space!(Srgb, SRGB_KEY);
+predefined_space!(LinearSrgb, LINEAR_SRGB_KEY);
+predefined_space!(DisplayP3, DISPLAY_P3_KEY);
+predefined_space!(LinearDisplayP3, LINEAR_DISPLAY_P3_KEY);
+predefined_space!(XyzD50, XYZ_D50_KEY);
+predefined_space!(XyzD65, XYZ_D65_KEY);
+predefined_space!(LabD50, LAB_D50_KEY);
+
+impl From<RgbColorSpace> for ColorSpaceKey {
+    fn from(space: RgbColorSpace) -> Self {
+        match space {
+            RgbColorSpace::Srgb => Srgb.into(),
+            RgbColorSpace::LinearSrgb => LinearSrgb.into(),
+            RgbColorSpace::DisplayP3 => DisplayP3.into(),
+            RgbColorSpace::LinearDisplayP3 => LinearDisplayP3.into(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
 
     fn assert_rgb_profile<P: ColorProfile<Model = Rgb>>() {}
+
+    #[test]
+    fn predefined_spaces_have_canonical_keys() {
+        assert_eq!(ColorSpaceKey::from(Srgb), ColorSpaceKey::from(Srgb));
+        assert_eq!(
+            ColorSpaceKey::from(Srgb),
+            ColorSpaceKey::from(RgbColorSpace::Srgb)
+        );
+        assert_ne!(ColorSpaceKey::from(Srgb), ColorSpaceKey::from(LinearSrgb));
+        assert_ne!(ColorSpaceKey::from(XyzD50), ColorSpaceKey::from(XyzD65));
+    }
+
+    #[test]
+    fn cloned_custom_key_preserves_identity_without_equating_channel_counts() {
+        let first = ColorSpaceKey::new(NonZeroUsize::new(4).unwrap());
+        let same = first.clone();
+        let separate = ColorSpaceKey::new(NonZeroUsize::new(4).unwrap());
+        assert_eq!(first, same);
+        assert_ne!(first, separate);
+        assert_eq!(first.channels(), 4);
+        let keys = HashSet::from([first]);
+        assert!(keys.contains(&same));
+        assert!(!keys.contains(&separate));
+    }
 
     #[test]
     fn profiles_declare_their_coordinate_model() {
