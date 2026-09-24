@@ -1,3 +1,4 @@
+mod icc;
 mod pixel_format;
 mod raster;
 
@@ -14,3 +15,4 @@ pub type Srgba8Image = RasterImage<Rgba8, Srgb>;
 
 /// Validation failures produced while creating an [`Srgba8Image`].
 pub type Srgba8ImageError = RasterImageError;
+pub use icc::{IccImageError, IccRasterImage};

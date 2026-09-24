@@ -1,14 +1,19 @@
-use std::{error::Error, fmt, sync::Arc};
+use std::{fmt, sync::Arc};
 
 use crate::{
     color::{
         DisplayP3, IccProfile, IccRenderingIntent, LinearDisplayP3, LinearSrgb, RgbColorSpace, Srgb,
     },
-    image::{AlphaAssociation, RasterImage, RasterImageInstanceKey, RasterPlane, Rgb8, Rgba8},
+    image::{
+        AlphaAssociation, IccRasterImage, RasterImage, RasterImageInstanceKey, RasterPlane, Rgb8,
+        Rgba8,
+    },
     transform::Projective2,
 };
 
 use super::canvas_image::CanvasImage;
+
+pub use crate::image::IccImageError;
 
 /// A finite image that can be sampled by a Canvas.
 ///
@@ -44,63 +49,28 @@ pub(crate) enum RasterImageView<'a> {
     },
 }
 
-#[derive(Debug)]
-struct Icc8Source {
-    owner: Arc<()>,
-    width: u32,
-    height: u32,
-    pixels: Arc<[u8]>,
-    profile: IccProfile,
-    intent: IccRenderingIntent,
-    has_alpha: bool,
-}
-
-impl RasterImageSource for Icc8Source {
+impl RasterImageSource for IccRasterImage {
     fn width(&self) -> u32 {
-        self.width
+        self.width()
     }
 
     fn height(&self) -> u32 {
-        self.height
+        self.height()
     }
 
     fn instance_key(&self) -> RasterImageInstanceKey {
-        RasterImageInstanceKey::from_owner(&self.owner)
+        self.instance_key()
     }
 
     fn view(&self) -> RasterImageView<'_> {
         RasterImageView::Icc8 {
-            pixels: &self.pixels,
-            profile: &self.profile,
-            intent: self.intent,
-            has_alpha: self.has_alpha,
+            pixels: self.pixels(),
+            profile: self.profile(),
+            intent: self.intent(),
+            has_alpha: self.has_alpha(),
         }
     }
 }
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum IccImageError {
-    Empty,
-    DimensionsTooLarge,
-    InvalidDataLength { expected: usize, actual: usize },
-    AbsoluteIntent,
-}
-
-impl fmt::Display for IccImageError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Empty => formatter.write_str("ICC image dimensions must be non-zero"),
-            Self::DimensionsTooLarge => formatter.write_str("ICC image dimensions are too large"),
-            Self::InvalidDataLength { expected, actual } => {
-                write!(formatter, "ICC image needs {expected} bytes, got {actual}")
-            }
-            Self::AbsoluteIntent => formatter
-                .write_str("absolute ICC image conversion needs an explicit destination profile"),
-        }
-    }
-}
-
-impl Error for IccImageError {}
 
 #[derive(Debug)]
 struct Rgb8Source<P>
@@ -188,36 +158,7 @@ impl Image {
         intent: IccRenderingIntent,
         has_alpha: bool,
     ) -> Result<Self, IccImageError> {
-        if width == 0 || height == 0 {
-            return Err(IccImageError::Empty);
-        }
-        if intent == IccRenderingIntent::AbsoluteColorimetric {
-            return Err(IccImageError::AbsoluteIntent);
-        }
-        let pixels = pixels.into();
-        let channels = profile.device_channels() + usize::from(has_alpha);
-        let expected = usize::try_from(width)
-            .ok()
-            .and_then(|width| width.checked_mul(usize::try_from(height).ok()?))
-            .and_then(|pixels| pixels.checked_mul(channels))
-            .ok_or(IccImageError::DimensionsTooLarge)?;
-        if pixels.len() != expected {
-            return Err(IccImageError::InvalidDataLength {
-                expected,
-                actual: pixels.len(),
-            });
-        }
-        Ok(Self {
-            kind: ImageKind::Raster(Arc::new(Icc8Source {
-                owner: Arc::new(()),
-                width,
-                height,
-                pixels,
-                profile,
-                intent,
-                has_alpha,
-            })),
-        })
+        IccRasterImage::new(width, height, pixels, profile, intent, has_alpha).map(Into::into)
     }
 
     pub fn width(&self) -> u32 {
@@ -296,6 +237,14 @@ impl From<CanvasImage> for Image {
     fn from(image: CanvasImage) -> Self {
         Self {
             kind: ImageKind::Canvas(image),
+        }
+    }
+}
+
+impl From<IccRasterImage> for Image {
+    fn from(image: IccRasterImage) -> Self {
+        Self {
+            kind: ImageKind::Raster(Arc::new(image)),
         }
     }
 }

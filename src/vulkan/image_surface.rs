@@ -5,7 +5,8 @@ use std::error::Error;
 use ash::vk;
 
 use crate::{
-    image::Srgba8Image,
+    color::{IccProfile, IccRenderingIntent},
+    image::{IccRasterImage, Srgba8Image},
     surface::{SurfaceContent, SurfaceSize, Viewport},
     vulkan::{
         CanvasRenderer,
@@ -152,6 +153,19 @@ impl ImageSurface {
         let mut pixels = self.readback.read()?;
         encode_linear_premultiplied_rgba8_as_straight_srgba8(&mut pixels);
         Ok(Srgba8Image::new(size.width, size.height, pixels)?)
+    }
+
+    /// Renders to a CPU-readable image encoded in the selected ICC profile.
+    /// The existing sRGBA8 readback is used as an intermediate until a GPU
+    /// output-transfer path is available; source Canvas colors stay unchanged.
+    pub fn render_icc(
+        &mut self,
+        content: &SurfaceContent,
+        profile: IccProfile,
+        intent: IccRenderingIntent,
+    ) -> Result<IccRasterImage> {
+        let image = self.render(content)?;
+        IccRasterImage::from_srgba8(&image, profile, intent)
     }
 }
 
