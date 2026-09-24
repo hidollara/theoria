@@ -20,7 +20,7 @@ use super::transfer::{
 };
 
 /// The requested rendering intent for selecting a profile conversion.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum IccRenderingIntent {
     Perceptual,
     RelativeColorimetric,

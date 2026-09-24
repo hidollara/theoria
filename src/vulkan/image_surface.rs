@@ -74,6 +74,38 @@ impl ImageSurface {
     /// Evaluates the latest content into one CPU-readable sRGBA8 image.
     pub fn render(&mut self, content: &SurfaceContent) -> Result<Srgba8Image> {
         let size = self.size;
+        let mut pixels = self.render_raw(content, None)?;
+        encode_linear_premultiplied_rgba8_as_straight_srgba8(&mut pixels);
+        Ok(Srgba8Image::new(size.width, size.height, pixels)?)
+    }
+
+    /// Renders directly into ICC device RGB coordinates on the GPU and returns
+    /// straight-alpha samples suitable for embedding with the same profile.
+    pub fn render_icc(
+        &mut self,
+        content: &SurfaceContent,
+        profile: IccProfile,
+        intent: IccRenderingIntent,
+    ) -> Result<IccRasterImage> {
+        let size = self.size;
+        let mut pixels = self.render_raw(content, Some((&profile, intent)))?;
+        unpremultiply_rgba8(&mut pixels);
+        Ok(IccRasterImage::new(
+            size.width,
+            size.height,
+            pixels,
+            profile,
+            intent,
+            true,
+        )?)
+    }
+
+    fn render_raw(
+        &mut self,
+        content: &SurfaceContent,
+        output_profile: Option<(&IccProfile, IccRenderingIntent)>,
+    ) -> Result<Vec<u8>> {
+        let size = self.size;
         let device = self.renderer.device();
         let commands = OneShotCommands::begin(device.clone())?;
         let command_buffer = commands.buffer();
@@ -104,14 +136,19 @@ impl ImageSurface {
                 vk::AccessFlags2::COLOR_ATTACHMENT_WRITE,
             );
         }
+        let target = RenderTarget::new(
+            command_buffer,
+            self.target.view,
+            self.target.format,
+            self.target.extent,
+            content.clear_color(),
+        );
+        let target = match output_profile {
+            Some((profile, intent)) => target.with_icc_output(profile, intent),
+            None => target,
+        };
         self.renderer.render(
-            RenderTarget::new(
-                command_buffer,
-                self.target.view,
-                self.target.format,
-                self.target.extent,
-                content.clear_color(),
-            ),
+            target,
             Viewport::new(0.0, 0.0, size.width as f32, size.height as f32),
             content.canvas(),
             content.view(),
@@ -150,22 +187,22 @@ impl ImageSurface {
         commands.submit_and_wait()?;
         self.target_initialized = true;
 
-        let mut pixels = self.readback.read()?;
-        encode_linear_premultiplied_rgba8_as_straight_srgba8(&mut pixels);
-        Ok(Srgba8Image::new(size.width, size.height, pixels)?)
+        self.readback.read()
     }
+}
 
-    /// Renders to a CPU-readable image encoded in the selected ICC profile.
-    /// The existing sRGBA8 readback is used as an intermediate until a GPU
-    /// output-transfer path is available; source Canvas colors stay unchanged.
-    pub fn render_icc(
-        &mut self,
-        content: &SurfaceContent,
-        profile: IccProfile,
-        intent: IccRenderingIntent,
-    ) -> Result<IccRasterImage> {
-        let image = self.render(content)?;
-        IccRasterImage::from_srgba8(&image, profile, intent)
+fn unpremultiply_rgba8(pixels: &mut [u8]) {
+    for pixel in pixels.chunks_exact_mut(4) {
+        let alpha = pixel[3];
+        if alpha == 0 {
+            pixel[..3].fill(0);
+            continue;
+        }
+        for component in &mut pixel[..3] {
+            *component = (f32::from(*component) * 255.0 / f32::from(alpha))
+                .round()
+                .clamp(0.0, 255.0) as u8;
+        }
     }
 }
 
@@ -196,8 +233,13 @@ fn pixel_byte_len(size: SurfaceSize) -> Result<usize> {
 
 #[cfg(test)]
 mod tests {
-    use super::pixel_byte_len;
-    use crate::surface::SurfaceSize;
+    use super::{ImageSurface, pixel_byte_len};
+    use crate::{
+        canvas::{Canvas, CanvasView, Coverage},
+        color::{Color, IccProfile, IccRenderingIntent},
+        geometry::Point,
+        surface::{SurfaceContent, SurfaceSize},
+    };
 
     #[test]
     fn image_surface_extent_must_be_non_zero_and_fit_memory() {
@@ -222,5 +264,40 @@ mod tests {
             })
             .is_err()
         );
+    }
+
+    #[test]
+    fn image_surface_renders_into_a_real_icc_output_profile() {
+        let size = SurfaceSize {
+            width: 2,
+            height: 2,
+        };
+        let Ok(mut surface) = ImageSurface::new(size) else {
+            return; // Vulkan may be unavailable on the test host.
+        };
+        let profile =
+            IccProfile::from_bytes(include_bytes!("../color/fixtures/DisplayP3-v4.icc")).unwrap();
+        let view = CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(1.0, 1.0)).unwrap();
+        let content = SurfaceContent::new(
+            Canvas::draw(Color::rgb8(255, 0, 0), Coverage::all()),
+            view,
+            Color::rgba8(0, 0, 0, 0),
+        );
+        let result = surface
+            .render_icc(&content, profile, IccRenderingIntent::RelativeColorimetric)
+            .unwrap();
+        let reference = crate::image::IccRasterImage::from_srgba8(
+            &crate::image::Srgba8Image::new(1, 1, vec![255, 0, 0, 255]).unwrap(),
+            result.profile().clone(),
+            IccRenderingIntent::RelativeColorimetric,
+        )
+        .unwrap();
+        for (actual, expected) in result.pixels()[..4].iter().zip(reference.pixels()) {
+            assert!(actual.abs_diff(*expected) <= 3);
+        }
+        assert_eq!((result.width(), result.height()), (2, 2));
+        assert_eq!(result.pixels()[3], 255);
+        assert!(result.pixels()[0] < 255);
+        assert!(result.pixels()[1] > 0);
     }
 }

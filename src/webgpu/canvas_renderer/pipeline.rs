@@ -1,6 +1,8 @@
 use std::{borrow::Cow, collections::HashMap};
 
 use crate::canvas::{BlendShader, Composite, composition_shader::Binding};
+use crate::canvas_renderer::output_color::OutputColorTransform;
+use crate::color::{ColorSpaceKey, IccProfile, IccRenderingIntent};
 
 use super::encoding::{ImageVertex, TriangleVertex};
 
@@ -15,6 +17,8 @@ pub(super) struct Pipelines {
     pub(super) mask: wgpu::RenderPipeline,
     blend_shaders: HashMap<BlendShader, wgpu::RenderPipeline>,
     presents: HashMap<wgpu::TextureFormat, wgpu::RenderPipeline>,
+    icc_presents:
+        HashMap<(wgpu::TextureFormat, ColorSpaceKey, IccRenderingIntent), wgpu::RenderPipeline>,
 }
 
 impl Pipelines {
@@ -124,6 +128,7 @@ impl Pipelines {
             mask,
             blend_shaders: HashMap::new(),
             presents: HashMap::new(),
+            icc_presents: HashMap::new(),
         }
     }
 
@@ -176,6 +181,32 @@ impl Pipelines {
                 composite_blend_state(Composite::SourceOver),
             )
         })
+    }
+
+    pub(super) fn icc_present(
+        &mut self,
+        device: &wgpu::Device,
+        format: wgpu::TextureFormat,
+        profile: &IccProfile,
+        intent: IccRenderingIntent,
+        transform: &OutputColorTransform,
+    ) -> Result<&wgpu::RenderPipeline, Box<dyn std::error::Error>> {
+        let key = (format, profile.device_space(), intent);
+        if !self.icc_presents.contains_key(&key) {
+            let source = transform.wgsl()?;
+            let module = shader(device, "theoria WebGPU ICC present shader", source);
+            let pipeline = create_pipeline(
+                device,
+                "theoria WebGPU ICC present pipeline",
+                format,
+                &module,
+                &[],
+                &[Some(&self.texture_layout)],
+                composite_blend_state(Composite::SourceOver),
+            );
+            self.icc_presents.insert(key.clone(), pipeline);
+        }
+        Ok(&self.icc_presents[&key])
     }
 }
 

@@ -5,6 +5,7 @@ use std::{error::Error, marker::PhantomData};
 use ash::vk;
 
 use crate::canvas::CanvasColor;
+use crate::color::{IccProfile, IccRenderingIntent};
 use crate::vulkan::image_layout::transition_image;
 
 use super::{device::PresentationDevice, swapchain::SwapchainResources};
@@ -49,10 +50,11 @@ pub struct RenderTarget<'a> {
     format: vk::Format,
     extent: vk::Extent2D,
     clear_color: CanvasColor,
+    output_profile: Option<(&'a IccProfile, IccRenderingIntent)>,
     _frame: PhantomData<&'a ()>,
 }
 
-impl RenderTarget<'_> {
+impl<'a> RenderTarget<'a> {
     pub(in crate::vulkan) const fn new(
         command_buffer: vk::CommandBuffer,
         image_view: vk::ImageView,
@@ -66,6 +68,7 @@ impl RenderTarget<'_> {
             format,
             extent,
             clear_color,
+            output_profile: None,
             _frame: PhantomData,
         }
     }
@@ -76,6 +79,17 @@ impl RenderTarget<'_> {
 
     pub(crate) fn clear_color(&self) -> CanvasColor {
         self.clear_color.clone()
+    }
+
+    pub(crate) fn output_profile(&self) -> Option<(&'a IccProfile, IccRenderingIntent)> {
+        self.output_profile
+    }
+
+    /// Encodes the final working image into ICC device RGB coordinates.
+    /// The target format must be unsigned-normalized and non-sRGB.
+    pub fn with_icc_output(mut self, profile: &'a IccProfile, intent: IccRenderingIntent) -> Self {
+        self.output_profile = Some((profile, intent));
+        self
     }
 }
 

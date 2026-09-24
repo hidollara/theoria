@@ -110,6 +110,7 @@ impl CanvasGpuResources {
                 .into_iter()
                 .chain(pipelines.composites.into_values())
                 .chain(pipelines.blend_shaders.into_values())
+                .chain(pipelines.icc_presents.into_values())
                 {
                     device.raw().destroy_pipeline(pipeline.handle, None);
                     device.raw().destroy_pipeline_layout(pipeline.layout, None);

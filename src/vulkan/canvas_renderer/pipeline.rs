@@ -3,6 +3,8 @@ use std::{collections::HashMap, error::Error, ffi::CStr, io::Cursor, mem::size_o
 use ash::vk;
 
 use crate::canvas::{BlendShader, Composite, composition_shader::Binding};
+use crate::canvas_renderer::output_color::OutputColorTransform;
+use crate::color::{ColorSpaceKey, IccProfile, IccRenderingIntent};
 
 use super::encoding::{CompositionPushConstants, ImagePushConstants, TrianglePushConstants};
 
@@ -80,10 +82,51 @@ pub(super) struct Pipelines {
     pub(super) composites: HashMap<Composite, Pipeline>,
     pub(super) mask: Pipeline,
     pub(super) present: Pipeline,
+    pub(super) icc_presents: HashMap<(ColorSpaceKey, IccRenderingIntent), Pipeline>,
     pub(super) blend_shaders: HashMap<BlendShader, Pipeline>,
 }
 
 impl Pipelines {
+    pub(super) fn icc_present(
+        &self,
+        profile: &IccProfile,
+        intent: IccRenderingIntent,
+    ) -> &Pipeline {
+        &self.icc_presents[&(profile.device_space(), intent)]
+    }
+
+    pub(super) unsafe fn ensure_icc_present(
+        &mut self,
+        device: &ash::Device,
+        image_descriptor_set_layout: vk::DescriptorSetLayout,
+        profile: &IccProfile,
+        intent: IccRenderingIntent,
+        transform: &OutputColorTransform,
+    ) -> Result<()> {
+        let key = (profile.device_space(), intent);
+        if self.icc_presents.contains_key(&key) {
+            return Ok(());
+        }
+        let source = transform.wgsl()?;
+        let words = compile_fragment(&source)?;
+        let bytes: Vec<u8> = words.into_iter().flat_map(u32::to_le_bytes).collect();
+        let pipeline = unsafe {
+            create_pipeline(
+                device,
+                self.format,
+                COMPOSITION_VERTEX_SHADER,
+                &bytes,
+                0,
+                vk::ShaderStageFlags::VERTEX,
+                &[image_descriptor_set_layout],
+                vk::SampleCountFlags::TYPE_1,
+                Composite::SourceOver,
+            )?
+        };
+        self.icc_presents.insert(key, pipeline.into_pipeline());
+        Ok(())
+    }
+
     pub(super) fn composite(&self, composite: Composite) -> &Pipeline {
         &self.composites[&composite]
     }
@@ -249,6 +292,7 @@ pub(super) unsafe fn create_pipelines(
             .collect(),
         mask: mask.into_pipeline(),
         present: present.into_pipeline(),
+        icc_presents: HashMap::new(),
         blend_shaders: HashMap::new(),
     })
 }

@@ -8,6 +8,8 @@ use crate::{
         canvas_image::CanvasImage,
         image::{Image, ImageKind},
     },
+    canvas_renderer::output_color::OutputColorTransform,
+    color::{IccProfile, IccRenderingIntent},
     surface::Viewport,
 };
 
@@ -60,6 +62,7 @@ impl CanvasRenderer {
         prepare_colors(canvas)?;
         let clear_color = target.clear_color();
         clear_color.prepare_linear_srgb()?;
+        let output_profile = target.output_profile();
         self.materialize_canvas_resources(canvas)?;
         let (image_view, format, extent) = target.surface();
         self.record_to_image_view(
@@ -71,6 +74,7 @@ impl CanvasRenderer {
             canvas,
             view,
             PremultipliedLinearSrgba::from_color(clear_color),
+            output_profile,
         )
     }
 
@@ -115,6 +119,7 @@ impl CanvasRenderer {
             canvas,
             view,
             PremultipliedLinearSrgba::TRANSPARENT,
+            None,
         )?;
         unsafe {
             transition_image(
@@ -193,12 +198,45 @@ impl CanvasRenderer {
         canvas: &Canvas,
         view: CanvasView,
         clear_color: PremultipliedLinearSrgba,
+        output_profile: Option<(&IccProfile, IccRenderingIntent)>,
     ) -> Result<()> {
+        let output = output_profile
+            .map(|(profile, intent)| OutputColorTransform::new(profile, intent))
+            .transpose()?;
+        if output.is_some()
+            && !matches!(
+                format,
+                vk::Format::R8G8B8A8_UNORM | vk::Format::B8G8R8A8_UNORM
+            )
+        {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "ICC output requires an RGBA8 or BGRA8 non-sRGB target",
+            )
+            .into());
+        }
         let sample_count = preferred_sample_count(&self.device, format);
         let target_region = target_region(viewport, extent);
         self.gpu.ensure_image_cache(&self.device)?;
         self.gpu
             .ensure_pipelines(&self.device, format, sample_count)?;
+        if let (Some((profile, intent)), Some(transform)) = (output_profile, &output) {
+            let descriptor_layout = self
+                .gpu
+                .image_cache
+                .as_ref()
+                .unwrap()
+                .descriptor_set_layout();
+            unsafe {
+                self.gpu.pipelines.as_mut().unwrap().ensure_icc_present(
+                    self.device.raw(),
+                    descriptor_layout,
+                    profile,
+                    intent,
+                    transform,
+                )?;
+            }
+        }
         let mut blend_shaders = Vec::new();
         collect_blend_shaders(canvas, &mut blend_shaders);
         self.gpu
@@ -211,6 +249,16 @@ impl CanvasRenderer {
             required_scratch_images(canvas),
         )?;
         let pipelines = self.gpu.pipelines.as_ref().unwrap();
+        let present_pipeline = match output_profile {
+            Some((profile, intent)) => pipelines.icc_present(profile, intent),
+            None => &pipelines.present,
+        };
+        let clear_color = match &output {
+            Some(transform) => PremultipliedLinearSrgba::from_components(
+                transform.convert_premultiplied(clear_color.components())?,
+            ),
+            None => clear_color,
+        };
         let image_cache = self.gpu.image_cache.as_ref().unwrap();
         let device = self.device.raw();
         let attachment_area = vk::Rect2D {
@@ -228,7 +276,7 @@ impl CanvasRenderer {
             target_region,
             view,
         );
-        recorder.record(canvas, image_view, clear_color);
+        recorder.record(canvas, image_view, clear_color, present_pipeline);
         Ok(())
     }
 }

@@ -13,10 +13,11 @@ use crate::{
             required_scratch_images,
         },
         mesh_paint::paint_triangle_prepared,
+        output_color::OutputColorTransform,
         path_sampling::PathSampler,
         view_space::screen_space_tolerance,
     },
-    color::Color,
+    color::{Color, IccProfile, IccRenderingIntent},
     geometry::Point,
     path::Path,
     surface::{SurfaceSize, Viewport},
@@ -45,6 +46,7 @@ pub struct RenderTarget<'a> {
     format: wgpu::TextureFormat,
     size: SurfaceSize,
     clear_color: CanvasColor,
+    output_profile: Option<(&'a IccProfile, IccRenderingIntent)>,
 }
 
 impl<'a> RenderTarget<'a> {
@@ -59,7 +61,16 @@ impl<'a> RenderTarget<'a> {
             format,
             size,
             clear_color: clear_color.into(),
+            output_profile: None,
         }
+    }
+
+    /// Encodes the final working image into ICC device RGB coordinates.
+    /// Use an unsigned-normalized, non-sRGB target format so the GPU does not
+    /// apply a second sRGB transfer curve to the profile's encoded values.
+    pub fn with_icc_output(mut self, profile: &'a IccProfile, intent: IccRenderingIntent) -> Self {
+        self.output_profile = Some((profile, intent));
+        self
     }
 }
 
@@ -114,7 +125,7 @@ impl CanvasRenderer {
         prepare_colors(canvas)?;
         target.clear_color.prepare_linear_srgb()?;
         self.materialize_canvas_resources(canvas)?;
-        self.render_to_view(target, viewport, canvas, view);
+        self.render_to_view(target, viewport, canvas, view)?;
         Ok(())
     }
 
@@ -169,7 +180,7 @@ impl CanvasRenderer {
             Viewport::new(0.0, 0.0, image.width() as f32, image.height() as f32),
             image.content(),
             image.view(),
-        );
+        )?;
         self.images.insert_canvas(image, backing);
         Ok(())
     }
@@ -180,7 +191,23 @@ impl CanvasRenderer {
         viewport: Viewport,
         canvas: &Canvas,
         view: CanvasView,
-    ) {
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let output = target
+            .output_profile
+            .map(|(profile, intent)| OutputColorTransform::new(profile, intent))
+            .transpose()?;
+        if output.is_some()
+            && matches!(
+                target.format,
+                wgpu::TextureFormat::Rgba8UnormSrgb | wgpu::TextureFormat::Bgra8UnormSrgb
+            )
+        {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "ICC output requires a non-sRGB render target format",
+            )
+            .into());
+        }
         let mut blend_shaders = Vec::new();
         collect_blend_shaders(canvas, &mut blend_shaders);
         self.pipelines
@@ -215,8 +242,21 @@ impl CanvasRenderer {
             &self.scratch_images[source].view,
             "theoria WebGPU present source",
         );
-        let present = self.pipelines.present(&self.device, target.format);
+        let present = match (target.output_profile, &output) {
+            (Some((profile, intent)), Some(transform)) => self.pipelines.icc_present(
+                &self.device,
+                target.format,
+                profile,
+                intent,
+                transform,
+            )?,
+            _ => self.pipelines.present(&self.device, target.format),
+        };
         let clear = PremultipliedLinearSrgba::from_color(target.clear_color).components();
+        let clear = match &output {
+            Some(transform) => transform.convert_premultiplied(clear)?,
+            None => clear,
+        };
         let attachment = Some(wgpu::RenderPassColorAttachment {
             view: target.view,
             depth_slice: None,
@@ -242,6 +282,7 @@ impl CanvasRenderer {
         drop(pass);
 
         self.queue.submit([encoder.finish()]);
+        Ok(())
     }
 
     fn ensure_scratch_images(&mut self, size: SurfaceSize, required: usize) {
@@ -890,7 +931,42 @@ mod tests {
         }
     }
 
+    #[test]
+    fn icc_output_profile_changes_final_webgpu_device_codes() {
+        let profile =
+            IccProfile::from_bytes(include_bytes!("../color/fixtures/DisplayP3-v4.icc")).unwrap();
+        let canvas = Canvas::draw(Color::rgb8(255, 0, 0), Coverage::all());
+        if let Some(pixel) =
+            render_pixel_in(&canvas, wgpu::TextureFormat::Rgba8Unorm, Some(&profile))
+        {
+            let reference = crate::image::IccRasterImage::from_srgba8(
+                &Srgba8Image::new(1, 1, vec![255, 0, 0, 255]).unwrap(),
+                profile,
+                IccRenderingIntent::RelativeColorimetric,
+            )
+            .unwrap();
+            for (actual, expected) in pixel.iter().zip(reference.pixels()) {
+                assert!(
+                    actual.abs_diff(*expected) <= 3,
+                    "{pixel:?} != {:?}",
+                    reference.pixels()
+                );
+            }
+            assert_eq!(pixel[3], 255);
+            assert!(pixel[0] < 255, "profile conversion was skipped: {pixel:?}");
+            assert!(pixel[1] > 0, "profile conversion was skipped: {pixel:?}");
+        }
+    }
+
     fn render_pixel(canvas: &Canvas) -> Option<[u8; 4]> {
+        render_pixel_in(canvas, wgpu::TextureFormat::Rgba8UnormSrgb, None)
+    }
+
+    fn render_pixel_in(
+        canvas: &Canvas,
+        format: wgpu::TextureFormat,
+        profile: Option<&IccProfile>,
+    ) -> Option<[u8; 4]> {
         block_on(async {
             let instance = wgpu::Instance::default();
             let Ok(adapter) = instance
@@ -919,7 +995,7 @@ mod tests {
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                format,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
                 view_formats: &[],
             });
@@ -928,14 +1004,16 @@ mod tests {
             let view =
                 CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(1.0, 1.0)).unwrap();
 
+            let target = RenderTarget::new(&target_view, format, size, Color::rgba8(0, 0, 0, 0));
+            let target = match profile {
+                Some(profile) => {
+                    target.with_icc_output(profile, IccRenderingIntent::RelativeColorimetric)
+                }
+                None => target,
+            };
             renderer
                 .render(
-                    RenderTarget::new(
-                        &target_view,
-                        wgpu::TextureFormat::Rgba8UnormSrgb,
-                        size,
-                        Color::rgba8(0, 0, 0, 0),
-                    ),
+                    target,
                     Viewport::new(0.0, 0.0, size.width as f32, size.height as f32),
                     canvas,
                     view,

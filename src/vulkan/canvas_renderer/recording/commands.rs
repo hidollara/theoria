@@ -71,6 +71,7 @@ impl<'a> CanvasCommandEncoder<'a> {
         source: usize,
         image_view: vk::ImageView,
         clear_color: PremultipliedLinearSrgba,
+        pipeline: &Pipeline,
     ) {
         let color_attachment = vk::RenderingAttachmentInfo::default()
             .image_view(image_view)
@@ -90,10 +91,7 @@ impl<'a> CanvasCommandEncoder<'a> {
             self.device
                 .cmd_begin_rendering(self.command_buffer, &rendering_info);
         }
-        self.draw_fullscreen(
-            &self.pipelines.present,
-            self.scratch_images[source].descriptor_set(),
-        );
+        self.draw_fullscreen(pipeline, self.scratch_images[source].descriptor_set());
         self.end_rendering();
     }
 

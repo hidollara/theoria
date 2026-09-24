@@ -15,7 +15,7 @@ use crate::{
 };
 
 use self::commands::CanvasCommandEncoder;
-use super::pipeline::Pipelines;
+use super::pipeline::{Pipeline, Pipelines};
 
 pub(super) struct CanvasRecorder<'a> {
     commands: CanvasCommandEncoder<'a>,
@@ -54,9 +54,11 @@ impl<'a> CanvasRecorder<'a> {
         canvas: &Canvas,
         image_view: vk::ImageView,
         clear_color: PremultipliedLinearSrgba,
+        present_pipeline: &Pipeline,
     ) {
         let canvas_image = self.evaluate(canvas, Projective2::IDENTITY);
-        self.commands.present(canvas_image, image_view, clear_color);
+        self.commands
+            .present(canvas_image, image_view, clear_color, present_pipeline);
     }
 
     fn evaluate(&mut self, canvas: &Canvas, canvas_to_root: Projective2) -> usize {
