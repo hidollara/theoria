@@ -36,18 +36,27 @@ impl CanvasGpuResources {
     pub(super) fn ensure_pipelines(
         &mut self,
         device: &RenderDevice,
-        format: vk::Format,
+        working_format: vk::Format,
+        output_format: vk::Format,
         sample_count: vk::SampleCountFlags,
     ) -> Result<()> {
         if self.pipelines.as_ref().is_some_and(|pipelines| {
-            pipelines.format == format && pipelines.sample_count == sample_count
+            pipelines.working_format == working_format
+                && pipelines.output_format == output_format
+                && pipelines.sample_count == sample_count
         }) {
             return Ok(());
         }
         self.destroy_pipelines(device);
         let descriptor_layout = self.image_cache.as_ref().unwrap().descriptor_set_layout();
         self.pipelines = Some(unsafe {
-            create_pipelines(device.raw(), format, sample_count, descriptor_layout)?
+            create_pipelines(
+                device.raw(),
+                working_format,
+                output_format,
+                sample_count,
+                descriptor_layout,
+            )?
         });
         Ok(())
     }

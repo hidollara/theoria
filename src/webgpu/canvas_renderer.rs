@@ -849,6 +849,7 @@ mod tests {
     use super::*;
     use crate::{
         canvas::{Composite, Coverage},
+        color::{LinearSrgb, Opacity, UnitF32},
         geometry::Point,
         image::Srgba8Image,
     };
@@ -958,6 +959,16 @@ mod tests {
         }
     }
 
+    #[test]
+    fn floating_working_image_preserves_out_of_gamut_values() {
+        let color = Color::new(LinearSrgb, [1.5, 0.0, 0.0], Opacity::new(UnitF32::ONE)).unwrap();
+        let canvas = Canvas::draw(color, Coverage::all());
+        if let Some(pixel) = render_pixel_bytes_in(&canvas, wgpu::TextureFormat::Rgba16Float, None)
+        {
+            assert_eq!(u16::from_le_bytes(pixel[..2].try_into().unwrap()), 0x3e00);
+        }
+    }
+
     fn render_pixel(canvas: &Canvas) -> Option<[u8; 4]> {
         render_pixel_in(canvas, wgpu::TextureFormat::Rgba8UnormSrgb, None)
     }
@@ -967,6 +978,14 @@ mod tests {
         format: wgpu::TextureFormat,
         profile: Option<&IccProfile>,
     ) -> Option<[u8; 4]> {
+        render_pixel_bytes_in(canvas, format, profile).map(|bytes| bytes[..4].try_into().unwrap())
+    }
+
+    fn render_pixel_bytes_in(
+        canvas: &Canvas,
+        format: wgpu::TextureFormat,
+        profile: Option<&IccProfile>,
+    ) -> Option<[u8; 8]> {
         block_on(async {
             let instance = wgpu::Instance::default();
             let Ok(adapter) = instance
@@ -1060,7 +1079,7 @@ mod tests {
             device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
             completed.recv().unwrap().unwrap();
             let bytes = readback.get_mapped_range(..).unwrap();
-            Some(bytes[..4].try_into().unwrap())
+            Some(bytes[..8].try_into().unwrap())
         })
     }
 

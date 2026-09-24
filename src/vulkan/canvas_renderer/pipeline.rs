@@ -75,7 +75,8 @@ impl Drop for PipelineGuard<'_> {
 }
 
 pub(super) struct Pipelines {
-    pub(super) format: vk::Format,
+    pub(super) working_format: vk::Format,
+    pub(super) output_format: vk::Format,
     pub(super) sample_count: vk::SampleCountFlags,
     pub(super) triangle: Pipeline,
     pub(super) image: Pipeline,
@@ -113,7 +114,7 @@ impl Pipelines {
         let pipeline = unsafe {
             create_pipeline(
                 device,
-                self.format,
+                self.output_format,
                 COMPOSITION_VERTEX_SHADER,
                 &bytes,
                 0,
@@ -151,7 +152,7 @@ impl Pipelines {
             let pipeline = unsafe {
                 create_pipeline(
                     device,
-                    self.format,
+                    self.working_format,
                     COMPOSITION_VERTEX_SHADER,
                     &bytes,
                     size_of::<CompositionPushConstants>() as u32,
@@ -192,14 +193,15 @@ fn compile_fragment(source: &str) -> Result<Vec<u32>> {
 
 pub(super) unsafe fn create_pipelines(
     device: &ash::Device,
-    color_format: vk::Format,
+    working_format: vk::Format,
+    output_format: vk::Format,
     sample_count: vk::SampleCountFlags,
     image_descriptor_set_layout: vk::DescriptorSetLayout,
 ) -> Result<Pipelines> {
     let triangle = unsafe {
         create_pipeline(
             device,
-            color_format,
+            working_format,
             TRIANGLE_VERTEX_SHADER,
             TRIANGLE_FRAGMENT_SHADER,
             size_of::<TrianglePushConstants>() as u32,
@@ -212,7 +214,7 @@ pub(super) unsafe fn create_pipelines(
     let image = unsafe {
         create_pipeline(
             device,
-            color_format,
+            working_format,
             IMAGE_VERTEX_SHADER,
             IMAGE_FRAGMENT_SHADER,
             size_of::<ImagePushConstants>() as u32,
@@ -225,7 +227,7 @@ pub(super) unsafe fn create_pipelines(
     let source_over = unsafe {
         create_pipeline(
             device,
-            color_format,
+            working_format,
             COMPOSITE_VERTEX_SHADER,
             COMPOSITE_FRAGMENT_SHADER,
             0,
@@ -243,7 +245,7 @@ pub(super) unsafe fn create_pipelines(
         let composite_pipeline = unsafe {
             create_pipeline(
                 device,
-                color_format,
+                working_format,
                 COMPOSITE_VERTEX_SHADER,
                 COMPOSITE_FRAGMENT_SHADER,
                 0,
@@ -258,7 +260,7 @@ pub(super) unsafe fn create_pipelines(
     let mask = unsafe {
         create_pipeline(
             device,
-            color_format,
+            working_format,
             MASK_VERTEX_SHADER,
             MASK_FRAGMENT_SHADER,
             0,
@@ -271,7 +273,7 @@ pub(super) unsafe fn create_pipelines(
     let present = unsafe {
         create_pipeline(
             device,
-            color_format,
+            output_format,
             COMPOSITE_VERTEX_SHADER,
             COMPOSITE_FRAGMENT_SHADER,
             0,
@@ -282,7 +284,8 @@ pub(super) unsafe fn create_pipelines(
         )?
     };
     Ok(Pipelines {
-        format: color_format,
+        working_format,
+        output_format,
         sample_count,
         triangle: triangle.into_pipeline(),
         image: image.into_pipeline(),

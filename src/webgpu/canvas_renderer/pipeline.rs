@@ -6,7 +6,7 @@ use crate::color::{ColorSpaceKey, IccProfile, IccRenderingIntent};
 
 use super::encoding::{ImageVertex, TriangleVertex};
 
-pub(super) const WORKING_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+pub(super) const WORKING_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 
 pub(super) struct Pipelines {
     pub(super) texture_layout: wgpu::BindGroupLayout,

@@ -215,11 +215,19 @@ impl CanvasRenderer {
             )
             .into());
         }
-        let sample_count = preferred_sample_count(&self.device, format);
+        let working_format = if self
+            .device
+            .supports_canvas_working_format(vk::Format::R16G16B16A16_SFLOAT)
+        {
+            vk::Format::R16G16B16A16_SFLOAT
+        } else {
+            vk::Format::R8G8B8A8_UNORM
+        };
+        let sample_count = preferred_sample_count(&self.device, working_format);
         let target_region = target_region(viewport, extent);
         self.gpu.ensure_image_cache(&self.device)?;
         self.gpu
-            .ensure_pipelines(&self.device, format, sample_count)?;
+            .ensure_pipelines(&self.device, working_format, format, sample_count)?;
         if let (Some((profile, intent)), Some(transform)) = (output_profile, &output) {
             let descriptor_layout = self
                 .gpu
@@ -243,7 +251,7 @@ impl CanvasRenderer {
             .ensure_blend_shaders(&self.device, &blend_shaders)?;
         self.gpu.ensure_scratch_images(
             &self.device,
-            format,
+            working_format,
             extent,
             sample_count,
             required_scratch_images(canvas),
