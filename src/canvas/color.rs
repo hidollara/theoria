@@ -1,57 +1,89 @@
+use std::{error::Error, fmt, sync::Arc};
+
 use crate::color::{
-    Color, ColorProfile, LabD50, Opacity, ReferenceSample, Rgb, RgbColorSpace, Sample, UnitF32,
-    UnitF64, UnitSample, XyzD50, XyzD50Profile, XyzD65,
+    Color, ColorProfile, IccProfile, IccProfileError, IccRenderingIntent, LabD50, Opacity,
+    ReferenceSample, Rgb, RgbColorSpace, Sample, TransferError, UnitF32, UnitF64, UnitSample,
+    XyzD50, XyzD65,
 };
 
 /// A logical color whose concrete representation has been erased at the
 /// Canvas boundary without converting its coordinates.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct CanvasColor {
-    profile: CanvasProfile,
-    coordinates: Coordinates,
-    opacity: Alpha,
+    pub(crate) profile: CanvasProfile,
+    pub(crate) coordinates: Coordinates,
+    pub(crate) opacity: Alpha,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum CanvasProfile {
+#[derive(Clone, Debug)]
+pub(crate) enum CanvasProfile {
     Rgb(RgbColorSpace),
     XyzD50,
     XyzD65,
     LabD50,
+    Icc {
+        profile: Arc<IccProfile>,
+        intent: IccRenderingIntent,
+    },
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum Coordinates {
+impl PartialEq for CanvasProfile {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Rgb(left), Self::Rgb(right)) => left == right,
+            (Self::XyzD50, Self::XyzD50)
+            | (Self::XyzD65, Self::XyzD65)
+            | (Self::LabD50, Self::LabD50) => true,
+            (
+                Self::Icc {
+                    profile: left,
+                    intent: left_intent,
+                },
+                Self::Icc {
+                    profile: right,
+                    intent: right_intent,
+                },
+            ) => left.device_space() == right.device_space() && left_intent == right_intent,
+            _ => false,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum Coordinates {
     F32([f32; 3]),
     F64([f64; 3]),
     U8([u8; 3]),
     U16([u16; 3]),
+    Dynamic(Arc<[f64]>),
 }
 
 impl Coordinates {
-    fn as_f32(self) -> [f32; 3] {
+    pub(crate) fn as_f32(&self) -> [f32; 3] {
         match self {
-            Self::F32(coordinates) => coordinates,
+            Self::F32(coordinates) => *coordinates,
             Self::F64(coordinates) => coordinates.map(|value| value as f32),
             Self::U8(coordinates) => coordinates.map(|value| f32::from(value) / f32::from(u8::MAX)),
             Self::U16(coordinates) => {
                 coordinates.map(|value| f32::from(value) / f32::from(u16::MAX))
             }
+            Self::Dynamic(_) => unreachable!("ICC coordinates are evaluated by their profile"),
         }
     }
 
-    fn as_f64(self) -> [f64; 3] {
+    pub(crate) fn as_f64(&self) -> [f64; 3] {
         match self {
             Self::F32(coordinates) => coordinates.map(Sample::to_f64),
-            Self::F64(coordinates) => coordinates,
+            Self::F64(coordinates) => *coordinates,
             Self::U8(coordinates) => coordinates.map(Sample::to_f64),
             Self::U16(coordinates) => coordinates.map(Sample::to_f64),
+            Self::Dynamic(_) => unreachable!("ICC coordinates are evaluated by their profile"),
         }
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-enum Alpha {
+pub(crate) enum Alpha {
     F32(UnitF32),
     F64(UnitF64),
     U8(u8),
@@ -59,7 +91,7 @@ enum Alpha {
 }
 
 impl Alpha {
-    fn as_f32(self) -> f32 {
+    pub(crate) fn as_f32(self) -> f32 {
         match self {
             Self::F32(opacity) => opacity.get(),
             Self::F64(opacity) => opacity.get() as f32,
@@ -70,26 +102,32 @@ impl Alpha {
 }
 
 impl CanvasColor {
-    /// Converts authored coordinates only when a consumer selects its RGB
-    /// evaluation space. Canvas retains the original profile and samples.
-    pub(crate) fn straight_rgba_in(self, space: RgbColorSpace) -> [f32; 4] {
-        let rgb = match self.profile {
-            CanvasProfile::Rgb(authored_space) => {
-                crate::color::convert_rgb(self.coordinates.as_f32(), authored_space, space)
-            }
-            CanvasProfile::XyzD50 => space
-                .xyz_d50_to_coordinates(self.coordinates.as_f64())
-                .map(|value| value as f32),
-            CanvasProfile::XyzD65 => {
-                let xyz = XyzD65.coordinates_to_xyz_d50(&self.coordinates.as_f64());
-                space.xyz_d50_to_coordinates(xyz).map(|value| value as f32)
-            }
-            CanvasProfile::LabD50 => {
-                let xyz = LabD50.coordinates_to_xyz_d50(&self.coordinates.as_f64());
-                space.xyz_d50_to_coordinates(xyz).map(|value| value as f32)
-            }
-        };
-        [rgb[0], rgb[1], rgb[2], self.opacity.as_f32()]
+    /// Keeps authored ICC device coordinates, profile, and rendering intent.
+    /// The renderer selects how to convert them into its working space.
+    pub fn from_icc(
+        profile: &IccProfile,
+        coordinates: impl Into<Arc<[f64]>>,
+        opacity: UnitF32,
+        intent: IccRenderingIntent,
+    ) -> Result<Self, CanvasIccColorError> {
+        if intent == IccRenderingIntent::AbsoluteColorimetric {
+            return Err(CanvasIccColorError::AbsoluteIntent);
+        }
+        let coordinates = coordinates.into();
+        if coordinates.len() != profile.device_channels()
+            || coordinates.iter().any(|value| !value.is_finite())
+        {
+            return Err(CanvasIccColorError::InvalidCoordinates);
+        }
+        profile.to_pcs(intent)?.transfer().evaluate(&coordinates)?;
+        Ok(Self {
+            profile: CanvasProfile::Icc {
+                profile: Arc::new(profile.clone()),
+                intent,
+            },
+            coordinates: Coordinates::Dynamic(coordinates),
+            opacity: Alpha::F32(opacity),
+        })
     }
 
     pub(crate) fn with_alpha_factor(&self, factor: f32) -> Self {
@@ -113,8 +151,8 @@ impl CanvasColor {
             ),
         };
         Self {
-            profile: self.profile,
-            coordinates: self.coordinates,
+            profile: self.profile.clone(),
+            coordinates: self.coordinates.clone(),
             opacity,
         }
     }
@@ -229,7 +267,50 @@ canvas_reference_color!(LabD50, LabD50);
 
 impl From<&CanvasColor> for CanvasColor {
     fn from(color: &CanvasColor) -> Self {
-        *color
+        color.clone()
+    }
+}
+
+#[derive(Debug)]
+pub enum CanvasIccColorError {
+    AbsoluteIntent,
+    InvalidCoordinates,
+    Profile(IccProfileError),
+    Transfer(TransferError),
+}
+
+impl From<IccProfileError> for CanvasIccColorError {
+    fn from(error: IccProfileError) -> Self {
+        Self::Profile(error)
+    }
+}
+
+impl From<TransferError> for CanvasIccColorError {
+    fn from(error: TransferError) -> Self {
+        Self::Transfer(error)
+    }
+}
+
+impl fmt::Display for CanvasIccColorError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::AbsoluteIntent => {
+                formatter.write_str("absolute ICC color needs an explicit display conversion")
+            }
+            Self::InvalidCoordinates => formatter.write_str("ICC device coordinates are invalid"),
+            Self::Profile(error) => error.fmt(formatter),
+            Self::Transfer(error) => error.fmt(formatter),
+        }
+    }
+}
+
+impl Error for CanvasIccColorError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Profile(error) => Some(error),
+            Self::Transfer(error) => Some(error),
+            _ => None,
+        }
     }
 }
 
@@ -237,6 +318,72 @@ impl From<&CanvasColor> for CanvasColor {
 mod tests {
     use super::*;
     use crate::color::{DisplayP3, LinearDisplayP3, LinearSrgb, Srgb};
+
+    #[test]
+    fn icc_color_preserves_device_coordinates_until_renderer_lowering() {
+        let bytes = moxcms::ColorProfile::new_srgb().encode().unwrap();
+        let profile = IccProfile::from_bytes(&bytes).unwrap();
+        let coordinates: Arc<[f64]> = vec![0.25, 0.5, 0.75].into();
+        let color = CanvasColor::from_icc(
+            &profile,
+            coordinates.clone(),
+            UnitF32::new(0.5).unwrap(),
+            IccRenderingIntent::RelativeColorimetric,
+        )
+        .unwrap();
+        let Coordinates::Dynamic(stored) = &color.coordinates else {
+            panic!("ICC device coordinates were converted at the Canvas boundary")
+        };
+        assert!(Arc::ptr_eq(stored, &coordinates));
+        let CanvasProfile::Icc {
+            profile: stored_profile,
+            intent,
+        } = &color.profile
+        else {
+            panic!("Canvas must retain the declared ICC profile, not a conversion plan")
+        };
+        assert_eq!(stored_profile.device_space(), profile.device_space());
+        assert_eq!(*intent, IccRenderingIntent::RelativeColorimetric);
+        drop(profile);
+        let rgba = color.straight_rgba_in(RgbColorSpace::Srgb);
+        for (actual, expected) in rgba[..3].iter().zip([0.25, 0.5, 0.75]) {
+            assert!((actual - expected).abs() < 0.01);
+        }
+        assert_eq!(rgba[3], 0.5);
+        let lowered = crate::canvas_renderer::color_space::lower_straight_color(&color);
+        assert_eq!(lowered[3], 0.5);
+        for (actual, straight) in lowered[..3]
+            .iter()
+            .zip(color.straight_rgba_in(RgbColorSpace::LinearSrgb))
+        {
+            assert!((actual - straight * 0.5).abs() < 1e-5);
+        }
+    }
+
+    #[test]
+    fn icc_color_rejects_invalid_coordinates_and_implicit_absolute_conversion() {
+        let bytes = moxcms::ColorProfile::new_srgb().encode().unwrap();
+        let profile = IccProfile::from_bytes(&bytes).unwrap();
+        let opacity = UnitF32::new(1.0).unwrap();
+        assert!(matches!(
+            CanvasColor::from_icc(
+                &profile,
+                vec![0.5, 0.5],
+                opacity,
+                IccRenderingIntent::RelativeColorimetric,
+            ),
+            Err(CanvasIccColorError::InvalidCoordinates)
+        ));
+        assert!(matches!(
+            CanvasColor::from_icc(
+                &profile,
+                vec![0.5, 0.5, 0.5],
+                opacity,
+                IccRenderingIntent::AbsoluteColorimetric,
+            ),
+            Err(CanvasIccColorError::AbsoluteIntent)
+        ));
+    }
 
     #[test]
     fn erasing_a_color_does_not_normalize_its_storage() {
@@ -333,7 +480,7 @@ mod tests {
     fn xyz_and_lab_colors_remain_authored_until_renderer_lowering() {
         let source = Color::rgba(0.25, 0.5, 0.75, 0.4).unwrap();
         let original = CanvasColor::from(source);
-        let lowered_original = crate::canvas_renderer::color_space::lower_straight_color(original);
+        let lowered_original = crate::canvas_renderer::color_space::lower_straight_color(&original);
 
         for (canvas, profile) in [
             (
@@ -352,7 +499,7 @@ mod tests {
             assert_eq!(canvas.profile, profile);
             assert!(matches!(canvas.coordinates, Coordinates::F64(_)));
             assert!(matches!(canvas.opacity, Alpha::F32(_)));
-            let lowered = crate::canvas_renderer::color_space::lower_straight_color(canvas);
+            let lowered = crate::canvas_renderer::color_space::lower_straight_color(&canvas);
             for (actual, expected) in lowered.into_iter().zip(lowered_original) {
                 assert!((actual - expected).abs() < 0.000_01);
             }

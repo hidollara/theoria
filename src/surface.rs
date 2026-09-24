@@ -79,7 +79,7 @@ impl SurfaceContent {
         self.view
     }
 
-    pub const fn clear_color(&self) -> CanvasColor {
-        self.clear_color
+    pub fn clear_color(&self) -> CanvasColor {
+        self.clear_color.clone()
     }
 }

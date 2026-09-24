@@ -75,7 +75,7 @@ impl RenderTarget<'_> {
     }
 
     pub(crate) fn clear_color(&self) -> CanvasColor {
-        self.clear_color
+        self.clear_color.clone()
     }
 }
 

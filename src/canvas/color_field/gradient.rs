@@ -11,7 +11,7 @@ pub enum GradientExtend {
     Reflect,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct GradientStop {
     offset: f32,
     color: CanvasColor,
@@ -545,7 +545,7 @@ fn validate_gradient_stops(stops: &[GradientStop]) -> Result<(), GradientStopsEr
 }
 
 /// A Canvas position carrying a color for mesh interpolation.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct GradientPoint {
     position: Point,
     color: CanvasColor,

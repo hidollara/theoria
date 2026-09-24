@@ -620,7 +620,7 @@ fn linear_gradient_keeps_ordered_stops_in_canvas_coordinates() {
     let gradient = LinearGradient::new(
         Point::new(10.0, 20.0),
         Point::new(110.0, 20.0),
-        stops,
+        stops.clone(),
         LinearSrgb,
     )
     .unwrap();
@@ -693,7 +693,7 @@ fn color_ramp_rejects_too_few_or_unordered_stops() {
     let blue = GradientStop::new(0.2, Color::rgb8(0, 0, 255)).unwrap();
 
     assert_eq!(
-        ColorRamp::new([red], LinearSrgb),
+        ColorRamp::new([red.clone()], LinearSrgb),
         Err(ColorRampError::TooFewStops)
     );
     assert_eq!(
@@ -718,7 +718,7 @@ fn rejects_invalid_linear_gradient_structure_without_panicking() {
         LinearGradient::new(
             Point::new(0.0, 0.0),
             Point::new(0.0, 0.0),
-            [red, blue],
+            [red.clone(), blue.clone()],
             LinearSrgb,
         ),
         Err(LinearGradientError::CoincidentPoints)
@@ -741,7 +741,7 @@ fn mesh_gradient_records_a_colored_triangle_patch() {
         GradientPoint::new(Point::new(4.0, 0.0), Color::rgb8(0, 255, 0)),
         GradientPoint::new(Point::new(0.0, 4.0), Color::rgb8(0, 0, 255)),
     ];
-    let gradient = MeshGradient::from_triangle(points, LinearSrgb).unwrap();
+    let gradient = MeshGradient::from_triangle(points.clone(), LinearSrgb).unwrap();
 
     assert_eq!(gradient.triangles(), &[points]);
     assert_eq!(gradient.interpolation_space(), LinearSrgb.into());
@@ -781,8 +781,8 @@ fn radial_and_conic_gradients_keep_their_canvas_coordinates() {
         GradientStop::new(1.0, Color::rgb8(0, 0, 0)).unwrap(),
     ];
     let center = Point::new(20.0, 30.0);
-    let radial = RadialGradient::new(center, 40.0, stops, LinearSrgb).unwrap();
-    let conic = ConicGradient::new(center, 0.75, stops, LinearSrgb).unwrap();
+    let radial = RadialGradient::new(center, 40.0, stops.clone(), LinearSrgb).unwrap();
+    let conic = ConicGradient::new(center, 0.75, stops.clone(), LinearSrgb).unwrap();
 
     assert_eq!(radial.center(), center);
     assert_eq!(radial.radius(), 40.0);
@@ -803,7 +803,7 @@ fn gradients_retain_extended_color_line_geometry() {
         3.0,
         Point::new(8.0, 9.0),
         12.0,
-        stops,
+        stops.clone(),
         LinearSrgb,
     )
     .unwrap()
@@ -850,7 +850,8 @@ fn degenerate_gradients_remain_representable() {
     let circle = Point::new(1.0, 2.0);
 
     let radial =
-        RadialGradient::between_circles(circle, 3.0, circle, 3.0, stops, LinearSrgb).unwrap();
+        RadialGradient::between_circles(circle, 3.0, circle, 3.0, stops.clone(), LinearSrgb)
+            .unwrap();
     let conic = ConicGradient::sweeping(circle, 0.5, 0.5, stops, LinearSrgb).unwrap();
 
     assert_eq!(radial.start_center(), radial.end_center());
@@ -865,11 +866,11 @@ fn radial_and_conic_gradients_reject_invalid_geometry() {
         GradientStop::new(1.0, Color::rgb8(0, 0, 0)).unwrap(),
     ];
     assert_eq!(
-        RadialGradient::new(Point::new(0.0, 0.0), 0.0, stops, LinearSrgb),
+        RadialGradient::new(Point::new(0.0, 0.0), 0.0, stops.clone(), LinearSrgb),
         Err(RadialGradientError::NonPositiveRadius)
     );
     assert_eq!(
-        RadialGradient::new(Point::new(0.0, 0.0), f32::NAN, stops, LinearSrgb),
+        RadialGradient::new(Point::new(0.0, 0.0), f32::NAN, stops.clone(), LinearSrgb),
         Err(RadialGradientError::NonFiniteRadius)
     );
     assert_eq!(
