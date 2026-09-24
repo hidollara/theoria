@@ -106,37 +106,46 @@ impl CanvasRenderer {
         viewport: Viewport,
         canvas: &Canvas,
         view: CanvasView,
-    ) {
+    ) -> Result<(), Box<dyn std::error::Error>> {
         if target.size.width == 0 || target.size.height == 0 {
-            return;
+            return Ok(());
         }
-        self.materialize_canvas_resources(canvas);
+        self.materialize_canvas_resources(canvas)?;
         self.render_to_view(target, viewport, canvas, view);
+        Ok(())
     }
 
-    fn materialize_canvas_resources(&mut self, canvas: &Canvas) {
+    fn materialize_canvas_resources(
+        &mut self,
+        canvas: &Canvas,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let mut images = Vec::new();
         collect_images(canvas, &mut images);
         for image in images {
-            self.materialize_image(&image);
+            self.materialize_image(&image)?;
         }
+        Ok(())
     }
 
-    fn materialize_image(&mut self, image: &Image) {
+    fn materialize_image(&mut self, image: &Image) -> Result<(), Box<dyn std::error::Error>> {
         match image.kind() {
             ImageKind::Raster(image) => {
                 self.images
-                    .ensure_uploaded(&self.device, &self.queue, image.as_ref());
+                    .ensure_uploaded(&self.device, &self.queue, image.as_ref())?;
             }
-            ImageKind::Canvas(image) => self.materialize_canvas_image(image),
+            ImageKind::Canvas(image) => self.materialize_canvas_image(image)?,
         }
+        Ok(())
     }
 
-    fn materialize_canvas_image(&mut self, image: &CanvasImage) {
+    fn materialize_canvas_image(
+        &mut self,
+        image: &CanvasImage,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         if self.images.contains_canvas(image) {
-            return;
+            return Ok(());
         }
-        self.materialize_canvas_resources(image.content());
+        self.materialize_canvas_resources(image.content())?;
         let backing = create_working_image(
             &self.device,
             image.width(),
@@ -158,6 +167,7 @@ impl CanvasRenderer {
             image.view(),
         );
         self.images.insert_canvas(image, backing);
+        Ok(())
     }
 
     fn render_to_view(
@@ -914,17 +924,19 @@ mod tests {
             let view =
                 CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(1.0, 1.0)).unwrap();
 
-            renderer.render(
-                RenderTarget::new(
-                    &target_view,
-                    wgpu::TextureFormat::Rgba8UnormSrgb,
-                    size,
-                    Color::rgba8(0, 0, 0, 0),
-                ),
-                Viewport::new(0.0, 0.0, size.width as f32, size.height as f32),
-                canvas,
-                view,
-            );
+            renderer
+                .render(
+                    RenderTarget::new(
+                        &target_view,
+                        wgpu::TextureFormat::Rgba8UnormSrgb,
+                        size,
+                        Color::rgba8(0, 0, 0, 0),
+                    ),
+                    Viewport::new(0.0, 0.0, size.width as f32, size.height as f32),
+                    canvas,
+                    view,
+                )
+                .unwrap();
 
             let bytes_per_row = 256;
             let readback = device.create_buffer(&wgpu::BufferDescriptor {

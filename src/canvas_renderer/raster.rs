@@ -1,4 +1,36 @@
-use crate::image::RasterPlane;
+use crate::{
+    color::{ColorTransform, IccProfile, IccRenderingIntent, RgbColorSpace},
+    image::RasterPlane,
+};
+
+/// Converts ICC device samples at the renderer boundary. The returned plane
+/// uses encoded sRGB coordinates and straight alpha for the existing upload
+/// path; the source image remains in its original ICC representation.
+pub(crate) fn convert_icc8_to_rgba8(
+    width: u32,
+    pixels: &[u8],
+    profile: &IccProfile,
+    intent: IccRenderingIntent,
+    has_alpha: bool,
+) -> Result<RasterPlane<u8>, Box<dyn std::error::Error>> {
+    let to_pcs = profile.to_pcs(intent)?;
+    let to_srgb = ColorTransform::pcs_to_rgb(profile.pcs(), RgbColorSpace::Srgb)?;
+    let transfer = to_pcs.then(&to_srgb)?;
+    let channels = profile.device_channels();
+    let mut output = Vec::with_capacity(pixels.len() / (channels + usize::from(has_alpha)) * 4);
+    for pixel in pixels.chunks_exact(channels + usize::from(has_alpha)) {
+        let coordinates: Vec<_> = pixel[..channels]
+            .iter()
+            .map(|&sample| f64::from(sample) / 255.0)
+            .collect();
+        let rgb = transfer.transfer().evaluate(&coordinates)?;
+        for &sample in &rgb[..3] {
+            output.push((sample.clamp(0.0, 1.0) * 255.0).round() as u8);
+        }
+        output.push(if has_alpha { pixel[channels] } else { u8::MAX });
+    }
+    Ok(RasterPlane::new(usize::try_from(width)? * 4, output))
+}
 
 /// Expands an RGB8 plane into the portable RGBA8 upload representation used
 /// by renderers whose sampled texture API has no three-channel byte format.

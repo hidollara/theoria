@@ -731,10 +731,7 @@ mod tests {
                 &include_bytes!("fixtures/DisplayP3-v4.icc")[..],
                 &[0.25, 0.5, 0.75][..],
             ),
-            (
-                &include_bytes!("fixtures/sGrey-v4.icc")[..],
-                &[0.5][..],
-            ),
+            (&include_bytes!("fixtures/sGrey-v4.icc")[..], &[0.5][..]),
         ] {
             let profile = IccProfile::from_bytes(bytes).unwrap();
             assert_eq!(profile.device_channels(), sample.len());

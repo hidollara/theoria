@@ -21,7 +21,7 @@ pub use color_field::{
 };
 pub use composition::{Composite, Composition};
 pub use coverage::Coverage;
-pub use image::Image;
+pub use image::{IccImageError, Image};
 pub use model::Canvas;
 pub use view::CanvasView;
 

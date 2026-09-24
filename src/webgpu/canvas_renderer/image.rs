@@ -50,64 +50,83 @@ impl ImageCache {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         image: &dyn RasterImageSource,
-    ) {
+    ) -> Result<(), Box<dyn std::error::Error>> {
         self.prune_unused();
         let key = image.instance_key();
-        self.raster.entry(key).or_insert_with(|| {
-            let (plane, color_space, rgb_is_premultiplied) = match image.view() {
-                RasterImageView::Rgb8 { plane, color_space } => {
-                    let expanded = crate::canvas_renderer::raster::expand_rgb8_to_rgba8(
-                        image.width(),
-                        image.height(),
-                        plane,
-                    );
-                    (UploadPlane::Expanded(expanded), color_space, false)
-                }
-                RasterImageView::Rgba8 {
+        if self.raster.contains_key(&key) {
+            return Ok(());
+        }
+        let (plane, color_space, rgb_is_premultiplied) = match image.view() {
+            RasterImageView::Icc8 {
+                pixels,
+                profile,
+                intent,
+                has_alpha,
+            } => (
+                UploadPlane::Expanded(crate::canvas_renderer::raster::convert_icc8_to_rgba8(
+                    image.width(),
+                    pixels,
+                    profile,
+                    intent,
+                    has_alpha,
+                )?),
+                RgbColorSpace::Srgb,
+                false,
+            ),
+            RasterImageView::Rgb8 { plane, color_space } => {
+                let expanded = crate::canvas_renderer::raster::expand_rgb8_to_rgba8(
+                    image.width(),
+                    image.height(),
                     plane,
-                    color_space,
-                    alpha,
-                } => (
-                    UploadPlane::Borrowed(plane),
-                    color_space,
-                    alpha == AlphaAssociation::Premultiplied,
-                ),
-            };
-            let plane = plane.as_ref();
-            let size = extent(image.width(), image.height());
-            let texture = device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("theoria WebGPU RGBA8 image"),
-                size,
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rgba8Unorm,
-                usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
-                view_formats: &[],
-            });
-            queue.write_texture(
-                wgpu::TexelCopyTextureInfo {
-                    texture: &texture,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
-                    aspect: wgpu::TextureAspect::All,
-                },
-                plane.samples(),
-                wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(u32::try_from(plane.row_stride()).unwrap()),
-                    rows_per_image: Some(image.height()),
-                },
-                size,
-            );
-            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-            GpuImage {
-                _texture: texture,
-                view,
-                rgb_is_premultiplied,
-                rgb_color_space: color_space,
+                );
+                (UploadPlane::Expanded(expanded), color_space, false)
             }
+            RasterImageView::Rgba8 {
+                plane,
+                color_space,
+                alpha,
+            } => (
+                UploadPlane::Borrowed(plane),
+                color_space,
+                alpha == AlphaAssociation::Premultiplied,
+            ),
+        };
+        let plane = plane.as_ref();
+        let size = extent(image.width(), image.height());
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("theoria WebGPU RGBA8 image"),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
         });
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            plane.samples(),
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(u32::try_from(plane.row_stride()).unwrap()),
+                rows_per_image: Some(image.height()),
+            },
+            size,
+        );
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let uploaded = GpuImage {
+            _texture: texture,
+            view,
+            rgb_is_premultiplied,
+            rgb_color_space: color_space,
+        };
+        self.raster.insert(key, uploaded);
+        Ok(())
     }
 
     pub(super) fn contains_canvas(&mut self, image: &CanvasImage) -> bool {

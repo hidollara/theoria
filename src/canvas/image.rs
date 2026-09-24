@@ -1,7 +1,9 @@
-use std::{fmt, sync::Arc};
+use std::{error::Error, fmt, sync::Arc};
 
 use crate::{
-    color::{DisplayP3, LinearDisplayP3, LinearSrgb, RgbColorSpace, Srgb},
+    color::{
+        DisplayP3, IccProfile, IccRenderingIntent, LinearDisplayP3, LinearSrgb, RgbColorSpace, Srgb,
+    },
     image::{AlphaAssociation, RasterImage, RasterImageInstanceKey, RasterPlane, Rgb8, Rgba8},
     transform::Projective2,
 };
@@ -34,7 +36,71 @@ pub(crate) enum RasterImageView<'a> {
         color_space: RgbColorSpace,
         alpha: AlphaAssociation,
     },
+    Icc8 {
+        pixels: &'a [u8],
+        profile: &'a IccProfile,
+        intent: IccRenderingIntent,
+        has_alpha: bool,
+    },
 }
+
+#[derive(Debug)]
+struct Icc8Source {
+    owner: Arc<()>,
+    width: u32,
+    height: u32,
+    pixels: Arc<[u8]>,
+    profile: IccProfile,
+    intent: IccRenderingIntent,
+    has_alpha: bool,
+}
+
+impl RasterImageSource for Icc8Source {
+    fn width(&self) -> u32 {
+        self.width
+    }
+
+    fn height(&self) -> u32 {
+        self.height
+    }
+
+    fn instance_key(&self) -> RasterImageInstanceKey {
+        RasterImageInstanceKey::from_owner(&self.owner)
+    }
+
+    fn view(&self) -> RasterImageView<'_> {
+        RasterImageView::Icc8 {
+            pixels: &self.pixels,
+            profile: &self.profile,
+            intent: self.intent,
+            has_alpha: self.has_alpha,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IccImageError {
+    Empty,
+    DimensionsTooLarge,
+    InvalidDataLength { expected: usize, actual: usize },
+    AbsoluteIntent,
+}
+
+impl fmt::Display for IccImageError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Empty => formatter.write_str("ICC image dimensions must be non-zero"),
+            Self::DimensionsTooLarge => formatter.write_str("ICC image dimensions are too large"),
+            Self::InvalidDataLength { expected, actual } => {
+                write!(formatter, "ICC image needs {expected} bytes, got {actual}")
+            }
+            Self::AbsoluteIntent => formatter
+                .write_str("absolute ICC image conversion needs an explicit destination profile"),
+        }
+    }
+}
+
+impl Error for IccImageError {}
 
 #[derive(Debug)]
 struct Rgb8Source<P>
@@ -111,6 +177,49 @@ where
 }
 
 impl Image {
+    /// Retains interleaved normalized device samples and their ICC profile.
+    /// The renderer converts them when materializing the image. Alpha, when
+    /// present, is the last byte of each pixel and is straight (not premultiplied).
+    pub fn from_icc_u8(
+        width: u32,
+        height: u32,
+        pixels: impl Into<Arc<[u8]>>,
+        profile: IccProfile,
+        intent: IccRenderingIntent,
+        has_alpha: bool,
+    ) -> Result<Self, IccImageError> {
+        if width == 0 || height == 0 {
+            return Err(IccImageError::Empty);
+        }
+        if intent == IccRenderingIntent::AbsoluteColorimetric {
+            return Err(IccImageError::AbsoluteIntent);
+        }
+        let pixels = pixels.into();
+        let channels = profile.device_channels() + usize::from(has_alpha);
+        let expected = usize::try_from(width)
+            .ok()
+            .and_then(|width| width.checked_mul(usize::try_from(height).ok()?))
+            .and_then(|pixels| pixels.checked_mul(channels))
+            .ok_or(IccImageError::DimensionsTooLarge)?;
+        if pixels.len() != expected {
+            return Err(IccImageError::InvalidDataLength {
+                expected,
+                actual: pixels.len(),
+            });
+        }
+        Ok(Self {
+            kind: ImageKind::Raster(Arc::new(Icc8Source {
+                owner: Arc::new(()),
+                width,
+                height,
+                pixels,
+                profile,
+                intent,
+                has_alpha,
+            })),
+        })
+    }
+
     pub fn width(&self) -> u32 {
         match &self.kind {
             ImageKind::Raster(image) => image.width(),
@@ -188,5 +297,65 @@ impl From<CanvasImage> for Image {
         Self {
             kind: ImageKind::Canvas(image),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::canvas_renderer::raster::convert_icc8_to_rgba8;
+
+    #[test]
+    fn icc_image_preserves_samples_until_renderer_conversion() {
+        let profile =
+            IccProfile::from_bytes(include_bytes!("../color/fixtures/sRGB-v4.icc")).unwrap();
+        let source: Arc<[u8]> = vec![64, 128, 192, 77].into();
+        let image = Image::from_icc_u8(
+            1,
+            1,
+            source.clone(),
+            profile,
+            IccRenderingIntent::RelativeColorimetric,
+            true,
+        )
+        .unwrap();
+        let ImageKind::Raster(raster) = image.kind() else {
+            panic!("ICC image was materialized at the Canvas boundary")
+        };
+        let RasterImageView::Icc8 {
+            pixels,
+            profile,
+            intent,
+            has_alpha,
+        } = raster.view()
+        else {
+            panic!("ICC samples were replaced before renderer conversion")
+        };
+        assert_eq!(pixels, source.as_ref());
+        let converted = convert_icc8_to_rgba8(1, pixels, profile, intent, has_alpha).unwrap();
+        for (actual, expected) in converted.samples()[..3].iter().zip([64, 128, 192]) {
+            assert!(actual.abs_diff(expected) <= 2);
+        }
+        assert_eq!(converted.samples()[3], 77);
+    }
+
+    #[test]
+    fn icc_image_checks_sample_count_at_construction() {
+        let profile =
+            IccProfile::from_bytes(include_bytes!("../color/fixtures/sGrey-v4.icc")).unwrap();
+        assert!(matches!(
+            Image::from_icc_u8(
+                2,
+                1,
+                vec![127],
+                profile,
+                IccRenderingIntent::RelativeColorimetric,
+                false,
+            ),
+            Err(IccImageError::InvalidDataLength {
+                expected: 2,
+                actual: 1
+            })
+        ));
     }
 }
