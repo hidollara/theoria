@@ -720,6 +720,38 @@ impl Error for IccProfileError {
 mod tests {
     use super::*;
 
+    #[test]
+    fn real_v4_profiles_round_trip_device_coordinates() {
+        for (bytes, sample) in [
+            (
+                &include_bytes!("fixtures/sRGB-v4.icc")[..],
+                &[0.25, 0.5, 0.75][..],
+            ),
+            (
+                &include_bytes!("fixtures/DisplayP3-v4.icc")[..],
+                &[0.25, 0.5, 0.75][..],
+            ),
+            (
+                &include_bytes!("fixtures/sGrey-v4.icc")[..],
+                &[0.5][..],
+            ),
+        ] {
+            let profile = IccProfile::from_bytes(bytes).unwrap();
+            assert_eq!(profile.device_channels(), sample.len());
+            let forward = profile
+                .to_pcs(IccRenderingIntent::RelativeColorimetric)
+                .unwrap();
+            let backward = profile
+                .from_pcs(IccRenderingIntent::RelativeColorimetric)
+                .unwrap();
+            let pcs = forward.transfer().evaluate(sample).unwrap();
+            let restored = backward.transfer().evaluate(&pcs).unwrap();
+            for (&actual, &expected) in restored.iter().zip(sample) {
+                assert!((actual - expected).abs() < 0.01, "{actual} != {expected}");
+            }
+        }
+    }
+
     fn simple_lut(curve: ToneReprCurve) -> LutWarehouse {
         LutWarehouse::Multidimensional(LutMultidimensionalType {
             num_input_channels: 3,
