@@ -145,7 +145,7 @@ impl Error for IccTransferError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::color::{TransferClut, TransferStage};
+    use crate::{TransferClut, TransferStage};
 
     #[test]
     fn four_channel_device_can_connect_through_matching_pcs() {

@@ -209,8 +209,8 @@ impl Error for ColorTransformError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::color::profile::{LabD50, LinearSrgb, Srgb, XyzD50};
-    use crate::color::{IccProfile, IccRenderingIntent};
+    use crate::profile::{LabD50, LinearSrgb, Srgb, XyzD50};
+    use crate::{IccProfile, IccRenderingIntent};
 
     #[test]
     fn matching_channel_counts_do_not_imply_matching_spaces() {

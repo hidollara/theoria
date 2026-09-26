@@ -78,7 +78,7 @@ pub(super) fn lab_d50_to_xyz_d50_wgsl(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::color::{Transfer, TransferStage};
+    use crate::{Transfer, TransferStage};
 
     #[test]
     fn d50_pcs_white_black_and_negative_roundtrip() {

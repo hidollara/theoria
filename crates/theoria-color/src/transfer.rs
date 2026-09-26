@@ -1215,7 +1215,7 @@ mod tests {
 
     #[test]
     fn rgb_transform_and_general_transfer_agree_on_both_directions() {
-        use crate::color::{DisplayP3, LinearDisplayP3, LinearSrgb, MatrixRgbProfile, Srgb};
+        use crate::{DisplayP3, LinearDisplayP3, LinearSrgb, MatrixRgbProfile, Srgb};
 
         fn check<P: MatrixRgbProfile>() {
             let rgb = [0.23, 0.51, 0.79];

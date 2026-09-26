@@ -419,15 +419,27 @@ mod tests {
     fn icc_image_shaders_validate_for_rgb_gray_and_cmyk_samples() {
         for (profile_bytes, intent) in [
             (
-                include_bytes!("../../color/fixtures/DisplayP3-v4.icc").as_slice(),
+                include_bytes!(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/crates/theoria-color/src/color/fixtures/DisplayP3-v4.icc"
+                ))
+                .as_slice(),
                 IccRenderingIntent::RelativeColorimetric,
             ),
             (
-                include_bytes!("../../color/fixtures/sGrey-v4.icc").as_slice(),
+                include_bytes!(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/crates/theoria-color/src/color/fixtures/sGrey-v4.icc"
+                ))
+                .as_slice(),
                 IccRenderingIntent::RelativeColorimetric,
             ),
             (
-                include_bytes!("../../color/fixtures/CGATS001Compat-v2-micro.icc").as_slice(),
+                include_bytes!(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/crates/theoria-color/src/color/fixtures/CGATS001Compat-v2-micro.icc"
+                ))
+                .as_slice(),
                 IccRenderingIntent::Perceptual,
             ),
         ] {

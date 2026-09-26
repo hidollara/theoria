@@ -256,7 +256,7 @@ mod tests {
     use moxcms::ColorProfile as ParsedProfile;
 
     use super::*;
-    use crate::color::{IccProfile, IccRenderingIntent};
+    use crate::{IccProfile, IccRenderingIntent};
 
     fn matrix_element(scale: f32) -> Vec<u8> {
         let mut element = Vec::new();

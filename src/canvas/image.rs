@@ -256,8 +256,11 @@ mod tests {
 
     #[test]
     fn icc_image_preserves_samples_until_renderer_conversion() {
-        let profile =
-            IccProfile::from_bytes(include_bytes!("../color/fixtures/sRGB-v4.icc")).unwrap();
+        let profile = IccProfile::from_bytes(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/crates/theoria-color/src/color/fixtures/sRGB-v4.icc"
+        )))
+        .unwrap();
         let source: Arc<[u8]> = vec![64, 128, 192, 77].into();
         let image = Image::from_icc_u8(
             1,
@@ -298,8 +301,11 @@ mod tests {
 
     #[test]
     fn icc_image_checks_sample_count_at_construction() {
-        let profile =
-            IccProfile::from_bytes(include_bytes!("../color/fixtures/sGrey-v4.icc")).unwrap();
+        let profile = IccProfile::from_bytes(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/crates/theoria-color/src/color/fixtures/sGrey-v4.icc"
+        )))
+        .unwrap();
         assert!(matches!(
             Image::from_icc_u8(
                 2,

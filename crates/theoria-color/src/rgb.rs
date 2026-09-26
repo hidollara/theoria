@@ -4,7 +4,7 @@ use super::{RgbColorSpace, RgbTransfer};
 ///
 /// This operates on logical coordinates only. Alpha association and renderer
 /// working precision are deliberately outside this boundary.
-pub(crate) fn convert_rgb(rgb: [f32; 3], from: RgbColorSpace, to: RgbColorSpace) -> [f32; 3] {
+pub fn convert_rgb(rgb: [f32; 3], from: RgbColorSpace, to: RgbColorSpace) -> [f32; 3] {
     if from == to {
         rgb
     } else {
@@ -18,7 +18,7 @@ pub(crate) fn convert_rgb(rgb: [f32; 3], from: RgbColorSpace, to: RgbColorSpace)
     }
 }
 
-pub(crate) fn encode_srgb(value: f32) -> f32 {
+pub fn encode_srgb(value: f32) -> f32 {
     RgbTransfer::Srgb.encode(value)
 }
 

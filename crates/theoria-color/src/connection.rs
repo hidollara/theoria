@@ -93,7 +93,7 @@ fn adapt_d50_to_d65(xyz: [f64; 3]) -> [f64; 3] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::color::{Color, Opacity, UnitF64};
+    use crate::{Color, Opacity, UnitF64};
 
     fn near(actual: [f64; 3], expected: [f64; 3], tolerance: f64) {
         for (actual, expected) in actual.into_iter().zip(expected) {

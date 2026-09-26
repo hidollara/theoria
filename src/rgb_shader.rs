@@ -1,7 +1,7 @@
 //! Supplies the same RGB conversion definitions to every Canvas WGSL shader.
 //! Also compiled by build.rs when validating and compiling Vulkan shaders.
 
-use crate::color::{RgbTransfer, RgbTransform, Transfer, profile_data as data};
+use theoria_color::{RgbTransfer, RgbTransform, Transfer, profile_data as data};
 
 const MARKER: &str = "// @theoria-rgb-conversions";
 

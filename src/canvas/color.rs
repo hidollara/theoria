@@ -2,7 +2,7 @@ use std::{error::Error, fmt, sync::Arc};
 
 use crate::color::{
     Color, ColorProfile, ColorTransformError, IccProfile, IccProfileError, IccRenderingIntent,
-    LabD50, Opacity, ReferenceSample, Rgb, RgbColorSpace, Sample, TransferError, UnitF32, UnitF64,
+    LabD50, Opacity, ReferenceSample, RgbColorSpace, Sample, TransferError, UnitF32, UnitF64,
     UnitSample, XyzD50, XyzD65,
 };
 
@@ -227,21 +227,30 @@ impl CanvasOpacity for u16 {
     }
 }
 
-impl<P, S, A> From<Color<P, S, A>> for CanvasColor
-where
-    P: ColorProfile<Model = Rgb> + Into<RgbColorSpace>,
-    S: CanvasCoordinates,
-    A: CanvasOpacity,
-{
-    fn from(color: Color<P, S, A>) -> Self {
-        let (profile, coordinates, opacity) = color.into_parts();
-        Self {
-            profile: CanvasProfile::Rgb(profile.into()),
-            coordinates: S::erase(coordinates),
-            opacity: A::erase(opacity),
+macro_rules! canvas_rgb_color {
+    ($profile:ty) => {
+        impl<S, A> From<Color<$profile, S, A>> for CanvasColor
+        where
+            S: CanvasCoordinates,
+            A: CanvasOpacity,
+        {
+            fn from(color: Color<$profile, S, A>) -> Self {
+                let (profile, coordinates, opacity) = color.into_parts();
+                Self {
+                    profile: CanvasProfile::Rgb(profile.into()),
+                    coordinates: S::erase(coordinates),
+                    opacity: A::erase(opacity),
+                }
+            }
         }
-    }
+    };
 }
+
+canvas_rgb_color!(crate::color::Srgb);
+canvas_rgb_color!(crate::color::LinearSrgb);
+canvas_rgb_color!(crate::color::DisplayP3);
+canvas_rgb_color!(crate::color::LinearDisplayP3);
+canvas_rgb_color!(RgbColorSpace);
 
 macro_rules! canvas_reference_color {
     ($profile:ty, $variant:ident) => {

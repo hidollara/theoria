@@ -2,41 +2,12 @@ use std::{env, fs, path::PathBuf};
 
 #[path = "src/canvas/composition_shader.rs"]
 mod composition_shader;
-#[path = "src/color/pcs.rs"]
-#[allow(dead_code)] // Build-time WGSL generation only needs the source emitters.
-mod pcs;
-#[path = "src/color/profile_data.rs"]
-#[allow(dead_code)] // Build-time WGSL generation does not use the D50 adaptation constants.
-mod profile_data;
 #[path = "src/rgb_shader.rs"]
 mod rgb_shader;
-#[path = "src/color/transfer.rs"]
-#[allow(dead_code)] // Build-time shader generation uses only WGSL lowering.
-mod transfer;
-#[path = "src/color/transform.rs"]
-#[allow(dead_code)] // Build-time shader generation uses only RGB profile definitions.
-mod transform;
-
-mod color {
-    pub(crate) use crate::{
-        profile_data,
-        transfer::Transfer,
-        transform::{RgbTransfer, RgbTransform},
-    };
-}
-
-use transform::{RgbTransfer, RgbTransform};
 
 fn main() {
     let output_dir = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR is set"));
-    for source_file in [
-        "src/canvas/composition_shader.rs",
-        "src/color/profile_data.rs",
-        "src/color/pcs.rs",
-        "src/color/transfer.rs",
-        "src/color/transform.rs",
-        "src/rgb_shader.rs",
-    ] {
+    for source_file in ["src/canvas/composition_shader.rs", "src/rgb_shader.rs"] {
         println!("cargo:rerun-if-changed={source_file}");
     }
     for (source_file, output_prefix) in [

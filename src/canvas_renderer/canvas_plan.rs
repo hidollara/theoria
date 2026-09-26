@@ -280,9 +280,11 @@ mod tests {
 
     #[test]
     fn renderer_prepares_icc_colors_before_recording() {
-        let profile =
-            crate::color::IccProfile::from_bytes(include_bytes!("../color/fixtures/sRGB-v4.icc"))
-                .unwrap();
+        let profile = crate::color::IccProfile::from_bytes(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/crates/theoria-color/src/color/fixtures/sRGB-v4.icc"
+        )))
+        .unwrap();
         let color = crate::canvas::CanvasColor::from_icc(
             &profile,
             vec![0.25, 0.5, 0.75],

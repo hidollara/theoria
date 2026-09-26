@@ -558,9 +558,10 @@ mod tests {
 
     #[test]
     fn icc_image_fragment_compiles_for_cmyk_with_alpha() {
-        let profile = IccProfile::from_bytes(include_bytes!(
-            "../../color/fixtures/CGATS001Compat-v2-micro.icc"
-        ))
+        let profile = IccProfile::from_bytes(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/crates/theoria-color/src/color/fixtures/CGATS001Compat-v2-micro.icc"
+        )))
         .unwrap();
         let lowered = crate::canvas_renderer::icc_image_shader::build(
             &profile,

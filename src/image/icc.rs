@@ -163,8 +163,11 @@ mod tests {
     #[test]
     fn real_profile_output_can_be_sampled_as_a_canvas_image() {
         let source = Srgba8Image::new(2, 1, vec![64, 128, 192, 77, 200, 20, 40, 255]).unwrap();
-        let profile =
-            IccProfile::from_bytes(include_bytes!("../color/fixtures/DisplayP3-v4.icc")).unwrap();
+        let profile = IccProfile::from_bytes(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/crates/theoria-color/src/color/fixtures/DisplayP3-v4.icc"
+        )))
+        .unwrap();
         let encoded =
             IccRasterImage::from_srgba8(&source, profile, IccRenderingIntent::RelativeColorimetric)
                 .unwrap();
@@ -205,8 +208,11 @@ mod tests {
     #[test]
     fn output_profile_controls_channel_count() {
         let source = Srgba8Image::new(1, 1, vec![128, 128, 128, 255]).unwrap();
-        let profile =
-            IccProfile::from_bytes(include_bytes!("../color/fixtures/sGrey-v4.icc")).unwrap();
+        let profile = IccProfile::from_bytes(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/crates/theoria-color/src/color/fixtures/sGrey-v4.icc"
+        )))
+        .unwrap();
         let encoded =
             IccRasterImage::from_srgba8(&source, profile, IccRenderingIntent::RelativeColorimetric)
                 .unwrap();
@@ -216,9 +222,10 @@ mod tests {
 
     #[test]
     fn real_cmyk_profile_can_enter_the_canvas_image_pipeline() {
-        let profile = IccProfile::from_bytes(include_bytes!(
-            "../color/fixtures/CGATS001Compat-v2-micro.icc"
-        ))
+        let profile = IccProfile::from_bytes(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/crates/theoria-color/src/color/fixtures/CGATS001Compat-v2-micro.icc"
+        )))
         .unwrap();
         assert_eq!(profile.device_channels(), 4);
         let image = IccRasterImage::new(

@@ -6,7 +6,8 @@ mod icc_profile;
 mod model;
 mod pcs;
 mod profile;
-pub(crate) mod profile_data;
+#[doc(hidden)]
+pub mod profile_data;
 mod rgb;
 mod sample;
 mod transfer;
@@ -34,4 +35,5 @@ pub use transform::{RgbTransfer, RgbTransform};
 pub use value::{Color, ColorError};
 pub use white_point::{WhitePoint, WhitePointError};
 
-pub(crate) use rgb::{convert_rgb, encode_srgb};
+#[doc(hidden)]
+pub use rgb::{convert_rgb, encode_srgb};

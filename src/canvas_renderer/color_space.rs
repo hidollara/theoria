@@ -208,9 +208,11 @@ mod tests {
 
     #[test]
     fn preparing_an_icc_color_does_not_rewrite_authored_data() {
-        let profile =
-            crate::color::IccProfile::from_bytes(include_bytes!("../color/fixtures/sRGB-v4.icc"))
-                .unwrap();
+        let profile = crate::color::IccProfile::from_bytes(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/crates/theoria-color/src/color/fixtures/sRGB-v4.icc"
+        )))
+        .unwrap();
         let color = CanvasColor::from_icc(
             &profile,
             vec![0.25, 0.5, 0.75],

@@ -991,8 +991,11 @@ mod tests {
 
     #[test]
     fn selected_working_space_preserves_srgba_output() {
-        let profile =
-            IccProfile::from_bytes(include_bytes!("../color/fixtures/DisplayP3-v4.icc")).unwrap();
+        let profile = IccProfile::from_bytes(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/crates/theoria-color/src/color/fixtures/DisplayP3-v4.icc"
+        )))
+        .unwrap();
         let image = crate::canvas::Image::from_icc_u8(
             1,
             1,
@@ -1081,8 +1084,11 @@ mod tests {
 
     #[test]
     fn icc_output_profile_changes_final_webgpu_device_codes() {
-        let profile =
-            IccProfile::from_bytes(include_bytes!("../color/fixtures/DisplayP3-v4.icc")).unwrap();
+        let profile = IccProfile::from_bytes(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/crates/theoria-color/src/color/fixtures/DisplayP3-v4.icc"
+        )))
+        .unwrap();
         let canvas = Canvas::draw(Color::rgb8(255, 0, 0), Coverage::all());
         if let Some(pixel) =
             render_pixel_in(&canvas, wgpu::TextureFormat::Rgba8Unorm, Some(&profile))
@@ -1118,8 +1124,11 @@ mod tests {
 
     #[test]
     fn icc_raster_keeps_out_of_srgb_gamut_values_when_sampled() {
-        let profile =
-            IccProfile::from_bytes(include_bytes!("../color/fixtures/DisplayP3-v4.icc")).unwrap();
+        let profile = IccProfile::from_bytes(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/crates/theoria-color/src/color/fixtures/DisplayP3-v4.icc"
+        )))
+        .unwrap();
         let image = crate::canvas::Image::from_icc_u8(
             1,
             1,
@@ -1146,9 +1155,10 @@ mod tests {
 
     #[test]
     fn cmyk_raster_with_alpha_is_transformed_when_drawn() {
-        let profile = IccProfile::from_bytes(include_bytes!(
-            "../color/fixtures/CGATS001Compat-v2-micro.icc"
-        ))
+        let profile = IccProfile::from_bytes(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/crates/theoria-color/src/color/fixtures/CGATS001Compat-v2-micro.icc"
+        )))
         .unwrap();
         let samples = [50, 100, 150, 20, 128];
         let expected = crate::canvas_renderer::raster::convert_icc8_to_linear_rgba16(

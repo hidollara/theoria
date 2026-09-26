@@ -284,8 +284,11 @@ mod tests {
         let mut linear_p3 =
             ImageSurface::new_with_working_space(size, RgbColorSpace::LinearDisplayP3).unwrap();
         let view = CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(1.0, 1.0)).unwrap();
-        let profile =
-            IccProfile::from_bytes(include_bytes!("../color/fixtures/DisplayP3-v4.icc")).unwrap();
+        let profile = IccProfile::from_bytes(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/crates/theoria-color/src/color/fixtures/DisplayP3-v4.icc"
+        )))
+        .unwrap();
         let image = crate::canvas::Image::from_icc_u8(
             1,
             1,
@@ -334,8 +337,11 @@ mod tests {
         let Ok(mut surface) = ImageSurface::new(size) else {
             return; // Vulkan may be unavailable on the test host.
         };
-        let profile =
-            IccProfile::from_bytes(include_bytes!("../color/fixtures/DisplayP3-v4.icc")).unwrap();
+        let profile = IccProfile::from_bytes(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/crates/theoria-color/src/color/fixtures/DisplayP3-v4.icc"
+        )))
+        .unwrap();
         let view = CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(1.0, 1.0)).unwrap();
         let content = SurfaceContent::new(
             Canvas::draw(Color::rgb8(255, 0, 0), Coverage::all()),
@@ -369,9 +375,10 @@ mod tests {
         let Ok(mut surface) = ImageSurface::new(size) else {
             return; // Vulkan may be unavailable on the test host.
         };
-        let profile = IccProfile::from_bytes(include_bytes!(
-            "../color/fixtures/CGATS001Compat-v2-micro.icc"
-        ))
+        let profile = IccProfile::from_bytes(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/crates/theoria-color/src/color/fixtures/CGATS001Compat-v2-micro.icc"
+        )))
         .unwrap();
         let samples = [50, 100, 150, 20, 128];
         let reference = crate::canvas_renderer::raster::convert_icc8_to_linear_rgba16(

@@ -733,14 +733,17 @@ mod tests {
     fn real_v4_profiles_round_trip_device_coordinates() {
         for (bytes, sample) in [
             (
-                &include_bytes!("fixtures/sRGB-v4.icc")[..],
+                &include_bytes!("color/fixtures/sRGB-v4.icc")[..],
                 &[0.25, 0.5, 0.75][..],
             ),
             (
-                &include_bytes!("fixtures/DisplayP3-v4.icc")[..],
+                &include_bytes!("color/fixtures/DisplayP3-v4.icc")[..],
                 &[0.25, 0.5, 0.75][..],
             ),
-            (&include_bytes!("fixtures/sGrey-v4.icc")[..], &[0.5][..]),
+            (
+                &include_bytes!("color/fixtures/sGrey-v4.icc")[..],
+                &[0.5][..],
+            ),
         ] {
             let profile = IccProfile::from_bytes(bytes).unwrap();
             assert_eq!(profile.device_channels(), sample.len());
@@ -760,7 +763,7 @@ mod tests {
 
     #[test]
     fn loaded_profile_retains_exact_bytes_for_image_metadata() {
-        let bytes = include_bytes!("fixtures/DisplayP3-v4.icc");
+        let bytes = include_bytes!("color/fixtures/DisplayP3-v4.icc");
         let profile = IccProfile::from_bytes(bytes).unwrap();
         assert_eq!(profile.original_bytes(), Some(bytes.as_slice()));
         assert_eq!(profile.clone().original_bytes(), Some(bytes.as_slice()));

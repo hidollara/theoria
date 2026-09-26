@@ -96,8 +96,11 @@ mod tests {
 
     #[test]
     fn real_display_profile_output_compiles_as_a_fragment_shader() {
-        let profile =
-            IccProfile::from_bytes(include_bytes!("../color/fixtures/DisplayP3-v4.icc")).unwrap();
+        let profile = IccProfile::from_bytes(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/crates/theoria-color/src/color/fixtures/DisplayP3-v4.icc"
+        )))
+        .unwrap();
         let output = OutputColorTransform::new(
             &profile,
             IccRenderingIntent::RelativeColorimetric,
@@ -119,8 +122,11 @@ mod tests {
 
     #[test]
     fn gpu_output_rejects_a_non_rgb_profile() {
-        let profile =
-            IccProfile::from_bytes(include_bytes!("../color/fixtures/sGrey-v4.icc")).unwrap();
+        let profile = IccProfile::from_bytes(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/crates/theoria-color/src/color/fixtures/sGrey-v4.icc"
+        )))
+        .unwrap();
         assert!(matches!(
             OutputColorTransform::new(
                 &profile,
@@ -133,8 +139,11 @@ mod tests {
 
     #[test]
     fn output_transfer_starts_in_the_selected_working_space() {
-        let profile =
-            IccProfile::from_bytes(include_bytes!("../color/fixtures/DisplayP3-v4.icc")).unwrap();
+        let profile = IccProfile::from_bytes(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/crates/theoria-color/src/color/fixtures/DisplayP3-v4.icc"
+        )))
+        .unwrap();
         let linear = OutputColorTransform::new(
             &profile,
             IccRenderingIntent::RelativeColorimetric,

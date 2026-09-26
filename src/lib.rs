@@ -1,7 +1,7 @@
 pub mod animation;
 pub mod canvas;
 mod canvas_renderer;
-pub mod color;
+pub use theoria_color as color;
 mod component_execution;
 pub mod event_loop;
 pub mod font;

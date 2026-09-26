@@ -132,8 +132,11 @@ mod tests {
 
     #[test]
     fn icc_upload_keeps_out_of_srgb_gamut_coordinates() {
-        let profile =
-            IccProfile::from_bytes(include_bytes!("../color/fixtures/DisplayP3-v4.icc")).unwrap();
+        let profile = IccProfile::from_bytes(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/crates/theoria-color/src/color/fixtures/DisplayP3-v4.icc"
+        )))
+        .unwrap();
         let converted = convert_icc8_to_linear_rgba16(
             1,
             &[255, 0, 0],

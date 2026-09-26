@@ -1,0 +1,11 @@
+[package]
+name = "theoria-color"
+version = "0.1.0"
+edition = "2024"
+description = "Color profiles, coordinates, and ICC transforms for Theoria"
+
+[dependencies]
+moxcms = { version = "0.8.1", default-features = false }
+
+[dev-dependencies]
+naga = { version = "30.0.0", features = ["wgsl-in", "spv-out"] }

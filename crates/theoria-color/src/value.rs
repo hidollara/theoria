@@ -204,7 +204,7 @@ fn validate_srgb(coordinates: [f32; 3]) -> Result<(), ColorError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::color::{LinearSrgb, XyzD50};
+    use crate::{LinearSrgb, XyzD50};
 
     #[test]
     fn a_typed_color_retains_its_authored_representation() {
