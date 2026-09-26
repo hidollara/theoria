@@ -12,7 +12,7 @@ mod view;
 pub use blend::{Blend, BlendMode, BlendOperation, BlendShader, BlendShaderError, WgslBlend};
 pub use canvas_image::{CanvasImage, CanvasImageError};
 pub use color::{CanvasColor, CanvasIccColorError};
-pub(crate) use color::{CanvasProfile, Coordinates};
+pub(crate) use color::{CanvasProfile, ColorValue};
 pub use color_field::{
     AcrossPathGradient, AcrossPathGradientError, AlongPathGradient, ColorField, ColorRamp,
     ColorRampError, ConicGradient, ConicGradientError, GradientExtend, GradientPoint, GradientStop,

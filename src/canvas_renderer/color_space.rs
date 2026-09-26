@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    canvas::{CanvasColor, CanvasIccColorError, CanvasProfile, Coordinates},
+    canvas::{CanvasColor, CanvasIccColorError, CanvasProfile, ColorValue},
     color::{ColorTransform, LabD50, RgbColorSpace, XyzD50Profile, XyzD65, convert_rgb},
 };
 
@@ -63,27 +63,57 @@ impl CanvasColor {
     ) -> Result<[f32; 4], CanvasIccColorError> {
         let rgb = match &self.profile {
             CanvasProfile::Rgb(authored_space) => {
-                crate::color::convert_rgb(self.coordinates.as_f32(), *authored_space, space)
+                crate::color::convert_rgb(self.value.coordinates_as_f32(), *authored_space, space)
             }
             CanvasProfile::XyzD50 => space
-                .xyz_d50_to_coordinates(self.coordinates.as_f64())
+                .xyz_d50_to_coordinates(self.value.coordinates_as_f64())
                 .map(|value| value as f32),
             CanvasProfile::XyzD65 => {
-                let xyz = XyzD65.coordinates_to_xyz_d50(&self.coordinates.as_f64());
+                let xyz = XyzD65.coordinates_to_xyz_d50(&self.value.coordinates_as_f64());
                 space.xyz_d50_to_coordinates(xyz).map(|value| value as f32)
             }
             CanvasProfile::LabD50 => {
-                let xyz = LabD50.coordinates_to_xyz_d50(&self.coordinates.as_f64());
+                let xyz = LabD50.coordinates_to_xyz_d50(&self.value.coordinates_as_f64());
                 space.xyz_d50_to_coordinates(xyz).map(|value| value as f32)
             }
             CanvasProfile::Icc { profile, intent } => {
-                let Coordinates::Dynamic(coordinates) = &self.coordinates else {
+                let ColorValue::Dynamic(coordinates, _) = &self.value else {
                     unreachable!("ICC profile always stores dynamic device coordinates")
                 };
                 convert_icc_color(profile, *intent, coordinates, space)?
             }
         };
-        Ok([rgb[0], rgb[1], rgb[2], self.opacity.as_f32()])
+        Ok([rgb[0], rgb[1], rgb[2], self.value.alpha().as_f32()])
+    }
+}
+
+impl ColorValue {
+    fn coordinates_as_f32(&self) -> [f32; 3] {
+        match self {
+            Self::F32(coordinates, _) => *coordinates,
+            Self::F64(coordinates, _) => coordinates.map(|value| value as f32),
+            Self::U8(coordinates, _) => {
+                coordinates.map(|value| f32::from(value) / f32::from(u8::MAX))
+            }
+            Self::U16(coordinates, _) => {
+                coordinates.map(|value| f32::from(value) / f32::from(u16::MAX))
+            }
+            Self::Dynamic(..) => unreachable!("ICC coordinates are evaluated by their profile"),
+        }
+    }
+
+    fn coordinates_as_f64(&self) -> [f64; 3] {
+        match self {
+            Self::F32(coordinates, _) => coordinates.map(f64::from),
+            Self::F64(coordinates, _) => *coordinates,
+            Self::U8(coordinates, _) => {
+                coordinates.map(|value| f64::from(value) / f64::from(u8::MAX))
+            }
+            Self::U16(coordinates, _) => {
+                coordinates.map(|value| f64::from(value) / f64::from(u16::MAX))
+            }
+            Self::Dynamic(..) => unreachable!("ICC coordinates are evaluated by their profile"),
+        }
     }
 }
 
@@ -225,10 +255,10 @@ mod tests {
         prepared.prepare(&color).unwrap();
         assert_eq!(color, original);
         assert!(prepared.lower(&color)[0] > 0.0);
-        assert_eq!(
-            color.coordinates,
-            Coordinates::Dynamic(vec![0.25, 0.5, 0.75].into())
-        );
+        assert!(matches!(
+            &color.value,
+            ColorValue::Dynamic(coordinates, _) if coordinates.as_ref() == [0.25, 0.5, 0.75]
+        ));
     }
 
     #[test]

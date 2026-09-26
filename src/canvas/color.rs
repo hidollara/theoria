@@ -11,8 +11,7 @@ use crate::color::{
 #[derive(Clone, Debug, PartialEq)]
 pub struct CanvasColor {
     pub(crate) profile: CanvasProfile,
-    pub(crate) coordinates: Coordinates,
-    pub(crate) opacity: Alpha,
+    pub(crate) value: ColorValue,
 }
 
 #[derive(Clone, Debug)]
@@ -51,35 +50,36 @@ impl PartialEq for CanvasProfile {
     }
 }
 
+/// The authored storage of one color, including its opacity. The renderer
+/// interprets the representation in the context of `CanvasColor::profile`.
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) enum Coordinates {
-    F32([f32; 3]),
-    F64([f64; 3]),
-    U8([u8; 3]),
-    U16([u16; 3]),
-    Dynamic(Arc<[f64]>),
+pub(crate) enum ColorValue {
+    F32([f32; 3], Alpha),
+    F64([f64; 3], Alpha),
+    U8([u8; 3], Alpha),
+    U16([u16; 3], Alpha),
+    Dynamic(Arc<[f64]>, Alpha),
 }
 
-impl Coordinates {
-    pub(crate) fn as_f32(&self) -> [f32; 3] {
+impl ColorValue {
+    fn with_alpha_factor(&self, factor: f32) -> Self {
+        let alpha = self.alpha().with_factor(factor);
         match self {
-            Self::F32(coordinates) => *coordinates,
-            Self::F64(coordinates) => coordinates.map(|value| value as f32),
-            Self::U8(coordinates) => coordinates.map(|value| f32::from(value) / f32::from(u8::MAX)),
-            Self::U16(coordinates) => {
-                coordinates.map(|value| f32::from(value) / f32::from(u16::MAX))
-            }
-            Self::Dynamic(_) => unreachable!("ICC coordinates are evaluated by their profile"),
+            Self::F32(coordinates, _) => Self::F32(*coordinates, alpha),
+            Self::F64(coordinates, _) => Self::F64(*coordinates, alpha),
+            Self::U8(coordinates, _) => Self::U8(*coordinates, alpha),
+            Self::U16(coordinates, _) => Self::U16(*coordinates, alpha),
+            Self::Dynamic(coordinates, _) => Self::Dynamic(coordinates.clone(), alpha),
         }
     }
 
-    pub(crate) fn as_f64(&self) -> [f64; 3] {
+    pub(crate) fn alpha(&self) -> Alpha {
         match self {
-            Self::F32(coordinates) => coordinates.map(Sample::to_f64),
-            Self::F64(coordinates) => *coordinates,
-            Self::U8(coordinates) => coordinates.map(Sample::to_f64),
-            Self::U16(coordinates) => coordinates.map(Sample::to_f64),
-            Self::Dynamic(_) => unreachable!("ICC coordinates are evaluated by their profile"),
+            Self::F32(_, alpha)
+            | Self::F64(_, alpha)
+            | Self::U8(_, alpha)
+            | Self::U16(_, alpha)
+            | Self::Dynamic(_, alpha) => *alpha,
         }
     }
 }
@@ -93,6 +93,28 @@ pub(crate) enum Alpha {
 }
 
 impl Alpha {
+    fn with_factor(self, factor: f32) -> Self {
+        let factor = factor.clamp(0.0, 1.0);
+        match self {
+            Self::F32(opacity) => Self::F32(
+                UnitF32::new(opacity.get() * factor)
+                    .expect("a finite unit opacity remains valid after multiplication"),
+            ),
+            Self::F64(opacity) => Self::F64(
+                UnitF64::new(opacity.get() * f64::from(factor))
+                    .expect("a finite unit opacity remains valid after multiplication"),
+            ),
+            Self::U8(opacity) => Self::F32(
+                UnitF32::new(f32::from(opacity) / 255.0 * factor)
+                    .expect("a finite unit opacity remains valid after multiplication"),
+            ),
+            Self::U16(opacity) => Self::F32(
+                UnitF32::new(f32::from(opacity) / f32::from(u16::MAX) * factor)
+                    .expect("a finite unit opacity remains valid after multiplication"),
+            ),
+        }
+    }
+
     pub(crate) fn as_f32(self) -> f32 {
         match self {
             Self::F32(opacity) => opacity.get(),
@@ -126,76 +148,55 @@ impl CanvasColor {
                 profile: Arc::new(profile.clone()),
                 intent,
             },
-            coordinates: Coordinates::Dynamic(coordinates),
-            opacity: Alpha::F32(opacity),
+            value: ColorValue::Dynamic(coordinates, Alpha::F32(opacity)),
         })
     }
 
     pub(crate) fn with_alpha_factor(&self, factor: f32) -> Self {
-        let factor = factor.clamp(0.0, 1.0);
-        let opacity = match self.opacity {
-            Alpha::F32(opacity) => Alpha::F32(
-                UnitF32::new(opacity.get() * factor)
-                    .expect("a finite unit opacity remains valid after multiplication"),
-            ),
-            Alpha::F64(opacity) => Alpha::F64(
-                UnitF64::new(opacity.get() * f64::from(factor))
-                    .expect("a finite unit opacity remains valid after multiplication"),
-            ),
-            Alpha::U8(opacity) => Alpha::F32(
-                UnitF32::new(f32::from(opacity) / 255.0 * factor)
-                    .expect("a finite unit opacity remains valid after multiplication"),
-            ),
-            Alpha::U16(opacity) => Alpha::F32(
-                UnitF32::new(f32::from(opacity) / f32::from(u16::MAX) * factor)
-                    .expect("a finite unit opacity remains valid after multiplication"),
-            ),
-        };
         Self {
             profile: self.profile.clone(),
-            coordinates: self.coordinates.clone(),
-            opacity,
+            value: self.value.with_alpha_factor(factor),
         }
     }
 }
 
 trait CanvasCoordinates: Sample {
-    fn erase(coordinates: [Self; 3]) -> Coordinates;
+    fn erase(coordinates: [Self; 3], alpha: Alpha) -> ColorValue;
 }
 
 impl CanvasCoordinates for f32 {
-    fn erase(coordinates: [Self; 3]) -> Coordinates {
-        Coordinates::F32(coordinates)
+    fn erase(coordinates: [Self; 3], alpha: Alpha) -> ColorValue {
+        ColorValue::F32(coordinates, alpha)
     }
 }
 
 impl CanvasCoordinates for UnitF32 {
-    fn erase(coordinates: [Self; 3]) -> Coordinates {
-        Coordinates::F32(coordinates.map(UnitF32::get))
+    fn erase(coordinates: [Self; 3], alpha: Alpha) -> ColorValue {
+        ColorValue::F32(coordinates.map(UnitF32::get), alpha)
     }
 }
 
 impl CanvasCoordinates for f64 {
-    fn erase(coordinates: [Self; 3]) -> Coordinates {
-        Coordinates::F64(coordinates)
+    fn erase(coordinates: [Self; 3], alpha: Alpha) -> ColorValue {
+        ColorValue::F64(coordinates, alpha)
     }
 }
 
 impl CanvasCoordinates for UnitF64 {
-    fn erase(coordinates: [Self; 3]) -> Coordinates {
-        Coordinates::F64(coordinates.map(UnitF64::get))
+    fn erase(coordinates: [Self; 3], alpha: Alpha) -> ColorValue {
+        ColorValue::F64(coordinates.map(UnitF64::get), alpha)
     }
 }
 
 impl CanvasCoordinates for u8 {
-    fn erase(coordinates: [Self; 3]) -> Coordinates {
-        Coordinates::U8(coordinates)
+    fn erase(coordinates: [Self; 3], alpha: Alpha) -> ColorValue {
+        ColorValue::U8(coordinates, alpha)
     }
 }
 
 impl CanvasCoordinates for u16 {
-    fn erase(coordinates: [Self; 3]) -> Coordinates {
-        Coordinates::U16(coordinates)
+    fn erase(coordinates: [Self; 3], alpha: Alpha) -> ColorValue {
+        ColorValue::U16(coordinates, alpha)
     }
 }
 
@@ -238,8 +239,7 @@ macro_rules! canvas_rgb_color {
                 let (profile, coordinates, opacity) = color.into_parts();
                 Self {
                     profile: CanvasProfile::Rgb(profile.into()),
-                    coordinates: S::erase(coordinates),
-                    opacity: A::erase(opacity),
+                    value: S::erase(coordinates, A::erase(opacity)),
                 }
             }
         }
@@ -263,8 +263,7 @@ macro_rules! canvas_reference_color {
                 let (_, coordinates, opacity) = color.into_parts();
                 Self {
                     profile: CanvasProfile::$variant,
-                    coordinates: S::erase(coordinates),
-                    opacity: A::erase(opacity),
+                    value: S::erase(coordinates, A::erase(opacity)),
                 }
             }
         }
@@ -350,10 +349,11 @@ mod tests {
             IccRenderingIntent::RelativeColorimetric,
         )
         .unwrap();
-        let Coordinates::Dynamic(stored) = &color.coordinates else {
+        let ColorValue::Dynamic(stored, Alpha::F32(stored_opacity)) = &color.value else {
             panic!("ICC device coordinates were converted at the Canvas boundary")
         };
         assert!(Arc::ptr_eq(stored, &coordinates));
+        assert_eq!(*stored_opacity, UnitF32::new(0.5).unwrap());
         let CanvasProfile::Icc {
             profile: stored_profile,
             intent,
@@ -409,7 +409,10 @@ mod tests {
     fn erasing_a_color_does_not_normalize_its_storage() {
         let color = CanvasColor::from(Color::rgba8(255, 128, 64, 128));
 
-        assert!(matches!(color.coordinates, Coordinates::U8(_)));
+        assert!(matches!(
+            color.value,
+            ColorValue::U8([255, 128, 64], Alpha::U8(128))
+        ));
         assert_eq!(color.profile, CanvasProfile::Rgb(RgbColorSpace::Srgb));
         assert_eq!(
             color.straight_rgba_in(RgbColorSpace::Srgb),
@@ -447,12 +450,12 @@ mod tests {
 
         let adjusted = color.with_alpha_factor(0.5);
 
-        assert_eq!(adjusted.coordinates, Coordinates::U8([255, 128, 64]));
+        assert!(matches!(adjusted.value, ColorValue::U8([255, 128, 64], _)));
         assert_eq!(
             adjusted.profile,
             CanvasProfile::Rgb(RgbColorSpace::LinearDisplayP3)
         );
-        assert!((adjusted.opacity.as_f32() - 64.0 / 255.0).abs() < 0.000_001);
+        assert!((adjusted.value.alpha().as_f32() - 64.0 / 255.0).abs() < 0.000_001);
     }
 
     #[test]
@@ -461,8 +464,7 @@ mod tests {
         let converted = authored.convert_to(LinearSrgb).unwrap();
         let canvas = CanvasColor::from(converted);
 
-        assert!(matches!(canvas.coordinates, Coordinates::F64(_)));
-        assert!(matches!(canvas.opacity, Alpha::F32(_)));
+        assert!(matches!(canvas.value, ColorValue::F64(_, Alpha::F32(_))));
         assert_eq!(
             canvas.profile,
             CanvasProfile::Rgb(RgbColorSpace::LinearSrgb)
@@ -474,7 +476,7 @@ mod tests {
     }
 
     #[test]
-    fn high_precision_and_integer_samples_are_erased_independently() {
+    fn color_value_keeps_coordinate_and_opacity_representations_together() {
         let color = Color::new(
             DisplayP3,
             [0.125_f64, 0.25, 0.5],
@@ -482,18 +484,16 @@ mod tests {
         )
         .unwrap();
         let canvas = CanvasColor::from(color);
-        assert!(matches!(canvas.coordinates, Coordinates::F64(_)));
-        assert!(matches!(canvas.opacity, Alpha::F64(_)));
+        assert!(matches!(canvas.value, ColorValue::F64(_, Alpha::F64(_))));
         assert!(matches!(
-            canvas.with_alpha_factor(0.5).opacity,
-            Alpha::F64(_)
+            canvas.with_alpha_factor(0.5).value,
+            ColorValue::F64(_, Alpha::F64(_))
         ));
 
         let color =
             Color::new(Srgb, [0_u16, u16::MAX / 2, u16::MAX], Opacity::new(128_u8)).unwrap();
         let canvas = CanvasColor::from(color);
-        assert!(matches!(canvas.coordinates, Coordinates::U16(_)));
-        assert!(matches!(canvas.opacity, Alpha::U8(_)));
+        assert!(matches!(canvas.value, ColorValue::U16(_, Alpha::U8(_))));
     }
 
     #[test]
@@ -517,8 +517,7 @@ mod tests {
             ),
         ] {
             assert_eq!(canvas.profile, profile);
-            assert!(matches!(canvas.coordinates, Coordinates::F64(_)));
-            assert!(matches!(canvas.opacity, Alpha::F32(_)));
+            assert!(matches!(canvas.value, ColorValue::F64(_, Alpha::F32(_))));
             let lowered = crate::canvas_renderer::color_space::lower_straight_color(&canvas);
             for (actual, expected) in lowered.into_iter().zip(lowered_original) {
                 assert!((actual - expected).abs() < 0.000_01);
