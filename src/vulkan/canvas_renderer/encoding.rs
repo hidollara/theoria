@@ -1,7 +1,7 @@
 use std::{mem::size_of, slice};
 
 use crate::{
-    canvas::{CanvasView, Composition, ImagePattern},
+    canvas::{CanvasView, Composition, ImageExtend, ImagePattern, ImageSampling},
     canvas_renderer::{composition_encoding, view_space::transformed_point_to_clip},
     color::RgbColorSpace,
     geometry::Point,
@@ -72,6 +72,26 @@ pub(super) struct ImagePushConstants {
 }
 
 impl ImagePushConstants {
+    pub(super) fn new_icc(
+        pattern: &ImagePattern,
+        points: [Point; 3],
+        image_to_root: Projective2,
+        view: CanvasView,
+    ) -> Self {
+        let mut result = Self::new(
+            pattern,
+            RgbAlphaAssociation::Straight,
+            RgbColorSpace::LinearSrgb,
+            points,
+            image_to_root,
+            view,
+        );
+        result.metadata[0] = u32::from(pattern.sampling() == ImageSampling::Linear)
+            | (u32::from(pattern.extend_x() == ImageExtend::Transparent) << 1)
+            | (u32::from(pattern.extend_y() == ImageExtend::Transparent) << 2);
+        result
+    }
+
     pub(super) fn new(
         pattern: &ImagePattern,
         rgb_alpha_association: RgbAlphaAssociation,

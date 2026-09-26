@@ -6,8 +6,9 @@ use std::{
 use wgpu::util::DeviceExt;
 
 use crate::canvas::{BlendShader, Composite, composition_shader::Binding};
+use crate::canvas_renderer::icc_image_shader;
 use crate::canvas_renderer::output_color::OutputColorTransform;
-use crate::color::{ColorSpaceKey, ColorTransform, IccProfile, IccRenderingIntent, RgbColorSpace};
+use crate::color::{ColorSpaceKey, IccProfile, IccRenderingIntent, RgbColorSpace};
 
 use super::encoding::{ImageVertex, TriangleVertex};
 
@@ -156,8 +157,14 @@ impl Pipelines {
         if self.icc_images.contains_key(&key) {
             return Ok(());
         }
-        let (shader_source, table_values) = icc_image_shader(profile, intent, has_alpha)?;
-        let shader = shader(device, "theoria WebGPU ICC image shader", shader_source);
+        let lowered = icc_image_shader::build(
+            profile,
+            intent,
+            has_alpha,
+            RgbColorSpace::LinearSrgb,
+            include_str!("../../../shaders/webgpu/icc_image.wgsl"),
+        )?;
+        let shader = shader(device, "theoria WebGPU ICC image shader", lowered.source);
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("theoria WebGPU ICC image"),
             entries: &[
@@ -191,7 +198,7 @@ impl Pipelines {
         });
         let tables = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("theoria WebGPU ICC image transfer tables"),
-            contents: bytemuck::cast_slice(&table_values),
+            contents: bytemuck::cast_slice(&lowered.tables),
             usage: wgpu::BufferUsages::STORAGE,
         });
         let pipeline = create_pipeline(
@@ -306,54 +313,6 @@ impl Pipelines {
     }
 }
 
-fn icc_image_shader(
-    profile: &IccProfile,
-    intent: IccRenderingIntent,
-    has_alpha: bool,
-) -> Result<(String, Vec<f32>), Box<dyn std::error::Error>> {
-    let to_pcs = profile.to_pcs(intent)?;
-    let to_working = ColorTransform::pcs_to_rgb(profile.pcs(), RgbColorSpace::LinearSrgb)?;
-    let transform = to_pcs.then(&to_working)?;
-    let transfer = transform.transfer().wgsl_with_storage(0, 0, 2)?;
-    let channels = profile.device_channels();
-    let total = channels + usize::from(has_alpha);
-    let layers = total.div_ceil(4);
-    let components = ["r", "g", "b", "a"];
-    let mut samples = String::new();
-    for layer in 0..layers {
-        samples.push_str(&format!(
-            "    let layer_{layer} = textureSampleLevel(image_texture, image_sampler, uv, {layer}, 0.0);\n"
-        ));
-    }
-    let values = (0..total)
-        .map(|channel| format!("layer_{}.{}", channel / 4, components[channel % 4]))
-        .collect::<Vec<_>>()
-        .join(", ");
-    samples.push_str(&format!("    return array<f32, {total}>({values});\n"));
-    let input = (0..channels)
-        .map(|channel| format!("sample[{channel}]"))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let alpha = if has_alpha {
-        format!("sample[{channels}]")
-    } else {
-        "1.0".to_owned()
-    };
-    let source = include_str!("../../../shaders/webgpu/icc_image.wgsl")
-        .replace("// @theoria-transfer", transfer.source())
-        .replace("// @theoria-sample-values", &samples)
-        .replace("THEORIA_SAMPLE_CHANNELS", &total.to_string())
-        .replace("THEORIA_DEVICE_CHANNELS", &channels.to_string())
-        .replace("THEORIA_DEVICE_VALUES", &input)
-        .replace("THEORIA_ALPHA", &alpha);
-    let tables = if transfer.table_values().is_empty() {
-        vec![0.0f32]
-    } else {
-        transfer.table_values().to_vec()
-    };
-    Ok((source, tables))
-}
-
 fn shader<'a>(
     device: &wgpu::Device,
     label: &'static str,
@@ -464,8 +423,15 @@ mod tests {
         ] {
             let profile = IccProfile::from_bytes(profile_bytes).unwrap();
             for has_alpha in [false, true] {
-                let (source, _) = icc_image_shader(&profile, intent, has_alpha).unwrap();
-                let module = naga::front::wgsl::parse_str(&source).unwrap();
+                let lowered = icc_image_shader::build(
+                    &profile,
+                    intent,
+                    has_alpha,
+                    RgbColorSpace::LinearSrgb,
+                    include_str!("../../../shaders/webgpu/icc_image.wgsl"),
+                )
+                .unwrap();
+                let module = naga::front::wgsl::parse_str(&lowered.source).unwrap();
                 naga::valid::Validator::new(
                     naga::valid::ValidationFlags::all(),
                     naga::valid::Capabilities::all(),

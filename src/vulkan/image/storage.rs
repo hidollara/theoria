@@ -25,6 +25,18 @@ impl VulkanImage {
         sample_count: vk::SampleCountFlags,
         usage: vk::ImageUsageFlags,
     ) -> Result<Self> {
+        Self::new_with_layers(device, format, extent, sample_count, usage, 1, false)
+    }
+
+    pub(in crate::vulkan) fn new_with_layers(
+        device: RenderDevice,
+        format: vk::Format,
+        extent: vk::Extent2D,
+        sample_count: vk::SampleCountFlags,
+        usage: vk::ImageUsageFlags,
+        layers: u32,
+        array_view: bool,
+    ) -> Result<Self> {
         let raw = device.raw();
         let image = unsafe {
             raw.create_image(
@@ -37,7 +49,7 @@ impl VulkanImage {
                         depth: 1,
                     })
                     .mip_levels(1)
-                    .array_layers(1)
+                    .array_layers(layers)
                     .samples(sample_count)
                     .tiling(vk::ImageTiling::OPTIMAL)
                     .usage(usage)
@@ -79,13 +91,17 @@ impl VulkanImage {
             raw.create_image_view(
                 &vk::ImageViewCreateInfo::default()
                     .image(image)
-                    .view_type(vk::ImageViewType::TYPE_2D)
+                    .view_type(if array_view {
+                        vk::ImageViewType::TYPE_2D_ARRAY
+                    } else {
+                        vk::ImageViewType::TYPE_2D
+                    })
                     .format(format)
                     .subresource_range(
                         vk::ImageSubresourceRange::default()
                             .aspect_mask(vk::ImageAspectFlags::COLOR)
                             .level_count(1)
-                            .layer_count(1),
+                            .layer_count(layers),
                     ),
                 None,
             )

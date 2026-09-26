@@ -18,7 +18,7 @@ use crate::{
             pipeline::{Pipeline, Pipelines},
         },
         color::PremultipliedLinearSrgba,
-        image::ImageCache,
+        image::{GpuImageColor, ImageCache},
         image_layout::transition_image,
         scratch_image::ScratchImage,
     },
@@ -218,16 +218,20 @@ impl<'a> CanvasCommandEncoder<'a> {
 
     fn render_image_mesh(&self, mesh: &Mesh, pattern: &ImagePattern, mesh_to_root: Projective2) {
         let gpu_image = self.image_cache.get(pattern.image()).unwrap();
+        let (pipeline, icc) = match &gpu_image.color {
+            GpuImageColor::Rgb { .. } => (&self.pipelines.image, false),
+            GpuImageColor::Icc { key, .. } => (self.pipelines.icc_image(key), true),
+        };
         unsafe {
             self.device.cmd_bind_pipeline(
                 self.command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
-                self.pipelines.image.handle,
+                pipeline.handle,
             );
             self.device.cmd_bind_descriptor_sets(
                 self.command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
-                self.pipelines.image.layout,
+                pipeline.layout,
                 0,
                 &[gpu_image.descriptor_set(pattern)],
                 &[],
@@ -238,17 +242,24 @@ impl<'a> CanvasCommandEncoder<'a> {
                     mesh.vertices[triangle[1] as usize],
                     mesh.vertices[triangle[2] as usize],
                 ];
-                let constants = ImagePushConstants::new(
-                    pattern,
-                    gpu_image.rgb_alpha_association(),
-                    gpu_image.rgb_color_space(),
-                    points,
-                    mesh_to_root,
-                    self.view,
-                );
+                let constants = if icc {
+                    ImagePushConstants::new_icc(pattern, points, mesh_to_root, self.view)
+                } else {
+                    let GpuImageColor::Rgb { association, space } = &gpu_image.color else {
+                        unreachable!()
+                    };
+                    ImagePushConstants::new(
+                        pattern,
+                        *association,
+                        *space,
+                        points,
+                        mesh_to_root,
+                        self.view,
+                    )
+                };
                 self.device.cmd_push_constants(
                     self.command_buffer,
-                    self.pipelines.image.layout,
+                    pipeline.layout,
                     vk::ShaderStageFlags::VERTEX,
                     0,
                     constants.as_bytes(),

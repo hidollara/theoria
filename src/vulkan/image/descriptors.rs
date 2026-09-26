@@ -6,8 +6,11 @@ use ash::vk;
 
 use crate::{
     canvas::{ImageExtend, ImagePattern, ImageSampling},
-    color::RgbColorSpace,
-    vulkan::{color::RgbAlphaAssociation, image::storage::VulkanImage, presenter::RenderDevice},
+    color::{ColorSpaceKey, IccRenderingIntent, RgbColorSpace},
+    vulkan::{
+        color::RgbAlphaAssociation, host_buffer::HostBuffer, image::storage::VulkanImage,
+        presenter::RenderDevice,
+    },
 };
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
@@ -15,10 +18,21 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 pub(in crate::vulkan) struct GpuImage {
     _descriptor_pool: DescriptorPool,
     descriptor_sets: HashMap<SamplerKey, vk::DescriptorSet>,
-    rgb_alpha_association: RgbAlphaAssociation,
-    rgb_color_space: RgbColorSpace,
+    pub(in crate::vulkan) color: GpuImageColor,
+    _tables: Option<HostBuffer>,
     // Fields drop in declaration order, so the sampled view outlives its pool.
     _backing: Arc<VulkanImage>,
+}
+
+pub(in crate::vulkan) enum GpuImageColor {
+    Rgb {
+        association: RgbAlphaAssociation,
+        space: RgbColorSpace,
+    },
+    Icc {
+        key: (ColorSpaceKey, IccRenderingIntent, bool),
+        shader_source: Arc<str>,
+    },
 }
 
 pub(in crate::vulkan) struct SampledImageBinding {
@@ -30,6 +44,7 @@ pub(super) struct ImageDescriptors {
     device: RenderDevice,
     samplers: HashMap<SamplerKey, vk::Sampler>,
     layout: vk::DescriptorSetLayout,
+    icc_layout: vk::DescriptorSetLayout,
 }
 
 struct DescriptorPool {
@@ -80,14 +95,6 @@ impl GpuImage {
     pub(in crate::vulkan) fn descriptor_set(&self, pattern: &ImagePattern) -> vk::DescriptorSet {
         self.descriptor_sets[&SamplerKey::from_pattern(pattern)]
     }
-
-    pub(in crate::vulkan) fn rgb_alpha_association(&self) -> RgbAlphaAssociation {
-        self.rgb_alpha_association
-    }
-
-    pub(in crate::vulkan) fn rgb_color_space(&self) -> RgbColorSpace {
-        self.rgb_color_space
-    }
 }
 
 impl ImageDescriptors {
@@ -109,6 +116,25 @@ impl ImageDescriptors {
                 &vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings),
                 None,
             )?;
+            let icc_bindings = [
+                bindings[0],
+                bindings[1],
+                vk::DescriptorSetLayoutBinding::default()
+                    .binding(2)
+                    .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                    .descriptor_count(1)
+                    .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+            ];
+            let icc_layout = match device.raw().create_descriptor_set_layout(
+                &vk::DescriptorSetLayoutCreateInfo::default().bindings(&icc_bindings),
+                None,
+            ) {
+                Ok(layout) => layout,
+                Err(error) => {
+                    device.raw().destroy_descriptor_set_layout(layout, None);
+                    return Err(error.into());
+                }
+            };
             let mut samplers = HashMap::new();
             for sampling in [ImageSampling::Nearest, ImageSampling::Linear] {
                 for extend_x in image_extend_modes() {
@@ -127,6 +153,7 @@ impl ImageDescriptors {
                                     device.raw().destroy_sampler(sampler, None);
                                 }
                                 device.raw().destroy_descriptor_set_layout(layout, None);
+                                device.raw().destroy_descriptor_set_layout(icc_layout, None);
                                 return Err(error.into());
                             }
                         }
@@ -137,12 +164,17 @@ impl ImageDescriptors {
                 device,
                 samplers,
                 layout,
+                icc_layout,
             })
         }
     }
 
     pub(super) fn layout(&self) -> vk::DescriptorSetLayout {
         self.layout
+    }
+
+    pub(super) fn icc_layout(&self) -> vk::DescriptorSetLayout {
+        self.icc_layout
     }
 
     pub(super) fn bind_sampled_view(
@@ -205,9 +237,45 @@ impl ImageDescriptors {
         rgb_alpha_association: RgbAlphaAssociation,
         rgb_color_space: RgbColorSpace,
     ) -> Result<GpuImage> {
+        self.bind_backing_with_color(
+            backing,
+            GpuImageColor::Rgb {
+                association: rgb_alpha_association,
+                space: rgb_color_space,
+            },
+            None,
+        )
+    }
+
+    pub(super) fn bind_icc_backing(
+        &self,
+        backing: Arc<VulkanImage>,
+        key: (ColorSpaceKey, IccRenderingIntent, bool),
+        shader_source: String,
+        table_values: &[f32],
+    ) -> Result<GpuImage> {
+        let tables = HostBuffer::new(
+            self.device.clone(),
+            u64::try_from(table_values.len() * 4)?,
+            vk::BufferUsageFlags::STORAGE_BUFFER,
+        )?;
+        tables.write(bytemuck::cast_slice(table_values))?;
+        self.bind_backing_with_color(
+            backing,
+            GpuImageColor::Icc { key, shader_source: shader_source.into() },
+            Some(tables),
+        )
+    }
+
+    fn bind_backing_with_color(
+        &self,
+        backing: Arc<VulkanImage>,
+        color: GpuImageColor,
+        tables: Option<HostBuffer>,
+    ) -> Result<GpuImage> {
         let device = self.device.raw();
         let descriptor_count = u32::try_from(self.samplers.len())?;
-        let pool_sizes = [
+        let mut pool_sizes = vec![
             vk::DescriptorPoolSize::default()
                 .ty(vk::DescriptorType::SAMPLER)
                 .descriptor_count(descriptor_count),
@@ -215,6 +283,13 @@ impl ImageDescriptors {
                 .ty(vk::DescriptorType::SAMPLED_IMAGE)
                 .descriptor_count(descriptor_count),
         ];
+        if tables.is_some() {
+            pool_sizes.push(
+                vk::DescriptorPoolSize::default()
+                    .ty(vk::DescriptorType::STORAGE_BUFFER)
+                    .descriptor_count(descriptor_count),
+            );
+        }
         let descriptor_pool = DescriptorPool::new(self.device.clone(), unsafe {
             device.create_descriptor_pool(
                 &vk::DescriptorPoolCreateInfo::default()
@@ -223,7 +298,14 @@ impl ImageDescriptors {
                 None,
             )?
         });
-        let layouts = vec![self.layout; self.samplers.len()];
+        let layouts = vec![
+            if tables.is_some() {
+                self.icc_layout
+            } else {
+                self.layout
+            };
+            self.samplers.len()
+        ];
         let descriptor_sets = unsafe {
             device.allocate_descriptor_sets(
                 &vk::DescriptorSetAllocateInfo::default()
@@ -233,7 +315,15 @@ impl ImageDescriptors {
         };
         let mut sets_by_sampler = HashMap::new();
         for ((key, sampler), descriptor_set) in self.samplers.iter().zip(descriptor_sets) {
-            let sampler_info = [vk::DescriptorImageInfo::default().sampler(*sampler)];
+            let sampler = if tables.is_some() {
+                self.samplers[&SamplerKey {
+                    sampling: ImageSampling::Nearest,
+                    ..*key
+                }]
+            } else {
+                *sampler
+            };
+            let sampler_info = [vk::DescriptorImageInfo::default().sampler(sampler)];
             let image_info = [vk::DescriptorImageInfo::default()
                 .image_view(backing.view)
                 .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
@@ -250,14 +340,25 @@ impl ImageDescriptors {
                     .image_info(&image_info),
             ];
             unsafe { device.update_descriptor_sets(&writes, &[]) };
+            if let Some(tables) = &tables {
+                let info = [vk::DescriptorBufferInfo::default()
+                    .buffer(tables.raw())
+                    .range(vk::WHOLE_SIZE)];
+                let write = [vk::WriteDescriptorSet::default()
+                    .dst_set(descriptor_set)
+                    .dst_binding(2)
+                    .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                    .buffer_info(&info)];
+                unsafe { device.update_descriptor_sets(&write, &[]) };
+            }
             sets_by_sampler.insert(*key, descriptor_set);
         }
 
         Ok(GpuImage {
             _descriptor_pool: descriptor_pool,
             descriptor_sets: sets_by_sampler,
-            rgb_alpha_association,
-            rgb_color_space,
+            color,
+            _tables: tables,
             _backing: backing,
         })
     }
@@ -272,6 +373,9 @@ impl Drop for ImageDescriptors {
             self.device
                 .raw()
                 .destroy_descriptor_set_layout(self.layout, None);
+            self.device
+                .raw()
+                .destroy_descriptor_set_layout(self.icc_layout, None);
         }
     }
 }

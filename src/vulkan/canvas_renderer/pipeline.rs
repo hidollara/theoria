@@ -1,4 +1,10 @@
-use std::{collections::HashMap, error::Error, ffi::CStr, io::Cursor, mem::size_of};
+use std::{
+    collections::{HashMap, HashSet},
+    error::Error,
+    ffi::CStr,
+    io::Cursor,
+    mem::size_of,
+};
 
 use ash::vk;
 
@@ -84,10 +90,61 @@ pub(super) struct Pipelines {
     pub(super) mask: Pipeline,
     pub(super) present: Pipeline,
     pub(super) icc_presents: HashMap<(ColorSpaceKey, IccRenderingIntent), Pipeline>,
+    pub(super) icc_images: HashMap<(ColorSpaceKey, IccRenderingIntent, bool), Pipeline>,
     pub(super) blend_shaders: HashMap<BlendShader, Pipeline>,
 }
 
 impl Pipelines {
+    pub(super) fn icc_image(&self, key: &(ColorSpaceKey, IccRenderingIntent, bool)) -> &Pipeline {
+        &self.icc_images[key]
+    }
+
+    pub(super) unsafe fn ensure_icc_image(
+        &mut self,
+        device: &ash::Device,
+        descriptor_layout: vk::DescriptorSetLayout,
+        key: (ColorSpaceKey, IccRenderingIntent, bool),
+        source: &str,
+    ) -> Result<()> {
+        if self.icc_images.contains_key(&key) {
+            return Ok(());
+        }
+        let words = compile_fragment(source)?;
+        let bytes: Vec<u8> = words.into_iter().flat_map(u32::to_le_bytes).collect();
+        let pipeline = unsafe {
+            create_pipeline(
+                device,
+                self.working_format,
+                IMAGE_VERTEX_SHADER,
+                &bytes,
+                size_of::<ImagePushConstants>() as u32,
+                vk::ShaderStageFlags::VERTEX,
+                &[descriptor_layout],
+                self.sample_count,
+                Composite::SourceOver,
+            )?
+        };
+        self.icc_images.insert(key, pipeline.into_pipeline());
+        Ok(())
+    }
+
+    pub(super) unsafe fn retain_icc_images(
+        &mut self,
+        device: &ash::Device,
+        active: &HashSet<(ColorSpaceKey, IccRenderingIntent, bool)>,
+    ) {
+        self.icc_images.retain(|key, pipeline| {
+            if active.contains(key) {
+                return true;
+            }
+            unsafe {
+                device.destroy_pipeline(pipeline.handle, None);
+                device.destroy_pipeline_layout(pipeline.layout, None);
+            }
+            false
+        });
+    }
+
     pub(super) fn icc_present(
         &self,
         profile: &IccProfile,
@@ -296,6 +353,7 @@ pub(super) unsafe fn create_pipelines(
         mask: mask.into_pipeline(),
         present: present.into_pipeline(),
         icc_presents: HashMap::new(),
+        icc_images: HashMap::new(),
         blend_shaders: HashMap::new(),
     })
 }
@@ -461,5 +519,22 @@ mod tests {
         let shader = BlendShader::wgsl("return backdrop * source;").unwrap();
         let source = shader.wgsl_module(Binding::Vulkan);
         assert!(!compile_fragment(&source).unwrap().is_empty());
+    }
+
+    #[test]
+    fn icc_image_fragment_compiles_for_cmyk_with_alpha() {
+        let profile = IccProfile::from_bytes(include_bytes!(
+            "../../color/fixtures/CGATS001Compat-v2-micro.icc"
+        ))
+        .unwrap();
+        let lowered = crate::canvas_renderer::icc_image_shader::build(
+            &profile,
+            IccRenderingIntent::Perceptual,
+            true,
+            crate::color::RgbColorSpace::LinearSrgb,
+            include_str!("../../../shaders/vulkan/icc_image.wgsl"),
+        )
+        .unwrap();
+        assert!(!compile_fragment(&lowered.source).unwrap().is_empty());
     }
 }

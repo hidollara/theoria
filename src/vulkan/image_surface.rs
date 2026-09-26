@@ -235,7 +235,7 @@ fn pixel_byte_len(size: SurfaceSize) -> Result<usize> {
 mod tests {
     use super::{ImageSurface, pixel_byte_len};
     use crate::{
-        canvas::{Canvas, CanvasView, Coverage},
+        canvas::{Canvas, CanvasView, Coverage, ImageExtend, ImagePattern},
         color::{Color, IccProfile, IccRenderingIntent},
         geometry::Point,
         surface::{SurfaceContent, SurfaceSize},
@@ -299,5 +299,60 @@ mod tests {
         assert_eq!(result.pixels()[3], 255);
         assert!(result.pixels()[0] < 255);
         assert!(result.pixels()[1] > 0);
+    }
+
+    #[test]
+    fn image_surface_samples_cmyk_with_alpha_without_preconverting_the_cache() {
+        let size = SurfaceSize {
+            width: 2,
+            height: 2,
+        };
+        let Ok(mut surface) = ImageSurface::new(size) else {
+            return; // Vulkan may be unavailable on the test host.
+        };
+        let profile = IccProfile::from_bytes(include_bytes!(
+            "../color/fixtures/CGATS001Compat-v2-micro.icc"
+        ))
+        .unwrap();
+        let samples = [50, 100, 150, 20, 128];
+        let reference = crate::canvas_renderer::raster::convert_icc8_to_linear_rgba16(
+            1,
+            &samples,
+            &profile,
+            IccRenderingIntent::Perceptual,
+            true,
+        )
+        .unwrap();
+        let image = crate::canvas::Image::from_icc_u8(
+            1,
+            1,
+            samples.to_vec(),
+            profile,
+            IccRenderingIntent::Perceptual,
+            true,
+        )
+        .unwrap();
+        let view = CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(1.0, 1.0)).unwrap();
+        let content = SurfaceContent::new(
+            Canvas::draw(
+                ImagePattern::new(image).with_extend(ImageExtend::Clamp),
+                Coverage::all(),
+            ),
+            view,
+            Color::rgba8(0, 0, 0, 0),
+        );
+        let rendered = surface.render(&content).unwrap();
+        for channel in 0..3 {
+            let linear = half::f16::from_bits(reference.samples()[channel]).to_f32();
+            let expected =
+                (crate::color::encode_srgb(linear).clamp(0.0, 1.0) * 255.0).round() as u8;
+            let actual = rendered.pixels()[channel];
+            assert!(
+                actual.abs_diff(expected) <= 6,
+                "channel {channel}: {actual} != {expected}; rgba={:?}",
+                &rendered.pixels()[..4]
+            );
+        }
+        assert!(rendered.pixels()[3].abs_diff(128) <= 2);
     }
 }

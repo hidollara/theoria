@@ -7,6 +7,7 @@ use crate::{
         canvas_image::{CanvasImage, CanvasImageInstanceKey},
         image::{Image, ImageKind, RasterImageSource, RasterImageView},
     },
+    canvas_renderer::{icc_image_shader, raster::pack_icc_samples},
     color::LinearSrgb,
     image::RasterImageInstanceKey,
 };
@@ -18,9 +19,9 @@ mod storage;
 mod upload;
 
 use descriptors::ImageDescriptors;
-pub(super) use descriptors::{GpuImage, SampledImageBinding};
+pub(super) use descriptors::{GpuImage, GpuImageColor, SampledImageBinding};
 pub(super) use storage::VulkanImage;
-use upload::{upload_rgba8, upload_rgba16f};
+use upload::{upload_rgba8, upload_rgba8_array};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -46,6 +47,10 @@ impl ImageCache {
 
     pub(super) fn descriptor_set_layout(&self) -> vk::DescriptorSetLayout {
         self.descriptors.layout()
+    }
+
+    pub(super) fn icc_descriptor_set_layout(&self) -> vk::DescriptorSetLayout {
+        self.descriptors.icc_layout()
     }
 
     pub(super) fn ensure_uploaded(&mut self, image: &dyn RasterImageSource) -> Result<()> {
@@ -85,6 +90,28 @@ impl ImageCache {
         }
     }
 
+    pub(super) fn active_icc_shaders(
+        &mut self,
+    ) -> Vec<(
+        (
+            crate::color::ColorSpaceKey,
+            crate::color::IccRenderingIntent,
+            bool,
+        ),
+        Arc<str>,
+    )> {
+        self.prune_unused();
+        self.raster
+            .values()
+            .filter_map(|image| match &image.color {
+                GpuImageColor::Icc { key, shader_source } => {
+                    Some((key.clone(), shader_source.clone()))
+                }
+                GpuImageColor::Rgb { .. } => None,
+            })
+            .collect()
+    }
+
     fn prune_unused(&mut self) {
         self.raster.retain(|key, _| key.is_alive());
         self.canvas.retain(|key, _| key.is_alive());
@@ -122,23 +149,36 @@ impl ImageCache {
             } => {
                 if !self
                     .device
-                    .supports_filterable_sampled_format(vk::Format::R16G16B16A16_SFLOAT)
+                    .supports_filterable_sampled_format(vk::Format::R8G8B8A8_UNORM)
                 {
-                    return Err("ICC image sampling requires filterable RGBA16F support".into());
+                    return Err("ICC image sampling requires filterable RGBA8 support".into());
                 }
-                let plane = crate::canvas_renderer::raster::convert_icc8_to_linear_rgba16(
+                let packed = pack_icc_samples(
                     source.width(),
+                    source.height(),
                     pixels,
+                    profile.device_channels(),
+                    has_alpha,
+                )?;
+                let backing = upload_rgba8_array(
+                    self.device.clone(),
+                    source.width(),
+                    source.height(),
+                    &packed.samples,
+                    packed.layers,
+                )?;
+                let lowered = icc_image_shader::build(
                     profile,
                     intent,
                     has_alpha,
-                )?;
-                let backing =
-                    upload_rgba16f(self.device.clone(), source.width(), source.height(), &plane)?;
-                self.descriptors.bind_backing(
-                    backing,
-                    RgbAlphaAssociation::Straight,
                     crate::color::RgbColorSpace::LinearSrgb,
+                    include_str!("../../shaders/vulkan/icc_image.wgsl"),
+                )?;
+                self.descriptors.bind_icc_backing(
+                    backing,
+                    (profile.device_space(), intent, has_alpha),
+                    lowered.source,
+                    &lowered.tables,
                 )
             }
             RasterImageView::Rgb8 { plane, color_space } => {

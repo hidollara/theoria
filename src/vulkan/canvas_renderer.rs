@@ -227,6 +227,21 @@ impl CanvasRenderer {
         self.gpu.ensure_image_cache(&self.device)?;
         self.gpu
             .ensure_pipelines(&self.device, working_format, format, sample_count)?;
+        let icc_layout = self
+            .gpu
+            .image_cache
+            .as_ref()
+            .unwrap()
+            .icc_descriptor_set_layout();
+        let icc_shaders = self.gpu.image_cache.as_mut().unwrap().active_icc_shaders();
+        let active_icc = icc_shaders.iter().map(|(key, _)| key.clone()).collect();
+        unsafe {
+            let pipelines = self.gpu.pipelines.as_mut().unwrap();
+            for (key, source) in icc_shaders {
+                pipelines.ensure_icc_image(self.device.raw(), icc_layout, key, &source)?;
+            }
+            pipelines.retain_icc_images(self.device.raw(), &active_icc);
+        }
         if let (Some((profile, intent)), Some(transform)) = (output_profile, &output) {
             let descriptor_layout = self
                 .gpu

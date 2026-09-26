@@ -1,10 +1,11 @@
-use std::{collections::HashMap, io};
+use std::collections::HashMap;
 
 use crate::{
     canvas::{
         canvas_image::{CanvasImage, CanvasImageInstanceKey},
         image::{Image, ImageKind, RasterImageSource, RasterImageView},
     },
+    canvas_renderer::raster::{PackedIccSamples, pack_icc_samples},
     color::{ColorSpaceKey, IccRenderingIntent, LinearSrgb, RgbColorSpace},
     image::{AlphaAssociation, RasterImageInstanceKey},
 };
@@ -30,11 +31,7 @@ pub(super) enum GpuImageColor {
 enum UploadPlane<'a> {
     Borrowed(&'a crate::image::RasterPlane<u8>),
     Expanded(crate::image::RasterPlane<u8>),
-    Icc {
-        samples: Vec<u8>,
-        layers: u32,
-        row_stride: usize,
-    },
+    Icc(PackedIccSamples),
 }
 
 impl UploadPlane<'_> {
@@ -42,7 +39,7 @@ impl UploadPlane<'_> {
         match self {
             Self::Borrowed(plane) => plane.samples(),
             Self::Expanded(plane) => plane.samples(),
-            Self::Icc { samples, .. } => samples,
+            Self::Icc(packed) => &packed.samples,
         }
     }
 
@@ -50,21 +47,19 @@ impl UploadPlane<'_> {
         match self {
             Self::Borrowed(plane) => plane.row_stride(),
             Self::Expanded(plane) => plane.row_stride(),
-            Self::Icc { row_stride, .. } => *row_stride,
+            Self::Icc(packed) => packed.row_stride,
         }
     }
 
     fn format(&self) -> wgpu::TextureFormat {
         match self {
-            Self::Borrowed(_) | Self::Expanded(_) | Self::Icc { .. } => {
-                wgpu::TextureFormat::Rgba8Unorm
-            }
+            Self::Borrowed(_) | Self::Expanded(_) | Self::Icc(_) => wgpu::TextureFormat::Rgba8Unorm,
         }
     }
 
     fn layers(&self) -> u32 {
         match self {
-            Self::Icc { layers, .. } => *layers,
+            Self::Icc(packed) => packed.layers,
             _ => 1,
         }
     }
@@ -101,13 +96,13 @@ impl ImageCache {
                 intent,
                 has_alpha,
             } => (
-                pack_icc_samples(
+                UploadPlane::Icc(pack_icc_samples(
                     image.width(),
                     image.height(),
                     pixels,
                     profile.device_channels(),
                     has_alpha,
-                )?,
+                )?),
                 GpuImageColor::Icc {
                     key: (profile.device_space(), intent, has_alpha),
                 },
@@ -247,59 +242,5 @@ fn extent(width: u32, height: u32) -> wgpu::Extent3d {
         width,
         height,
         depth_or_array_layers: 1,
-    }
-}
-
-/// Stores device channels unchanged in RGBA8 texture-array layers. The final
-/// channel is straight alpha when present; unused components are padding.
-fn pack_icc_samples(
-    width: u32,
-    height: u32,
-    pixels: &[u8],
-    device_channels: usize,
-    has_alpha: bool,
-) -> Result<UploadPlane<'static>, Box<dyn std::error::Error>> {
-    let channels = device_channels + usize::from(has_alpha);
-    let layers = u32::try_from(channels.div_ceil(4))?;
-    let width = usize::try_from(width)?;
-    let height = usize::try_from(height)?;
-    let overflow = || io::Error::from(io::ErrorKind::OutOfMemory);
-    let row_stride = width.checked_mul(4).ok_or_else(overflow)?;
-    let layer_size = row_stride.checked_mul(height).ok_or_else(overflow)?;
-    let size = layer_size
-        .checked_mul(layers as usize)
-        .ok_or_else(overflow)?;
-    let mut samples = vec![255; size];
-    for (pixel_index, pixel) in pixels.chunks_exact(channels).enumerate() {
-        for (channel, sample) in pixel.iter().copied().enumerate() {
-            let offset = (channel / 4) * layer_size + pixel_index * 4 + channel % 4;
-            samples[offset] = sample;
-        }
-    }
-    Ok(UploadPlane::Icc {
-        samples,
-        layers,
-        row_stride,
-    })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn icc_upload_preserves_source_channels_and_separate_alpha() {
-        let UploadPlane::Icc {
-            samples,
-            layers,
-            row_stride,
-        } = pack_icc_samples(2, 1, &[10, 20, 30, 40, 50, 60, 70, 80, 90, 100], 4, true).unwrap()
-        else {
-            panic!("ICC samples must use a source texture array")
-        };
-        assert_eq!(layers, 2);
-        assert_eq!(row_stride, 8);
-        assert_eq!(&samples[..8], &[10, 20, 30, 40, 60, 70, 80, 90]);
-        assert_eq!(&samples[8..], &[50, 255, 255, 255, 100, 255, 255, 255]);
     }
 }

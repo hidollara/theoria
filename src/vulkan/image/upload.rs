@@ -7,7 +7,7 @@ use ash::vk;
 use crate::{
     image::RasterPlane,
     vulkan::{
-        host_buffer::HostBuffer, image_layout::transition_image, one_shot::OneShotCommands,
+        host_buffer::HostBuffer, image_layout::transition_image_layers, one_shot::OneShotCommands,
         presenter::RenderDevice,
     },
 };
@@ -30,23 +30,28 @@ pub(super) fn upload_rgba8(
         plane.row_stride(),
         4,
         vk::Format::R8G8B8A8_UNORM,
+        1,
+        false,
     )
 }
 
-pub(super) fn upload_rgba16f(
+pub(super) fn upload_rgba8_array(
     device: RenderDevice,
     width: u32,
     height: u32,
-    plane: &RasterPlane<u16>,
+    samples: &[u8],
+    layers: u32,
 ) -> Result<Arc<VulkanImage>> {
     upload_rgba(
         device,
         width,
         height,
-        bytemuck::cast_slice(plane.samples()),
-        plane.row_stride() * 2,
-        8,
-        vk::Format::R16G16B16A16_SFLOAT,
+        samples,
+        usize::try_from(width)? * 4,
+        4,
+        vk::Format::R8G8B8A8_UNORM,
+        layers,
+        true,
     )
 }
 
@@ -58,6 +63,8 @@ fn upload_rgba(
     row_stride: usize,
     bytes_per_pixel: usize,
     format: vk::Format,
+    layers: u32,
+    array_view: bool,
 ) -> Result<Arc<VulkanImage>> {
     let staging = HostBuffer::new(
         device.clone(),
@@ -67,7 +74,7 @@ fn upload_rgba(
     staging.write(pixels)?;
 
     let extent = vk::Extent2D { width, height };
-    let backing = Arc::new(VulkanImage::new(
+    let backing = Arc::new(VulkanImage::new_with_layers(
         device.clone(),
         // Preserve stored coordinates exactly. Transfer decoding happens in
         // the image shader after straight/premultiplied alpha is interpreted.
@@ -75,12 +82,14 @@ fn upload_rgba(
         extent,
         vk::SampleCountFlags::TYPE_1,
         vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
+        layers,
+        array_view,
     )?);
 
     let commands = OneShotCommands::begin(device.clone())?;
     let command_buffer = commands.buffer();
     unsafe {
-        transition_image(
+        transition_image_layers(
             device.raw(),
             command_buffer,
             backing.image,
@@ -90,13 +99,14 @@ fn upload_rgba(
             vk::AccessFlags2::NONE,
             vk::PipelineStageFlags2::COPY,
             vk::AccessFlags2::TRANSFER_WRITE,
+            layers,
         );
         let region = vk::BufferImageCopy::default()
             .buffer_row_length(u32::try_from(row_stride / bytes_per_pixel)?)
             .image_subresource(
                 vk::ImageSubresourceLayers::default()
                     .aspect_mask(vk::ImageAspectFlags::COLOR)
-                    .layer_count(1),
+                    .layer_count(layers),
             )
             .image_extent(vk::Extent3D {
                 width: extent.width,
@@ -110,7 +120,7 @@ fn upload_rgba(
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
             &[region],
         );
-        transition_image(
+        transition_image_layers(
             device.raw(),
             command_buffer,
             backing.image,
@@ -120,6 +130,7 @@ fn upload_rgba(
             vk::AccessFlags2::TRANSFER_WRITE,
             vk::PipelineStageFlags2::FRAGMENT_SHADER,
             vk::AccessFlags2::SHADER_SAMPLED_READ,
+            layers,
         );
     }
     commands.submit_and_wait()?;

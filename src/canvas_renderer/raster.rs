@@ -1,15 +1,53 @@
 use std::io;
 
+#[cfg(test)]
 use half::f16;
 
-use crate::{
-    color::{ColorTransform, IccProfile, IccRenderingIntent, RgbColorSpace},
-    image::RasterPlane,
-};
+#[cfg(test)]
+use crate::color::{ColorTransform, IccProfile, IccRenderingIntent, RgbColorSpace};
+use crate::image::RasterPlane;
 
-/// Converts ICC device samples at the renderer boundary to straight-alpha
-/// linear-sRGB half floats. The source retains its device samples and profile.
-/// Unlike the old RGBA8 upload path, this does not clamp out-of-gamut colors.
+pub(crate) struct PackedIccSamples {
+    pub(crate) samples: Vec<u8>,
+    pub(crate) layers: u32,
+    pub(crate) row_stride: usize,
+}
+
+/// Packs unchanged ICC device samples and optional straight alpha into RGBA8
+/// texture-array layers. Unused components are padding, not color conversion.
+pub(crate) fn pack_icc_samples(
+    width: u32,
+    height: u32,
+    pixels: &[u8],
+    device_channels: usize,
+    has_alpha: bool,
+) -> Result<PackedIccSamples, Box<dyn std::error::Error>> {
+    let channels = device_channels + usize::from(has_alpha);
+    let layers = u32::try_from(channels.div_ceil(4))?;
+    let width = usize::try_from(width)?;
+    let height = usize::try_from(height)?;
+    let overflow = || io::Error::from(io::ErrorKind::OutOfMemory);
+    let row_stride = width.checked_mul(4).ok_or_else(overflow)?;
+    let layer_size = row_stride.checked_mul(height).ok_or_else(overflow)?;
+    let size = layer_size
+        .checked_mul(layers as usize)
+        .ok_or_else(overflow)?;
+    let mut samples = vec![255; size];
+    for (pixel_index, pixel) in pixels.chunks_exact(channels).enumerate() {
+        for (channel, sample) in pixel.iter().copied().enumerate() {
+            let offset = (channel / 4) * layer_size + pixel_index * 4 + channel % 4;
+            samples[offset] = sample;
+        }
+    }
+    Ok(PackedIccSamples {
+        samples,
+        layers,
+        row_stride,
+    })
+}
+
+/// CPU reference used by renderer tests to check sampled ICC coordinates.
+#[cfg(test)]
 pub(crate) fn convert_icc8_to_linear_rgba16(
     width: u32,
     pixels: &[u8],
@@ -33,7 +71,7 @@ pub(crate) fn convert_icc8_to_linear_rgba16(
             if !sample.is_finite() || sample.abs() > f32::from(f16::MAX) {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
-                    "ICC color is outside the finite RGBA16F upload range",
+                    "ICC color is outside the finite RGBA16F reference range",
                 )
                 .into());
             }
@@ -78,6 +116,19 @@ pub(crate) fn expand_rgb8_to_rgba8(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn icc_upload_preserves_source_channels_and_separate_alpha() {
+        let packed =
+            pack_icc_samples(2, 1, &[10, 20, 30, 40, 50, 60, 70, 80, 90, 100], 4, true).unwrap();
+        assert_eq!(packed.layers, 2);
+        assert_eq!(packed.row_stride, 8);
+        assert_eq!(&packed.samples[..8], &[10, 20, 30, 40, 60, 70, 80, 90]);
+        assert_eq!(
+            &packed.samples[8..],
+            &[50, 255, 255, 255, 100, 255, 255, 255]
+        );
+    }
 
     #[test]
     fn icc_upload_keeps_out_of_srgb_gamut_coordinates() {
