@@ -327,7 +327,7 @@ mod tests {
         let input = Rc::new(RefCell::new(None));
         let mounted_input = Rc::clone(&input);
         let mut runtime = TestDriver::new(move |context| {
-            let (pointer, events) = context.event_source::<PointerEvent>();
+            let (pointer, events) = context.channel::<PointerEvent>();
             let count = context.create_state(0_u32);
             let count_value = count.value();
             let center = context.create_state(INITIAL_CENTER);
