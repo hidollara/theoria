@@ -93,6 +93,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .expect("the counter text is valid")
                         .to_canvas(Color::rgb8(232, 240, 255))
                         .expect("the counter glyphs can be realized")
+                        .expect("the counter contains drawable glyphs")
                         .transformed(Affine2::from_translation(Vector2::new(210.0, 390.0)));
 
                     fill.composite(outline, Composition::new(Composite::SourceOver, LinearSrgb))
@@ -123,6 +124,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .expect("the heading text is valid")
                         .to_canvas(Color::rgb8(145, 168, 205))
                         .expect("the heading glyphs can be realized")
+                        .expect("the heading contains drawable glyphs")
                         .transformed(Affine2::from_translation(Vector2::new(90.0, 145.0)));
                     let value = Text::horizontal(TextStyle::new(&fonts, 96.0))
                         .push(count.to_string())
@@ -130,6 +132,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .expect("the shared value text is valid")
                         .to_canvas(Color::rgb8(90, 220, 255))
                         .expect("the shared value glyphs can be realized")
+                        .expect("the shared value contains drawable glyphs")
                         .transformed(Affine2::from_translation(Vector2::new(285.0, 300.0)));
                     let status = if controller_open {
                         "Controller Window is open"
@@ -146,6 +149,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             Color::rgb8(255, 188, 96)
                         })
                         .expect("the lifecycle status glyphs can be realized")
+                        .expect("the lifecycle status contains drawable glyphs")
                         .transformed(Affine2::from_translation(Vector2::new(110.0, 380.0)));
                     heading
                         .composite(value, Composition::new(Composite::SourceOver, LinearSrgb))

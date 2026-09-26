@@ -1,14 +1,15 @@
 use std::ops::Range;
 
 use crate::{
-    canvas::{Canvas, ColorField, Composite, Composition, Coverage},
-    color::{Color, LinearSrgb},
+    canvas::{Canvas, ColorField, Coverage},
+    color::Color,
     font::{GlyphPresentationError, GlyphRealizationRequest, RealizedGlyph},
     math::Vector2,
     transform::Affine2,
 };
 
 use super::super::layout::{LayoutRun, TextLine};
+use super::overlay;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum GlyphRealizationError {
@@ -46,14 +47,14 @@ impl LayoutRun {
     pub(super) fn coverage_canvas(
         &self,
         source_range: Option<&Range<usize>>,
-    ) -> Result<Canvas, GlyphRealizationError> {
+    ) -> Result<Option<Canvas>, GlyphRealizationError> {
         if self.font_size == 0.0 || self.glyphs.is_empty() {
-            return Ok(Canvas::empty());
+            return Ok(None);
         }
 
         let scale = self.font_size / f32::from(self.font.metrics().units_per_em());
         let mut pen = Vector2::ZERO;
-        let mut mask = Canvas::empty();
+        let mut mask = None;
 
         for positioned in self.glyphs.iter().copied() {
             if source_range.is_some_and(|range| !range.contains(&positioned.cluster)) {
@@ -65,10 +66,7 @@ impl LayoutRun {
                     let placement = glyph_placement(scale, pen + positioned.offset);
                     let glyph_mask = Canvas::draw(Color::rgb8(255, 255, 255), Coverage::fill(path))
                         .transformed(placement);
-                    mask = mask.composite(
-                        glyph_mask,
-                        Composition::new(Composite::SourceOver, LinearSrgb),
-                    );
+                    mask = overlay(mask, Some(glyph_mask));
                 }
                 RealizedGlyph::Empty => {}
                 RealizedGlyph::Intrinsic(_) => {
@@ -91,14 +89,14 @@ impl LayoutRun {
         foreground: &ColorField,
         palette_index: u16,
         source_range: Option<&Range<usize>>,
-    ) -> Result<Canvas, GlyphRealizationError> {
+    ) -> Result<Option<Canvas>, GlyphRealizationError> {
         if self.font_size == 0.0 || self.glyphs.is_empty() {
-            return Ok(Canvas::empty());
+            return Ok(None);
         }
 
         let scale = self.font_size / f32::from(self.font.metrics().units_per_em());
         let mut pen = Vector2::ZERO;
-        let mut canvas = Canvas::empty();
+        let mut canvas = None;
         for positioned in self.glyphs.iter().copied() {
             if source_range.is_some_and(|range| !range.contains(&positioned.cluster)) {
                 pen = pen + positioned.advance;
@@ -134,10 +132,7 @@ impl LayoutRun {
                 }
             }
             .transformed(placement);
-            canvas = canvas.composite(
-                glyph_canvas,
-                Composition::new(Composite::SourceOver, LinearSrgb),
-            );
+            canvas = overlay(canvas, Some(glyph_canvas));
             pen = pen + positioned.advance;
         }
         Ok(canvas)
@@ -148,17 +143,14 @@ impl TextLine {
     pub(super) fn coverage_canvas(
         &self,
         source_range: Option<&Range<usize>>,
-    ) -> Result<Canvas, GlyphRealizationError> {
-        let mut mask = Canvas::empty();
+    ) -> Result<Option<Canvas>, GlyphRealizationError> {
+        let mut mask = None;
         for positioned in self.runs.iter() {
             let run_mask = positioned
                 .run
                 .coverage_canvas(source_range)?
-                .transformed(positioned.placement);
-            mask = mask.composite(
-                run_mask,
-                Composition::new(Composite::SourceOver, LinearSrgb),
-            );
+                .map(|canvas| canvas.transformed(positioned.placement));
+            mask = overlay(mask, run_mask);
         }
         Ok(mask)
     }
@@ -168,14 +160,14 @@ impl TextLine {
         foreground: &ColorField,
         palette_index: u16,
         source_range: Option<&Range<usize>>,
-    ) -> Result<Canvas, GlyphRealizationError> {
-        let mut canvas = Canvas::empty();
+    ) -> Result<Option<Canvas>, GlyphRealizationError> {
+        let mut canvas = None;
         for positioned in self.runs.iter() {
             let run = positioned
                 .run
                 .realized_canvas(foreground, palette_index, source_range)?
-                .transformed(positioned.placement);
-            canvas = canvas.composite(run, Composition::new(Composite::SourceOver, LinearSrgb));
+                .map(|canvas| canvas.transformed(positioned.placement));
+            canvas = overlay(canvas, run);
         }
         Ok(canvas)
     }

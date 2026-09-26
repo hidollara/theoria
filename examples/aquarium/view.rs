@@ -38,7 +38,10 @@ pub fn render(
     let lane_height = lane_bottom - lane_top;
     let now = Instant::now();
 
-    let mut canvas = Canvas::empty();
+    let mut canvas = Canvas::draw(
+        lane_background(MessageStage::Queued),
+        Coverage::fill(rectangle(margin, lane_top, lane_width, lane_height)),
+    );
     for stage in [
         MessageStage::Queued,
         MessageStage::Thread,
@@ -46,13 +49,15 @@ pub fn render(
     ] {
         let index = stage.index();
         let x = margin + index as f32 * (lane_width + gap);
-        canvas = canvas.composite(
-            Canvas::draw(
-                lane_background(stage),
-                Coverage::fill(rectangle(x, lane_top, lane_width, lane_height)),
-            ),
-            Composition::new(Composite::SourceOver, LinearSrgb),
-        );
+        if stage != MessageStage::Queued {
+            canvas = canvas.composite(
+                Canvas::draw(
+                    lane_background(stage),
+                    Coverage::fill(rectangle(x, lane_top, lane_width, lane_height)),
+                ),
+                Composition::new(Composite::SourceOver, LinearSrgb),
+            );
+        }
         canvas = canvas.composite(
             label(
                 font,
@@ -178,6 +183,7 @@ fn label(
         .expect("the aquarium label is valid")
         .to_canvas(color)
         .expect("the aquarium label glyphs can be realized")
+        .expect("the aquarium label contains drawable glyphs")
         .transformed(Affine2::from_translation(Vector2::new(x, y)))
 }
 

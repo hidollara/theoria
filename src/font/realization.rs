@@ -75,6 +75,9 @@ impl GlyphRef<'_> {
         self,
         request: &GlyphRealizationRequest<'_>,
     ) -> Result<RealizedGlyph, GlyphPresentationError> {
+        if request.font_size == 0.0 {
+            return Ok(RealizedGlyph::Empty);
+        }
         let mut intrinsic_error = None;
         match colr::canvas(
             self.font,
@@ -82,7 +85,7 @@ impl GlyphRef<'_> {
             request.palette_index,
             request.foreground,
         ) {
-            Ok(Some(canvas)) => return Ok(RealizedGlyph::Intrinsic(canvas)),
+            Ok(Some(glyph)) => return Ok(glyph),
             Ok(None) => {}
             Err(error) => intrinsic_error = Some(error),
         }

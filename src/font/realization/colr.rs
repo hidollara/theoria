@@ -22,14 +22,14 @@ use crate::{
     transform::Affine2,
 };
 
-use super::{GlyphPresentationError, ResolvedFont};
+use super::{GlyphPresentationError, RealizedGlyph, ResolvedFont};
 
 pub(super) fn canvas(
     font: &ResolvedFont,
     glyph_id: GlyphId,
     palette_index: u16,
     foreground: &ColorField,
-) -> Result<Option<Canvas>, GlyphPresentationError> {
+) -> Result<Option<RealizedGlyph>, GlyphPresentationError> {
     let face = font.face();
     let glyphs = face.color_glyphs();
     let Some(glyph) = glyphs
@@ -46,7 +46,7 @@ pub(super) fn canvas(
         .map_err(|_| GlyphPresentationError::InvalidColorGlyph)
         .and_then(|_| painter.finish());
     match first {
-        Ok(canvas) => Ok(Some(canvas)),
+        Ok(canvas) => Ok(Some(realized(canvas))),
         Err(_) if matches!(glyph.format(), ColorGlyphFormat::ColrV1) => {
             let Some(v0) = glyphs.get_with_format(glyph_id, ColorGlyphFormat::ColrV0) else {
                 return Err(GlyphPresentationError::InvalidColorGlyph);
@@ -55,23 +55,32 @@ pub(super) fn canvas(
             let mut painter = CanvasColorPainter::new(font, foreground.clone(), palette);
             v0.paint(font.location(), &mut painter)
                 .map_err(|_| GlyphPresentationError::InvalidColorGlyph)?;
-            painter.finish().map(Some)
+            painter.finish().map(|canvas| Some(realized(canvas)))
         }
         Err(_) => Err(GlyphPresentationError::InvalidColorGlyph),
     }
 }
 
 struct Layer {
-    backdrop: Canvas,
+    backdrop: Option<Canvas>,
     blend_mode: BlendMode,
     composite: Composite,
+}
+
+fn realized(canvas: Option<Canvas>) -> RealizedGlyph {
+    canvas.map_or(RealizedGlyph::Empty, RealizedGlyph::Intrinsic)
+}
+
+// A missing operand still matters for COLR composition modes other than SourceOver.
+fn transparent_operand() -> Canvas {
+    Canvas::draw(Color::rgba8(0, 0, 0, 0), Coverage::all())
 }
 
 struct CanvasColorPainter<'font, 'palette> {
     font: &'font ResolvedFont,
     foreground: ColorField,
     palette: Option<ColorPalette<'palette>>,
-    canvas: Canvas,
+    canvas: Option<Canvas>,
     transforms: Vec<Affine2>,
     clips: Vec<Coverage>,
     layers: Vec<Layer>,
@@ -88,7 +97,7 @@ impl<'font, 'palette> CanvasColorPainter<'font, 'palette> {
             font,
             foreground,
             palette,
-            canvas: Canvas::empty(),
+            canvas: None,
             transforms: vec![Affine2::IDENTITY],
             clips: Vec::new(),
             layers: Vec::new(),
@@ -96,7 +105,7 @@ impl<'font, 'palette> CanvasColorPainter<'font, 'palette> {
         }
     }
 
-    fn finish(self) -> Result<Canvas, GlyphPresentationError> {
+    fn finish(self) -> Result<Option<Canvas>, GlyphPresentationError> {
         self.error.map_or(Ok(self.canvas), Err)
     }
 
@@ -264,10 +273,12 @@ impl<'font, 'palette> CanvasColorPainter<'font, 'palette> {
     }
 
     fn append(&mut self, source: Canvas) {
-        self.canvas = self
-            .canvas
-            .clone()
-            .composite(source, Composition::new(Composite::SourceOver, LinearSrgb));
+        self.canvas = Some(match self.canvas.take() {
+            Some(backdrop) => {
+                backdrop.composite(source, Composition::new(Composite::SourceOver, LinearSrgb))
+            }
+            None => source,
+        });
     }
 }
 
@@ -330,7 +341,7 @@ impl ColorPainter for CanvasColorPainter<'_, '_> {
         match composition(mode) {
             Ok((blend_mode, composite)) => {
                 self.layers.push(Layer {
-                    backdrop: std::mem::take(&mut self.canvas),
+                    backdrop: self.canvas.take(),
                     blend_mode,
                     composite,
                 });
@@ -344,11 +355,17 @@ impl ColorPainter for CanvasColorPainter<'_, '_> {
             self.fail(GlyphPresentationError::InvalidColorGlyph);
             return;
         };
-        let source = std::mem::take(&mut self.canvas);
-        self.canvas = layer.backdrop.composite(
-            source,
-            Composition::new(layer.composite, LinearSrgb).with_blend(layer.blend_mode, LinearSrgb),
-        );
+        let source = self.canvas.take();
+        self.canvas = match (layer.backdrop, source) {
+            (None, None) => None,
+            (backdrop, source) => Some(
+                backdrop.unwrap_or_else(transparent_operand).composite(
+                    source.unwrap_or_else(transparent_operand),
+                    Composition::new(layer.composite, LinearSrgb)
+                        .with_blend(layer.blend_mode, LinearSrgb),
+                ),
+            ),
+        };
     }
 }
 

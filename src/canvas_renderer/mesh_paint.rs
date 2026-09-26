@@ -80,7 +80,6 @@ pub(crate) fn paint_triangle_prepared<C: WorkingColor>(
     prepared: &PreparedColors,
 ) -> Vec<PaintedTriangle<C>> {
     match source {
-        ColorField::Transparent => Vec::new(),
         ColorField::Solid(color) => vec![PaintedTriangle {
             points,
             colors: [C::from_color(color, prepared); 3],

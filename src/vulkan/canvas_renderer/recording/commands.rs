@@ -139,9 +139,6 @@ impl<'a> CanvasCommandEncoder<'a> {
         source: &ColorField,
         source_to_root: Projective2,
     ) {
-        if matches!(source, ColorField::Transparent) {
-            return;
-        }
         if let Some(mesh) = self.unbounded_mesh(source_to_root) {
             self.render_mesh(&mesh, source, source_to_root);
         }

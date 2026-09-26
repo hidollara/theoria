@@ -35,11 +35,6 @@ pub struct Canvas {
 }
 
 impl Canvas {
-    /// Creates a Canvas with no color contribution anywhere.
-    pub fn empty() -> Self {
-        Self::draw(ColorField::Transparent, Coverage::all())
-    }
-
     /// Forms a Canvas drawing by applying `source` through `coverage`.
     pub fn draw(source: impl Into<ColorField>, coverage: Coverage) -> Self {
         Self {
@@ -76,11 +71,5 @@ impl Canvas {
 
     pub(crate) fn node(&self) -> &CanvasNode {
         &self.node
-    }
-}
-
-impl Default for Canvas {
-    fn default() -> Self {
-        Self::empty()
     }
 }

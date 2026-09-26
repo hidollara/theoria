@@ -59,6 +59,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             .expect("the fixed horizontal color is valid"),
                     )
                     .expect("the horizontal glyphs can be realized")
+                    .expect("the horizontal sample contains drawable glyphs")
                     .transformed(Affine2::from_translation(Vector2::new(
                         width * 0.08,
                         height * 0.16,
@@ -74,6 +75,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             .expect("the fixed vertical color is valid"),
                     )
                     .expect("the vertical glyphs can be realized")
+                    .expect("the vertical sample contains drawable glyphs")
                     .transformed(Affine2::from_translation(Vector2::new(
                         width * 0.76,
                         height * 0.12,

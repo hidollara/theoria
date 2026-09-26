@@ -13,6 +13,10 @@ use crate::geometry::Point;
 use crate::image::Srgba8Image;
 use crate::transform::Projective2;
 
+fn sample_canvas() -> Canvas {
+    Canvas::draw(Color::rgb8(255, 255, 255), Coverage::all())
+}
+
 #[test]
 fn canvas_image_is_an_image_boundary_while_canvas_color_field_stays_semantic() {
     let pixels = Srgba8Image::new(1, 1, vec![255; 4]).unwrap();
@@ -46,7 +50,7 @@ fn canvas_image_is_an_image_boundary_while_canvas_color_field_stays_semantic() {
 fn image_sampling_respects_the_sampled_rgb_alpha_association() {
     let straight = Srgba8Image::new(1, 1, vec![255, 128, 64, 128]).unwrap();
     let canvas_image = CanvasImage::new(
-        Canvas::empty(),
+        sample_canvas(),
         CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(1.0, 1.0)).unwrap(),
         1,
         1,
@@ -94,10 +98,10 @@ fn four_sample_msaa_is_preferred_with_a_single_sample_fallback() {
 
 #[test]
 fn only_coverage_boundaries_reserve_independent_results() {
-    let masked = Canvas::draw(Canvas::empty(), Coverage::from_alpha(Canvas::empty()))
+    let masked = Canvas::draw(sample_canvas(), Coverage::from_alpha(sample_canvas()))
         .transformed(Projective2::IDENTITY);
     let root =
-        Canvas::empty().composite(masked, Composition::new(Composite::SourceOver, LinearSrgb));
+        sample_canvas().composite(masked, Composition::new(Composite::SourceOver, LinearSrgb));
 
     assert_eq!(required_scratch_images(&root), 3);
 }
@@ -108,7 +112,7 @@ fn non_source_over_composites_create_group_boundaries() {
     let grouped = leaf
         .clone()
         .composite(leaf, Composition::new(Composite::SourceIn, LinearSrgb));
-    let root = Canvas::empty().composite(
+    let root = sample_canvas().composite(
         grouped.clone(),
         Composition::new(Composite::SourceOver, LinearSrgb),
     );

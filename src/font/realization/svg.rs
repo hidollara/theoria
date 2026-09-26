@@ -28,9 +28,6 @@ pub(super) fn canvas(
     foreground: &ColorField,
 ) -> Result<Canvas, GlyphPresentationError> {
     let units_per_em = font.metrics().units_per_em();
-    if font_size == 0.0 {
-        return Ok(Canvas::empty());
-    }
     if !font_size.is_finite() || font_size < 0.0 || units_per_em == 0 {
         return Err(GlyphPresentationError::UnsupportedSvg);
     }

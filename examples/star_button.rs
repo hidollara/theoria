@@ -202,6 +202,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .expect("the counter text is valid")
                     .to_canvas(Color::rgb8(235, 242, 255))
                     .expect("the counter glyphs can be realized")
+                    .expect("the counter contains drawable glyphs")
                     .transformed(Affine2::from_translation(Vector2::new(385.0, 470.0)));
                 let hint = Text::horizontal(TextStyle::new(&fonts, 22.0))
                     .push("Click or drag the star")
@@ -209,6 +210,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .expect("the hint text is valid")
                     .to_canvas(Color::rgb8(150, 167, 198))
                     .expect("the hint glyphs can be realized")
+                    .expect("the hint contains drawable glyphs")
                     .transformed(Affine2::from_translation(Vector2::new(375.0, 535.0)));
 
                 fill.composite(outline, Composition::new(Composite::SourceOver, LinearSrgb))

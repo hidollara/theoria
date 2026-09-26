@@ -82,7 +82,7 @@ fn prepare_color_field(
             }
         }
         ColorField::Canvas(canvas) => prepare_canvas_colors(canvas, prepared)?,
-        ColorField::Image(_) | ColorField::Transparent => {}
+        ColorField::Image(_) => {}
     }
     Ok(())
 }
@@ -158,7 +158,6 @@ fn collect_draw_images(draw: &Draw, images: &mut Vec<Image>) {
 
 fn collect_color_field_images(source: &ColorField, images: &mut Vec<Image>) {
     match source {
-        ColorField::Transparent => {}
         ColorField::Image(pattern) => images.push(pattern.image().clone()),
         ColorField::Canvas(canvas) => collect_images(canvas, images),
         ColorField::Solid(_)

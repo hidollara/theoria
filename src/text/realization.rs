@@ -60,26 +60,24 @@ impl Text {
     }
 
     /// Lowers the positioned monochrome glyphs into generic Canvas coverage.
-    pub fn coverage(&self) -> Result<Coverage, TextError> {
+    /// Returns `None` when there is no drawable outline.
+    pub fn coverage(&self) -> Result<Option<Coverage>, TextError> {
         self.coverage_for_range(None)
     }
 
     fn coverage_for_range(
         &self,
         source_range: Option<&std::ops::Range<usize>>,
-    ) -> Result<Coverage, TextError> {
-        let mut mask = Canvas::empty();
+    ) -> Result<Option<Coverage>, TextError> {
+        let mut mask = None;
         for positioned in self.lines.iter() {
             let line_mask = positioned
                 .line
                 .coverage_canvas(source_range)?
-                .transformed(Affine2::from_translation(positioned.baseline));
-            mask = mask.composite(
-                line_mask,
-                Composition::new(Composite::SourceOver, LinearSrgb),
-            );
+                .map(|canvas| canvas.transformed(Affine2::from_translation(positioned.baseline)));
+            mask = overlay(mask, line_mask);
         }
-        Ok(Coverage::from_alpha(mask))
+        Ok(mask.map(Coverage::from_alpha))
     }
 
     fn realized_canvas_for_range(
@@ -87,27 +85,31 @@ impl Text {
         foreground: &ColorField,
         palette_index: u16,
         source_range: Option<&std::ops::Range<usize>>,
-    ) -> Result<Canvas, TextError> {
-        let mut canvas = Canvas::empty();
+    ) -> Result<Option<Canvas>, TextError> {
+        let mut canvas = None;
         for positioned in self.lines.iter() {
             let line = positioned
                 .line
                 .realized_canvas(foreground, palette_index, source_range)?
-                .transformed(Affine2::from_translation(positioned.baseline));
-            canvas = canvas.composite(line, Composition::new(Composite::SourceOver, LinearSrgb));
+                .map(|canvas| canvas.transformed(Affine2::from_translation(positioned.baseline)));
+            canvas = overlay(canvas, line);
         }
         Ok(canvas)
     }
 
     /// Draws the realized glyph coverage using an arbitrary Canvas color field.
-    pub fn to_canvas(&self, foreground: impl Into<ColorField>) -> Result<Canvas, TextError> {
+    /// Returns `None` when the text has no drawable content.
+    pub fn to_canvas(
+        &self,
+        foreground: impl Into<ColorField>,
+    ) -> Result<Option<Canvas>, TextError> {
         let foreground = foreground.into();
         if self.paint_ranges.iter().all(|range| range.paint.is_none()) {
             return self.realized_canvas_for_range(&foreground, 0, None);
         }
 
-        let mut decorations = Canvas::empty();
-        let mut glyphs = Canvas::empty();
+        let mut decorations = None;
+        let mut glyphs = None;
         for range in self.paint_ranges.iter() {
             let paint = range.paint.as_ref();
             let source = paint
@@ -123,19 +125,29 @@ impl Text {
                         .unwrap_or_else(|| source.clone());
                     for region in range_regions(self, range.source_range.clone()) {
                         let coverage = decoration_coverage(region, self.writing_mode, decoration)?;
-                        decorations = decorations.composite(
-                            Canvas::draw(decoration_source.clone(), coverage),
-                            Composition::new(Composite::SourceOver, LinearSrgb),
+                        decorations = overlay(
+                            decorations,
+                            Some(Canvas::draw(decoration_source.clone(), coverage)),
                         );
                     }
                 }
             }
-            glyphs = glyphs.composite(
+            glyphs = overlay(
+                glyphs,
                 self.realized_canvas_for_range(&source, palette_index, Some(&range.source_range))?,
-                Composition::new(Composite::SourceOver, LinearSrgb),
             );
         }
-        Ok(decorations.composite(glyphs, Composition::new(Composite::SourceOver, LinearSrgb)))
+        Ok(overlay(decorations, glyphs))
+    }
+}
+
+pub(super) fn overlay(backdrop: Option<Canvas>, source: Option<Canvas>) -> Option<Canvas> {
+    match (backdrop, source) {
+        (Some(backdrop), Some(source)) => {
+            Some(backdrop.composite(source, Composition::new(Composite::SourceOver, LinearSrgb)))
+        }
+        (backdrop, None) => backdrop,
+        (None, source) => source,
     }
 }
 
@@ -162,6 +174,22 @@ fn transformed_bounds(minimum: Point, maximum: Point, transform: Affine2) -> Opt
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn text_without_drawable_glyphs_has_no_canvas_or_coverage() {
+        use crate::{
+            color::Color,
+            text::{TextStyle, test_support::bundled_latin_font},
+        };
+
+        let font = bundled_latin_font();
+        let text = Text::horizontal(TextStyle::new(&[font], 32.0))
+            .layout()
+            .unwrap();
+
+        assert!(text.coverage().unwrap().is_none());
+        assert!(text.to_canvas(Color::rgb8(20, 20, 20)).unwrap().is_none());
+    }
 
     #[test]
     fn text_reports_positioned_glyph_ink_bounds() {
@@ -199,7 +227,10 @@ mod tests {
             .layout()
             .unwrap();
 
-        let canvas = text.to_canvas(Color::rgb8(20, 20, 20)).unwrap();
+        let canvas = text
+            .to_canvas(Color::rgb8(20, 20, 20))
+            .unwrap()
+            .expect("painted text contains drawable glyphs");
         assert!(matches!(
             canvas.node(),
             crate::canvas::CanvasNode::Composite { .. }
