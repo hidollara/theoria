@@ -1,5 +1,3 @@
-use super::{UnitF32, UnitF64};
-
 /// An authored coordinate representation accepted by a color model.
 ///
 /// This contract validates storage without decoding or converting its values.
@@ -25,16 +23,6 @@ macro_rules! coordinate_representations {
         impl ColorCoordinates<$model> for [f64; $components] {
             fn is_finite(&self) -> bool {
                 self.iter().all(|value| value.is_finite())
-            }
-        }
-        impl ColorCoordinates<$model> for [UnitF32; $components] {
-            fn is_finite(&self) -> bool {
-                true
-            }
-        }
-        impl ColorCoordinates<$model> for [UnitF64; $components] {
-            fn is_finite(&self) -> bool {
-                true
             }
         }
     };
@@ -93,8 +81,6 @@ macro_rules! device_coordinates {
 
 device_coordinates!(f32, |value: &f32| value.is_finite());
 device_coordinates!(f64, |value: &f64| value.is_finite());
-device_coordinates!(UnitF32, |_: &UnitF32| true);
-device_coordinates!(UnitF64, |_: &UnitF64| true);
 
 #[cfg(test)]
 mod tests {

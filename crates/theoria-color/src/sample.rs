@@ -1,91 +1,49 @@
 use std::{error::Error, fmt};
 
-/// A representation whose complete value domain denotes the closed unit interval.
+/// A storage representation accepted by [`Opacity`].
 ///
-/// This is a representation contract only. It deliberately provides no numeric
-/// operations; renderers choose the precision in which values are evaluated.
-pub trait UnitSample: Copy + fmt::Debug + PartialEq + 'static {}
+/// Floating-point values are validated when wrapped in `Opacity`; every
+/// integer code value already denotes a valid opacity.
+pub trait OpacitySample: Copy + fmt::Debug + PartialEq + 'static {
+    fn validate(self) -> Result<(), OpacityError>;
+}
 
-impl UnitSample for u8 {}
-impl UnitSample for u16 {}
-
-/// A finite `f32` value in the closed unit interval.
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
-#[repr(transparent)]
-pub struct UnitF32(f32);
-
-impl UnitF32 {
-    pub const ZERO: Self = Self(0.0);
-    pub const ONE: Self = Self(1.0);
-
-    pub fn new(value: f32) -> Result<Self, UnitSampleError> {
-        if !value.is_finite() {
-            return Err(UnitSampleError::NonFinite);
-        }
-        if !(0.0..=1.0).contains(&value) {
-            return Err(UnitSampleError::OutOfRange);
-        }
-        Ok(Self(value))
-    }
-
-    pub const fn get(self) -> f32 {
-        self.0
+impl OpacitySample for f32 {
+    fn validate(self) -> Result<(), OpacityError> {
+        validate_f64(f64::from(self))
     }
 }
 
-impl UnitSample for UnitF32 {}
-
-/// A finite `f64` value in the closed unit interval.
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
-#[repr(transparent)]
-pub struct UnitF64(f64);
-
-impl UnitF64 {
-    pub const ZERO: Self = Self(0.0);
-    pub const ONE: Self = Self(1.0);
-
-    pub fn new(value: f64) -> Result<Self, UnitSampleError> {
-        if !value.is_finite() {
-            return Err(UnitSampleError::NonFinite);
-        }
-        if !(0.0..=1.0).contains(&value) {
-            return Err(UnitSampleError::OutOfRange);
-        }
-        Ok(Self(value))
-    }
-
-    pub const fn get(self) -> f64 {
-        self.0
+impl OpacitySample for f64 {
+    fn validate(self) -> Result<(), OpacityError> {
+        validate_f64(self)
     }
 }
 
-impl UnitSample for UnitF64 {}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum UnitSampleError {
-    NonFinite,
-    OutOfRange,
-}
-
-impl fmt::Display for UnitSampleError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::NonFinite => formatter.write_str("a unit sample must be finite"),
-            Self::OutOfRange => formatter.write_str("a unit sample must be between zero and one"),
-        }
+impl OpacitySample for u8 {
+    fn validate(self) -> Result<(), OpacityError> {
+        Ok(())
     }
 }
 
-impl Error for UnitSampleError {}
+impl OpacitySample for u16 {
+    fn validate(self) -> Result<(), OpacityError> {
+        Ok(())
+    }
+}
 
 /// A source's intrinsic contribution independently of geometric coverage.
+///
+/// Floating-point opacity is finite and in the closed unit interval. Integer
+/// opacity retains its authored code value until a renderer interprets it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[repr(transparent)]
-pub struct Opacity<S: UnitSample>(S);
+pub struct Opacity<S: OpacitySample>(S);
 
-impl<S: UnitSample> Opacity<S> {
-    pub const fn new(sample: S) -> Self {
-        Self(sample)
+impl<S: OpacitySample> Opacity<S> {
+    pub fn new(sample: S) -> Result<Self, OpacityError> {
+        sample.validate()?;
+        Ok(Self(sample))
     }
 
     pub const fn sample(self) -> S {
@@ -93,25 +51,87 @@ impl<S: UnitSample> Opacity<S> {
     }
 }
 
+impl Opacity<f32> {
+    pub const ZERO: Self = Self(0.0);
+    pub const ONE: Self = Self(1.0);
+}
+
+impl Opacity<f64> {
+    pub const ZERO: Self = Self(0.0);
+    pub const ONE: Self = Self(1.0);
+}
+
+impl Opacity<u8> {
+    pub const ZERO: Self = Self(0);
+    pub const ONE: Self = Self(u8::MAX);
+}
+
+impl Opacity<u16> {
+    pub const ZERO: Self = Self(0);
+    pub const ONE: Self = Self(u16::MAX);
+}
+
+impl From<u8> for Opacity<u8> {
+    fn from(value: u8) -> Self {
+        Self(value)
+    }
+}
+
+impl From<u16> for Opacity<u16> {
+    fn from(value: u16) -> Self {
+        Self(value)
+    }
+}
+
+fn validate_f64(value: f64) -> Result<(), OpacityError> {
+    if !value.is_finite() {
+        return Err(OpacityError::NonFinite);
+    }
+    if !(0.0..=1.0).contains(&value) {
+        return Err(OpacityError::OutOfRange);
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OpacityError {
+    NonFinite,
+    OutOfRange,
+}
+
+impl fmt::Display for OpacityError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NonFinite => formatter.write_str("opacity must be finite"),
+            Self::OutOfRange => formatter.write_str("opacity must be between zero and one"),
+        }
+    }
+}
+
+impl Error for OpacityError {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn floating_unit_samples_reject_non_finite_and_out_of_range_values() {
-        assert_eq!(UnitF32::new(f32::NAN), Err(UnitSampleError::NonFinite));
-        assert_eq!(UnitF32::new(f32::INFINITY), Err(UnitSampleError::NonFinite));
-        assert_eq!(UnitF32::new(-0.1), Err(UnitSampleError::OutOfRange));
+    fn floating_opacity_rejects_non_finite_and_out_of_range_values() {
+        assert_eq!(Opacity::<f32>::new(f32::NAN), Err(OpacityError::NonFinite));
         assert_eq!(
-            UnitF64::new(f64::NEG_INFINITY),
-            Err(UnitSampleError::NonFinite)
+            Opacity::<f32>::new(f32::INFINITY),
+            Err(OpacityError::NonFinite)
         );
-        assert_eq!(UnitF64::new(1.1), Err(UnitSampleError::OutOfRange));
+        assert_eq!(Opacity::<f32>::new(-0.1), Err(OpacityError::OutOfRange));
+        assert_eq!(
+            Opacity::<f64>::new(f64::NEG_INFINITY),
+            Err(OpacityError::NonFinite)
+        );
+        assert_eq!(Opacity::<f64>::new(1.1), Err(OpacityError::OutOfRange));
     }
 
     #[test]
     fn opacity_retains_its_input_representation() {
-        assert_eq!(Opacity::new(128_u8).sample(), 128);
-        assert_eq!(Opacity::new(UnitF32::new(0.5).unwrap()).sample().get(), 0.5);
+        assert_eq!(Opacity::from(128_u8).sample(), 128);
+        assert_eq!(Opacity::<f32>::new(0.5).unwrap().sample(), 0.5);
     }
 }

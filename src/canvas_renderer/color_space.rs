@@ -227,7 +227,7 @@ mod tests {
         let color = CanvasColor::from_icc(
             &profile,
             vec![0.25, 0.5, 0.75],
-            crate::color::UnitF32::ONE,
+            crate::color::Opacity::<f32>::ONE,
             crate::color::IccRenderingIntent::RelativeColorimetric,
         )
         .unwrap();
@@ -246,7 +246,7 @@ mod tests {
         let color = CanvasColor::from_icc(
             &profile,
             vec![0.25, 0.5, 0.75],
-            crate::color::UnitF32::ONE,
+            crate::color::Opacity::<f32>::ONE,
             crate::color::IccRenderingIntent::RelativeColorimetric,
         )
         .unwrap();

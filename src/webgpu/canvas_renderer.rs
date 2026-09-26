@@ -941,7 +941,7 @@ mod tests {
     use super::*;
     use crate::{
         canvas::{Composite, Coverage},
-        color::{LinearSrgb, Opacity, UnitF32},
+        color::{LinearSrgb, Opacity},
         geometry::Point,
         image::Srgba8Image,
     };
@@ -1114,7 +1114,7 @@ mod tests {
 
     #[test]
     fn floating_working_image_preserves_out_of_gamut_values() {
-        let color = Color::new(LinearSrgb, [1.5, 0.0, 0.0], Opacity::new(UnitF32::ONE)).unwrap();
+        let color = Color::new(LinearSrgb, [1.5, 0.0, 0.0], Opacity::<f32>::ONE).unwrap();
         let canvas = Canvas::draw(color, Coverage::all());
         if let Some(pixel) = render_pixel_bytes_in(&canvas, wgpu::TextureFormat::Rgba16Float, None)
         {

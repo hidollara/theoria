@@ -1,6 +1,6 @@
 use std::{error::Error, fmt};
 
-use super::{ColorCoordinates, ColorProfile, Opacity, Srgb, UnitF32, UnitSample};
+use super::{ColorCoordinates, ColorProfile, Opacity, OpacityError, OpacitySample, Srgb};
 
 /// A logical color retaining its authored profile, coordinate representation,
 /// and intrinsic opacity.
@@ -8,11 +8,11 @@ use super::{ColorCoordinates, ColorProfile, Opacity, Srgb, UnitF32, UnitSample};
 /// The value is not converted into a renderer working space and its color
 /// coordinates are not premultiplied. Those operations belong to the renderer
 /// that evaluates a Canvas.
-pub struct Color<P = Srgb, C = [f32; 3], A = UnitF32>
+pub struct Color<P = Srgb, C = [f32; 3], A = f32>
 where
     P: ColorProfile,
     C: ColorCoordinates<P::Model>,
-    A: UnitSample,
+    A: OpacitySample,
 {
     profile: P,
     coordinates: C,
@@ -23,7 +23,7 @@ impl<P, C, A> Color<P, C, A>
 where
     P: ColorProfile,
     C: ColorCoordinates<P::Model>,
-    A: UnitSample,
+    A: OpacitySample,
 {
     pub fn new(profile: P, coordinates: C, opacity: Opacity<A>) -> Result<Self, ColorError> {
         if !coordinates.is_finite() {
@@ -64,11 +64,11 @@ impl Color {
     pub fn rgba(red: f32, green: f32, blue: f32, alpha: f32) -> Result<Self, ColorError> {
         let coordinates = [red, green, blue];
         validate_srgb(coordinates)?;
-        let opacity = UnitF32::new(alpha).map_err(|error| match error {
-            super::UnitSampleError::NonFinite => ColorError::NonFiniteComponent,
-            super::UnitSampleError::OutOfRange => ColorError::ComponentOutOfRange,
+        let opacity = Opacity::<f32>::new(alpha).map_err(|error| match error {
+            OpacityError::NonFinite => ColorError::NonFiniteComponent,
+            OpacityError::OutOfRange => ColorError::ComponentOutOfRange,
         })?;
-        Self::new(Srgb, coordinates, Opacity::new(opacity))
+        Self::new(Srgb, coordinates, opacity)
     }
 }
 
@@ -81,7 +81,7 @@ impl Color<Srgb, [u8; 3], u8> {
     /// Creates a color while retaining its encoded-sRGB and opacity `u8`
     /// values.
     pub fn rgba8(red: u8, green: u8, blue: u8, alpha: u8) -> Self {
-        Self::new(Srgb, [red, green, blue], Opacity::new(alpha))
+        Self::new(Srgb, [red, green, blue], Opacity::from(alpha))
             .expect("integer samples always form a finite color")
     }
 }
@@ -90,7 +90,7 @@ impl<P, C, A> Clone for Color<P, C, A>
 where
     P: ColorProfile + Clone,
     C: ColorCoordinates<P::Model> + Clone,
-    A: UnitSample,
+    A: OpacitySample,
 {
     fn clone(&self) -> Self {
         Self::new(self.profile.clone(), self.coordinates.clone(), self.opacity)
@@ -102,7 +102,7 @@ impl<P, C, A> Copy for Color<P, C, A>
 where
     P: ColorProfile + Copy,
     C: ColorCoordinates<P::Model> + Copy,
-    A: UnitSample,
+    A: OpacitySample,
 {
 }
 
@@ -110,7 +110,7 @@ impl<P, C, A> fmt::Debug for Color<P, C, A>
 where
     P: ColorProfile + fmt::Debug,
     C: ColorCoordinates<P::Model> + fmt::Debug,
-    A: UnitSample,
+    A: OpacitySample,
 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -126,7 +126,7 @@ impl<P, C, A> PartialEq for Color<P, C, A>
 where
     P: ColorProfile + PartialEq,
     C: ColorCoordinates<P::Model> + PartialEq,
-    A: UnitSample,
+    A: OpacitySample,
 {
     fn eq(&self, other: &Self) -> bool {
         self.profile == other.profile
@@ -182,7 +182,7 @@ mod tests {
 
     #[test]
     fn a_model_can_accept_a_whole_user_defined_coordinate_type() {
-        let color = Color::new(Srgb, AuthoredRgb([12, 34, 56]), Opacity::new(255_u8)).unwrap();
+        let color = Color::new(Srgb, AuthoredRgb([12, 34, 56]), Opacity::from(255_u8)).unwrap();
 
         assert_eq!(color.coordinates().0, [12, 34, 56]);
         assert_eq!(color.opacity().sample(), 255);
@@ -213,7 +213,7 @@ mod tests {
         let color = Color::new(
             LogicalProfile,
             LogicalCoordinates([0.25, 0.75]),
-            Opacity::new(UnitF32::ONE),
+            Opacity::<f32>::ONE,
         )
         .unwrap();
 
@@ -243,7 +243,7 @@ mod tests {
             color.coordinates()[0],
             color.coordinates()[1],
             color.coordinates()[2],
-            color.opacity().sample().get(),
+            color.opacity().sample(),
         ];
 
         for (actual, expected) in round_trip.into_iter().zip(encoded) {

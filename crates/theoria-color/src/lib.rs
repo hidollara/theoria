@@ -24,7 +24,7 @@ pub use profile::{
     ColorProfile, ColorSpaceKey, DisplayP3, LabD50, LinearDisplayP3, LinearSrgb, MatrixRgbProfile,
     RgbColorSpace, Srgb, XyzD50, XyzD65,
 };
-pub use sample::{Opacity, UnitF32, UnitF64, UnitSample, UnitSampleError};
+pub use sample::{Opacity, OpacityError, OpacitySample};
 pub use transfer::{
     Transfer, TransferClut, TransferCurve, TransferError, TransferMatrix, TransferShader,
     TransferStage,

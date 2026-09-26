@@ -2,8 +2,8 @@ use std::{error::Error, fmt, sync::Arc};
 
 use crate::color::{
     Color, ColorCoordinates, ColorProfile, ColorTransformError, IccProfile, IccProfileError,
-    IccRenderingIntent, LabD50, Opacity, RgbColorSpace, TransferError, UnitF32, UnitF64,
-    UnitSample, XyzD50, XyzD65,
+    IccRenderingIntent, LabD50, Opacity, OpacitySample, RgbColorSpace, TransferError, XyzD50,
+    XyzD65,
 };
 
 /// A logical color whose concrete representation has been erased at the
@@ -86,8 +86,8 @@ impl ColorValue {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum Alpha {
-    F32(UnitF32),
-    F64(UnitF64),
+    F32(f32),
+    F64(f64),
     U8(u8),
     U16(u16),
 }
@@ -97,28 +97,32 @@ impl Alpha {
         let factor = factor.clamp(0.0, 1.0);
         match self {
             Self::F32(opacity) => Self::F32(
-                UnitF32::new(opacity.get() * factor)
-                    .expect("a finite unit opacity remains valid after multiplication"),
+                Opacity::<f32>::new(opacity * factor)
+                    .expect("a finite unit opacity remains valid after multiplication")
+                    .sample(),
             ),
             Self::F64(opacity) => Self::F64(
-                UnitF64::new(opacity.get() * f64::from(factor))
-                    .expect("a finite unit opacity remains valid after multiplication"),
+                Opacity::<f64>::new(opacity * f64::from(factor))
+                    .expect("a finite unit opacity remains valid after multiplication")
+                    .sample(),
             ),
             Self::U8(opacity) => Self::F32(
-                UnitF32::new(f32::from(opacity) / 255.0 * factor)
-                    .expect("a finite unit opacity remains valid after multiplication"),
+                Opacity::<f32>::new(f32::from(opacity) / 255.0 * factor)
+                    .expect("a finite unit opacity remains valid after multiplication")
+                    .sample(),
             ),
             Self::U16(opacity) => Self::F32(
-                UnitF32::new(f32::from(opacity) / f32::from(u16::MAX) * factor)
-                    .expect("a finite unit opacity remains valid after multiplication"),
+                Opacity::<f32>::new(f32::from(opacity) / f32::from(u16::MAX) * factor)
+                    .expect("a finite unit opacity remains valid after multiplication")
+                    .sample(),
             ),
         }
     }
 
     pub(crate) fn as_f32(self) -> f32 {
         match self {
-            Self::F32(opacity) => opacity.get(),
-            Self::F64(opacity) => opacity.get() as f32,
+            Self::F32(opacity) => opacity,
+            Self::F64(opacity) => opacity as f32,
             Self::U8(opacity) => f32::from(opacity) / f32::from(u8::MAX),
             Self::U16(opacity) => f32::from(opacity) / f32::from(u16::MAX),
         }
@@ -131,7 +135,7 @@ impl CanvasColor {
     pub fn from_icc(
         profile: &IccProfile,
         coordinates: impl Into<Arc<[f64]>>,
-        opacity: UnitF32,
+        opacity: Opacity<f32>,
         intent: IccRenderingIntent,
     ) -> Result<Self, CanvasIccColorError> {
         if intent == IccRenderingIntent::AbsoluteColorimetric {
@@ -148,7 +152,7 @@ impl CanvasColor {
                 profile: Arc::new(profile.clone()),
                 intent,
             },
-            value: ColorValue::Dynamic(coordinates, Alpha::F32(opacity)),
+            value: ColorValue::Dynamic(coordinates, Alpha::F32(opacity.sample())),
         })
     }
 
@@ -170,21 +174,9 @@ impl CanvasCoordinates for [f32; 3] {
     }
 }
 
-impl CanvasCoordinates for [UnitF32; 3] {
-    fn erase(self, alpha: Alpha) -> ColorValue {
-        ColorValue::F32(self.map(UnitF32::get), alpha)
-    }
-}
-
 impl CanvasCoordinates for [f64; 3] {
     fn erase(self, alpha: Alpha) -> ColorValue {
         ColorValue::F64(self, alpha)
-    }
-}
-
-impl CanvasCoordinates for [UnitF64; 3] {
-    fn erase(self, alpha: Alpha) -> ColorValue {
-        ColorValue::F64(self.map(UnitF64::get), alpha)
     }
 }
 
@@ -200,17 +192,17 @@ impl CanvasCoordinates for [u16; 3] {
     }
 }
 
-trait CanvasOpacity: UnitSample {
+trait CanvasOpacity: OpacitySample {
     fn erase(opacity: Opacity<Self>) -> Alpha;
 }
 
-impl CanvasOpacity for UnitF32 {
+impl CanvasOpacity for f32 {
     fn erase(opacity: Opacity<Self>) -> Alpha {
         Alpha::F32(opacity.sample())
     }
 }
 
-impl CanvasOpacity for UnitF64 {
+impl CanvasOpacity for f64 {
     fn erase(opacity: Opacity<Self>) -> Alpha {
         Alpha::F64(opacity.sample())
     }
@@ -345,7 +337,7 @@ mod tests {
         let color = CanvasColor::from_icc(
             &profile,
             coordinates.clone(),
-            UnitF32::new(0.5).unwrap(),
+            Opacity::<f32>::new(0.5).unwrap(),
             IccRenderingIntent::RelativeColorimetric,
         )
         .unwrap();
@@ -353,7 +345,7 @@ mod tests {
             panic!("ICC device coordinates were converted at the Canvas boundary")
         };
         assert!(Arc::ptr_eq(stored, &coordinates));
-        assert_eq!(*stored_opacity, UnitF32::new(0.5).unwrap());
+        assert_eq!(*stored_opacity, 0.5);
         let CanvasProfile::Icc {
             profile: stored_profile,
             intent,
@@ -384,7 +376,7 @@ mod tests {
     fn icc_color_rejects_invalid_coordinates_and_implicit_absolute_conversion() {
         let bytes = moxcms::ColorProfile::new_srgb().encode().unwrap();
         let profile = IccProfile::from_bytes(&bytes).unwrap();
-        let opacity = UnitF32::new(1.0).unwrap();
+        let opacity = Opacity::<f32>::ONE;
         assert!(matches!(
             CanvasColor::from_icc(
                 &profile,
@@ -424,8 +416,8 @@ mod tests {
     fn erasing_a_color_retains_its_rgb_profile() {
         let color = Color::new(
             DisplayP3,
-            [UnitF32::ONE.get(), 0.5, 0.25],
-            crate::color::Opacity::new(UnitF32::new(0.75).unwrap()),
+            [1.0, 0.5, 0.25],
+            Opacity::<f32>::new(0.75).unwrap(),
         )
         .unwrap();
 
@@ -440,12 +432,7 @@ mod tests {
     #[test]
     fn changing_opacity_preserves_authored_coordinates_and_profile() {
         let color = CanvasColor::from(
-            Color::new(
-                LinearDisplayP3,
-                [255_u8, 128, 64],
-                crate::color::Opacity::new(128_u8),
-            )
-            .unwrap(),
+            Color::new(LinearDisplayP3, [255_u8, 128, 64], Opacity::from(128_u8)).unwrap(),
         );
 
         let adjusted = color.with_alpha_factor(0.5);
@@ -486,7 +473,7 @@ mod tests {
         let color = Color::new(
             DisplayP3,
             [0.125_f64, 0.25, 0.5],
-            Opacity::new(UnitF64::new(0.75).unwrap()),
+            Opacity::<f64>::new(0.75).unwrap(),
         )
         .unwrap();
         let canvas = CanvasColor::from(color);
@@ -497,7 +484,7 @@ mod tests {
         ));
 
         let color =
-            Color::new(Srgb, [0_u16, u16::MAX / 2, u16::MAX], Opacity::new(128_u8)).unwrap();
+            Color::new(Srgb, [0_u16, u16::MAX / 2, u16::MAX], Opacity::from(128_u8)).unwrap();
         let canvas = CanvasColor::from(color);
         assert!(matches!(canvas.value, ColorValue::U16(_, Alpha::U8(_))));
     }
