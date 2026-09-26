@@ -14,13 +14,13 @@ use super::{
 pub trait XyzD50Profile: ColorProfile {
     fn coordinates_to_xyz_d50(
         &self,
-        coordinates: &<Self::Model as ColorModel>::Coordinates<f64>,
+        coordinates: &<Self::Model as ColorModel>::ReferenceCoordinates,
     ) -> [f64; 3];
 
     fn xyz_d50_to_coordinates(
         &self,
         xyz_d50: [f64; 3],
-    ) -> <Self::Model as ColorModel>::Coordinates<f64>;
+    ) -> <Self::Model as ColorModel>::ReferenceCoordinates;
 }
 
 macro_rules! rgb_profile {
@@ -131,10 +131,8 @@ mod tests {
     fn predefined_profiles_round_trip_via_d50_xyz() {
         fn check<P: XyzD50Profile>(
             profile: P,
-            coordinates: <P::Model as ColorModel>::Coordinates<f64>,
-        ) where
-            <P::Model as ColorModel>::Coordinates<f64>: AsRef<[f64]>,
-        {
+            coordinates: <P::Model as ColorModel>::ReferenceCoordinates,
+        ) {
             let actual =
                 profile.xyz_d50_to_coordinates(profile.coordinates_to_xyz_d50(&coordinates));
             for (actual, expected) in actual.as_ref().iter().zip(coordinates.as_ref()) {

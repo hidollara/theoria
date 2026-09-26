@@ -1,8 +1,8 @@
 use std::{error::Error, fmt, sync::Arc};
 
 use crate::color::{
-    Color, ColorProfile, ColorTransformError, IccProfile, IccProfileError, IccRenderingIntent,
-    LabD50, Opacity, ReferenceSample, RgbColorSpace, Sample, TransferError, UnitF32, UnitF64,
+    Color, ColorCoordinates, ColorProfile, ColorTransformError, IccProfile, IccProfileError,
+    IccRenderingIntent, LabD50, Opacity, RgbColorSpace, TransferError, UnitF32, UnitF64,
     UnitSample, XyzD50, XyzD65,
 };
 
@@ -160,43 +160,43 @@ impl CanvasColor {
     }
 }
 
-trait CanvasCoordinates: Sample {
-    fn erase(coordinates: [Self; 3], alpha: Alpha) -> ColorValue;
+trait CanvasCoordinates {
+    fn erase(self, alpha: Alpha) -> ColorValue;
 }
 
-impl CanvasCoordinates for f32 {
-    fn erase(coordinates: [Self; 3], alpha: Alpha) -> ColorValue {
-        ColorValue::F32(coordinates, alpha)
+impl CanvasCoordinates for [f32; 3] {
+    fn erase(self, alpha: Alpha) -> ColorValue {
+        ColorValue::F32(self, alpha)
     }
 }
 
-impl CanvasCoordinates for UnitF32 {
-    fn erase(coordinates: [Self; 3], alpha: Alpha) -> ColorValue {
-        ColorValue::F32(coordinates.map(UnitF32::get), alpha)
+impl CanvasCoordinates for [UnitF32; 3] {
+    fn erase(self, alpha: Alpha) -> ColorValue {
+        ColorValue::F32(self.map(UnitF32::get), alpha)
     }
 }
 
-impl CanvasCoordinates for f64 {
-    fn erase(coordinates: [Self; 3], alpha: Alpha) -> ColorValue {
-        ColorValue::F64(coordinates, alpha)
+impl CanvasCoordinates for [f64; 3] {
+    fn erase(self, alpha: Alpha) -> ColorValue {
+        ColorValue::F64(self, alpha)
     }
 }
 
-impl CanvasCoordinates for UnitF64 {
-    fn erase(coordinates: [Self; 3], alpha: Alpha) -> ColorValue {
-        ColorValue::F64(coordinates.map(UnitF64::get), alpha)
+impl CanvasCoordinates for [UnitF64; 3] {
+    fn erase(self, alpha: Alpha) -> ColorValue {
+        ColorValue::F64(self.map(UnitF64::get), alpha)
     }
 }
 
-impl CanvasCoordinates for u8 {
-    fn erase(coordinates: [Self; 3], alpha: Alpha) -> ColorValue {
-        ColorValue::U8(coordinates, alpha)
+impl CanvasCoordinates for [u8; 3] {
+    fn erase(self, alpha: Alpha) -> ColorValue {
+        ColorValue::U8(self, alpha)
     }
 }
 
-impl CanvasCoordinates for u16 {
-    fn erase(coordinates: [Self; 3], alpha: Alpha) -> ColorValue {
-        ColorValue::U16(coordinates, alpha)
+impl CanvasCoordinates for [u16; 3] {
+    fn erase(self, alpha: Alpha) -> ColorValue {
+        ColorValue::U16(self, alpha)
     }
 }
 
@@ -230,16 +230,16 @@ impl CanvasOpacity for u16 {
 
 macro_rules! canvas_rgb_color {
     ($profile:ty) => {
-        impl<S, A> From<Color<$profile, S, A>> for CanvasColor
+        impl<C, A> From<Color<$profile, C, A>> for CanvasColor
         where
-            S: CanvasCoordinates,
+            C: CanvasCoordinates + ColorCoordinates<<$profile as ColorProfile>::Model>,
             A: CanvasOpacity,
         {
-            fn from(color: Color<$profile, S, A>) -> Self {
+            fn from(color: Color<$profile, C, A>) -> Self {
                 let (profile, coordinates, opacity) = color.into_parts();
                 Self {
                     profile: CanvasProfile::Rgb(profile.into()),
-                    value: S::erase(coordinates, A::erase(opacity)),
+                    value: coordinates.erase(A::erase(opacity)),
                 }
             }
         }
@@ -254,16 +254,16 @@ canvas_rgb_color!(RgbColorSpace);
 
 macro_rules! canvas_reference_color {
     ($profile:ty, $variant:ident) => {
-        impl<S, A> From<Color<$profile, S, A>> for CanvasColor
+        impl<C, A> From<Color<$profile, C, A>> for CanvasColor
         where
-            S: CanvasCoordinates + ReferenceSample<<$profile as ColorProfile>::Model>,
+            C: CanvasCoordinates + ColorCoordinates<<$profile as ColorProfile>::Model>,
             A: CanvasOpacity,
         {
-            fn from(color: Color<$profile, S, A>) -> Self {
+            fn from(color: Color<$profile, C, A>) -> Self {
                 let (_, coordinates, opacity) = color.into_parts();
                 Self {
                     profile: CanvasProfile::$variant,
-                    value: S::erase(coordinates, A::erase(opacity)),
+                    value: coordinates.erase(A::erase(opacity)),
                 }
             }
         }

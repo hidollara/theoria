@@ -1,7 +1,7 @@
 use std::{error::Error, fmt};
 
 use super::{
-    ColorCoordinates, ColorModel, ColorProfile, Opacity, ReferenceSample, Sample, Srgb, UnitF32,
+    ColorCoordinates, ColorModel, ColorProfile, Opacity, ReferenceCoordinates, Srgb, UnitF32,
     UnitSample, XyzD50Profile,
 };
 
@@ -11,33 +11,25 @@ use super::{
 /// The value is not converted into a renderer working space and its color
 /// coordinates are not premultiplied. Those operations belong to the renderer
 /// that evaluates a Canvas.
-pub struct Color<P = Srgb, S = f32, A = UnitF32>
+pub struct Color<P = Srgb, C = [f32; 3], A = UnitF32>
 where
     P: ColorProfile,
-    S: Sample,
+    C: ColorCoordinates<P::Model>,
     A: UnitSample,
 {
     profile: P,
-    coordinates: <P::Model as ColorModel>::Coordinates<S>,
+    coordinates: C,
     opacity: Opacity<A>,
 }
 
-impl<P, S, A> Color<P, S, A>
+impl<P, C, A> Color<P, C, A>
 where
     P: ColorProfile,
-    S: Sample,
+    C: ColorCoordinates<P::Model>,
     A: UnitSample,
 {
-    pub fn new(
-        profile: P,
-        coordinates: <P::Model as ColorModel>::Coordinates<S>,
-        opacity: Opacity<A>,
-    ) -> Result<Self, ColorError> {
-        if coordinates
-            .as_slice()
-            .iter()
-            .any(|coordinate| !coordinate.is_finite())
-        {
+    pub fn new(profile: P, coordinates: C, opacity: Opacity<A>) -> Result<Self, ColorError> {
+        if !coordinates.is_finite() {
             return Err(ColorError::NonFiniteComponent);
         }
         Ok(Self {
@@ -51,7 +43,7 @@ where
         &self.profile
     }
 
-    pub const fn coordinates(&self) -> &<P::Model as ColorModel>::Coordinates<S> {
+    pub const fn coordinates(&self) -> &C {
         &self.coordinates
     }
 
@@ -59,15 +51,15 @@ where
         self.opacity
     }
 
-    pub fn into_parts(self) -> (P, <P::Model as ColorModel>::Coordinates<S>, Opacity<A>) {
+    pub fn into_parts(self) -> (P, C, Opacity<A>) {
         (self.profile, self.coordinates, self.opacity)
     }
 }
 
-impl<P, S, A> Color<P, S, A>
+impl<P, C, A> Color<P, C, A>
 where
     P: XyzD50Profile,
-    S: ReferenceSample<P::Model>,
+    C: ReferenceCoordinates<P::Model>,
     A: UnitSample,
 {
     /// Explicitly converts an authored color through D50-adapted CIE XYZ.
@@ -75,11 +67,11 @@ where
     /// The original color is unchanged; its opacity is carried separately.
     /// This reference conversion does not perform gamut mapping or select an
     /// ICC rendering intent, and it does not set renderer working precision.
-    pub fn convert_to<Q: XyzD50Profile>(&self, profile: Q) -> Result<Color<Q, f64, A>, ColorError> {
-        let source = <P::Model as ColorModel>::map_samples(
-            &self.coordinates,
-            ReferenceSample::<P::Model>::to_reference_f64,
-        );
+    pub fn convert_to<Q: XyzD50Profile>(
+        &self,
+        profile: Q,
+    ) -> Result<Color<Q, <Q::Model as ColorModel>::ReferenceCoordinates, A>, ColorError> {
+        let source = self.coordinates.to_reference();
         let xyz = self.profile.coordinates_to_xyz_d50(&source);
         let coordinates = profile.xyz_d50_to_coordinates(xyz);
         Color::new(profile, coordinates, self.opacity)
@@ -105,7 +97,7 @@ impl Color {
     }
 }
 
-impl Color<Srgb, u8, u8> {
+impl Color<Srgb, [u8; 3], u8> {
     /// Creates an opaque color while retaining its encoded-sRGB `u8` values.
     pub fn rgb8(red: u8, green: u8, blue: u8) -> Self {
         Self::rgba8(red, green, blue, u8::MAX)
@@ -119,12 +111,11 @@ impl Color<Srgb, u8, u8> {
     }
 }
 
-impl<P, S, A> Clone for Color<P, S, A>
+impl<P, C, A> Clone for Color<P, C, A>
 where
     P: ColorProfile + Clone,
-    S: Sample,
+    C: ColorCoordinates<P::Model> + Clone,
     A: UnitSample,
-    <P::Model as ColorModel>::Coordinates<S>: Clone,
 {
     fn clone(&self) -> Self {
         Self::new(self.profile.clone(), self.coordinates.clone(), self.opacity)
@@ -132,21 +123,19 @@ where
     }
 }
 
-impl<P, S, A> Copy for Color<P, S, A>
+impl<P, C, A> Copy for Color<P, C, A>
 where
     P: ColorProfile + Copy,
-    S: Sample,
+    C: ColorCoordinates<P::Model> + Copy,
     A: UnitSample,
-    <P::Model as ColorModel>::Coordinates<S>: Copy,
 {
 }
 
-impl<P, S, A> fmt::Debug for Color<P, S, A>
+impl<P, C, A> fmt::Debug for Color<P, C, A>
 where
     P: ColorProfile + fmt::Debug,
-    S: Sample,
+    C: ColorCoordinates<P::Model> + fmt::Debug,
     A: UnitSample,
-    <P::Model as ColorModel>::Coordinates<S>: fmt::Debug,
 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -158,12 +147,11 @@ where
     }
 }
 
-impl<P, S, A> PartialEq for Color<P, S, A>
+impl<P, C, A> PartialEq for Color<P, C, A>
 where
     P: ColorProfile + PartialEq,
-    S: Sample,
+    C: ColorCoordinates<P::Model> + PartialEq,
     A: UnitSample,
-    <P::Model as ColorModel>::Coordinates<S>: PartialEq,
 {
     fn eq(&self, other: &Self) -> bool {
         self.profile == other.profile
@@ -207,7 +195,23 @@ fn validate_srgb(coordinates: [f32; 3]) -> Result<(), ColorError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{LinearSrgb, XyzD50};
+    use crate::{LinearSrgb, Rgb, XyzD50};
+
+    struct AuthoredRgb([u8; 3]);
+
+    impl ColorCoordinates<Rgb> for AuthoredRgb {
+        fn is_finite(&self) -> bool {
+            true
+        }
+    }
+
+    #[test]
+    fn a_model_can_accept_a_whole_user_defined_coordinate_type() {
+        let color = Color::new(Srgb, AuthoredRgb([12, 34, 56]), Opacity::new(255_u8)).unwrap();
+
+        assert_eq!(color.coordinates().0, [12, 34, 56]);
+        assert_eq!(color.opacity().sample(), 255);
+    }
 
     #[test]
     fn a_typed_color_retains_its_authored_representation() {
