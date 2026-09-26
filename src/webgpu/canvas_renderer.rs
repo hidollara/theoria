@@ -9,8 +9,8 @@ use crate::{
     },
     canvas_renderer::{
         canvas_plan::{
-            can_record_directly, collect_blend_shaders, collect_images, prepare_colors,
-            required_scratch_images,
+            can_record_directly_in, collect_blend_shaders_in, collect_images, prepare_colors_in,
+            required_scratch_images_in,
         },
         color_space::PreparedColors,
         mesh_paint::paint_triangle_prepared,
@@ -18,7 +18,7 @@ use crate::{
         path_sampling::PathSampler,
         view_space::screen_space_tolerance,
     },
-    color::{Color, IccProfile, IccRenderingIntent},
+    color::{Color, IccProfile, IccRenderingIntent, RgbColorSpace},
     geometry::Point,
     path::Path,
     surface::{SurfaceSize, Viewport},
@@ -29,7 +29,7 @@ use crate::{
     transform::Projective2,
 };
 
-use super::color::PremultipliedLinearSrgba;
+use super::color::PremultipliedWorkingRgba;
 
 mod encoding;
 mod image;
@@ -48,6 +48,7 @@ pub struct RenderTarget<'a> {
     size: SurfaceSize,
     clear_color: CanvasColor,
     output_profile: Option<(&'a IccProfile, IccRenderingIntent)>,
+    preserve_working: bool,
 }
 
 impl<'a> RenderTarget<'a> {
@@ -63,6 +64,7 @@ impl<'a> RenderTarget<'a> {
             size,
             clear_color: clear_color.into(),
             output_profile: None,
+            preserve_working: false,
         }
     }
 
@@ -73,6 +75,11 @@ impl<'a> RenderTarget<'a> {
         self.output_profile = Some((profile, intent));
         self
     }
+
+    fn preserving_working(mut self) -> Self {
+        self.preserve_working = true;
+        self
+    }
 }
 
 /// Translates backend-independent Canvas content into WebGPU commands.
@@ -81,6 +88,7 @@ impl<'a> RenderTarget<'a> {
 /// uploaded Canvas images, and submits one or more command buffers from
 /// [`render`](Self::render). It does not create or present a WebGPU surface.
 pub struct CanvasRenderer {
+    working_space: RgbColorSpace,
     device: wgpu::Device,
     queue: wgpu::Queue,
     pipelines: Pipelines,
@@ -92,7 +100,17 @@ pub struct CanvasRenderer {
 
 impl CanvasRenderer {
     pub fn new(device: wgpu::Device, queue: wgpu::Queue) -> Self {
-        let pipelines = Pipelines::new(&device);
+        Self::new_with_working_space(device, queue, RgbColorSpace::LinearSrgb)
+    }
+
+    /// Selects the RGB coordinates used for intermediate Canvas evaluation.
+    /// The choice is fixed for this renderer so cached Canvas images keep one meaning.
+    pub fn new_with_working_space(
+        device: wgpu::Device,
+        queue: wgpu::Queue,
+        working_space: RgbColorSpace,
+    ) -> Self {
+        let pipelines = Pipelines::new(&device, working_space);
         let composite_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("theoria WebGPU Canvas sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -103,6 +121,7 @@ impl CanvasRenderer {
             ..Default::default()
         });
         Self {
+            working_space,
             device,
             queue,
             pipelines,
@@ -123,10 +142,10 @@ impl CanvasRenderer {
         if target.size.width == 0 || target.size.height == 0 {
             return Ok(());
         }
-        let prepared = prepare_colors(canvas)?;
+        let prepared = prepare_colors_in(canvas, self.working_space)?;
         target
             .clear_color
-            .try_straight_rgba_in(crate::color::RgbColorSpace::LinearSrgb)?;
+            .try_straight_rgba_in(self.working_space)?;
         self.materialize_canvas_resources(canvas)?;
         self.pipelines
             .retain_icc_images(&self.images.active_icc_keys());
@@ -156,8 +175,13 @@ impl CanvasRenderer {
                     ..
                 } = image.view()
                 {
-                    self.pipelines
-                        .ensure_icc_image(&self.device, profile, intent, has_alpha)?;
+                    self.pipelines.ensure_icc_image(
+                        &self.device,
+                        profile,
+                        intent,
+                        has_alpha,
+                        self.working_space,
+                    )?;
                 }
                 self.images
                     .ensure_uploaded(&self.device, &self.queue, image.as_ref())?;
@@ -174,13 +198,14 @@ impl CanvasRenderer {
         if self.images.contains_canvas(image) {
             return Ok(());
         }
-        let prepared = prepare_colors(image.content())?;
+        let prepared = prepare_colors_in(image.content(), self.working_space)?;
         self.materialize_canvas_resources(image.content())?;
         let backing = create_working_image(
             &self.device,
             image.width(),
             image.height(),
             "theoria WebGPU Canvas image",
+            self.working_space,
         );
         self.render_to_view(
             RenderTarget::new(
@@ -191,7 +216,8 @@ impl CanvasRenderer {
                     height: image.height(),
                 },
                 Color::rgba8(0, 0, 0, 0),
-            ),
+            )
+            .preserving_working(),
             Viewport::new(0.0, 0.0, image.width() as f32, image.height() as f32),
             image.content(),
             image.view(),
@@ -211,7 +237,7 @@ impl CanvasRenderer {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let output = target
             .output_profile
-            .map(|(profile, intent)| OutputColorTransform::new(profile, intent))
+            .map(|(profile, intent)| OutputColorTransform::new(profile, intent, self.working_space))
             .transpose()?;
         if output.is_some()
             && matches!(
@@ -226,10 +252,13 @@ impl CanvasRenderer {
             .into());
         }
         let mut blend_shaders = Vec::new();
-        collect_blend_shaders(canvas, &mut blend_shaders);
+        collect_blend_shaders_in(canvas, &mut blend_shaders, self.working_space);
         self.pipelines
             .ensure_blend_shaders(&self.device, &blend_shaders);
-        self.ensure_scratch_images(target.size, required_scratch_images(canvas));
+        self.ensure_scratch_images(
+            target.size,
+            required_scratch_images_in(canvas, self.working_space),
+        );
         let target_region = target_region(viewport, target.size);
         let mut encoder = self
             .device
@@ -268,12 +297,21 @@ impl CanvasRenderer {
                 intent,
                 transform,
             )?,
+            _ if target.preserve_working => &self.pipelines.composites[&Composite::SourceOver],
             _ => self.pipelines.present(&self.device, target.format),
         };
-        let clear = PremultipliedLinearSrgba::from_color(target.clear_color).components();
+        let clear = crate::canvas_renderer::color_space::lower_straight_color_in(
+            &target.clear_color,
+            self.working_space,
+        );
         let clear = match &output {
             Some(transform) => transform.convert_premultiplied(clear)?,
-            None => clear,
+            None if target.preserve_working => clear,
+            None => crate::canvas_renderer::color_space::convert_premultiplied_space(
+                clear,
+                self.working_space,
+                RgbColorSpace::LinearSrgb,
+            ),
         };
         let attachment = Some(wgpu::RenderPassColorAttachment {
             view: target.view,
@@ -314,6 +352,7 @@ impl CanvasRenderer {
                 size.width,
                 size.height,
                 "theoria WebGPU Canvas scratch image",
+                self.working_space,
             ));
         }
     }
@@ -362,13 +401,13 @@ impl CanvasRecorder<'_> {
                 self.render_node(accumulator, backdrop, canvas_to_root);
                 if composition.blend().is_none()
                     && composition.composite() == Composite::SourceOver
-                    && composition.composite_space().is_linear()
-                    && can_record_directly(source)
+                    && composition.composite_space() == self.prepared.working_space()
+                    && can_record_directly_in(source, self.prepared.working_space())
                 {
                     self.render_node(accumulator, source, canvas_to_root);
                 } else {
                     let source_image = self.evaluate(source, canvas_to_root);
-                    if !composition.requires_destination_read() {
+                    if !composition.requires_destination_read_in(self.prepared.working_space()) {
                         self.draw_composite(accumulator, source_image, composition.composite());
                     } else {
                         self.compose_with_destination(accumulator, source_image, composition);
@@ -574,7 +613,7 @@ impl CanvasRecorder<'_> {
                 mesh.vertices[triangle[1] as usize],
                 mesh.vertices[triangle[2] as usize],
             ];
-            for painted in paint_triangle_prepared::<PremultipliedLinearSrgba>(
+            for painted in paint_triangle_prepared::<PremultipliedWorkingRgba>(
                 points,
                 source,
                 path_sampler.as_ref(),
@@ -954,6 +993,61 @@ mod tests {
     }
 
     #[test]
+    fn selected_working_space_preserves_srgba_output() {
+        let profile =
+            IccProfile::from_bytes(include_bytes!("../color/fixtures/DisplayP3-v4.icc")).unwrap();
+        let image = crate::canvas::Image::from_icc_u8(
+            1,
+            1,
+            vec![200, 100, 50],
+            profile,
+            IccRenderingIntent::RelativeColorimetric,
+            false,
+        )
+        .unwrap();
+        let view = CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(1.0, 1.0)).unwrap();
+        let cached = CanvasImage::new(
+            Canvas::draw(
+                ImagePattern::new(image).with_extend(ImageExtend::Clamp),
+                Coverage::all(),
+            ),
+            view,
+            1,
+            1,
+        )
+        .unwrap();
+        let backdrop = Canvas::draw(Color::rgb8(32, 96, 180), Coverage::all());
+        let source = Canvas::draw(
+            ImagePattern::new(cached).with_extend(ImageExtend::Clamp),
+            Coverage::all(),
+        );
+        let canvas = backdrop.composite(
+            source,
+            Composition::new(Composite::SourceOver, RgbColorSpace::LinearSrgb),
+        );
+        let linear_srgb = render_pixel_bytes_with_working_space(
+            &canvas,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+            None,
+            RgbColorSpace::LinearSrgb,
+        );
+        let linear_p3 = render_pixel_bytes_with_working_space(
+            &canvas,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+            None,
+            RgbColorSpace::LinearDisplayP3,
+        );
+        if let (Some(expected), Some(actual)) = (linear_srgb, linear_p3) {
+            for (&actual, &expected) in actual.iter().zip(&expected) {
+                assert!(
+                    actual.abs_diff(expected) <= 3,
+                    "{actual} != {expected}; full: {linear_p3:?} != {linear_srgb:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn blend_is_converted_to_composition_space_before_alpha_weighting() {
         let backdrop = Canvas::draw(Color::rgba8(51, 51, 51, 128), Coverage::all());
         let source = Canvas::draw(Color::rgb8(204, 204, 204), Coverage::all());
@@ -1046,7 +1140,10 @@ mod tests {
         {
             let red =
                 half::f16::from_bits(u16::from_le_bytes(pixel[..2].try_into().unwrap())).to_f32();
-            assert!(red > 1.0, "ICC raster red was clipped during sampling: {red}");
+            assert!(
+                red > 1.0,
+                "ICC raster red was clipped during sampling: {red}"
+            );
         }
     }
 
@@ -1117,6 +1214,15 @@ mod tests {
         format: wgpu::TextureFormat,
         profile: Option<&IccProfile>,
     ) -> Option<[u8; 8]> {
+        render_pixel_bytes_with_working_space(canvas, format, profile, RgbColorSpace::LinearSrgb)
+    }
+
+    fn render_pixel_bytes_with_working_space(
+        canvas: &Canvas,
+        format: wgpu::TextureFormat,
+        profile: Option<&IccProfile>,
+        working_space: RgbColorSpace,
+    ) -> Option<[u8; 8]> {
         block_on(async {
             let instance = wgpu::Instance::default();
             let Ok(adapter) = instance
@@ -1150,7 +1256,8 @@ mod tests {
                 view_formats: &[],
             });
             let target_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-            let mut renderer = CanvasRenderer::new(device.clone(), queue);
+            let mut renderer =
+                CanvasRenderer::new_with_working_space(device.clone(), queue, working_space);
             let view =
                 CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(1.0, 1.0)).unwrap();
 

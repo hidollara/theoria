@@ -2,28 +2,40 @@ use std::collections::HashMap;
 
 use crate::{
     canvas::{CanvasColor, CanvasIccColorError, CanvasProfile, Coordinates},
-    color::{
-        ColorTransform, LabD50, LinearSrgb, RgbColorSpace, XyzD50Profile, XyzD65, from_linear_srgb,
-        to_linear_srgb,
-    },
+    color::{ColorTransform, LabD50, RgbColorSpace, XyzD50Profile, XyzD65, convert_rgb},
 };
 
 /// Renderer-owned conversions prepared before commands are recorded.
 ///
 /// Keys identify colors within the borrowed, immutable Canvas for one render.
 /// The Canvas stays alive and unmoved until this cache is discarded.
-#[derive(Default)]
 pub(crate) struct PreparedColors {
-    premultiplied_linear_srgb: HashMap<usize, [f32; 4]>,
+    working_space: RgbColorSpace,
+    premultiplied: HashMap<usize, [f32; 4]>,
+}
+
+impl Default for PreparedColors {
+    fn default() -> Self {
+        Self::new(RgbColorSpace::LinearSrgb)
+    }
 }
 
 impl PreparedColors {
+    pub(crate) fn new(working_space: RgbColorSpace) -> Self {
+        Self {
+            working_space,
+            premultiplied: HashMap::new(),
+        }
+    }
+
+    pub(crate) fn working_space(&self) -> RgbColorSpace {
+        self.working_space
+    }
+
     pub(crate) fn prepare(&mut self, color: &CanvasColor) -> Result<(), CanvasIccColorError> {
         let key = color as *const CanvasColor as usize;
-        if let std::collections::hash_map::Entry::Vacant(entry) =
-            self.premultiplied_linear_srgb.entry(key)
-        {
-            let [red, green, blue, alpha] = color.try_straight_rgba_in(LinearSrgb.into())?;
+        if let std::collections::hash_map::Entry::Vacant(entry) = self.premultiplied.entry(key) {
+            let [red, green, blue, alpha] = color.try_straight_rgba_in(self.working_space)?;
             entry.insert([red * alpha, green * alpha, blue * alpha, alpha]);
         }
         Ok(())
@@ -31,10 +43,10 @@ impl PreparedColors {
 
     pub(crate) fn lower(&self, color: &CanvasColor) -> [f32; 4] {
         let key = color as *const CanvasColor as usize;
-        self.premultiplied_linear_srgb
+        self.premultiplied
             .get(&key)
             .copied()
-            .unwrap_or_else(|| lower_straight_color(color))
+            .unwrap_or_else(|| lower_straight_color_in(color, self.working_space))
     }
 }
 
@@ -92,45 +104,56 @@ fn convert_icc_color(
     ])
 }
 
+#[cfg(test)]
 pub(crate) fn lower_straight_color(color: &CanvasColor) -> [f32; 4] {
-    let [red, green, blue, alpha] = color.straight_rgba_in(LinearSrgb.into());
+    lower_straight_color_in(color, RgbColorSpace::LinearSrgb)
+}
+
+pub(crate) fn lower_straight_color_in(color: &CanvasColor, space: RgbColorSpace) -> [f32; 4] {
+    let [red, green, blue, alpha] = color.straight_rgba_in(space);
     [red * alpha, green * alpha, blue * alpha, alpha]
 }
 
 pub(crate) use crate::color::encode_srgb as encode_linear_srgb_component;
 
-pub(super) fn interpolate_premultiplied_linear_srgba(
+pub(super) fn interpolate_premultiplied_rgba(
     first: [f32; 4],
     second: [f32; 4],
     amount: f32,
-    space: RgbColorSpace,
+    interpolation_space: RgbColorSpace,
+    working_space: RgbColorSpace,
 ) -> [f32; 4] {
-    let first = from_working(first, space);
-    let second = from_working(second, space);
+    let first = convert_premultiplied_space(first, working_space, interpolation_space);
+    let second = convert_premultiplied_space(second, working_space, interpolation_space);
     let mixed = std::array::from_fn(|index| first[index] + (second[index] - first[index]) * amount);
-    to_working(mixed, space)
+    convert_premultiplied_space(mixed, interpolation_space, working_space)
 }
 
-pub(super) fn mix_premultiplied_linear_srgba(
+pub(super) fn mix_premultiplied_rgba(
     colors: [[f32; 4]; 3],
     weights: [f32; 3],
-    space: RgbColorSpace,
+    interpolation_space: RgbColorSpace,
+    working_space: RgbColorSpace,
 ) -> [f32; 4] {
-    let colors = colors.map(|color| from_working(color, space));
+    let colors =
+        colors.map(|color| convert_premultiplied_space(color, working_space, interpolation_space));
     let mixed = std::array::from_fn(|component| {
         colors[0][component] * weights[0]
             + colors[1][component] * weights[1]
             + colors[2][component] * weights[2]
     });
-    to_working(mixed, space)
+    convert_premultiplied_space(mixed, interpolation_space, working_space)
 }
 
-fn from_working(value: [f32; 4], space: RgbColorSpace) -> [f32; 4] {
-    convert_premultiplied(value, |rgb| from_linear_srgb(rgb, space))
-}
-
-fn to_working(value: [f32; 4], space: RgbColorSpace) -> [f32; 4] {
-    convert_premultiplied(value, |rgb| to_linear_srgb(rgb, space))
+pub(crate) fn convert_premultiplied_space(
+    value: [f32; 4],
+    from: RgbColorSpace,
+    to: RgbColorSpace,
+) -> [f32; 4] {
+    if from == to {
+        return value;
+    }
+    convert_premultiplied(value, |rgb| convert_rgb(rgb, from, to))
 }
 
 fn convert_premultiplied(
@@ -160,7 +183,7 @@ mod tests {
         prepared.prepare(&color).unwrap();
         prepared.prepare(&color).unwrap();
 
-        assert_eq!(prepared.premultiplied_linear_srgb.len(), 1);
+        assert_eq!(prepared.premultiplied.len(), 1);
         assert_eq!(prepared.lower(&color), [1.0, 0.0, 0.0, 1.0]);
     }
 
@@ -210,13 +233,53 @@ mod tests {
     fn interpolation_is_performed_in_the_selected_space() {
         let black = [0.0, 0.0, 0.0, 1.0];
         let white = [1.0, 1.0, 1.0, 1.0];
-        let encoded =
-            interpolate_premultiplied_linear_srgba(black, white, 0.5, RgbColorSpace::Srgb);
-        let linear =
-            interpolate_premultiplied_linear_srgba(black, white, 0.5, RgbColorSpace::LinearSrgb);
+        let encoded = interpolate_premultiplied_rgba(
+            black,
+            white,
+            0.5,
+            RgbColorSpace::Srgb,
+            RgbColorSpace::LinearSrgb,
+        );
+        let linear = interpolate_premultiplied_rgba(
+            black,
+            white,
+            0.5,
+            RgbColorSpace::LinearSrgb,
+            RgbColorSpace::LinearSrgb,
+        );
 
         assert!(encoded[0] < linear[0]);
         assert!((encoded[0] - 0.214_041_14).abs() < 0.000_001);
         assert_eq!(linear, [0.5, 0.5, 0.5, 1.0]);
+    }
+
+    #[test]
+    fn preparation_uses_the_selected_working_space() {
+        let color = CanvasColor::from(crate::color::Color::rgb(0.5, 0.5, 0.5).unwrap());
+        let mut prepared = PreparedColors::new(RgbColorSpace::Srgb);
+        prepared.prepare(&color).unwrap();
+        assert_eq!(prepared.lower(&color), [0.5, 0.5, 0.5, 1.0]);
+    }
+
+    #[test]
+    fn interpolation_returns_coordinates_in_the_working_space() {
+        let black = [0.0, 0.0, 0.0, 1.0];
+        let white = [1.0, 1.0, 1.0, 1.0];
+        let actual = interpolate_premultiplied_rgba(
+            black,
+            white,
+            0.5,
+            RgbColorSpace::Srgb,
+            RgbColorSpace::LinearDisplayP3,
+        );
+        let expected = convert_rgb(
+            [0.5; 3],
+            RgbColorSpace::Srgb,
+            RgbColorSpace::LinearDisplayP3,
+        );
+        for (actual, expected) in actual[..3].iter().zip(expected) {
+            assert!((actual - expected).abs() < 0.000_01);
+        }
+        assert_eq!(actual[3], 1.0);
     }
 }

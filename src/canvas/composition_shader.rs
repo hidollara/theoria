@@ -40,8 +40,17 @@ pub(crate) fn operation(helpers: &str, body: &str) -> String {
 }
 
 pub(crate) fn assemble(binding: Binding, helpers: &str, body: &str) -> String {
+    assemble_for(binding, helpers, body, 1)
+}
+
+pub(crate) fn assemble_for(
+    binding: Binding,
+    helpers: &str,
+    body: &str,
+    working_space: u32,
+) -> String {
     let operation = operation(helpers, body);
-    let context = crate::rgb_shader::assemble(CONTEXT);
+    let context = crate::rgb_shader::assemble_for(CONTEXT, working_space);
     let fragments = [&*context, binding.declaration(), &operation, FRAGMENT];
     let capacity = fragments.iter().map(|fragment| fragment.len() + 1).sum();
     let mut source = String::with_capacity(capacity);

@@ -2,7 +2,7 @@ use std::{error::Error, fmt};
 
 use crate::color::{ColorTransform, IccProfile, IccRenderingIntent, RgbColorSpace, TransferError};
 
-/// Conversion from the renderer's premultiplied linear-sRGB working image to
+/// Conversion from the renderer's premultiplied RGB working image to
 /// straight destination-profile device coordinates at the output boundary.
 pub(crate) struct OutputColorTransform {
     transfer: ColorTransform,
@@ -42,6 +42,7 @@ impl OutputColorTransform {
     pub(crate) fn new(
         profile: &IccProfile,
         intent: IccRenderingIntent,
+        working_space: RgbColorSpace,
     ) -> Result<Self, OutputColorError> {
         if profile.device_channels() != 3 {
             return Err(OutputColorError::UnsupportedChannels(
@@ -51,7 +52,7 @@ impl OutputColorTransform {
         if intent == IccRenderingIntent::AbsoluteColorimetric {
             return Err(OutputColorError::AbsoluteIntent);
         }
-        let source = ColorTransform::rgb_to_pcs(RgbColorSpace::LinearSrgb, profile.pcs())
+        let source = ColorTransform::rgb_to_pcs(working_space, profile.pcs())
             .map_err(|error| OutputColorError::Transform(Box::new(error)))?;
         let destination = profile
             .from_pcs(intent)
@@ -97,8 +98,12 @@ mod tests {
     fn real_display_profile_output_compiles_as_a_fragment_shader() {
         let profile =
             IccProfile::from_bytes(include_bytes!("../color/fixtures/DisplayP3-v4.icc")).unwrap();
-        let output =
-            OutputColorTransform::new(&profile, IccRenderingIntent::RelativeColorimetric).unwrap();
+        let output = OutputColorTransform::new(
+            &profile,
+            IccRenderingIntent::RelativeColorimetric,
+            RgbColorSpace::LinearSrgb,
+        )
+        .unwrap();
         let converted = output.convert_premultiplied([0.1, 0.2, 0.3, 0.5]).unwrap();
         assert_eq!(converted[3], 0.5);
         let shader = output.wgsl().unwrap();
@@ -117,8 +122,37 @@ mod tests {
         let profile =
             IccProfile::from_bytes(include_bytes!("../color/fixtures/sGrey-v4.icc")).unwrap();
         assert!(matches!(
-            OutputColorTransform::new(&profile, IccRenderingIntent::RelativeColorimetric),
+            OutputColorTransform::new(
+                &profile,
+                IccRenderingIntent::RelativeColorimetric,
+                RgbColorSpace::LinearSrgb
+            ),
             Err(OutputColorError::UnsupportedChannels(1))
         ));
+    }
+
+    #[test]
+    fn output_transfer_starts_in_the_selected_working_space() {
+        let profile =
+            IccProfile::from_bytes(include_bytes!("../color/fixtures/DisplayP3-v4.icc")).unwrap();
+        let linear = OutputColorTransform::new(
+            &profile,
+            IccRenderingIntent::RelativeColorimetric,
+            RgbColorSpace::LinearSrgb,
+        )
+        .unwrap();
+        let encoded = OutputColorTransform::new(
+            &profile,
+            IccRenderingIntent::RelativeColorimetric,
+            RgbColorSpace::Srgb,
+        )
+        .unwrap();
+        let from_linear = linear
+            .convert_premultiplied([0.214_041_14, 0.0, 0.0, 1.0])
+            .unwrap();
+        let from_encoded = encoded.convert_premultiplied([0.5, 0.0, 0.0, 1.0]).unwrap();
+        for (actual, expected) in from_encoded.into_iter().zip(from_linear) {
+            assert!((actual - expected).abs() < 0.000_01);
+        }
     }
 }

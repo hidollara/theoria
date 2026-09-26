@@ -105,7 +105,7 @@ impl Composition {
         }
     }
 
-    pub(crate) const fn requires_destination_read(&self) -> bool {
-        self.blend.is_some() || !self.composite_space.is_linear()
+    pub(crate) fn requires_destination_read_in(&self, working_space: RgbColorSpace) -> bool {
+        self.blend.is_some() || self.composite_space != working_space
     }
 }

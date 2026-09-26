@@ -9,12 +9,12 @@ use crate::{
         image::{Image, ImageKind},
     },
     canvas_renderer::output_color::OutputColorTransform,
-    color::{IccProfile, IccRenderingIntent},
+    color::{IccProfile, IccRenderingIntent, RgbColorSpace},
     surface::Viewport,
 };
 
 use super::{
-    color::PremultipliedLinearSrgba,
+    color::PremultipliedWorkingRgba,
     image::VulkanImage,
     image_layout::transition_image,
     presenter::{RenderDevice, RenderTarget},
@@ -26,7 +26,7 @@ mod recording;
 mod resources;
 
 use crate::canvas_renderer::canvas_plan::{
-    collect_blend_shaders, collect_images, prepare_colors, required_scratch_images,
+    collect_blend_shaders_in, collect_images, prepare_colors_in, required_scratch_images_in,
 };
 use crate::canvas_renderer::color_space::PreparedColors;
 use crate::vulkan::one_shot::OneShotCommands;
@@ -38,13 +38,21 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 /// Translates backend-independent Canvas commands into Vulkan commands.
 pub struct CanvasRenderer {
     device: RenderDevice,
+    working_space: RgbColorSpace,
     gpu: CanvasGpuResources,
 }
 
 impl CanvasRenderer {
     pub fn new(device: RenderDevice) -> Self {
+        Self::new_with_working_space(device, RgbColorSpace::LinearSrgb)
+    }
+
+    /// Selects the RGB coordinates used for intermediate Canvas evaluation.
+    /// The choice is fixed for this renderer so cached Canvas images keep one meaning.
+    pub fn new_with_working_space(device: RenderDevice, working_space: RgbColorSpace) -> Self {
         Self {
             device,
+            working_space,
             gpu: CanvasGpuResources::new(),
         }
     }
@@ -60,9 +68,9 @@ impl CanvasRenderer {
         canvas: &Canvas,
         view: CanvasView,
     ) -> Result<()> {
-        let prepared = prepare_colors(canvas)?;
+        let prepared = prepare_colors_in(canvas, self.working_space)?;
         let clear_color = target.clear_color();
-        clear_color.try_straight_rgba_in(crate::color::RgbColorSpace::LinearSrgb)?;
+        clear_color.try_straight_rgba_in(self.working_space)?;
         let output_profile = target.output_profile();
         self.materialize_canvas_resources(canvas)?;
         let (image_view, format, extent) = target.surface();
@@ -74,8 +82,14 @@ impl CanvasRenderer {
             viewport,
             canvas,
             view,
-            PremultipliedLinearSrgba::from_color(clear_color),
+            PremultipliedWorkingRgba::from_components(
+                crate::canvas_renderer::color_space::lower_straight_color_in(
+                    &clear_color,
+                    self.working_space,
+                ),
+            ),
             output_profile,
+            false,
             &prepared,
         )
     }
@@ -87,12 +101,13 @@ impl CanvasRenderer {
         canvas: &Canvas,
         view: CanvasView,
     ) -> Result<Arc<VulkanImage>> {
-        let prepared = prepare_colors(canvas)?;
+        let prepared = prepare_colors_in(canvas, self.working_space)?;
         let extent = vk::Extent2D { width, height };
         // A CanvasImage is an intermediate result, not an output image. Keep
-        // it in the same linear working format as the renderer's scratch images.
+        // it in the same working format as the renderer's scratch images.
         let format = self.working_format();
-        self.gpu.ensure_image_cache(&self.device)?;
+        self.gpu
+            .ensure_image_cache(&self.device, self.working_space)?;
         let backing = self
             .gpu
             .image_cache
@@ -122,8 +137,9 @@ impl CanvasRenderer {
             Viewport::new(0.0, 0.0, width as f32, height as f32),
             canvas,
             view,
-            PremultipliedLinearSrgba::TRANSPARENT,
+            PremultipliedWorkingRgba::TRANSPARENT,
             None,
+            true,
             &prepared,
         )?;
         unsafe {
@@ -155,7 +171,8 @@ impl CanvasRenderer {
     fn materialize_image(&mut self, image: &Image) -> Result<()> {
         match image.kind() {
             ImageKind::Raster(image) => {
-                self.gpu.ensure_image_cache(&self.device)?;
+                self.gpu
+                    .ensure_image_cache(&self.device, self.working_space)?;
                 self.gpu
                     .image_cache
                     .as_mut()
@@ -167,7 +184,8 @@ impl CanvasRenderer {
     }
 
     fn materialize_canvas_image(&mut self, image: &CanvasImage) -> Result<()> {
-        self.gpu.ensure_image_cache(&self.device)?;
+        self.gpu
+            .ensure_image_cache(&self.device, self.working_space)?;
         if self
             .gpu
             .image_cache
@@ -202,12 +220,13 @@ impl CanvasRenderer {
         viewport: Viewport,
         canvas: &Canvas,
         view: CanvasView,
-        clear_color: PremultipliedLinearSrgba,
+        clear_color: PremultipliedWorkingRgba,
         output_profile: Option<(&IccProfile, IccRenderingIntent)>,
+        preserve_working: bool,
         prepared: &PreparedColors,
     ) -> Result<()> {
         let output = output_profile
-            .map(|(profile, intent)| OutputColorTransform::new(profile, intent))
+            .map(|(profile, intent)| OutputColorTransform::new(profile, intent, self.working_space))
             .transpose()?;
         if output.is_some()
             && !matches!(
@@ -224,9 +243,15 @@ impl CanvasRenderer {
         let working_format = self.working_format();
         let sample_count = preferred_sample_count(&self.device, working_format);
         let target_region = target_region(viewport, extent);
-        self.gpu.ensure_image_cache(&self.device)?;
         self.gpu
-            .ensure_pipelines(&self.device, working_format, format, sample_count)?;
+            .ensure_image_cache(&self.device, self.working_space)?;
+        self.gpu.ensure_pipelines(
+            &self.device,
+            working_format,
+            format,
+            sample_count,
+            self.working_space,
+        )?;
         let icc_layout = self
             .gpu
             .image_cache
@@ -260,7 +285,7 @@ impl CanvasRenderer {
             }
         }
         let mut blend_shaders = Vec::new();
-        collect_blend_shaders(canvas, &mut blend_shaders);
+        collect_blend_shaders_in(canvas, &mut blend_shaders, self.working_space);
         self.gpu
             .ensure_blend_shaders(&self.device, &blend_shaders)?;
         self.gpu.ensure_scratch_images(
@@ -268,18 +293,26 @@ impl CanvasRenderer {
             working_format,
             extent,
             sample_count,
-            required_scratch_images(canvas),
+            required_scratch_images_in(canvas, self.working_space),
         )?;
         let pipelines = self.gpu.pipelines.as_ref().unwrap();
         let present_pipeline = match output_profile {
             Some((profile, intent)) => pipelines.icc_present(profile, intent),
+            None if preserve_working => pipelines.composite(crate::canvas::Composite::SourceOver),
             None => &pipelines.present,
         };
         let clear_color = match &output {
-            Some(transform) => PremultipliedLinearSrgba::from_components(
+            Some(transform) => PremultipliedWorkingRgba::from_components(
                 transform.convert_premultiplied(clear_color.components())?,
             ),
-            None => clear_color,
+            None if preserve_working => clear_color,
+            None => PremultipliedWorkingRgba::from_components(
+                crate::canvas_renderer::color_space::convert_premultiplied_space(
+                    clear_color.components(),
+                    self.working_space,
+                    RgbColorSpace::LinearSrgb,
+                ),
+            ),
         };
         let image_cache = self.gpu.image_cache.as_ref().unwrap();
         let device = self.device.raw();

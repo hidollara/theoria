@@ -5,7 +5,7 @@ use std::error::Error;
 use ash::vk;
 
 use crate::{
-    color::{IccProfile, IccRenderingIntent},
+    color::{IccProfile, IccRenderingIntent, RgbColorSpace},
     image::{IccRasterImage, Srgba8Image},
     surface::{SurfaceContent, SurfaceSize, Viewport},
     vulkan::{
@@ -39,6 +39,12 @@ pub struct ImageSurface {
 impl ImageSurface {
     /// Creates an offscreen image Surface with a fixed non-zero extent.
     pub fn new(size: SurfaceSize) -> Result<Self> {
+        Self::new_with_working_space(size, RgbColorSpace::LinearSrgb)
+    }
+
+    /// Creates an offscreen Surface using the specified RGB working space.
+    /// Readback is still returned as sRGBA8 unless an ICC output is requested.
+    pub fn new_with_working_space(size: SurfaceSize, working_space: RgbColorSpace) -> Result<Self> {
         let byte_len = pixel_byte_len(size)?;
         let device = RenderDevice::independent()?;
         let extent = vk::Extent2D {
@@ -59,7 +65,7 @@ impl ImageSurface {
         )?;
         Ok(Self {
             size,
-            renderer: CanvasRenderer::new(device),
+            renderer: CanvasRenderer::new_with_working_space(device, working_space),
             target,
             readback,
             target_initialized: false,
@@ -235,8 +241,8 @@ fn pixel_byte_len(size: SurfaceSize) -> Result<usize> {
 mod tests {
     use super::{ImageSurface, pixel_byte_len};
     use crate::{
-        canvas::{Canvas, CanvasView, Coverage, ImageExtend, ImagePattern},
-        color::{Color, IccProfile, IccRenderingIntent},
+        canvas::{Canvas, CanvasView, Composite, Composition, Coverage, ImageExtend, ImagePattern},
+        color::{Color, IccProfile, IccRenderingIntent, RgbColorSpace},
         geometry::Point,
         surface::{SurfaceContent, SurfaceSize},
     };
@@ -264,6 +270,59 @@ mod tests {
             })
             .is_err()
         );
+    }
+
+    #[test]
+    fn selected_working_space_preserves_srgba_readback() {
+        let size = SurfaceSize {
+            width: 2,
+            height: 2,
+        };
+        let Ok(mut linear_srgb) = ImageSurface::new(size) else {
+            return; // Vulkan may be unavailable on the test host.
+        };
+        let mut linear_p3 =
+            ImageSurface::new_with_working_space(size, RgbColorSpace::LinearDisplayP3).unwrap();
+        let view = CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(1.0, 1.0)).unwrap();
+        let profile =
+            IccProfile::from_bytes(include_bytes!("../color/fixtures/DisplayP3-v4.icc")).unwrap();
+        let image = crate::canvas::Image::from_icc_u8(
+            1,
+            1,
+            vec![200, 100, 50],
+            profile,
+            IccRenderingIntent::RelativeColorimetric,
+            false,
+        )
+        .unwrap();
+        let cached = crate::canvas::canvas_image::CanvasImage::new(
+            Canvas::draw(
+                ImagePattern::new(image).with_extend(ImageExtend::Clamp),
+                Coverage::all(),
+            ),
+            view,
+            1,
+            1,
+        )
+        .unwrap();
+        let backdrop = Canvas::draw(Color::rgb8(32, 96, 180), Coverage::all());
+        let source = Canvas::draw(
+            ImagePattern::new(cached).with_extend(ImageExtend::Clamp),
+            Coverage::all(),
+        );
+        let content = SurfaceContent::new(
+            backdrop.composite(
+                source,
+                Composition::new(Composite::SourceOver, RgbColorSpace::LinearSrgb),
+            ),
+            view,
+            Color::rgba8(0, 0, 0, 0),
+        );
+        let expected = linear_srgb.render(&content).unwrap();
+        let actual = linear_p3.render(&content).unwrap();
+        for (&actual, &expected) in actual.pixels().iter().zip(expected.pixels()) {
+            assert!(actual.abs_diff(expected) <= 3, "{actual} != {expected}");
+        }
     }
 
     #[test]

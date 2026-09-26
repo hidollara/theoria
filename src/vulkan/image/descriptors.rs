@@ -262,7 +262,10 @@ impl ImageDescriptors {
         tables.write(bytemuck::cast_slice(table_values))?;
         self.bind_backing_with_color(
             backing,
-            GpuImageColor::Icc { key, shader_source: shader_source.into() },
+            GpuImageColor::Icc {
+                key,
+                shader_source: shader_source.into(),
+            },
             Some(tables),
         )
     }

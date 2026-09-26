@@ -3,7 +3,7 @@ struct VertexOutput {
     @location(0) uv: vec2<f32>,
 }
 
-// Both textures contain premultiplied linear-sRGB Canvas values. The shader
+// Both textures contain premultiplied renderer-working Canvas values. The shader
 // temporarily converts straight RGB into the spaces selected independently
 // for blending and Porter-Duff composition, then returns the result to the
 // renderer working representation.

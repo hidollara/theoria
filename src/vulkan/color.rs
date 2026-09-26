@@ -1,7 +1,7 @@
 //! Conversion boundaries for the Vulkan Canvas color pipeline.
 //!
 //! Public colors and CPU images use straight alpha. Vulkan Canvas evaluation
-//! lowers them into premultiplied linear sRGB exactly once, keeps that working
+//! lowers them into premultiplied renderer-selected RGB exactly once, keeps that working
 //! representation through interpolation and compositing, and converts it back
 //! only when a CPU-readable image is requested.
 
@@ -11,13 +11,13 @@ use crate::canvas_renderer::{WorkingColor, color_space};
 #[cfg(test)]
 use crate::color::Color;
 
-/// Vulkan Canvas working color in premultiplied linear-sRGB form.
+/// Vulkan Canvas working color in premultiplied renderer-selected RGB coordinates.
 ///
 /// This representation exists only after renderer lowering. Public colors
 /// remain straight-alpha values, while every Vulkan Canvas pipeline consumes
 /// this one compositing representation.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) struct PremultipliedLinearSrgba([f32; 4]);
+pub(super) struct PremultipliedWorkingRgba([f32; 4]);
 
 /// Describes whether sampled RGB components already contain their alpha
 /// contribution before they enter the premultiplied Canvas pipeline.
@@ -27,13 +27,15 @@ pub(super) enum RgbAlphaAssociation {
     Premultiplied,
 }
 
-impl PremultipliedLinearSrgba {
+impl PremultipliedWorkingRgba {
     pub(super) const TRANSPARENT: Self = Self([0.0; 4]);
 
+    #[cfg(test)]
     pub(super) fn from_color(color: impl Into<CanvasColor>) -> Self {
         Self::from_canvas_color(&color.into())
     }
 
+    #[cfg(test)]
     fn from_canvas_color(color: &CanvasColor) -> Self {
         Self(color_space::lower_straight_color(color))
     }
@@ -47,7 +49,7 @@ impl PremultipliedLinearSrgba {
     }
 }
 
-impl WorkingColor for PremultipliedLinearSrgba {
+impl WorkingColor for PremultipliedWorkingRgba {
     const TRANSPARENT: Self = Self::TRANSPARENT;
 
     fn from_color(color: &CanvasColor, prepared: &color_space::PreparedColors) -> Self {
@@ -85,7 +87,7 @@ mod tests {
 
     #[test]
     fn lowering_associates_linear_rgb_with_alpha() {
-        let lowered = PremultipliedLinearSrgba::from_color(Color::rgba8(255, 128, 64, 128));
+        let lowered = PremultipliedWorkingRgba::from_color(Color::rgba8(255, 128, 64, 128));
         let [red, green, blue, alpha] = lowered.components();
 
         assert_eq!(alpha, 128.0 / 255.0);
@@ -97,7 +99,7 @@ mod tests {
     #[test]
     fn lowering_decodes_srgb_into_the_vulkan_working_space() {
         let [red, green, blue, alpha] =
-            PremultipliedLinearSrgba::from_color(Color::rgb(0.5, 0.5, 0.5).unwrap()).components();
+            PremultipliedWorkingRgba::from_color(Color::rgb(0.5, 0.5, 0.5).unwrap()).components();
 
         for component in [red, green, blue] {
             assert!((component - 0.214_041_14).abs() < 0.000_001);
@@ -107,12 +109,17 @@ mod tests {
 
     #[test]
     fn interpolation_operates_on_associated_components() {
-        let transparent = PremultipliedLinearSrgba::TRANSPARENT;
-        let opaque = PremultipliedLinearSrgba::from_color(Color::rgb8(255, 0, 0));
+        let transparent = PremultipliedWorkingRgba::TRANSPARENT;
+        let opaque = PremultipliedWorkingRgba::from_color(Color::rgb8(255, 0, 0));
 
         assert_eq!(
             transparent
-                .interpolate(opaque, 0.5, crate::color::LinearSrgb.into())
+                .interpolate(
+                    opaque,
+                    0.5,
+                    crate::color::LinearSrgb.into(),
+                    crate::color::LinearSrgb.into()
+                )
                 .components(),
             [0.5, 0.0, 0.0, 0.5]
         );

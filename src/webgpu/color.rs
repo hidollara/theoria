@@ -6,17 +6,19 @@ use crate::{
 #[cfg(test)]
 use crate::color::Color;
 
-/// WebGPU Canvas working color in premultiplied linear-sRGB form.
+/// WebGPU Canvas working color in premultiplied renderer-selected RGB coordinates.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) struct PremultipliedLinearSrgba([f32; 4]);
+pub(super) struct PremultipliedWorkingRgba([f32; 4]);
 
-impl PremultipliedLinearSrgba {
+impl PremultipliedWorkingRgba {
     pub(super) const TRANSPARENT: Self = Self([0.0; 4]);
 
+    #[cfg(test)]
     pub(super) fn from_color(color: impl Into<CanvasColor>) -> Self {
         Self::from_canvas_color(&color.into())
     }
 
+    #[cfg(test)]
     fn from_canvas_color(color: &CanvasColor) -> Self {
         Self(color_space::lower_straight_color(color))
     }
@@ -30,7 +32,7 @@ impl PremultipliedLinearSrgba {
     }
 }
 
-impl WorkingColor for PremultipliedLinearSrgba {
+impl WorkingColor for PremultipliedWorkingRgba {
     const TRANSPARENT: Self = Self::TRANSPARENT;
 
     fn from_color(color: &CanvasColor, prepared: &color_space::PreparedColors) -> Self {
@@ -53,7 +55,7 @@ mod tests {
     #[test]
     fn lowering_decodes_and_associates_public_colors() {
         let [red, green, blue, alpha] =
-            PremultipliedLinearSrgba::from_color(Color::rgba(0.5, 0.5, 0.5, 0.5).unwrap())
+            PremultipliedWorkingRgba::from_color(Color::rgba(0.5, 0.5, 0.5, 0.5).unwrap())
                 .components();
 
         for component in [red, green, blue] {

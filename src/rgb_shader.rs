@@ -5,18 +5,27 @@ use crate::color::{RgbTransfer, RgbTransform, Transfer, profile_data as data};
 
 const MARKER: &str = "// @theoria-rgb-conversions";
 
+// The build script includes this module and uses the default specialization.
+#[allow(dead_code)]
 pub(crate) fn assemble(source: &str) -> String {
+    assemble_for(source, 1)
+}
+
+pub(crate) fn assemble_for(source: &str, working_space: u32) -> String {
+    assert!(working_space < 4, "unknown RGB working space");
     assert_eq!(
         source.matches(MARKER).count(),
         1,
         "WGSL source must have exactly one RGB conversion insertion point"
     );
-    source.replacen(MARKER, &conversion_functions(), 1)
+    source.replacen(MARKER, &conversion_functions(working_space), 1)
 }
 
-fn conversion_functions() -> String {
+fn conversion_functions(working_space: u32) -> String {
     let mut result = format!(
         r#"
+const THEORIA_WORKING_SPACE: u32 = {working_space}u;
+
 fn decode_srgb_component(value: f32) -> f32 {{
     let magnitude = abs(value);
     if magnitude <= {decode_threshold} {{
@@ -76,7 +85,7 @@ fn array_to_rgb(value: array<f32, 3>) -> vec3<f32> {
     return vec3<f32>(value[0], value[1], value[2]);
 }
 
-fn from_working(value: vec3<f32>, space: u32) -> vec3<f32> {
+fn from_linear_srgb(value: vec3<f32>, space: u32) -> vec3<f32> {
     if space == 0u {
         return encode_srgb(value);
     }
@@ -89,7 +98,7 @@ fn from_working(value: vec3<f32>, space: u32) -> vec3<f32> {
     return array_to_rgb(theoria_transfer_3(rgb_to_array(value)));
 }
 
-fn to_working(value: vec3<f32>, space: u32) -> vec3<f32> {
+fn to_linear_srgb(value: vec3<f32>, space: u32) -> vec3<f32> {
     if space == 0u {
         return decode_srgb(value);
     }
@@ -100,6 +109,28 @@ fn to_working(value: vec3<f32>, space: u32) -> vec3<f32> {
         return array_to_rgb(theoria_transfer_0(rgb_to_array(value)));
     }
     return array_to_rgb(theoria_transfer_1(rgb_to_array(value)));
+}
+
+fn working_to_linear_srgb(value: vec3<f32>) -> vec3<f32> {
+    return to_linear_srgb(value, THEORIA_WORKING_SPACE);
+}
+
+fn linear_srgb_to_working(value: vec3<f32>) -> vec3<f32> {
+    return from_linear_srgb(value, THEORIA_WORKING_SPACE);
+}
+
+fn from_working(value: vec3<f32>, space: u32) -> vec3<f32> {
+    if space == THEORIA_WORKING_SPACE {
+        return value;
+    }
+    return from_linear_srgb(working_to_linear_srgb(value), space);
+}
+
+fn to_working(value: vec3<f32>, space: u32) -> vec3<f32> {
+    if space == THEORIA_WORKING_SPACE {
+        return value;
+    }
+    return linear_srgb_to_working(to_linear_srgb(value, space));
 }
 "#,
     );
@@ -147,5 +178,24 @@ mod tests {
         assert_eq!(shader.matches("fn to_working(").count(), 1);
         assert_eq!(shader.matches("fn theoria_transfer_0(").count(), 1);
         assert_eq!(shader.matches("fn theoria_transfer_3(").count(), 1);
+    }
+
+    #[test]
+    fn every_working_space_validates_for_sampling_and_presentation() {
+        for working_space in 0..4 {
+            for template in [
+                include_str!("../shaders/webgpu/image.wgsl"),
+                include_str!("../shaders/canvas_renderer/present.wgsl"),
+            ] {
+                let source = assemble_for(template, working_space);
+                let module = naga::front::wgsl::parse_str(&source).unwrap();
+                naga::valid::Validator::new(
+                    naga::valid::ValidationFlags::all(),
+                    naga::valid::Capabilities::all(),
+                )
+                .validate(&module)
+                .unwrap();
+            }
+        }
     }
 }

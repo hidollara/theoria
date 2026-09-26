@@ -34,4 +34,4 @@ pub use transform::{RgbTransfer, RgbTransform};
 pub use value::{Color, ColorError};
 pub use white_point::{WhitePoint, WhitePointError};
 
-pub(crate) use rgb::{convert_rgb, encode_srgb, from_linear_srgb, to_linear_srgb};
+pub(crate) use rgb::{convert_rgb, encode_srgb};

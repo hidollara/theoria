@@ -8,7 +8,7 @@ use crate::{
     transform::Projective2,
 };
 
-use super::super::color::PremultipliedLinearSrgba;
+use super::super::color::PremultipliedWorkingRgba;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -46,7 +46,7 @@ pub(super) struct TrianglePushConstants {
 impl TrianglePushConstants {
     pub(super) fn new(
         points: [Point; 3],
-        colors: [PremultipliedLinearSrgba; 3],
+        colors: [PremultipliedWorkingRgba; 3],
         canvas_to_root: Projective2,
         view: CanvasView,
     ) -> Self {

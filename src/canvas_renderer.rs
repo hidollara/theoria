@@ -22,20 +22,33 @@ pub(crate) trait WorkingColor: Copy {
     fn from_components(components: [f32; 4]) -> Self;
     fn components(self) -> [f32; 4];
 
-    fn interpolate(self, other: Self, amount: f32, space: RgbColorSpace) -> Self {
-        Self::from_components(color_space::interpolate_premultiplied_linear_srgba(
+    fn interpolate(
+        self,
+        other: Self,
+        amount: f32,
+        space: RgbColorSpace,
+        working_space: RgbColorSpace,
+    ) -> Self {
+        Self::from_components(color_space::interpolate_premultiplied_rgba(
             self.components(),
             other.components(),
             amount,
             space,
+            working_space,
         ))
     }
 
-    fn mix(colors: [Self; 3], weights: [f32; 3], space: RgbColorSpace) -> Self {
-        Self::from_components(color_space::mix_premultiplied_linear_srgba(
+    fn mix(
+        colors: [Self; 3],
+        weights: [f32; 3],
+        space: RgbColorSpace,
+        working_space: RgbColorSpace,
+    ) -> Self {
+        Self::from_components(color_space::mix_premultiplied_rgba(
             colors.map(Self::components),
             weights,
             space,
+            working_space,
         ))
     }
 

@@ -18,14 +18,6 @@ pub(crate) fn convert_rgb(rgb: [f32; 3], from: RgbColorSpace, to: RgbColorSpace)
     }
 }
 
-pub(crate) fn from_linear_srgb(rgb: [f32; 3], space: RgbColorSpace) -> [f32; 3] {
-    convert_rgb(rgb, RgbColorSpace::LinearSrgb, space)
-}
-
-pub(crate) fn to_linear_srgb(rgb: [f32; 3], space: RgbColorSpace) -> [f32; 3] {
-    convert_rgb(rgb, space, RgbColorSpace::LinearSrgb)
-}
-
 pub(crate) fn encode_srgb(value: f32) -> f32 {
     RgbTransfer::Srgb.encode(value)
 }
@@ -54,7 +46,7 @@ mod tests {
     fn spaces_with_the_same_primaries_only_change_the_transfer_curve() {
         let color = [0.0, 0.5, 1.0];
         assert_eq!(
-            to_linear_srgb(color, RgbColorSpace::Srgb),
+            convert_rgb(color, RgbColorSpace::Srgb, RgbColorSpace::LinearSrgb),
             color.map(|value| RgbTransfer::Srgb.decode(value))
         );
         assert_eq!(

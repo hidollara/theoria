@@ -111,6 +111,10 @@ impl BlendShader {
     pub(crate) fn wgsl_module(&self, binding: Binding) -> String {
         composition_shader::assemble(binding, &self.0.helpers, &self.0.body)
     }
+
+    pub(crate) fn wgsl_module_for(&self, binding: Binding, working_space: u32) -> String {
+        composition_shader::assemble_for(binding, &self.0.helpers, &self.0.body, working_space)
+    }
 }
 
 /// An invalid WGSL blend definition.

@@ -17,7 +17,7 @@ use crate::{
             encoding::{CompositionPushConstants, ImagePushConstants, TrianglePushConstants},
             pipeline::{Pipeline, Pipelines},
         },
-        color::PremultipliedLinearSrgba,
+        color::PremultipliedWorkingRgba,
         image::{GpuImageColor, ImageCache},
         image_layout::transition_image,
         scratch_image::ScratchImage,
@@ -73,7 +73,7 @@ impl<'a> CanvasCommandEncoder<'a> {
         &self,
         source: usize,
         image_view: vk::ImageView,
-        clear_color: PremultipliedLinearSrgba,
+        clear_color: PremultipliedWorkingRgba,
         pipeline: &Pipeline,
     ) {
         let color_attachment = vk::RenderingAttachmentInfo::default()

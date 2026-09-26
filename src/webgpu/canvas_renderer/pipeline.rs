@@ -15,6 +15,7 @@ use super::encoding::{ImageVertex, TriangleVertex};
 pub(super) const WORKING_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 
 pub(super) struct Pipelines {
+    working_space: RgbColorSpace,
     pub(super) texture_layout: wgpu::BindGroupLayout,
     pub(super) blend_uniform_layout: wgpu::BindGroupLayout,
     pub(super) triangle: wgpu::RenderPipeline,
@@ -35,7 +36,7 @@ pub(super) struct IccImagePipeline {
 }
 
 impl Pipelines {
-    pub(super) fn new(device: &wgpu::Device) -> Self {
+    pub(super) fn new(device: &wgpu::Device, working_space: RgbColorSpace) -> Self {
         let texture_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("theoria WebGPU sampled image"),
             entries: &[
@@ -77,8 +78,10 @@ impl Pipelines {
             "theoria WebGPU triangle shader",
             include_str!("../../../shaders/webgpu/triangle.wgsl"),
         );
-        let image_source =
-            crate::rgb_shader::assemble(include_str!("../../../shaders/webgpu/image.wgsl"));
+        let image_source = crate::rgb_shader::assemble_for(
+            include_str!("../../../shaders/webgpu/image.wgsl"),
+            crate::canvas_renderer::composition_encoding::encode_space(working_space),
+        );
         let image_shader = shader(device, "theoria WebGPU image shader", &image_source);
         let composite_shader = shader(
             device,
@@ -133,6 +136,7 @@ impl Pipelines {
             composite_blend_state(Composite::DestinationIn),
         );
         Self {
+            working_space,
             texture_layout,
             blend_uniform_layout,
             triangle,
@@ -152,6 +156,7 @@ impl Pipelines {
         profile: &IccProfile,
         intent: IccRenderingIntent,
         has_alpha: bool,
+        working_space: RgbColorSpace,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let key = (profile.device_space(), intent, has_alpha);
         if self.icc_images.contains_key(&key) {
@@ -161,7 +166,7 @@ impl Pipelines {
             profile,
             intent,
             has_alpha,
-            RgbColorSpace::LinearSrgb,
+            working_space,
             include_str!("../../../shaders/webgpu/icc_image.wgsl"),
         )?;
         let shader = shader(device, "theoria WebGPU ICC image shader", lowered.source);
@@ -240,7 +245,12 @@ impl Pipelines {
             self.blend_shaders
                 .entry(definition.clone())
                 .or_insert_with(|| {
-                    let source = definition.wgsl_module(Binding::WebGpu);
+                    let source = definition.wgsl_module_for(
+                        Binding::WebGpu,
+                        crate::canvas_renderer::composition_encoding::encode_space(
+                            self.working_space,
+                        ),
+                    );
                     let module = shader(device, "theoria WebGPU blend shader", Cow::Owned(source));
                     create_pipeline(
                         device,
@@ -269,11 +279,11 @@ impl Pipelines {
         format: wgpu::TextureFormat,
     ) -> &wgpu::RenderPipeline {
         self.presents.entry(format).or_insert_with(|| {
-            let shader = shader(
-                device,
-                "theoria WebGPU present shader",
-                include_str!("../../../shaders/canvas_renderer/composite.wgsl"),
+            let source = crate::rgb_shader::assemble_for(
+                include_str!("../../../shaders/canvas_renderer/present.wgsl"),
+                crate::canvas_renderer::composition_encoding::encode_space(self.working_space),
             );
+            let shader = shader(device, "theoria WebGPU present shader", source);
             create_pipeline(
                 device,
                 "theoria WebGPU present pipeline",

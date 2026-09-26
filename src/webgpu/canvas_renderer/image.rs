@@ -6,7 +6,7 @@ use crate::{
         image::{Image, ImageKind, RasterImageSource, RasterImageView},
     },
     canvas_renderer::raster::{PackedIccSamples, pack_icc_samples},
-    color::{ColorSpaceKey, IccRenderingIntent, LinearSrgb, RgbColorSpace},
+    color::{ColorSpaceKey, IccRenderingIntent, RgbColorSpace},
     image::{AlphaAssociation, RasterImageInstanceKey},
 };
 
@@ -215,6 +215,7 @@ pub(super) fn create_working_image(
     width: u32,
     height: u32,
     label: &'static str,
+    working_space: RgbColorSpace,
 ) -> GpuImage {
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some(label),
@@ -232,7 +233,7 @@ pub(super) fn create_working_image(
         view,
         color: GpuImageColor::Rgb {
             premultiplied: true,
-            space: LinearSrgb.into(),
+            space: working_space,
         },
     }
 }

@@ -5,7 +5,7 @@ use crate::{
     canvas_renderer::view_space::transformed_point_to_clip,
     geometry::Point,
     transform::Projective2,
-    webgpu::color::PremultipliedLinearSrgba,
+    webgpu::color::PremultipliedWorkingRgba,
 };
 
 #[repr(C)]
@@ -18,7 +18,7 @@ pub(super) struct TriangleVertex {
 impl TriangleVertex {
     pub(super) fn encode(
         points: [Point; 3],
-        colors: [PremultipliedLinearSrgba; 3],
+        colors: [PremultipliedWorkingRgba; 3],
         canvas_to_root: Projective2,
         view: CanvasView,
     ) -> [Self; 3] {

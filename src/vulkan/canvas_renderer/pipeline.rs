@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::{HashMap, HashSet},
     error::Error,
     ffi::CStr,
@@ -9,8 +10,10 @@ use std::{
 use ash::vk;
 
 use crate::canvas::{BlendShader, Composite, composition_shader::Binding};
-use crate::canvas_renderer::output_color::OutputColorTransform;
-use crate::color::{ColorSpaceKey, IccProfile, IccRenderingIntent};
+use crate::canvas_renderer::{
+    composition_encoding::encode_space, output_color::OutputColorTransform,
+};
+use crate::color::{ColorSpaceKey, IccProfile, IccRenderingIntent, RgbColorSpace};
 
 use super::encoding::{CompositionPushConstants, ImagePushConstants, TrianglePushConstants};
 
@@ -81,6 +84,7 @@ impl Drop for PipelineGuard<'_> {
 }
 
 pub(super) struct Pipelines {
+    pub(super) working_space: RgbColorSpace,
     pub(super) working_format: vk::Format,
     pub(super) output_format: vk::Format,
     pub(super) sample_count: vk::SampleCountFlags,
@@ -203,7 +207,8 @@ impl Pipelines {
             if self.blend_shaders.contains_key(definition) {
                 continue;
             }
-            let source = definition.wgsl_module(Binding::Vulkan);
+            let source =
+                definition.wgsl_module_for(Binding::Vulkan, encode_space(self.working_space));
             let words = compile_fragment(&source)?;
             let bytes: Vec<u8> = words.into_iter().flat_map(u32::to_le_bytes).collect();
             let pipeline = unsafe {
@@ -254,7 +259,36 @@ pub(super) unsafe fn create_pipelines(
     output_format: vk::Format,
     sample_count: vk::SampleCountFlags,
     image_descriptor_set_layout: vk::DescriptorSetLayout,
+    working_space: RgbColorSpace,
 ) -> Result<Pipelines> {
+    let image_fragment: Cow<'_, [u8]> = if working_space == RgbColorSpace::LinearSrgb {
+        Cow::Borrowed(IMAGE_FRAGMENT_SHADER)
+    } else {
+        let source = crate::rgb_shader::assemble_for(
+            include_str!("../../../shaders/vulkan/image.wgsl"),
+            encode_space(working_space),
+        );
+        Cow::Owned(
+            compile_fragment(&source)?
+                .into_iter()
+                .flat_map(u32::to_le_bytes)
+                .collect(),
+        )
+    };
+    let present_fragment: Cow<'_, [u8]> = if working_space == RgbColorSpace::LinearSrgb {
+        Cow::Borrowed(COMPOSITE_FRAGMENT_SHADER)
+    } else {
+        let source = crate::rgb_shader::assemble_for(
+            include_str!("../../../shaders/canvas_renderer/present.wgsl"),
+            encode_space(working_space),
+        );
+        Cow::Owned(
+            compile_fragment(&source)?
+                .into_iter()
+                .flat_map(u32::to_le_bytes)
+                .collect(),
+        )
+    };
     let triangle = unsafe {
         create_pipeline(
             device,
@@ -273,7 +307,7 @@ pub(super) unsafe fn create_pipelines(
             device,
             working_format,
             IMAGE_VERTEX_SHADER,
-            IMAGE_FRAGMENT_SHADER,
+            &image_fragment,
             size_of::<ImagePushConstants>() as u32,
             vk::ShaderStageFlags::VERTEX,
             &[image_descriptor_set_layout],
@@ -332,7 +366,7 @@ pub(super) unsafe fn create_pipelines(
             device,
             output_format,
             COMPOSITE_VERTEX_SHADER,
-            COMPOSITE_FRAGMENT_SHADER,
+            &present_fragment,
             0,
             vk::ShaderStageFlags::VERTEX,
             &[image_descriptor_set_layout],
@@ -341,6 +375,7 @@ pub(super) unsafe fn create_pipelines(
         )?
     };
     Ok(Pipelines {
+        working_space,
         working_format,
         output_format,
         sample_count,

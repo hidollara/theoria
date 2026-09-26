@@ -7,11 +7,11 @@ use crate::{
         Canvas, CanvasNode, CanvasView, ColorField, Composite, Composition, Coverage, CoverageNode,
         Draw,
     },
-    canvas_renderer::{canvas_plan::can_record_directly, color_space::PreparedColors},
-    color::Color,
+    canvas_renderer::{canvas_plan::can_record_directly_in, color_space::PreparedColors},
+    color::{Color, RgbColorSpace},
     tessellation::{Mesh, tessellate_fill_with_tolerance, tessellate_stroke_with_tolerance},
     transform::Projective2,
-    vulkan::{color::PremultipliedLinearSrgba, image::ImageCache, scratch_image::ScratchImage},
+    vulkan::{color::PremultipliedWorkingRgba, image::ImageCache, scratch_image::ScratchImage},
 };
 
 use self::commands::CanvasCommandEncoder;
@@ -20,6 +20,7 @@ use super::pipeline::{Pipeline, Pipelines};
 pub(super) struct CanvasRecorder<'a> {
     commands: CanvasCommandEncoder<'a>,
     next_image: usize,
+    working_space: RgbColorSpace,
 }
 
 impl<'a> CanvasRecorder<'a> {
@@ -48,6 +49,7 @@ impl<'a> CanvasRecorder<'a> {
                 prepared,
             ),
             next_image: 0,
+            working_space: prepared.working_space(),
         }
     }
 
@@ -55,7 +57,7 @@ impl<'a> CanvasRecorder<'a> {
         &mut self,
         canvas: &Canvas,
         image_view: vk::ImageView,
-        clear_color: PremultipliedLinearSrgba,
+        clear_color: PremultipliedWorkingRgba,
         present_pipeline: &Pipeline,
     ) {
         let canvas_image = self.evaluate(canvas, Projective2::IDENTITY);
@@ -90,14 +92,14 @@ impl<'a> CanvasRecorder<'a> {
                 self.render_node(accumulator, backdrop, canvas_to_root);
                 if composition.blend().is_none()
                     && composition.composite() == Composite::SourceOver
-                    && composition.composite_space().is_linear()
-                    && can_record_directly(source)
+                    && composition.composite_space() == self.working_space
+                    && can_record_directly_in(source, self.working_space)
                 {
                     self.render_node(accumulator, source, canvas_to_root);
                 } else {
                     self.commands.end_rendering();
                     let source_image = self.evaluate(source, canvas_to_root);
-                    if !composition.requires_destination_read() {
+                    if !composition.requires_destination_read_in(self.working_space) {
                         self.commands.resume_accumulator(accumulator);
                         self.commands
                             .draw_composite(source_image, composition.composite());

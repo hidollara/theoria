@@ -3,11 +3,20 @@ use crate::canvas::{
     BlendShader, Canvas, CanvasIccColorError, CanvasNode, ColorField, Composite, CoverageNode,
     Draw, image::Image,
 };
+use crate::color::RgbColorSpace;
 
 /// Resolves fallible authored colors before either backend starts recording.
 /// The converted values belong to this render, not to the Canvas definition.
+#[cfg(test)]
 pub(crate) fn prepare_colors(canvas: &Canvas) -> Result<PreparedColors, CanvasIccColorError> {
-    let mut prepared = PreparedColors::default();
+    prepare_colors_in(canvas, RgbColorSpace::LinearSrgb)
+}
+
+pub(crate) fn prepare_colors_in(
+    canvas: &Canvas,
+    working_space: RgbColorSpace,
+) -> Result<PreparedColors, CanvasIccColorError> {
+    let mut prepared = PreparedColors::new(working_space);
     prepare_canvas_colors(canvas, &mut prepared)?;
     Ok(prepared)
 }
@@ -80,35 +89,50 @@ fn prepare_color_field(
 
 /// Collects the blend programs needed to record this Canvas. Canvas images are
 /// materialized separately and therefore run their own collection pass.
+#[cfg(test)]
 pub(crate) fn collect_blend_shaders(canvas: &Canvas, shaders: &mut Vec<BlendShader>) {
+    collect_blend_shaders_in(canvas, shaders, RgbColorSpace::LinearSrgb);
+}
+
+pub(crate) fn collect_blend_shaders_in(
+    canvas: &Canvas,
+    shaders: &mut Vec<BlendShader>,
+    working_space: RgbColorSpace,
+) {
     match canvas.node() {
         CanvasNode::Draw(draw) => {
-            collect_color_field_blend_shaders(&draw.source, shaders);
+            collect_color_field_blend_shaders(&draw.source, shaders, working_space);
             if let CoverageNode::AlphaOf(source) = draw.coverage.node() {
-                collect_color_field_blend_shaders(source, shaders);
+                collect_color_field_blend_shaders(source, shaders, working_space);
             }
         }
-        CanvasNode::Transform { content, .. } => collect_blend_shaders(content, shaders),
+        CanvasNode::Transform { content, .. } => {
+            collect_blend_shaders_in(content, shaders, working_space)
+        }
         CanvasNode::Composite {
             backdrop,
             source,
             composition,
         } => {
-            if composition.requires_destination_read() {
+            if composition.requires_destination_read_in(working_space) {
                 let shader = composition.blend_shader();
                 if !shaders.contains(shader) {
                     shaders.push(shader.clone());
                 }
             }
-            collect_blend_shaders(backdrop, shaders);
-            collect_blend_shaders(source, shaders);
+            collect_blend_shaders_in(backdrop, shaders, working_space);
+            collect_blend_shaders_in(source, shaders, working_space);
         }
     }
 }
 
-fn collect_color_field_blend_shaders(source: &ColorField, shaders: &mut Vec<BlendShader>) {
+fn collect_color_field_blend_shaders(
+    source: &ColorField,
+    shaders: &mut Vec<BlendShader>,
+    working_space: RgbColorSpace,
+) {
     if let ColorField::Canvas(canvas) = source {
-        collect_blend_shaders(canvas, shaders);
+        collect_blend_shaders_in(canvas, shaders, working_space);
     }
 }
 
@@ -147,70 +171,83 @@ fn collect_color_field_images(source: &ColorField, images: &mut Vec<Image>) {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn required_scratch_images(canvas: &Canvas) -> usize {
-    1 + additional_scratch_images(canvas)
+    required_scratch_images_in(canvas, RgbColorSpace::LinearSrgb)
 }
 
-fn additional_scratch_images(canvas: &Canvas) -> usize {
+pub(crate) fn required_scratch_images_in(canvas: &Canvas, working_space: RgbColorSpace) -> usize {
+    1 + additional_scratch_images(canvas, working_space)
+}
+
+fn additional_scratch_images(canvas: &Canvas, working_space: RgbColorSpace) -> usize {
     match canvas.node() {
         CanvasNode::Draw(draw) => match &draw.source {
             ColorField::Canvas(content) => {
-                required_scratch_images(content)
+                required_scratch_images_in(content, working_space)
                     + match draw.coverage.node() {
                         CoverageNode::All => 0,
                         CoverageNode::Fill { .. } | CoverageNode::Stroke { .. } => 1,
                         CoverageNode::AlphaOf(source) => {
-                            required_color_field_scratch_images(source)
+                            required_color_field_scratch_images(source, working_space)
                         }
                     }
             }
             _ => match draw.coverage.node() {
-                CoverageNode::AlphaOf(source) => 1 + required_color_field_scratch_images(source),
+                CoverageNode::AlphaOf(source) => {
+                    1 + required_color_field_scratch_images(source, working_space)
+                }
                 CoverageNode::All | CoverageNode::Fill { .. } | CoverageNode::Stroke { .. } => 0,
             },
         },
-        CanvasNode::Transform { content, .. } => additional_scratch_images(content),
+        CanvasNode::Transform { content, .. } => additional_scratch_images(content, working_space),
         CanvasNode::Composite {
             backdrop,
             source,
             composition,
         } => {
-            additional_scratch_images(backdrop)
+            additional_scratch_images(backdrop, working_space)
                 + if composition.blend().is_none()
                     && composition.composite() == Composite::SourceOver
-                    && composition.composite_space().is_linear()
-                    && can_record_directly(source)
+                    && composition.composite_space() == working_space
+                    && can_record_directly_in(source, working_space)
                 {
-                    additional_scratch_images(source)
+                    additional_scratch_images(source, working_space)
                 } else {
-                    required_scratch_images(source)
-                        + usize::from(composition.requires_destination_read())
+                    required_scratch_images_in(source, working_space)
+                        + usize::from(composition.requires_destination_read_in(working_space))
                 }
         }
     }
 }
 
+#[cfg(test)]
 pub(crate) fn can_record_directly(canvas: &Canvas) -> bool {
+    can_record_directly_in(canvas, RgbColorSpace::LinearSrgb)
+}
+
+pub(crate) fn can_record_directly_in(canvas: &Canvas, working_space: RgbColorSpace) -> bool {
     match canvas.node() {
         CanvasNode::Draw(_) => true,
-        CanvasNode::Transform { content, .. } => can_record_directly(content),
+        CanvasNode::Transform { content, .. } => can_record_directly_in(content, working_space),
         CanvasNode::Composite {
             backdrop,
             source,
             composition,
         } if composition.blend().is_none()
             && composition.composite() == Composite::SourceOver
-            && composition.composite_space().is_linear() =>
+            && composition.composite_space() == working_space =>
         {
-            can_record_directly(backdrop) && can_record_directly(source)
+            can_record_directly_in(backdrop, working_space)
+                && can_record_directly_in(source, working_space)
         }
         CanvasNode::Composite { .. } => false,
     }
 }
 
-fn required_color_field_scratch_images(source: &ColorField) -> usize {
+fn required_color_field_scratch_images(source: &ColorField, working_space: RgbColorSpace) -> usize {
     match source {
-        ColorField::Canvas(canvas) => required_scratch_images(canvas),
+        ColorField::Canvas(canvas) => required_scratch_images_in(canvas, working_space),
         _ => 1,
     }
 }
@@ -273,5 +310,27 @@ mod tests {
 
         assert_eq!(stored, &color);
         assert_eq!(prepared.lower(stored)[0], 1.0);
+    }
+
+    #[test]
+    fn direct_composition_requires_the_same_working_space() {
+        let leaf = || Canvas::draw(Color::rgb8(64, 128, 192), Coverage::all());
+        let canvas = leaf().composite(
+            leaf(),
+            Composition::new(Composite::SourceOver, crate::color::LinearDisplayP3),
+        );
+        assert!(!can_record_directly_in(&canvas, RgbColorSpace::LinearSrgb));
+        assert_eq!(
+            required_scratch_images_in(&canvas, RgbColorSpace::LinearSrgb),
+            3
+        );
+        assert!(can_record_directly_in(
+            &canvas,
+            RgbColorSpace::LinearDisplayP3
+        ));
+        assert_eq!(
+            required_scratch_images_in(&canvas, RgbColorSpace::LinearDisplayP3),
+            1
+        );
     }
 }
