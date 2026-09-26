@@ -1,9 +1,6 @@
 use std::{error::Error, fmt};
 
-use super::{
-    ColorCoordinates, ColorModel, ColorProfile, Opacity, ReferenceCoordinates, Srgb, UnitF32,
-    UnitSample, XyzD50Profile,
-};
+use super::{ColorCoordinates, ColorProfile, Opacity, Srgb, UnitF32, UnitSample};
 
 /// A logical color retaining its authored profile, coordinate representation,
 /// and intrinsic opacity.
@@ -53,28 +50,6 @@ where
 
     pub fn into_parts(self) -> (P, C, Opacity<A>) {
         (self.profile, self.coordinates, self.opacity)
-    }
-}
-
-impl<P, C, A> Color<P, C, A>
-where
-    P: XyzD50Profile,
-    C: ReferenceCoordinates<P::Model>,
-    A: UnitSample,
-{
-    /// Explicitly converts an authored color through D50-adapted CIE XYZ.
-    ///
-    /// The original color is unchanged; its opacity is carried separately.
-    /// This reference conversion does not perform gamut mapping or select an
-    /// ICC rendering intent, and it does not set renderer working precision.
-    pub fn convert_to<Q: XyzD50Profile>(
-        &self,
-        profile: Q,
-    ) -> Result<Color<Q, <Q::Model as ColorModel>::ReferenceCoordinates, A>, ColorError> {
-        let source = self.coordinates.to_reference();
-        let xyz = self.profile.coordinates_to_xyz_d50(&source);
-        let coordinates = profile.xyz_d50_to_coordinates(xyz);
-        Color::new(profile, coordinates, self.opacity)
     }
 }
 
@@ -195,7 +170,7 @@ fn validate_srgb(coordinates: [f32; 3]) -> Result<(), ColorError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{LinearSrgb, Rgb, XyzD50};
+    use crate::{ColorModel, ColorProfile, Rgb};
 
     struct AuthoredRgb([u8; 3]);
 
@@ -211,6 +186,38 @@ mod tests {
 
         assert_eq!(color.coordinates().0, [12, 34, 56]);
         assert_eq!(color.opacity().sample(), 255);
+    }
+
+    struct LogicalModel;
+
+    impl ColorModel for LogicalModel {
+        const COMPONENTS: usize = 2;
+    }
+
+    struct LogicalProfile;
+
+    impl ColorProfile for LogicalProfile {
+        type Model = LogicalModel;
+    }
+
+    struct LogicalCoordinates([f32; 2]);
+
+    impl ColorCoordinates<LogicalModel> for LogicalCoordinates {
+        fn is_finite(&self) -> bool {
+            self.0.iter().all(|value| value.is_finite())
+        }
+    }
+
+    #[test]
+    fn a_model_needs_no_cpu_reference_conversion_to_hold_a_color() {
+        let color = Color::new(
+            LogicalProfile,
+            LogicalCoordinates([0.25, 0.75]),
+            Opacity::new(UnitF32::ONE),
+        )
+        .unwrap();
+
+        assert_eq!(color.coordinates().0, [0.25, 0.75]);
     }
 
     #[test]
@@ -258,32 +265,5 @@ mod tests {
             Color::rgba(1.0, 0.0, 0.0, -0.1),
             Err(ColorError::ComponentOutOfRange)
         );
-    }
-
-    #[test]
-    fn default_f32_color_converts_without_changing_its_authored_samples() {
-        let source = Color::rgba(0.25, 0.5, 0.75, 0.4).unwrap();
-        let xyz = source.convert_to(XyzD50).unwrap();
-        let restored = xyz.convert_to(Srgb).unwrap();
-
-        assert_eq!(*source.coordinates(), [0.25, 0.5, 0.75]);
-        assert_eq!(xyz.opacity(), source.opacity());
-        for (actual, expected) in restored.coordinates().iter().zip(source.coordinates()) {
-            assert!((actual - f64::from(*expected)).abs() < 0.000_01);
-        }
-    }
-
-    #[test]
-    fn integer_color_samples_are_normalized_only_when_converted() {
-        let source = Color::rgba8(255, 128, 0, 64);
-        let converted = source.convert_to(LinearSrgb).unwrap();
-        let restored = converted.convert_to(Srgb).unwrap();
-
-        assert_eq!(*source.coordinates(), [255, 128, 0]);
-        assert_eq!(source.opacity().sample(), 64);
-        assert_eq!(converted.opacity().sample(), 64);
-        for (actual, expected) in restored.coordinates().iter().zip([1.0, 128.0 / 255.0, 0.0]) {
-            assert!((actual - expected).abs() < 0.000_01);
-        }
     }
 }

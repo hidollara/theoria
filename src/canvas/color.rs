@@ -335,7 +335,7 @@ impl Error for CanvasIccColorError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::color::{DisplayP3, LinearDisplayP3, LinearSrgb, Srgb};
+    use crate::color::{DisplayP3, LinearDisplayP3, LinearSrgb, Srgb, XyzD50Profile};
 
     #[test]
     fn icc_color_preserves_device_coordinates_until_renderer_lowering() {
@@ -459,9 +459,15 @@ mod tests {
     }
 
     #[test]
-    fn converted_f64_color_enters_canvas_without_losing_its_storage() {
+    fn profile_reference_coordinates_enter_canvas_without_losing_storage() {
         let authored = Color::rgba(0.25, 0.5, 0.75, 0.4).unwrap();
-        let converted = authored.convert_to(LinearSrgb).unwrap();
+        let xyz = Srgb.coordinates_to_xyz_d50(&authored.coordinates().map(f64::from));
+        let converted = Color::new(
+            LinearSrgb,
+            LinearSrgb.xyz_d50_to_coordinates(xyz),
+            authored.opacity(),
+        )
+        .unwrap();
         let canvas = CanvasColor::from(converted);
 
         assert!(matches!(canvas.value, ColorValue::F64(_, Alpha::F32(_))));
@@ -501,18 +507,28 @@ mod tests {
         let source = Color::rgba(0.25, 0.5, 0.75, 0.4).unwrap();
         let original = CanvasColor::from(source);
         let lowered_original = crate::canvas_renderer::color_space::lower_straight_color(&original);
+        let xyz = Srgb.coordinates_to_xyz_d50(&source.coordinates().map(f64::from));
 
         for (canvas, profile) in [
             (
-                CanvasColor::from(source.convert_to(XyzD50).unwrap()),
+                CanvasColor::from(
+                    Color::new(XyzD50, XyzD50.xyz_d50_to_coordinates(xyz), source.opacity())
+                        .unwrap(),
+                ),
                 CanvasProfile::XyzD50,
             ),
             (
-                CanvasColor::from(source.convert_to(XyzD65).unwrap()),
+                CanvasColor::from(
+                    Color::new(XyzD65, XyzD65.xyz_d50_to_coordinates(xyz), source.opacity())
+                        .unwrap(),
+                ),
                 CanvasProfile::XyzD65,
             ),
             (
-                CanvasColor::from(source.convert_to(LabD50).unwrap()),
+                CanvasColor::from(
+                    Color::new(LabD50, LabD50.xyz_d50_to_coordinates(xyz), source.opacity())
+                        .unwrap(),
+                ),
                 CanvasProfile::LabD50,
             ),
         ] {
@@ -526,10 +542,11 @@ mod tests {
     }
 
     #[test]
-    fn converted_lab_color_can_be_used_as_a_gradient_stop() {
+    fn profile_authored_lab_color_can_be_used_as_a_gradient_stop() {
         let source = Color::rgba(0.25, 0.5, 0.75, 0.4).unwrap();
-        let stop =
-            crate::canvas::GradientStop::new(0.5, source.convert_to(LabD50).unwrap()).unwrap();
+        let xyz = Srgb.coordinates_to_xyz_d50(&source.coordinates().map(f64::from));
+        let lab = Color::new(LabD50, LabD50.xyz_d50_to_coordinates(xyz), source.opacity()).unwrap();
+        let stop = crate::canvas::GradientStop::new(0.5, lab).unwrap();
 
         let rgba = stop.color().straight_rgba_in(RgbColorSpace::Srgb);
         for (actual, expected) in rgba.into_iter().zip([0.25, 0.5, 0.75, 0.4]) {
