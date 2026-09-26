@@ -148,7 +148,7 @@ where
 
 impl Image {
     /// Retains interleaved normalized device samples and their ICC profile.
-    /// The renderer converts them when materializing the image. Alpha, when
+    /// The renderer interprets them when sampling the image. Alpha, when
     /// present, is the last byte of each pixel and is straight (not premultiplied).
     pub fn from_icc_u8(
         width: u32,

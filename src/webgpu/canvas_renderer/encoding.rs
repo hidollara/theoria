@@ -83,7 +83,7 @@ impl ImageVertex {
                     u32::from(pattern.extend_x() == ImageExtend::Transparent),
                     u32::from(pattern.extend_y() == ImageExtend::Transparent),
                     crate::canvas_renderer::composition_encoding::encode_space(rgb_color_space),
-                    0,
+                    u32::from(pattern.sampling() == crate::canvas::ImageSampling::Linear),
                 ],
             }
         })

@@ -36,7 +36,7 @@ mod image;
 mod pipeline;
 
 use encoding::{CompositionUniform, ImageVertex, TriangleVertex, bytes_of, bytes_of_slice};
-use image::{GpuImage, ImageCache, create_working_image};
+use image::{GpuImage, GpuImageColor, ImageCache, create_working_image};
 use pipeline::{Pipelines, WORKING_FORMAT};
 
 /// A WebGPU texture region that can receive one Canvas evaluation.
@@ -128,6 +128,8 @@ impl CanvasRenderer {
             .clear_color
             .try_straight_rgba_in(crate::color::RgbColorSpace::LinearSrgb)?;
         self.materialize_canvas_resources(canvas)?;
+        self.pipelines
+            .retain_icc_images(&self.images.active_icc_keys());
         self.render_to_view(target, viewport, canvas, view, &prepared)?;
         Ok(())
     }
@@ -147,6 +149,16 @@ impl CanvasRenderer {
     fn materialize_image(&mut self, image: &Image) -> Result<(), Box<dyn std::error::Error>> {
         match image.kind() {
             ImageKind::Raster(image) => {
+                if let crate::canvas::image::RasterImageView::Icc8 {
+                    profile,
+                    intent,
+                    has_alpha,
+                    ..
+                } = image.view()
+                {
+                    self.pipelines
+                        .ensure_icc_image(&self.device, profile, intent, has_alpha)?;
+                }
                 self.images
                     .ensure_uploaded(&self.device, &self.queue, image.as_ref())?;
             }
@@ -612,6 +624,17 @@ impl CanvasRecorder<'_> {
             .images
             .get(pattern.image())
             .expect("Canvas images are materialized before command recording");
+        let (premultiplied, space, icc_pipeline) = match &image.color {
+            GpuImageColor::Rgb {
+                premultiplied,
+                space,
+            } => (*premultiplied, *space, None),
+            GpuImageColor::Icc { key } => (
+                false,
+                crate::color::RgbColorSpace::LinearSrgb,
+                Some(self.pipelines.icc_image(key)),
+            ),
+        };
         let mut vertices = Vec::with_capacity(mesh.indices.len());
         for triangle in mesh.indices.chunks_exact(3) {
             let points = [
@@ -621,8 +644,8 @@ impl CanvasRecorder<'_> {
             ];
             vertices.extend(ImageVertex::encode(
                 pattern,
-                image.rgb_is_premultiplied,
-                image.rgb_color_space,
+                premultiplied,
+                space,
                 points,
                 mesh_to_root,
                 self.view,
@@ -638,14 +661,34 @@ impl CanvasRecorder<'_> {
                 contents: bytes_of_slice(&vertices),
                 usage: wgpu::BufferUsages::VERTEX,
             });
-        let sampler = image_sampler(self.device, pattern);
-        let binding = sampled_binding(
-            self.device,
-            &self.pipelines.texture_layout,
-            &sampler,
-            &image.view,
-            "theoria WebGPU sampled image",
-        );
+        let sampler = image_sampler(self.device, pattern, icc_pipeline.is_some());
+        let binding = match icc_pipeline {
+            Some(icc) => self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("theoria WebGPU ICC image"),
+                layout: &icc.layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::Sampler(&sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(&image.view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: icc.tables.as_entire_binding(),
+                    },
+                ],
+            }),
+            None => sampled_binding(
+                self.device,
+                &self.pipelines.texture_layout,
+                &sampler,
+                &image.view,
+                "theoria WebGPU sampled image",
+            ),
+        };
         let region = self
             .target_region
             .expect("Canvas drawing is skipped for an empty target region");
@@ -656,7 +699,7 @@ impl CanvasRecorder<'_> {
             ..Default::default()
         });
         set_canvas_region(&mut pass, region);
-        pass.set_pipeline(&self.pipelines.image);
+        pass.set_pipeline(icc_pipeline.map_or(&self.pipelines.image, |icc| &icc.pipeline));
         pass.set_bind_group(0, &binding, &[]);
         pass.set_vertex_buffer(0, buffer.slice(..));
         pass.draw(0..vertices.len() as u32, 0..1);
@@ -792,10 +835,15 @@ fn sampled_binding(
     })
 }
 
-fn image_sampler(device: &wgpu::Device, pattern: &ImagePattern) -> wgpu::Sampler {
-    let filter = match pattern.sampling() {
-        ImageSampling::Nearest => wgpu::FilterMode::Nearest,
-        ImageSampling::Linear => wgpu::FilterMode::Linear,
+fn image_sampler(
+    device: &wgpu::Device,
+    pattern: &ImagePattern,
+    force_nearest: bool,
+) -> wgpu::Sampler {
+    let filter = match (force_nearest, pattern.sampling()) {
+        (true, _) => wgpu::FilterMode::Nearest,
+        (_, ImageSampling::Nearest) => wgpu::FilterMode::Nearest,
+        (_, ImageSampling::Linear) => wgpu::FilterMode::Linear,
     };
     device.create_sampler(&wgpu::SamplerDescriptor {
         label: Some("theoria WebGPU image sampler"),
@@ -996,6 +1044,53 @@ mod tests {
             let red =
                 half::f16::from_bits(u16::from_le_bytes(pixel[..2].try_into().unwrap())).to_f32();
             assert!(red > 1.0, "ICC raster red was clipped during upload: {red}");
+        }
+    }
+
+    #[test]
+    fn cmyk_raster_with_alpha_is_transformed_when_drawn() {
+        let profile = IccProfile::from_bytes(include_bytes!(
+            "../color/fixtures/CGATS001Compat-v2-micro.icc"
+        ))
+        .unwrap();
+        let samples = [50, 100, 150, 20, 128];
+        let expected = crate::canvas_renderer::raster::convert_icc8_to_linear_rgba16(
+            1,
+            &samples,
+            &profile,
+            IccRenderingIntent::Perceptual,
+            true,
+        )
+        .unwrap();
+        let image = crate::canvas::Image::from_icc_u8(
+            1,
+            1,
+            samples.to_vec(),
+            profile,
+            IccRenderingIntent::Perceptual,
+            true,
+        )
+        .unwrap();
+        let canvas = Canvas::draw(image, Coverage::all());
+        if let Some(pixel) = render_pixel_bytes_in(&canvas, wgpu::TextureFormat::Rgba16Float, None)
+        {
+            let alpha = half::f16::from_bits(expected.samples()[3]).to_f32();
+            for channel in 0..4 {
+                let actual = half::f16::from_bits(u16::from_le_bytes(
+                    pixel[channel * 2..channel * 2 + 2].try_into().unwrap(),
+                ))
+                .to_f32();
+                let expected = half::f16::from_bits(expected.samples()[channel]).to_f32();
+                let expected = if channel == 3 {
+                    expected
+                } else {
+                    expected * alpha
+                };
+                assert!(
+                    (actual - expected).abs() < 0.04,
+                    "channel {channel}: {actual} != {expected}"
+                );
+            }
         }
     }
 

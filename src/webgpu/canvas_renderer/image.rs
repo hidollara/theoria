@@ -1,11 +1,11 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, io};
 
 use crate::{
     canvas::{
         canvas_image::{CanvasImage, CanvasImageInstanceKey},
         image::{Image, ImageKind, RasterImageSource, RasterImageView},
     },
-    color::{LinearSrgb, RgbColorSpace},
+    color::{ColorSpaceKey, IccRenderingIntent, LinearSrgb, RgbColorSpace},
     image::{AlphaAssociation, RasterImageInstanceKey},
 };
 
@@ -14,14 +14,27 @@ use super::pipeline::WORKING_FORMAT;
 pub(super) struct GpuImage {
     _texture: wgpu::Texture,
     pub(super) view: wgpu::TextureView,
-    pub(super) rgb_is_premultiplied: bool,
-    pub(super) rgb_color_space: RgbColorSpace,
+    pub(super) color: GpuImageColor,
+}
+
+pub(super) enum GpuImageColor {
+    Rgb {
+        premultiplied: bool,
+        space: RgbColorSpace,
+    },
+    Icc {
+        key: (ColorSpaceKey, IccRenderingIntent, bool),
+    },
 }
 
 enum UploadPlane<'a> {
     Borrowed(&'a crate::image::RasterPlane<u8>),
     Expanded(crate::image::RasterPlane<u8>),
-    Linear16(crate::image::RasterPlane<u16>),
+    Icc {
+        samples: Vec<u8>,
+        layers: u32,
+        row_stride: usize,
+    },
 }
 
 impl UploadPlane<'_> {
@@ -29,7 +42,7 @@ impl UploadPlane<'_> {
         match self {
             Self::Borrowed(plane) => plane.samples(),
             Self::Expanded(plane) => plane.samples(),
-            Self::Linear16(plane) => bytemuck::cast_slice(plane.samples()),
+            Self::Icc { samples, .. } => samples,
         }
     }
 
@@ -37,14 +50,22 @@ impl UploadPlane<'_> {
         match self {
             Self::Borrowed(plane) => plane.row_stride(),
             Self::Expanded(plane) => plane.row_stride(),
-            Self::Linear16(plane) => plane.row_stride() * 2,
+            Self::Icc { row_stride, .. } => *row_stride,
         }
     }
 
     fn format(&self) -> wgpu::TextureFormat {
         match self {
-            Self::Borrowed(_) | Self::Expanded(_) => wgpu::TextureFormat::Rgba8Unorm,
-            Self::Linear16(_) => wgpu::TextureFormat::Rgba16Float,
+            Self::Borrowed(_) | Self::Expanded(_) | Self::Icc { .. } => {
+                wgpu::TextureFormat::Rgba8Unorm
+            }
+        }
+    }
+
+    fn layers(&self) -> u32 {
+        match self {
+            Self::Icc { layers, .. } => *layers,
+            _ => 1,
         }
     }
 }
@@ -73,24 +94,23 @@ impl ImageCache {
         if self.raster.contains_key(&key) {
             return Ok(());
         }
-        let (plane, color_space, rgb_is_premultiplied) = match image.view() {
+        let (plane, color) = match image.view() {
             RasterImageView::Icc8 {
                 pixels,
                 profile,
                 intent,
                 has_alpha,
             } => (
-                UploadPlane::Linear16(
-                    crate::canvas_renderer::raster::convert_icc8_to_linear_rgba16(
-                        image.width(),
-                        pixels,
-                        profile,
-                        intent,
-                        has_alpha,
-                    )?,
-                ),
-                RgbColorSpace::LinearSrgb,
-                false,
+                pack_icc_samples(
+                    image.width(),
+                    image.height(),
+                    pixels,
+                    profile.device_channels(),
+                    has_alpha,
+                )?,
+                GpuImageColor::Icc {
+                    key: (profile.device_space(), intent, has_alpha),
+                },
             ),
             RasterImageView::Rgb8 { plane, color_space } => {
                 let expanded = crate::canvas_renderer::raster::expand_rgb8_to_rgba8(
@@ -98,7 +118,13 @@ impl ImageCache {
                     image.height(),
                     plane,
                 );
-                (UploadPlane::Expanded(expanded), color_space, false)
+                (
+                    UploadPlane::Expanded(expanded),
+                    GpuImageColor::Rgb {
+                        premultiplied: false,
+                        space: color_space,
+                    },
+                )
             }
             RasterImageView::Rgba8 {
                 plane,
@@ -106,13 +132,16 @@ impl ImageCache {
                 alpha,
             } => (
                 UploadPlane::Borrowed(plane),
-                color_space,
-                alpha == AlphaAssociation::Premultiplied,
+                GpuImageColor::Rgb {
+                    premultiplied: alpha == AlphaAssociation::Premultiplied,
+                    space: color_space,
+                },
             ),
         };
-        let size = extent(image.width(), image.height());
+        let mut size = extent(image.width(), image.height());
+        size.depth_or_array_layers = plane.layers();
         let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("theoria WebGPU RGBA8 image"),
+            label: Some("theoria WebGPU raster image"),
             size,
             mip_level_count: 1,
             sample_count: 1,
@@ -136,12 +165,15 @@ impl ImageCache {
             },
             size,
         );
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let view = texture.create_view(&wgpu::TextureViewDescriptor {
+            dimension: matches!(color, GpuImageColor::Icc { .. })
+                .then_some(wgpu::TextureViewDimension::D2Array),
+            ..Default::default()
+        });
         let uploaded = GpuImage {
             _texture: texture,
             view,
-            rgb_is_premultiplied,
-            rgb_color_space: color_space,
+            color,
         };
         self.raster.insert(key, uploaded);
         Ok(())
@@ -168,6 +200,19 @@ impl ImageCache {
         self.raster.retain(|key, _| key.is_alive());
         self.canvas.retain(|key, _| key.is_alive());
     }
+
+    pub(super) fn active_icc_keys(
+        &mut self,
+    ) -> std::collections::HashSet<(ColorSpaceKey, IccRenderingIntent, bool)> {
+        self.prune_unused();
+        self.raster
+            .values()
+            .filter_map(|image| match &image.color {
+                GpuImageColor::Icc { key } => Some(key.clone()),
+                GpuImageColor::Rgb { .. } => None,
+            })
+            .collect()
+    }
 }
 
 pub(super) fn create_working_image(
@@ -190,8 +235,10 @@ pub(super) fn create_working_image(
     GpuImage {
         _texture: texture,
         view,
-        rgb_is_premultiplied: true,
-        rgb_color_space: LinearSrgb.into(),
+        color: GpuImageColor::Rgb {
+            premultiplied: true,
+            space: LinearSrgb.into(),
+        },
     }
 }
 
@@ -200,5 +247,59 @@ fn extent(width: u32, height: u32) -> wgpu::Extent3d {
         width,
         height,
         depth_or_array_layers: 1,
+    }
+}
+
+/// Stores device channels unchanged in RGBA8 texture-array layers. The final
+/// channel is straight alpha when present; unused components are padding.
+fn pack_icc_samples(
+    width: u32,
+    height: u32,
+    pixels: &[u8],
+    device_channels: usize,
+    has_alpha: bool,
+) -> Result<UploadPlane<'static>, Box<dyn std::error::Error>> {
+    let channels = device_channels + usize::from(has_alpha);
+    let layers = u32::try_from(channels.div_ceil(4))?;
+    let width = usize::try_from(width)?;
+    let height = usize::try_from(height)?;
+    let overflow = || io::Error::from(io::ErrorKind::OutOfMemory);
+    let row_stride = width.checked_mul(4).ok_or_else(overflow)?;
+    let layer_size = row_stride.checked_mul(height).ok_or_else(overflow)?;
+    let size = layer_size
+        .checked_mul(layers as usize)
+        .ok_or_else(overflow)?;
+    let mut samples = vec![255; size];
+    for (pixel_index, pixel) in pixels.chunks_exact(channels).enumerate() {
+        for (channel, sample) in pixel.iter().copied().enumerate() {
+            let offset = (channel / 4) * layer_size + pixel_index * 4 + channel % 4;
+            samples[offset] = sample;
+        }
+    }
+    Ok(UploadPlane::Icc {
+        samples,
+        layers,
+        row_stride,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn icc_upload_preserves_source_channels_and_separate_alpha() {
+        let UploadPlane::Icc {
+            samples,
+            layers,
+            row_stride,
+        } = pack_icc_samples(2, 1, &[10, 20, 30, 40, 50, 60, 70, 80, 90, 100], 4, true).unwrap()
+        else {
+            panic!("ICC samples must use a source texture array")
+        };
+        assert_eq!(layers, 2);
+        assert_eq!(row_stride, 8);
+        assert_eq!(&samples[..8], &[10, 20, 30, 40, 60, 70, 80, 90]);
+        assert_eq!(&samples[8..], &[50, 255, 255, 255, 100, 255, 255, 255]);
     }
 }
