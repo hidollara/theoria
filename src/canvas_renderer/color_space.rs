@@ -205,10 +205,15 @@ fn convert_premultiplied(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::color::{Opacity, Srgb};
 
     #[test]
     fn a_solid_color_is_lowered_once_per_render() {
-        let color = CanvasColor::from(crate::color::Color::rgb8(255, 0, 0));
+        let color = CanvasColor::from(crate::color::Color::new(
+            Srgb,
+            [255_u8, 0, 0],
+            Opacity::<u8>::ONE,
+        ));
         let mut prepared = PreparedColors::default();
         prepared.prepare(&color).unwrap();
         prepared.prepare(&color).unwrap();
@@ -227,7 +232,7 @@ mod tests {
         let color = CanvasColor::from_icc(
             &profile,
             vec![0.25, 0.5, 0.75],
-            crate::color::Opacity::<f32>::ONE,
+            Opacity::<f32>::ONE,
             crate::color::IccRenderingIntent::RelativeColorimetric,
         )
         .unwrap();
@@ -246,7 +251,7 @@ mod tests {
         let color = CanvasColor::from_icc(
             &profile,
             vec![0.25, 0.5, 0.75],
-            crate::color::Opacity::<f32>::ONE,
+            Opacity::<f32>::ONE,
             crate::color::IccRenderingIntent::RelativeColorimetric,
         )
         .unwrap();
@@ -287,7 +292,11 @@ mod tests {
 
     #[test]
     fn preparation_uses_the_selected_working_space() {
-        let color = CanvasColor::from(crate::color::Color::rgb(0.5, 0.5, 0.5).unwrap());
+        let color = CanvasColor::from(crate::color::Color::new(
+            Srgb,
+            [0.5_f32, 0.5, 0.5],
+            Opacity::<f32>::ONE,
+        ));
         let mut prepared = PreparedColors::new(RgbColorSpace::Srgb);
         prepared.prepare(&color).unwrap();
         assert_eq!(prepared.lower(&color), [0.5, 0.5, 0.5, 1.0]);

@@ -15,7 +15,7 @@ use crate::{
         BlendMode, Canvas, ColorField, Composite, Composition, ConicGradient, Coverage,
         GradientExtend, GradientStop, LinearGradient, RadialGradient,
     },
-    color::{Color, LinearSrgb},
+    color::{Color, LinearSrgb, Opacity, Srgb},
     geometry::Point,
     math::{Matrix2, Vector2},
     path::Path,
@@ -73,7 +73,10 @@ fn realized(canvas: Option<Canvas>) -> RealizedGlyph {
 
 // A missing operand still matters for COLR composition modes other than SourceOver.
 fn transparent_operand() -> Canvas {
-    Canvas::draw(Color::rgba8(0, 0, 0, 0), Coverage::all())
+    Canvas::draw(
+        Color::new(Srgb, [0_u8, 0, 0], Opacity::<u8>::from(0)),
+        Coverage::all(),
+    )
 }
 
 struct CanvasColorPainter<'font, 'palette> {
@@ -225,8 +228,12 @@ impl<'font, 'palette> CanvasColorPainter<'font, 'palette> {
             if alpha >= 1.0 {
                 return Ok(self.foreground.clone());
             }
-            let opacity = Color::rgba(1.0, 1.0, 1.0, alpha.clamp(0.0, 1.0))
-                .map_err(|_| GlyphPresentationError::InvalidColorGlyph)?;
+            let opacity = Color::new(
+                Srgb,
+                [1.0, 1.0, 1.0],
+                Opacity::<f32>::new(alpha.clamp(0.0, 1.0))
+                    .map_err(|_| GlyphPresentationError::InvalidColorGlyph)?,
+            );
             return Ok(Canvas::draw(self.foreground.clone(), Coverage::from_alpha(opacity)).into());
         }
         let color = self
@@ -234,11 +241,10 @@ impl<'font, 'palette> CanvasColorPainter<'font, 'palette> {
             .as_ref()
             .and_then(|palette| palette.colors().get(usize::from(palette_index)))
             .ok_or(GlyphPresentationError::InvalidColorGlyph)?;
-        Ok(Color::rgba8(
-            color.red(),
-            color.green(),
-            color.blue(),
-            ((f32::from(color.alpha()) * alpha.clamp(0.0, 1.0)).round()) as u8,
+        Ok(Color::new(
+            Srgb,
+            [color.red(), color.green(), color.blue()],
+            Opacity::<u8>::from(((f32::from(color.alpha()) * alpha.clamp(0.0, 1.0)).round()) as u8),
         )
         .into())
     }
@@ -380,12 +386,21 @@ fn affine(transform: Transform) -> Affine2 {
 }
 
 fn intersect(left: Coverage, right: Coverage) -> Coverage {
-    let left = Canvas::draw(Color::rgb8(255, 255, 255), left);
+    let left = Canvas::draw(
+        Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE),
+        left,
+    );
     Coverage::from_alpha(Canvas::draw(left, right))
 }
 
 fn transform_coverage(coverage: Coverage, transform: Affine2) -> Coverage {
-    Coverage::from_alpha(Canvas::draw(Color::rgb8(255, 255, 255), coverage).transformed(transform))
+    Coverage::from_alpha(
+        Canvas::draw(
+            Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE),
+            coverage,
+        )
+        .transformed(transform),
+    )
 }
 
 fn gradient_extend(extend: Extend) -> Result<GradientExtend, GlyphPresentationError> {
@@ -459,7 +474,7 @@ mod tests {
         let font = crate::font::Font::from_bytes(font_test_data::COLRV0V1)
             .unwrap()
             .resolve();
-        let foreground = Color::rgba8(100, 120, 140, 128);
+        let foreground = Color::new(Srgb, [100_u8, 120, 140], Opacity::<u8>::from(128));
         let painter = CanvasColorPainter::new(&font, foreground.into(), None);
         let stops = painter
             .gradient_stops(&[
@@ -515,7 +530,12 @@ mod tests {
             })
             .expect("test font contains a COLRv0 glyph");
 
-        let result = canvas(&font, glyph_id, 0, &Color::rgb8(0, 0, 0).into());
+        let result = canvas(
+            &font,
+            glyph_id,
+            0,
+            &Color::new(Srgb, [0_u8, 0, 0], Opacity::<u8>::ONE).into(),
+        );
         assert!(matches!(result, Ok(Some(_))));
     }
 
@@ -525,7 +545,12 @@ mod tests {
             .unwrap()
             .resolve();
         let glyph = first_color_glyph(&font, ColorGlyphFormat::ColrV1);
-        let result = canvas(&font, glyph, 0, &Color::rgb8(20, 40, 60).into());
+        let result = canvas(
+            &font,
+            glyph,
+            0,
+            &Color::new(Srgb, [20_u8, 40, 60], Opacity::<u8>::ONE).into(),
+        );
 
         assert!(matches!(result, Ok(Some(_))), "COLRv1 result: {result:?}");
     }
@@ -538,7 +563,12 @@ mod tests {
         let glyph = first_color_glyph(&font, ColorGlyphFormat::ColrV1);
 
         assert!(matches!(
-            canvas(&font, glyph, 0, &Color::rgb8(20, 40, 60).into()),
+            canvas(
+                &font,
+                glyph,
+                0,
+                &Color::new(Srgb, [20_u8, 40, 60], Opacity::<u8>::ONE).into()
+            ),
             Ok(Some(_))
         ));
     }
@@ -547,7 +577,7 @@ mod tests {
     fn variable_colr_location_changes_the_lowered_canvas_semantics() {
         let default = crate::font::Font::from_bytes(font_test_data::COLRV0V1_VARIABLE).unwrap();
         let resolved_default = default.resolve();
-        let foreground = Color::rgb8(20, 40, 60).into();
+        let foreground = Color::new(Srgb, [20_u8, 40, 60], Opacity::<u8>::ONE).into();
         let changed = default.variation_axes().into_iter().any(|axis| {
             let varied = default
                 .clone()

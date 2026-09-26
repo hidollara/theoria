@@ -1,3 +1,4 @@
+use theoria::color::{Opacity, Srgb};
 use theoria::{
     canvas::{CanvasView, Composite, Composition},
     color::Color,
@@ -31,17 +32,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let height = size.height.max(1) as f32;
                 let font_size = width.min(height) * 0.052;
 
-                let body_style = TextStyle::new(&fonts, font_size).with_foreground(
-                    Color::rgba(0.90, 0.94, 1.0, 0.96).expect("the fixed body color is valid"),
-                );
+                let body_style = TextStyle::new(&fonts, font_size).with_foreground(Color::new(
+                    Srgb,
+                    [0.90_f32, 0.94, 1.0],
+                    Opacity::<f32>::new(0.96).expect("the fixed body opacity is valid"),
+                ));
                 let emphasized_style = body_style
                     .clone()
                     .with_font_size(font_size * 1.45)
                     .with_feature(OpenTypeFeatureTag::STANDARD_LIGATURES.disabled())
-                    .with_foreground(
-                        Color::rgba(1.0, 0.68, 0.24, 1.0)
-                            .expect("the fixed emphasis color is valid"),
-                    );
+                    .with_foreground(Color::new(Srgb, [1.0_f32, 0.68, 0.24], Opacity::<f32>::ONE));
                 let rtl_style = body_style.clone().with_language("he");
 
                 let horizontal = Text::horizontal(body_style.clone())
@@ -54,10 +54,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .wrap_width(width * 0.55)
                     .layout()
                     .expect("the horizontal sample text is valid")
-                    .to_canvas(
-                        Color::rgba(0.90, 0.94, 1.0, 0.96)
-                            .expect("the fixed horizontal color is valid"),
-                    )
+                    .to_canvas(Color::new(
+                        Srgb,
+                        [0.90_f32, 0.94, 1.0],
+                        Opacity::<f32>::new(0.96).expect("the fixed horizontal opacity is valid"),
+                    ))
                     .expect("the horizontal glyphs can be realized")
                     .expect("the horizontal sample contains drawable glyphs")
                     .transformed(Affine2::from_translation(Vector2::new(
@@ -70,10 +71,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .wrap_height(height * 0.64)
                     .layout()
                     .expect("the vertical sample text is valid")
-                    .to_canvas(
-                        Color::rgba(0.54, 0.90, 1.0, 0.96)
-                            .expect("the fixed vertical color is valid"),
-                    )
+                    .to_canvas(Color::new(
+                        Srgb,
+                        [0.54_f32, 0.90, 1.0],
+                        Opacity::<f32>::new(0.96).expect("the fixed vertical opacity is valid"),
+                    ))
                     .expect("the vertical glyphs can be realized")
                     .expect("the vertical sample contains drawable glyphs")
                     .transformed(Affine2::from_translation(Vector2::new(
@@ -91,7 +93,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 SurfaceContent::new(
                     canvas,
                     view,
-                    Color::rgba(0.025, 0.035, 0.055, 1.0).expect("the fixed clear color is valid"),
+                    Color::new(Srgb, [0.025_f32, 0.035, 0.055], Opacity::<f32>::ONE),
                 )
             })
         },

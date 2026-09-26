@@ -141,7 +141,7 @@ fn unpremultiply(component: u8, alpha: u8) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::color::Color;
+    use crate::color::{Color, Opacity, Srgb};
 
     #[test]
     fn unpremultiplies_bgra_channels() {
@@ -161,7 +161,7 @@ mod tests {
         let result = canvas(
             glyph,
             face.head().unwrap().units_per_em(),
-            &Color::rgb8(0, 0, 0).into(),
+            &Color::new(Srgb, [0_u8, 0, 0], Opacity::<u8>::ONE).into(),
         );
         assert!(result.is_ok());
     }

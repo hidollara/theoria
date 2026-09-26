@@ -1,6 +1,6 @@
-use std::{error::Error, fmt};
+use std::fmt;
 
-use super::{ColorCoordinates, ColorProfile, Opacity, OpacityError, OpacitySample, Srgb};
+use super::{ColorCoordinates, ColorProfile, Opacity, OpacitySample, Srgb};
 
 /// A logical color retaining its authored profile, coordinate representation,
 /// and intrinsic opacity.
@@ -25,15 +25,12 @@ where
     C: ColorCoordinates<P::Model>,
     A: OpacitySample,
 {
-    pub fn new(profile: P, coordinates: C, opacity: Opacity<A>) -> Result<Self, ColorError> {
-        if !coordinates.is_finite() {
-            return Err(ColorError::NonFiniteComponent);
-        }
-        Ok(Self {
+    pub fn new(profile: P, coordinates: C, opacity: Opacity<A>) -> Self {
+        Self {
             profile,
             coordinates,
             opacity,
-        })
+        }
     }
 
     pub const fn profile(&self) -> &P {
@@ -53,39 +50,6 @@ where
     }
 }
 
-impl Color {
-    /// Creates an opaque color from normalized encoded-sRGB components.
-    pub fn rgb(red: f32, green: f32, blue: f32) -> Result<Self, ColorError> {
-        Self::rgba(red, green, blue, 1.0)
-    }
-
-    /// Creates a straight-alpha color from normalized encoded-sRGB and linear
-    /// opacity.
-    pub fn rgba(red: f32, green: f32, blue: f32, alpha: f32) -> Result<Self, ColorError> {
-        let coordinates = [red, green, blue];
-        validate_srgb(coordinates)?;
-        let opacity = Opacity::<f32>::new(alpha).map_err(|error| match error {
-            OpacityError::NonFinite => ColorError::NonFiniteComponent,
-            OpacityError::OutOfRange => ColorError::ComponentOutOfRange,
-        })?;
-        Self::new(Srgb, coordinates, opacity)
-    }
-}
-
-impl Color<Srgb, [u8; 3], u8> {
-    /// Creates an opaque color while retaining its encoded-sRGB `u8` values.
-    pub fn rgb8(red: u8, green: u8, blue: u8) -> Self {
-        Self::rgba8(red, green, blue, u8::MAX)
-    }
-
-    /// Creates a color while retaining its encoded-sRGB and opacity `u8`
-    /// values.
-    pub fn rgba8(red: u8, green: u8, blue: u8, alpha: u8) -> Self {
-        Self::new(Srgb, [red, green, blue], Opacity::from(alpha))
-            .expect("integer samples always form a finite color")
-    }
-}
-
 impl<P, C, A> Clone for Color<P, C, A>
 where
     P: ColorProfile + Clone,
@@ -94,7 +58,6 @@ where
 {
     fn clone(&self) -> Self {
         Self::new(self.profile.clone(), self.coordinates.clone(), self.opacity)
-            .expect("a previously constructed color remains valid when cloned")
     }
 }
 
@@ -135,38 +98,6 @@ where
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ColorError {
-    NonFiniteComponent,
-    ComponentOutOfRange,
-}
-
-impl fmt::Display for ColorError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::NonFiniteComponent => formatter.write_str("color components must be finite"),
-            Self::ComponentOutOfRange => {
-                formatter.write_str("sRGB and opacity components must be between 0 and 1")
-            }
-        }
-    }
-}
-
-impl Error for ColorError {}
-
-fn validate_srgb(coordinates: [f32; 3]) -> Result<(), ColorError> {
-    if coordinates.iter().any(|component| !component.is_finite()) {
-        return Err(ColorError::NonFiniteComponent);
-    }
-    if coordinates
-        .iter()
-        .any(|component| !(0.0..=1.0).contains(component))
-    {
-        return Err(ColorError::ComponentOutOfRange);
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -174,15 +105,11 @@ mod tests {
 
     struct AuthoredRgb([u8; 3]);
 
-    impl ColorCoordinates<Rgb> for AuthoredRgb {
-        fn is_finite(&self) -> bool {
-            true
-        }
-    }
+    impl ColorCoordinates<Rgb> for AuthoredRgb {}
 
     #[test]
     fn a_model_can_accept_a_whole_user_defined_coordinate_type() {
-        let color = Color::new(Srgb, AuthoredRgb([12, 34, 56]), Opacity::from(255_u8)).unwrap();
+        let color = Color::new(Srgb, AuthoredRgb([12, 34, 56]), Opacity::from(255_u8));
 
         assert_eq!(color.coordinates().0, [12, 34, 56]);
         assert_eq!(color.opacity().sample(), 255);
@@ -202,11 +129,7 @@ mod tests {
 
     struct LogicalCoordinates([f32; 2]);
 
-    impl ColorCoordinates<LogicalModel> for LogicalCoordinates {
-        fn is_finite(&self) -> bool {
-            self.0.iter().all(|value| value.is_finite())
-        }
-    }
+    impl ColorCoordinates<LogicalModel> for LogicalCoordinates {}
 
     #[test]
     fn a_model_needs_no_cpu_reference_conversion_to_hold_a_color() {
@@ -214,23 +137,15 @@ mod tests {
             LogicalProfile,
             LogicalCoordinates([0.25, 0.75]),
             Opacity::<f32>::ONE,
-        )
-        .unwrap();
+        );
 
         assert_eq!(color.coordinates().0, [0.25, 0.75]);
     }
 
     #[test]
     fn a_typed_color_retains_its_authored_representation() {
-        let color = Color::rgba8(255, 128, 64, 128);
+        let color = Color::new(Srgb, [255_u8, 128, 64], Opacity::from(128_u8));
 
-        assert_eq!(color.coordinates(), &[255, 128, 64]);
-        assert_eq!(color.opacity().sample(), 128);
-    }
-
-    #[test]
-    fn eight_bit_srgba_constructors_retain_integer_components() {
-        let color = Color::rgba8(255, 128, 64, 128);
         assert_eq!(color.coordinates(), &[255, 128, 64]);
         assert_eq!(color.opacity().sample(), 128);
     }
@@ -238,7 +153,11 @@ mod tests {
     #[test]
     fn normalized_srgba_is_retained_exactly() {
         let encoded = [0.8, 0.4, 0.2, 0.6];
-        let color = Color::rgba(encoded[0], encoded[1], encoded[2], encoded[3]).unwrap();
+        let color = Color::new(
+            Srgb,
+            [encoded[0], encoded[1], encoded[2]],
+            Opacity::<f32>::new(encoded[3]).unwrap(),
+        );
         let round_trip = [
             color.coordinates()[0],
             color.coordinates()[1],
@@ -252,18 +171,35 @@ mod tests {
     }
 
     #[test]
-    fn rejects_invalid_default_srgba_components() {
-        assert_eq!(
-            Color::rgba(f32::NAN, 0.0, 0.0, 1.0),
-            Err(ColorError::NonFiniteComponent)
-        );
-        assert_eq!(
-            Color::rgba(1.1, 0.0, 0.0, 1.0),
-            Err(ColorError::ComponentOutOfRange)
-        );
-        assert_eq!(
-            Color::rgba(1.0, 0.0, 0.0, -0.1),
-            Err(ColorError::ComponentOutOfRange)
-        );
+    fn raw_coordinates_do_not_inherit_a_value_range() {
+        let color = Color::new(Srgb, [f32::NAN, 1.1, f32::INFINITY], Opacity::<f32>::ONE);
+        assert!(color.coordinates()[0].is_nan());
+        assert_eq!(color.coordinates()[1], 1.1);
+        assert_eq!(color.coordinates()[2], f32::INFINITY);
+    }
+
+    struct UnitRgb([f32; 3]);
+
+    impl TryFrom<[f32; 3]> for UnitRgb {
+        type Error = ();
+
+        fn try_from(coordinates: [f32; 3]) -> Result<Self, Self::Error> {
+            coordinates
+                .iter()
+                .all(|component| (0.0..=1.0).contains(component))
+                .then_some(Self(coordinates))
+                .ok_or(())
+        }
+    }
+
+    impl ColorCoordinates<Rgb> for UnitRgb {}
+
+    #[test]
+    fn constrained_coordinates_fail_during_conversion_not_color_construction() {
+        assert!(UnitRgb::try_from([1.1, 0.0, 0.0]).is_err());
+
+        let coordinates = UnitRgb::try_from([0.25, 0.5, 0.75]).unwrap();
+        let color = Color::new(Srgb, coordinates, Opacity::<f32>::ONE);
+        assert_eq!(color.coordinates().0, [0.25, 0.5, 0.75]);
     }
 }

@@ -4,7 +4,7 @@ use crate::{
 };
 
 #[cfg(test)]
-use crate::color::Color;
+use crate::color::{Color, Opacity, Srgb};
 
 /// WebGPU Canvas working color in premultiplied renderer-selected RGB coordinates.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -54,9 +54,12 @@ mod tests {
 
     #[test]
     fn lowering_decodes_and_associates_public_colors() {
-        let [red, green, blue, alpha] =
-            PremultipliedWorkingRgba::from_color(Color::rgba(0.5, 0.5, 0.5, 0.5).unwrap())
-                .components();
+        let [red, green, blue, alpha] = PremultipliedWorkingRgba::from_color(Color::new(
+            Srgb,
+            [0.5_f32, 0.5, 0.5],
+            Opacity::<f32>::new(0.5).unwrap(),
+        ))
+        .components();
 
         for component in [red, green, blue] {
             assert!((component - 0.107_020_57).abs() < 0.000_001);

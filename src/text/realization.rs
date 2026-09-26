@@ -174,6 +174,7 @@ fn transformed_bounds(minimum: Point, maximum: Point, transform: Affine2) -> Opt
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::color::{Opacity, Srgb};
 
     #[test]
     fn text_without_drawable_glyphs_has_no_canvas_or_coverage() {
@@ -188,7 +189,11 @@ mod tests {
             .unwrap();
 
         assert!(text.coverage().unwrap().is_none());
-        assert!(text.to_canvas(Color::rgb8(20, 20, 20)).unwrap().is_none());
+        assert!(
+            text.to_canvas(Color::new(Srgb, [20_u8, 20, 20], Opacity::<u8>::ONE))
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]
@@ -219,7 +224,7 @@ mod tests {
 
         let font = bundled_latin_font();
         let painted = TextStyle::new(std::slice::from_ref(&font), 24.0)
-            .with_foreground(Color::rgb8(220, 40, 70))
+            .with_foreground(Color::new(Srgb, [220_u8, 40, 70], Opacity::<u8>::ONE))
             .with_decoration(TextDecoration::new(TextDecorationKind::Underline));
         let text = Text::horizontal(TextStyle::new(&[font], 24.0))
             .push("plain ")
@@ -228,7 +233,7 @@ mod tests {
             .unwrap();
 
         let canvas = text
-            .to_canvas(Color::rgb8(20, 20, 20))
+            .to_canvas(Color::new(Srgb, [20_u8, 20, 20], Opacity::<u8>::ONE))
             .unwrap()
             .expect("painted text contains drawable glyphs");
         assert!(matches!(
@@ -251,6 +256,9 @@ mod tests {
             .layout()
             .unwrap();
 
-        assert!(text.to_canvas(Color::rgb8(0, 0, 0)).is_ok());
+        assert!(
+            text.to_canvas(Color::new(Srgb, [0_u8, 0, 0], Opacity::<u8>::ONE))
+                .is_ok()
+        );
     }
 }

@@ -18,7 +18,7 @@ use crate::{
         path_sampling::PathSampler,
         view_space::screen_space_tolerance,
     },
-    color::{Color, IccProfile, IccRenderingIntent, RgbColorSpace},
+    color::{Color, IccProfile, IccRenderingIntent, Opacity, RgbColorSpace, Srgb},
     geometry::Point,
     path::Path,
     surface::{SurfaceSize, Viewport},
@@ -215,7 +215,7 @@ impl CanvasRenderer {
                     width: image.width(),
                     height: image.height(),
                 },
-                Color::rgba8(0, 0, 0, 0),
+                Color::new(Srgb, [0_u8, 0, 0], Opacity::<u8>::from(0)),
             )
             .preserving_working(),
             Viewport::new(0.0, 0.0, image.width() as f32, image.height() as f32),
@@ -501,7 +501,7 @@ impl CanvasRecorder<'_> {
         self.render_mesh(
             image,
             mesh,
-            &ColorField::Solid(Color::rgb8(255, 255, 255).into()),
+            &ColorField::Solid(Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE).into()),
             mask_to_root,
         );
         image
@@ -941,7 +941,7 @@ mod tests {
     use super::*;
     use crate::{
         canvas::{Composite, Coverage},
-        color::{LinearSrgb, Opacity},
+        color::LinearSrgb,
         geometry::Point,
         image::Srgba8Image,
     };
@@ -974,10 +974,13 @@ mod tests {
 
     #[test]
     fn canvas_renderer_submits_an_offscreen_webgpu_render() {
-        let backdrop = Canvas::draw(Color::rgb8(255, 0, 0), Coverage::all());
+        let backdrop = Canvas::draw(
+            Color::new(Srgb, [255_u8, 0, 0], Opacity::<u8>::ONE),
+            Coverage::all(),
+        );
         let source = Canvas::draw(
             Srgba8Image::new(1, 1, vec![0, 255, 0, 255]).unwrap(),
-            Coverage::from_alpha(Color::rgb8(255, 255, 255)),
+            Coverage::from_alpha(Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE)),
         );
         let canvas = backdrop.composite(
             source,
@@ -1016,7 +1019,10 @@ mod tests {
             1,
         )
         .unwrap();
-        let backdrop = Canvas::draw(Color::rgb8(32, 96, 180), Coverage::all());
+        let backdrop = Canvas::draw(
+            Color::new(Srgb, [32_u8, 96, 180], Opacity::<u8>::ONE),
+            Coverage::all(),
+        );
         let source = Canvas::draw(
             ImagePattern::new(cached).with_extend(ImageExtend::Clamp),
             Coverage::all(),
@@ -1049,12 +1055,18 @@ mod tests {
 
     #[test]
     fn blend_is_converted_to_composition_space_before_alpha_weighting() {
-        let backdrop = Canvas::draw(Color::rgba8(51, 51, 51, 128), Coverage::all());
-        let source = Canvas::draw(Color::rgb8(204, 204, 204), Coverage::all());
+        let backdrop = Canvas::draw(
+            Color::new(Srgb, [51_u8, 51, 51], Opacity::<u8>::from(128)),
+            Coverage::all(),
+        );
+        let source = Canvas::draw(
+            Color::new(Srgb, [204_u8, 204, 204], Opacity::<u8>::ONE),
+            Coverage::all(),
+        );
         let canvas = backdrop.composite(
             source,
             Composition::new(Composite::SourceOver, crate::color::LinearSrgb)
-                .with_blend(crate::canvas::BlendMode::Multiply, crate::color::Srgb),
+                .with_blend(crate::canvas::BlendMode::Multiply, Srgb),
         );
         if let Some(pixel) = render_pixel(&canvas) {
             // Weighting the source and blend results in sRGB instead yields
@@ -1070,8 +1082,14 @@ mod tests {
     #[test]
     fn custom_wgsl_blend_is_used_by_webgpu() {
         let shader = crate::canvas::BlendShader::wgsl("return vec3<f32>(1.0, 0.0, 0.0);").unwrap();
-        let backdrop = Canvas::draw(Color::rgb8(0, 255, 0), Coverage::all());
-        let source = Canvas::draw(Color::rgb8(0, 0, 255), Coverage::all());
+        let backdrop = Canvas::draw(
+            Color::new(Srgb, [0_u8, 255, 0], Opacity::<u8>::ONE),
+            Coverage::all(),
+        );
+        let source = Canvas::draw(
+            Color::new(Srgb, [0_u8, 0, 255], Opacity::<u8>::ONE),
+            Coverage::all(),
+        );
         let canvas = backdrop.composite(
             source,
             Composition::new(Composite::SourceOver, crate::color::LinearSrgb)
@@ -1089,7 +1107,10 @@ mod tests {
             "/crates/theoria-color/src/color/fixtures/DisplayP3-v4.icc"
         )))
         .unwrap();
-        let canvas = Canvas::draw(Color::rgb8(255, 0, 0), Coverage::all());
+        let canvas = Canvas::draw(
+            Color::new(Srgb, [255_u8, 0, 0], Opacity::<u8>::ONE),
+            Coverage::all(),
+        );
         if let Some(pixel) =
             render_pixel_in(&canvas, wgpu::TextureFormat::Rgba8Unorm, Some(&profile))
         {
@@ -1114,7 +1135,7 @@ mod tests {
 
     #[test]
     fn floating_working_image_preserves_out_of_gamut_values() {
-        let color = Color::new(LinearSrgb, [1.5, 0.0, 0.0], Opacity::<f32>::ONE).unwrap();
+        let color = Color::new(LinearSrgb, [1.5, 0.0, 0.0], Opacity::<f32>::ONE);
         let canvas = Canvas::draw(color, Coverage::all());
         if let Some(pixel) = render_pixel_bytes_in(&canvas, wgpu::TextureFormat::Rgba16Float, None)
         {
@@ -1268,7 +1289,12 @@ mod tests {
             let view =
                 CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(1.0, 1.0)).unwrap();
 
-            let target = RenderTarget::new(&target_view, format, size, Color::rgba8(0, 0, 0, 0));
+            let target = RenderTarget::new(
+                &target_view,
+                format,
+                size,
+                Color::new(Srgb, [0_u8, 0, 0], Opacity::<u8>::from(0)),
+            );
             let target = match profile {
                 Some(profile) => {
                     target.with_icc_output(profile, IccRenderingIntent::RelativeColorimetric)

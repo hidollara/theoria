@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    color::{Color, DisplayP3, LinearSrgb, RgbColorSpace, Srgb},
+    color::{Color, DisplayP3, LinearSrgb, Opacity, RgbColorSpace, Srgb},
     geometry::Point,
     image::{AlphaAssociation, RasterImage, RasterPlane, Rgba8, Srgba8Image},
     math::Vector2,
@@ -19,7 +19,10 @@ fn filled_triangle(points: [Point; 3], source: ColorField) -> Canvas {
 }
 
 fn sample_canvas() -> Canvas {
-    Canvas::draw(Color::rgb8(10, 20, 30), Coverage::all())
+    Canvas::draw(
+        Color::new(Srgb, [10_u8, 20, 30], Opacity::<u8>::ONE),
+        Coverage::all(),
+    )
 }
 
 fn assert_point_near(actual: Option<Point>, expected: Point) {
@@ -30,7 +33,10 @@ fn assert_point_near(actual: Option<Point>, expected: Point) {
 
 #[test]
 fn canvas_image_fixes_a_canvas_view_and_pixel_extent() {
-    let content = Canvas::draw(Color::rgb8(10, 20, 30), Coverage::all());
+    let content = Canvas::draw(
+        Color::new(Srgb, [10_u8, 20, 30], Opacity::<u8>::ONE),
+        Coverage::all(),
+    );
     let view = CanvasView::axis_aligned(Point::new(-2.0, -1.0), Point::new(2.0, 1.0)).unwrap();
     let image = CanvasImage::new(content.clone(), view, 320, 180).unwrap();
 
@@ -101,11 +107,11 @@ fn composes_color_fields_in_paint_order_without_a_size() {
 
     let first = filled_triangle(
         first,
-        ColorField::Solid(Color::rgb(1.0, 0.0, 0.0).unwrap().into()),
+        ColorField::Solid(Color::new(Srgb, [1.0_f32, 0.0, 0.0], Opacity::<f32>::ONE).into()),
     );
     let second = filled_triangle(
         second,
-        ColorField::Solid(Color::rgb(0.0, 1.0, 0.0).unwrap().into()),
+        ColorField::Solid(Color::new(Srgb, [0.0_f32, 1.0, 0.0], Opacity::<f32>::ONE).into()),
     );
     let canvas = first.clone().composite(
         second.clone(),
@@ -130,7 +136,7 @@ fn fill_records_non_zero_by_default_and_accepts_even_odd_explicitly() {
         Point::new(2.0, 0.0),
         Point::new(1.0, 2.0),
     ]);
-    let source = ColorField::Solid(Color::rgb8(255, 255, 255).into());
+    let source = ColorField::Solid(Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE).into());
     let default_fill = Canvas::draw(source.clone(), Coverage::fill(path.clone()));
     let even_odd = Canvas::draw(source, Coverage::fill_with_rule(path, FillRule::EvenOdd));
 
@@ -276,7 +282,7 @@ fn cloned_canvases_diverge_without_changing_the_shared_value() {
         Point::new(1.0, 0.0),
         Point::new(0.0, 1.0),
     ];
-    let source = ColorField::Solid(Color::rgb8(255, 255, 255).into());
+    let source = ColorField::Solid(Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE).into());
     let base = filled_triangle(triangle, source.clone());
     let extended = base.clone().composite(
         filled_triangle(triangle, source),
@@ -299,7 +305,7 @@ fn transform_preserves_the_child_canvas_as_a_shared_value() {
     ];
     let child = filled_triangle(
         triangle,
-        ColorField::Solid(Color::rgb8(255, 255, 255).into()),
+        ColorField::Solid(Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE).into()),
     );
     let child_to_parent =
         Projective2::from_rows([[1.0, 0.0, 20.0], [0.0, 1.0, 30.0], [0.001, 0.0, 1.0]]);
@@ -318,7 +324,7 @@ fn coverage_pairs_a_lazy_canvas_color_field_with_a_canvas_alpha_field() {
         Point::new(1.0, 0.0),
         Point::new(0.0, 1.0),
     ];
-    let source = ColorField::Solid(Color::rgb8(255, 255, 255).into());
+    let source = ColorField::Solid(Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE).into());
     let content = filled_triangle(triangle, source.clone());
     let coverage_canvas = filled_triangle(triangle, source.clone());
     let overlay = filled_triangle(triangle, source);
@@ -348,7 +354,10 @@ fn any_color_field_can_supply_an_alpha_coverage_field() {
         Point::new(1.0, 0.0),
         Point::new(0.0, 1.0),
     ]);
-    let content = Canvas::draw(Color::rgb8(255, 255, 255), Coverage::fill(triangle));
+    let content = Canvas::draw(
+        Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE),
+        Coverage::fill(triangle),
+    );
     let image = Srgba8Image::new(1, 1, vec![255; 4]).unwrap();
     let masked = Canvas::draw(content, Coverage::from_alpha(ImagePattern::new(image)));
 
@@ -366,7 +375,9 @@ fn any_color_field_can_supply_an_alpha_coverage_field() {
 
 #[test]
 fn draw_keeps_source_and_coverage_as_distinct_semantics() {
-    let source = ColorField::Solid(Color::rgba(0.8, 0.2, 0.1, 0.4).unwrap().into());
+    let source = ColorField::Solid(
+        Color::new(Srgb, [0.8_f32, 0.2, 0.1], Opacity::<f32>::new(0.4).unwrap()).into(),
+    );
     let coverage = Coverage::fill(Path::polygon([
         Point::new(0.0, 0.0),
         Point::new(1.0, 0.0),
@@ -387,8 +398,14 @@ fn draw_keeps_source_and_coverage_as_distinct_semantics() {
 
 #[test]
 fn destination_over_keeps_source_and_backdrop_roles_in_the_ir() {
-    let backdrop = Canvas::draw(Color::rgb8(10, 20, 30), Coverage::all());
-    let source = Canvas::draw(Color::rgb8(40, 50, 60), Coverage::all());
+    let backdrop = Canvas::draw(
+        Color::new(Srgb, [10_u8, 20, 30], Opacity::<u8>::ONE),
+        Coverage::all(),
+    );
+    let source = Canvas::draw(
+        Color::new(Srgb, [40_u8, 50, 60], Opacity::<u8>::ONE),
+        Coverage::all(),
+    );
     let composition = Composition::new(Composite::DestinationOver, LinearSrgb)
         .with_blend(BlendMode::Screen, Srgb);
     let canvas = backdrop
@@ -414,7 +431,7 @@ fn transformed_wraps_the_canvas_without_baking_primitive_coordinates() {
     let transform = Projective2::from_rows([[2.0, 0.0, 10.0], [0.0, 3.0, 20.0], [0.0, 0.0, 1.0]]);
     let content = filled_triangle(
         triangle,
-        ColorField::Solid(Color::rgb8(255, 255, 255).into()),
+        ColorField::Solid(Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE).into()),
     );
     let transformed = content.clone().transformed(transform);
 
@@ -433,7 +450,7 @@ fn stroke_keeps_the_path_and_style_as_coverage() {
     ]);
     let style = StrokeStyle::new(3.0).unwrap();
     let canvas = Canvas::draw(
-        Color::rgb8(255, 255, 255),
+        Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE),
         Coverage::stroke(path, style.clone()),
     );
 
@@ -596,9 +613,9 @@ fn view_can_give_canvas_coordinates_an_upward_y_direction() {
 #[test]
 fn linear_gradient_keeps_ordered_stops_in_canvas_coordinates() {
     let stops = [
-        GradientStop::new(0.0, Color::rgb8(255, 0, 0)).unwrap(),
-        GradientStop::new(0.4, Color::rgb8(0, 255, 0)).unwrap(),
-        GradientStop::new(1.0, Color::rgb8(0, 0, 255)).unwrap(),
+        GradientStop::new(0.0, Color::new(Srgb, [255_u8, 0, 0], Opacity::<u8>::ONE)).unwrap(),
+        GradientStop::new(0.4, Color::new(Srgb, [0_u8, 255, 0], Opacity::<u8>::ONE)).unwrap(),
+        GradientStop::new(1.0, Color::new(Srgb, [0_u8, 0, 255], Opacity::<u8>::ONE)).unwrap(),
     ];
     let gradient = LinearGradient::new(
         Point::new(10.0, 20.0),
@@ -623,8 +640,8 @@ fn along_path_gradient_keeps_a_path_and_reusable_color_ramp() {
     ]);
     let ramp = ColorRamp::new(
         [
-            GradientStop::new(0.0, Color::rgb8(255, 0, 0)).unwrap(),
-            GradientStop::new(1.0, Color::rgb8(0, 0, 255)).unwrap(),
+            GradientStop::new(0.0, Color::new(Srgb, [255_u8, 0, 0], Opacity::<u8>::ONE)).unwrap(),
+            GradientStop::new(1.0, Color::new(Srgb, [0_u8, 0, 255], Opacity::<u8>::ONE)).unwrap(),
         ],
         LinearSrgb,
     )
@@ -644,8 +661,8 @@ fn across_path_gradient_keeps_explicit_signed_distance_bounds() {
     let path = Path::polyline([Point::new(0.0, 0.0), Point::new(10.0, 0.0)]);
     let ramp = ColorRamp::new(
         [
-            GradientStop::new(0.0, Color::rgb8(255, 0, 0)).unwrap(),
-            GradientStop::new(1.0, Color::rgb8(0, 0, 255)).unwrap(),
+            GradientStop::new(0.0, Color::new(Srgb, [255_u8, 0, 0], Opacity::<u8>::ONE)).unwrap(),
+            GradientStop::new(1.0, Color::new(Srgb, [0_u8, 0, 255], Opacity::<u8>::ONE)).unwrap(),
         ],
         LinearSrgb,
     )
@@ -672,8 +689,9 @@ fn across_path_gradient_keeps_explicit_signed_distance_bounds() {
 
 #[test]
 fn color_ramp_rejects_too_few_or_unordered_stops() {
-    let red = GradientStop::new(0.8, Color::rgb8(255, 0, 0)).unwrap();
-    let blue = GradientStop::new(0.2, Color::rgb8(0, 0, 255)).unwrap();
+    let red = GradientStop::new(0.8, Color::new(Srgb, [255_u8, 0, 0], Opacity::<u8>::ONE)).unwrap();
+    let blue =
+        GradientStop::new(0.2, Color::new(Srgb, [0_u8, 0, 255], Opacity::<u8>::ONE)).unwrap();
 
     assert_eq!(
         ColorRamp::new([red.clone()], LinearSrgb),
@@ -687,14 +705,15 @@ fn color_ramp_rejects_too_few_or_unordered_stops() {
 
 #[test]
 fn rejects_invalid_linear_gradient_structure_without_panicking() {
-    let red = GradientStop::new(0.8, Color::rgb8(255, 0, 0)).unwrap();
-    let blue = GradientStop::new(0.2, Color::rgb8(0, 0, 255)).unwrap();
+    let red = GradientStop::new(0.8, Color::new(Srgb, [255_u8, 0, 0], Opacity::<u8>::ONE)).unwrap();
+    let blue =
+        GradientStop::new(0.2, Color::new(Srgb, [0_u8, 0, 255], Opacity::<u8>::ONE)).unwrap();
     assert_eq!(
-        GradientStop::new(f32::NAN, Color::rgb8(0, 0, 0)),
+        GradientStop::new(f32::NAN, Color::new(Srgb, [0_u8, 0, 0], Opacity::<u8>::ONE)),
         Err(GradientStopError::NonFiniteOffset)
     );
     assert_eq!(
-        GradientStop::new(1.1, Color::rgb8(0, 0, 0)),
+        GradientStop::new(1.1, Color::new(Srgb, [0_u8, 0, 0], Opacity::<u8>::ONE)),
         Err(GradientStopError::OffsetOutOfRange)
     );
     assert_eq!(
@@ -720,9 +739,18 @@ fn rejects_invalid_linear_gradient_structure_without_panicking() {
 #[test]
 fn mesh_gradient_records_a_colored_triangle_patch() {
     let points = [
-        GradientPoint::new(Point::new(0.0, 0.0), Color::rgb8(255, 0, 0)),
-        GradientPoint::new(Point::new(4.0, 0.0), Color::rgb8(0, 255, 0)),
-        GradientPoint::new(Point::new(0.0, 4.0), Color::rgb8(0, 0, 255)),
+        GradientPoint::new(
+            Point::new(0.0, 0.0),
+            Color::new(Srgb, [255_u8, 0, 0], Opacity::<u8>::ONE),
+        ),
+        GradientPoint::new(
+            Point::new(4.0, 0.0),
+            Color::new(Srgb, [0_u8, 255, 0], Opacity::<u8>::ONE),
+        ),
+        GradientPoint::new(
+            Point::new(0.0, 4.0),
+            Color::new(Srgb, [0_u8, 0, 255], Opacity::<u8>::ONE),
+        ),
     ];
     let gradient = MeshGradient::from_triangle(points.clone(), LinearSrgb).unwrap();
 
@@ -732,7 +760,7 @@ fn mesh_gradient_records_a_colored_triangle_patch() {
 
 #[test]
 fn mesh_gradient_rejects_invalid_triangle_geometry() {
-    let color = Color::rgb8(255, 255, 255);
+    let color = Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE);
     assert_eq!(
         MeshGradient::from_triangle(
             [
@@ -760,8 +788,12 @@ fn mesh_gradient_rejects_invalid_triangle_geometry() {
 #[test]
 fn radial_and_conic_gradients_keep_their_canvas_coordinates() {
     let stops = [
-        GradientStop::new(0.0, Color::rgb8(255, 255, 255)).unwrap(),
-        GradientStop::new(1.0, Color::rgb8(0, 0, 0)).unwrap(),
+        GradientStop::new(
+            0.0,
+            Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE),
+        )
+        .unwrap(),
+        GradientStop::new(1.0, Color::new(Srgb, [0_u8, 0, 0], Opacity::<u8>::ONE)).unwrap(),
     ];
     let center = Point::new(20.0, 30.0);
     let radial = RadialGradient::new(center, 40.0, stops.clone(), LinearSrgb).unwrap();
@@ -778,8 +810,12 @@ fn radial_and_conic_gradients_keep_their_canvas_coordinates() {
 #[test]
 fn gradients_retain_extended_color_line_geometry() {
     let stops = [
-        GradientStop::new(0.0, Color::rgb8(255, 255, 255)).unwrap(),
-        GradientStop::new(1.0, Color::rgb8(0, 0, 0)).unwrap(),
+        GradientStop::new(
+            0.0,
+            Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE),
+        )
+        .unwrap(),
+        GradientStop::new(1.0, Color::new(Srgb, [0_u8, 0, 0], Opacity::<u8>::ONE)).unwrap(),
     ];
     let radial = RadialGradient::between_circles(
         Point::new(1.0, 2.0),
@@ -807,8 +843,12 @@ fn gradients_retain_extended_color_line_geometry() {
 #[test]
 fn two_circle_radial_gradient_preserves_signed_radii() {
     let stops = [
-        GradientStop::new(0.0, Color::rgb8(255, 255, 255)).unwrap(),
-        GradientStop::new(1.0, Color::rgb8(0, 0, 0)).unwrap(),
+        GradientStop::new(
+            0.0,
+            Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE),
+        )
+        .unwrap(),
+        GradientStop::new(1.0, Color::new(Srgb, [0_u8, 0, 0], Opacity::<u8>::ONE)).unwrap(),
     ];
     let gradient = RadialGradient::between_circles(
         Point::new(1.0, 2.0),
@@ -827,8 +867,12 @@ fn two_circle_radial_gradient_preserves_signed_radii() {
 #[test]
 fn degenerate_gradients_remain_representable() {
     let stops = [
-        GradientStop::new(0.0, Color::rgb8(255, 255, 255)).unwrap(),
-        GradientStop::new(1.0, Color::rgb8(0, 0, 0)).unwrap(),
+        GradientStop::new(
+            0.0,
+            Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE),
+        )
+        .unwrap(),
+        GradientStop::new(1.0, Color::new(Srgb, [0_u8, 0, 0], Opacity::<u8>::ONE)).unwrap(),
     ];
     let circle = Point::new(1.0, 2.0);
 
@@ -845,8 +889,12 @@ fn degenerate_gradients_remain_representable() {
 #[test]
 fn radial_and_conic_gradients_reject_invalid_geometry() {
     let stops = [
-        GradientStop::new(0.0, Color::rgb8(255, 255, 255)).unwrap(),
-        GradientStop::new(1.0, Color::rgb8(0, 0, 0)).unwrap(),
+        GradientStop::new(
+            0.0,
+            Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE),
+        )
+        .unwrap(),
+        GradientStop::new(1.0, Color::new(Srgb, [0_u8, 0, 0], Opacity::<u8>::ONE)).unwrap(),
     ];
     assert_eq!(
         RadialGradient::new(Point::new(0.0, 0.0), 0.0, stops.clone(), LinearSrgb),

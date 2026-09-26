@@ -8,7 +8,7 @@ use crate::{
         Draw,
     },
     canvas_renderer::{canvas_plan::can_record_directly_in, color_space::PreparedColors},
-    color::{Color, RgbColorSpace},
+    color::{Color, Opacity, RgbColorSpace, Srgb},
     tessellation::{Mesh, tessellate_fill_with_tolerance, tessellate_stroke_with_tolerance},
     transform::Projective2,
     vulkan::{color::PremultipliedWorkingRgba, image::ImageCache, scratch_image::ScratchImage},
@@ -241,7 +241,7 @@ impl<'a> CanvasRecorder<'a> {
             .begin_accumulator(image, vk::AttachmentLoadOp::CLEAR);
         self.commands.render_mesh(
             mesh,
-            &ColorField::Solid(Color::rgb8(255, 255, 255).into()),
+            &ColorField::Solid(Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE).into()),
             mask_to_root,
         );
         self.commands.end_rendering();

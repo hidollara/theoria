@@ -30,7 +30,7 @@ pub use transfer::{
     TransferStage,
 };
 pub use transform::{RgbTransfer, RgbTransform};
-pub use value::{Color, ColorError};
+pub use value::Color;
 pub use white_point::{WhitePoint, WhitePointError};
 
 #[doc(hidden)]

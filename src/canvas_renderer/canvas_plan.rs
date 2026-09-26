@@ -256,12 +256,17 @@ mod tests {
     use super::*;
     use crate::{
         canvas::{Blend, BlendMode, Composition, Coverage},
-        color::{Color, LinearSrgb, Srgb},
+        color::{Color, LinearSrgb, Opacity, Srgb},
     };
 
     #[test]
     fn destination_reading_compositions_collect_their_shader() {
-        let leaf = || Canvas::draw(Color::rgb8(64, 128, 255), Coverage::all());
+        let leaf = || {
+            Canvas::draw(
+                Color::new(Srgb, [64_u8, 128, 255], Opacity::<u8>::ONE),
+                Coverage::all(),
+            )
+        };
         let nonlinear = leaf().composite(leaf(), Composition::new(Composite::SourceOver, Srgb));
         let blended = leaf().composite(
             leaf(),
@@ -288,7 +293,7 @@ mod tests {
         let color = crate::canvas::CanvasColor::from_icc(
             &profile,
             vec![0.25, 0.5, 0.75],
-            crate::color::Opacity::<f32>::ONE,
+            Opacity::<f32>::ONE,
             crate::color::IccRenderingIntent::RelativeColorimetric,
         )
         .unwrap();
@@ -299,7 +304,11 @@ mod tests {
 
     #[test]
     fn renderer_prepares_solid_colors_without_changing_canvas_storage() {
-        let color = crate::canvas::CanvasColor::from(Color::rgb8(255, 128, 0));
+        let color = crate::canvas::CanvasColor::from(Color::new(
+            Srgb,
+            [255_u8, 128, 0],
+            Opacity::<u8>::ONE,
+        ));
         let canvas = Canvas::draw(color.clone(), Coverage::all());
         let prepared = prepare_colors(&canvas).unwrap();
         let CanvasNode::Draw(draw) = canvas.node() else {
@@ -315,7 +324,12 @@ mod tests {
 
     #[test]
     fn direct_composition_requires_the_same_working_space() {
-        let leaf = || Canvas::draw(Color::rgb8(64, 128, 192), Coverage::all());
+        let leaf = || {
+            Canvas::draw(
+                Color::new(Srgb, [64_u8, 128, 192], Opacity::<u8>::ONE),
+                Coverage::all(),
+            )
+        };
         let canvas = leaf().composite(
             leaf(),
             Composition::new(Composite::SourceOver, crate::color::LinearDisplayP3),

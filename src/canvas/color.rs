@@ -2,7 +2,7 @@ use std::{error::Error, fmt, sync::Arc};
 
 use crate::color::{
     Color, ColorCoordinates, ColorProfile, ColorTransformError, IccProfile, IccProfileError,
-    IccRenderingIntent, LabD50, Opacity, OpacitySample, RgbColorSpace, TransferError, XyzD50,
+    IccRenderingIntent, LabD50, Opacity, OpacitySample, RgbColorSpace, Srgb, TransferError, XyzD50,
     XyzD65,
 };
 
@@ -238,7 +238,7 @@ macro_rules! canvas_rgb_color {
     };
 }
 
-canvas_rgb_color!(crate::color::Srgb);
+canvas_rgb_color!(Srgb);
 canvas_rgb_color!(crate::color::LinearSrgb);
 canvas_rgb_color!(crate::color::DisplayP3);
 canvas_rgb_color!(crate::color::LinearDisplayP3);
@@ -399,7 +399,11 @@ mod tests {
 
     #[test]
     fn erasing_a_color_does_not_normalize_its_storage() {
-        let color = CanvasColor::from(Color::rgba8(255, 128, 64, 128));
+        let color = CanvasColor::from(Color::new(
+            Srgb,
+            [255_u8, 128, 64],
+            Opacity::<u8>::from(128),
+        ));
 
         assert!(matches!(
             color.value,
@@ -418,8 +422,7 @@ mod tests {
             DisplayP3,
             [1.0, 0.5, 0.25],
             Opacity::<f32>::new(0.75).unwrap(),
-        )
-        .unwrap();
+        );
 
         let canvas = CanvasColor::from(color);
         assert_eq!(canvas.profile, CanvasProfile::Rgb(RgbColorSpace::DisplayP3));
@@ -431,9 +434,11 @@ mod tests {
 
     #[test]
     fn changing_opacity_preserves_authored_coordinates_and_profile() {
-        let color = CanvasColor::from(
-            Color::new(LinearDisplayP3, [255_u8, 128, 64], Opacity::from(128_u8)).unwrap(),
-        );
+        let color = CanvasColor::from(Color::new(
+            LinearDisplayP3,
+            [255_u8, 128, 64],
+            Opacity::from(128_u8),
+        ));
 
         let adjusted = color.with_alpha_factor(0.5);
 
@@ -447,14 +452,17 @@ mod tests {
 
     #[test]
     fn profile_reference_coordinates_enter_canvas_without_losing_storage() {
-        let authored = Color::rgba(0.25, 0.5, 0.75, 0.4).unwrap();
+        let authored = Color::new(
+            Srgb,
+            [0.25_f32, 0.5, 0.75],
+            Opacity::<f32>::new(0.4).unwrap(),
+        );
         let xyz = Srgb.coordinates_to_xyz_d50(&authored.coordinates().map(f64::from));
         let converted = Color::new(
             LinearSrgb,
             LinearSrgb.xyz_d50_to_coordinates(xyz),
             authored.opacity(),
-        )
-        .unwrap();
+        );
         let canvas = CanvasColor::from(converted);
 
         assert!(matches!(canvas.value, ColorValue::F64(_, Alpha::F32(_))));
@@ -474,8 +482,7 @@ mod tests {
             DisplayP3,
             [0.125_f64, 0.25, 0.5],
             Opacity::<f64>::new(0.75).unwrap(),
-        )
-        .unwrap();
+        );
         let canvas = CanvasColor::from(color);
         assert!(matches!(canvas.value, ColorValue::F64(_, Alpha::F64(_))));
         assert!(matches!(
@@ -483,39 +490,45 @@ mod tests {
             ColorValue::F64(_, Alpha::F64(_))
         ));
 
-        let color =
-            Color::new(Srgb, [0_u16, u16::MAX / 2, u16::MAX], Opacity::from(128_u8)).unwrap();
+        let color = Color::new(Srgb, [0_u16, u16::MAX / 2, u16::MAX], Opacity::from(128_u8));
         let canvas = CanvasColor::from(color);
         assert!(matches!(canvas.value, ColorValue::U16(_, Alpha::U8(_))));
     }
 
     #[test]
     fn xyz_and_lab_colors_remain_authored_until_renderer_lowering() {
-        let source = Color::rgba(0.25, 0.5, 0.75, 0.4).unwrap();
+        let source = Color::new(
+            Srgb,
+            [0.25_f32, 0.5, 0.75],
+            Opacity::<f32>::new(0.4).unwrap(),
+        );
         let original = CanvasColor::from(source);
         let lowered_original = crate::canvas_renderer::color_space::lower_straight_color(&original);
         let xyz = Srgb.coordinates_to_xyz_d50(&source.coordinates().map(f64::from));
 
         for (canvas, profile) in [
             (
-                CanvasColor::from(
-                    Color::new(XyzD50, XyzD50.xyz_d50_to_coordinates(xyz), source.opacity())
-                        .unwrap(),
-                ),
+                CanvasColor::from(Color::new(
+                    XyzD50,
+                    XyzD50.xyz_d50_to_coordinates(xyz),
+                    source.opacity(),
+                )),
                 CanvasProfile::XyzD50,
             ),
             (
-                CanvasColor::from(
-                    Color::new(XyzD65, XyzD65.xyz_d50_to_coordinates(xyz), source.opacity())
-                        .unwrap(),
-                ),
+                CanvasColor::from(Color::new(
+                    XyzD65,
+                    XyzD65.xyz_d50_to_coordinates(xyz),
+                    source.opacity(),
+                )),
                 CanvasProfile::XyzD65,
             ),
             (
-                CanvasColor::from(
-                    Color::new(LabD50, LabD50.xyz_d50_to_coordinates(xyz), source.opacity())
-                        .unwrap(),
-                ),
+                CanvasColor::from(Color::new(
+                    LabD50,
+                    LabD50.xyz_d50_to_coordinates(xyz),
+                    source.opacity(),
+                )),
                 CanvasProfile::LabD50,
             ),
         ] {
@@ -530,9 +543,13 @@ mod tests {
 
     #[test]
     fn profile_authored_lab_color_can_be_used_as_a_gradient_stop() {
-        let source = Color::rgba(0.25, 0.5, 0.75, 0.4).unwrap();
+        let source = Color::new(
+            Srgb,
+            [0.25_f32, 0.5, 0.75],
+            Opacity::<f32>::new(0.4).unwrap(),
+        );
         let xyz = Srgb.coordinates_to_xyz_d50(&source.coordinates().map(f64::from));
-        let lab = Color::new(LabD50, LabD50.xyz_d50_to_coordinates(xyz), source.opacity()).unwrap();
+        let lab = Color::new(LabD50, LabD50.xyz_d50_to_coordinates(xyz), source.opacity());
         let stop = crate::canvas::GradientStop::new(0.5, lab).unwrap();
 
         let rgba = stop.color().straight_rgba_in(RgbColorSpace::Srgb);

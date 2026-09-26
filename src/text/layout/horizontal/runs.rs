@@ -73,6 +73,7 @@ pub(super) fn shape_bidi_line(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::color::{Opacity, Srgb};
     use crate::text::test_support::windows_test_font;
 
     #[cfg(target_os = "windows")]
@@ -133,9 +134,11 @@ mod tests {
     #[test]
     fn paint_boundaries_are_retained_without_becoming_canvas_state() {
         let typography = TextStyle::new(&[], 16.0);
-        let painted = typography
-            .clone()
-            .with_foreground(crate::color::Color::rgb8(255, 0, 0));
+        let painted = typography.clone().with_foreground(crate::color::Color::new(
+            Srgb,
+            [255_u8, 0, 0],
+            Opacity::<u8>::ONE,
+        ));
         let attributed = AttributedText::from_spans(
             typography,
             vec![Span::new("a"), Span::new("b").with_style(painted)],

@@ -1,3 +1,4 @@
+use theoria::color::{Opacity, Srgb};
 use theoria::{
     canvas::{
         AcrossPathGradient, AlongPathGradient, BlendMode, Canvas, CanvasImage, CanvasView,
@@ -48,7 +49,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .close(),
                         );
                     let coverage_canvas = Canvas::draw(
-                        Color::rgb8(255, 255, 255),
+                        Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE),
                         Coverage::fill_with_rule(coverage_path, FillRule::EvenOdd),
                     );
                     let image_layer = Canvas::draw(
@@ -75,9 +76,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             Point::new(width * 0.10, height * 0.20),
                             Point::new(width * 0.70, height * 0.75),
                             [
-                                GradientStop::new(0.0, Color::rgba(0.05, 0.85, 1.0, 0.78)?)?,
-                                GradientStop::new(0.45, Color::rgba(0.35, 0.38, 1.0, 0.72)?)?,
-                                GradientStop::new(1.0, Color::rgba(1.0, 0.18, 0.72, 0.68)?)?,
+                                GradientStop::new(
+                                    0.0,
+                                    Color::new(
+                                        Srgb,
+                                        [0.05_f32, 0.85, 1.0],
+                                        Opacity::<f32>::new(0.78)?,
+                                    ),
+                                )?,
+                                GradientStop::new(
+                                    0.45,
+                                    Color::new(
+                                        Srgb,
+                                        [0.35_f32, 0.38, 1.0],
+                                        Opacity::<f32>::new(0.72)?,
+                                    ),
+                                )?,
+                                GradientStop::new(
+                                    1.0,
+                                    Color::new(
+                                        Srgb,
+                                        [1.0_f32, 0.18, 0.72],
+                                        Opacity::<f32>::new(0.68)?,
+                                    ),
+                                )?,
                             ],
                             LinearSrgb,
                         )?,
@@ -99,15 +121,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             [
                                 GradientPoint::new(
                                     Point::new(width * 0.62, height * 0.16),
-                                    Color::rgba(1.0, 0.12, 0.42, 0.78)?,
+                                    Color::new(
+                                        Srgb,
+                                        [1.0_f32, 0.12, 0.42],
+                                        Opacity::<f32>::new(0.78)?,
+                                    ),
                                 ),
                                 GradientPoint::new(
                                     Point::new(width * 0.92, height * 0.72),
-                                    Color::rgba(0.15, 1.0, 0.58, 0.72)?,
+                                    Color::new(
+                                        Srgb,
+                                        [0.15_f32, 1.0, 0.58],
+                                        Opacity::<f32>::new(0.72)?,
+                                    ),
                                 ),
                                 GradientPoint::new(
                                     Point::new(width * 0.50, height * 0.88),
-                                    Color::rgba(0.20, 0.32, 1.0, 0.72)?,
+                                    Color::new(
+                                        Srgb,
+                                        [0.20_f32, 0.32, 1.0],
+                                        Opacity::<f32>::new(0.72)?,
+                                    ),
                                 ),
                             ],
                             LinearSrgb,
@@ -123,9 +157,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             Point::new(width * 0.22, height * 0.23),
                             height * 0.13,
                             [
-                                GradientStop::new(0.0, Color::rgba(1.0, 1.0, 1.0, 0.95)?)?,
-                                GradientStop::new(0.45, Color::rgba(0.1, 0.9, 1.0, 0.78)?)?,
-                                GradientStop::new(1.0, Color::rgba(0.08, 0.2, 0.8, 0.15)?)?,
+                                GradientStop::new(
+                                    0.0,
+                                    Color::new(
+                                        Srgb,
+                                        [1.0_f32, 1.0, 1.0],
+                                        Opacity::<f32>::new(0.95)?,
+                                    ),
+                                )?,
+                                GradientStop::new(
+                                    0.45,
+                                    Color::new(
+                                        Srgb,
+                                        [0.1_f32, 0.9, 1.0],
+                                        Opacity::<f32>::new(0.78)?,
+                                    ),
+                                )?,
+                                GradientStop::new(
+                                    1.0,
+                                    Color::new(
+                                        Srgb,
+                                        [0.08_f32, 0.2, 0.8],
+                                        Opacity::<f32>::new(0.15)?,
+                                    ),
+                                )?,
                             ],
                             LinearSrgb,
                         )?,
@@ -139,11 +194,46 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             Point::new(width * 0.76, height * 0.70),
                             -std::f32::consts::FRAC_PI_2,
                             [
-                                GradientStop::new(0.0, Color::rgba(1.0, 0.15, 0.25, 0.82)?)?,
-                                GradientStop::new(0.25, Color::rgba(1.0, 0.85, 0.12, 0.82)?)?,
-                                GradientStop::new(0.5, Color::rgba(0.1, 1.0, 0.55, 0.82)?)?,
-                                GradientStop::new(0.75, Color::rgba(0.2, 0.4, 1.0, 0.82)?)?,
-                                GradientStop::new(1.0, Color::rgba(1.0, 0.15, 0.25, 0.82)?)?,
+                                GradientStop::new(
+                                    0.0,
+                                    Color::new(
+                                        Srgb,
+                                        [1.0_f32, 0.15, 0.25],
+                                        Opacity::<f32>::new(0.82)?,
+                                    ),
+                                )?,
+                                GradientStop::new(
+                                    0.25,
+                                    Color::new(
+                                        Srgb,
+                                        [1.0_f32, 0.85, 0.12],
+                                        Opacity::<f32>::new(0.82)?,
+                                    ),
+                                )?,
+                                GradientStop::new(
+                                    0.5,
+                                    Color::new(
+                                        Srgb,
+                                        [0.1_f32, 1.0, 0.55],
+                                        Opacity::<f32>::new(0.82)?,
+                                    ),
+                                )?,
+                                GradientStop::new(
+                                    0.75,
+                                    Color::new(
+                                        Srgb,
+                                        [0.2_f32, 0.4, 1.0],
+                                        Opacity::<f32>::new(0.82)?,
+                                    ),
+                                )?,
+                                GradientStop::new(
+                                    1.0,
+                                    Color::new(
+                                        Srgb,
+                                        [1.0_f32, 0.15, 0.25],
+                                        Opacity::<f32>::new(0.82)?,
+                                    ),
+                                )?,
                             ],
                             LinearSrgb,
                         )?,
@@ -179,9 +269,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             ribbon_width * 0.5,
                             ColorRamp::new(
                                 [
-                                    GradientStop::new(0.0, Color::rgba(0.35, 0.10, 1.0, 0.48)?)?,
-                                    GradientStop::new(0.5, Color::rgba(0.15, 0.75, 1.0, 0.28)?)?,
-                                    GradientStop::new(1.0, Color::rgba(0.10, 1.0, 0.55, 0.48)?)?,
+                                    GradientStop::new(
+                                        0.0,
+                                        Color::new(
+                                            Srgb,
+                                            [0.35_f32, 0.10, 1.0],
+                                            Opacity::<f32>::new(0.48)?,
+                                        ),
+                                    )?,
+                                    GradientStop::new(
+                                        0.5,
+                                        Color::new(
+                                            Srgb,
+                                            [0.15_f32, 0.75, 1.0],
+                                            Opacity::<f32>::new(0.28)?,
+                                        ),
+                                    )?,
+                                    GradientStop::new(
+                                        1.0,
+                                        Color::new(
+                                            Srgb,
+                                            [0.10_f32, 1.0, 0.55],
+                                            Opacity::<f32>::new(0.48)?,
+                                        ),
+                                    )?,
                                 ],
                                 LinearSrgb,
                             )?,
@@ -198,9 +309,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             stroke_path.clone(),
                             ColorRamp::new(
                                 [
-                                    GradientStop::new(0.0, Color::rgba(1.0, 0.25, 0.72, 0.95)?)?,
-                                    GradientStop::new(0.45, Color::rgba(1.0, 0.90, 0.12, 0.95)?)?,
-                                    GradientStop::new(1.0, Color::rgba(0.10, 0.90, 1.0, 0.95)?)?,
+                                    GradientStop::new(
+                                        0.0,
+                                        Color::new(
+                                            Srgb,
+                                            [1.0_f32, 0.25, 0.72],
+                                            Opacity::<f32>::new(0.95)?,
+                                        ),
+                                    )?,
+                                    GradientStop::new(
+                                        0.45,
+                                        Color::new(
+                                            Srgb,
+                                            [1.0_f32, 0.90, 0.12],
+                                            Opacity::<f32>::new(0.95)?,
+                                        ),
+                                    )?,
+                                    GradientStop::new(
+                                        1.0,
+                                        Color::new(
+                                            Srgb,
+                                            [0.10_f32, 0.90, 1.0],
+                                            Opacity::<f32>::new(0.95)?,
+                                        ),
+                                    )?,
                                 ],
                                 LinearSrgb,
                             )?,
@@ -249,7 +381,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         CanvasImage::new(content, view, size.width.max(1), size.height.max(1))?,
                         Coverage::all(),
                     );
-                    let clear_color = Color::rgba(0.025, 0.035, 0.055, 1.0)?;
+                    let clear_color =
+                        Color::new(Srgb, [0.025_f32, 0.035, 0.055], Opacity::<f32>::ONE);
                     Ok(SurfaceContent::new(content, view, clear_color))
                 })()
                 .expect("the Canvas sample uses valid fixed drawing parameters")

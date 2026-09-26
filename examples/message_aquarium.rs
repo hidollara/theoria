@@ -14,6 +14,7 @@ use ::windows::Win32::{
     System::Threading::GetCurrentThreadId,
     UI::WindowsAndMessaging::{PostQuitMessage, PostThreadMessageW, WM_APP},
 };
+use theoria::color::{Opacity, Srgb};
 use theoria::{
     canvas::{Canvas, CanvasImage, CanvasView, Coverage},
     event::EventSink,
@@ -250,7 +251,11 @@ fn aquarium_content(
     } else {
         canvas
     };
-    SurfaceContent::new(canvas, view, theoria::color::Color::rgb8(5, 8, 15))
+    SurfaceContent::new(
+        canvas,
+        view,
+        theoria::color::Color::new(Srgb, [5_u8, 8, 15], Opacity::<u8>::ONE),
+    )
 }
 
 fn capture_request(

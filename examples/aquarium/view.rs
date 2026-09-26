@@ -1,5 +1,6 @@
 use std::time::{Duration, Instant};
 
+use theoria::color::{Opacity, Srgb};
 use theoria::{
     canvas::{Canvas, CanvasColor, Composite, Composition, Coverage},
     color::{Color, LinearSrgb},
@@ -87,7 +88,7 @@ pub fn render(
         let radius = 4.0 + (entry.observation.id % 7) as f32;
         canvas = canvas.composite(
             Canvas::draw(
-                Color::rgba8(base.0, base.1, base.2, alpha),
+                Color::new(Srgb, [base.0, base.1, base.2], Opacity::<u8>::from(alpha)),
                 Coverage::fill(rectangle(
                     x - radius,
                     y - radius,
@@ -105,7 +106,7 @@ pub fn render(
                 font,
                 "WIN32 MESSAGE AQUARIUM",
                 30.0,
-                Color::rgb8(231, 240, 255),
+                Color::new(Srgb, [231_u8, 240, 255], Opacity::<u8>::ONE),
                 margin,
                 8.0,
             ),
@@ -116,7 +117,7 @@ pub fn render(
                 font,
                 "Move, resize, scroll, or click. A click posts a thread message.",
                 18.0,
-                Color::rgb8(138, 157, 188),
+                Color::new(Srgb, [138_u8, 157, 188], Opacity::<u8>::ONE),
                 margin,
                 height - 42.0,
             ),
@@ -149,7 +150,7 @@ pub fn render(
                 font,
                 &details,
                 15.0,
-                Color::rgb8(180, 197, 224),
+                Color::new(Srgb, [180_u8, 197, 224], Opacity::<u8>::ONE),
                 margin,
                 55.0,
             ),
@@ -205,14 +206,14 @@ fn stage_rgb(stage: MessageStage) -> (u8, u8, u8) {
 
 fn stage_color(stage: MessageStage) -> CanvasColor {
     let (red, green, blue) = stage_rgb(stage);
-    Color::rgb8(red, green, blue).into()
+    Color::new(Srgb, [red, green, blue], Opacity::<u8>::ONE).into()
 }
 
 fn lane_background(stage: MessageStage) -> CanvasColor {
     match stage {
-        MessageStage::Queued => Color::rgba8(23, 92, 120, 64).into(),
-        MessageStage::Thread => Color::rgba8(111, 31, 98, 64).into(),
-        MessageStage::Window => Color::rgba8(112, 82, 18, 64).into(),
+        MessageStage::Queued => Color::new(Srgb, [23_u8, 92, 120], Opacity::<u8>::from(64)).into(),
+        MessageStage::Thread => Color::new(Srgb, [111_u8, 31, 98], Opacity::<u8>::from(64)).into(),
+        MessageStage::Window => Color::new(Srgb, [112_u8, 82, 18], Opacity::<u8>::from(64)).into(),
     }
 }
 

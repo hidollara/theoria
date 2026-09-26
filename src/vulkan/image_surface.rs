@@ -242,7 +242,7 @@ mod tests {
     use super::{ImageSurface, pixel_byte_len};
     use crate::{
         canvas::{Canvas, CanvasView, Composite, Composition, Coverage, ImageExtend, ImagePattern},
-        color::{Color, IccProfile, IccRenderingIntent, RgbColorSpace},
+        color::{Color, IccProfile, IccRenderingIntent, Opacity, RgbColorSpace, Srgb},
         geometry::Point,
         surface::{SurfaceContent, SurfaceSize},
     };
@@ -308,7 +308,10 @@ mod tests {
             1,
         )
         .unwrap();
-        let backdrop = Canvas::draw(Color::rgb8(32, 96, 180), Coverage::all());
+        let backdrop = Canvas::draw(
+            Color::new(Srgb, [32_u8, 96, 180], Opacity::<u8>::ONE),
+            Coverage::all(),
+        );
         let source = Canvas::draw(
             ImagePattern::new(cached).with_extend(ImageExtend::Clamp),
             Coverage::all(),
@@ -319,7 +322,7 @@ mod tests {
                 Composition::new(Composite::SourceOver, RgbColorSpace::LinearSrgb),
             ),
             view,
-            Color::rgba8(0, 0, 0, 0),
+            Color::new(Srgb, [0_u8, 0, 0], Opacity::<u8>::from(0)),
         );
         let expected = linear_srgb.render(&content).unwrap();
         let actual = linear_p3.render(&content).unwrap();
@@ -344,9 +347,12 @@ mod tests {
         .unwrap();
         let view = CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(1.0, 1.0)).unwrap();
         let content = SurfaceContent::new(
-            Canvas::draw(Color::rgb8(255, 0, 0), Coverage::all()),
+            Canvas::draw(
+                Color::new(Srgb, [255_u8, 0, 0], Opacity::<u8>::ONE),
+                Coverage::all(),
+            ),
             view,
-            Color::rgba8(0, 0, 0, 0),
+            Color::new(Srgb, [0_u8, 0, 0], Opacity::<u8>::from(0)),
         );
         let result = surface
             .render_icc(&content, profile, IccRenderingIntent::RelativeColorimetric)
@@ -405,7 +411,7 @@ mod tests {
                 Coverage::all(),
             ),
             view,
-            Color::rgba8(0, 0, 0, 0),
+            Color::new(Srgb, [0_u8, 0, 0], Opacity::<u8>::from(0)),
         );
         let rendered = surface.render(&content).unwrap();
         for channel in 0..3 {

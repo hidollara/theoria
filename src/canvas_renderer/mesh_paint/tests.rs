@@ -5,7 +5,7 @@ use crate::{
         MeshGradient, RadialGradient,
     },
     canvas_renderer::WorkingColor,
-    color::{Color, DisplayP3, LinearSrgb, Opacity},
+    color::{Color, DisplayP3, LinearSrgb, Opacity, Srgb},
     geometry::Point,
 };
 
@@ -15,8 +15,8 @@ fn lowered(color: impl Into<crate::canvas::CanvasColor>) -> TestWorkingColor {
 
 #[test]
 fn logical_colors_are_lowered_from_their_authored_rgb_profile() {
-    let srgb = lowered(Color::rgb(1.0, 0.0, 0.0).unwrap());
-    let display_p3 = lowered(Color::new(DisplayP3, [1.0, 0.0, 0.0], Opacity::<f32>::ONE).unwrap());
+    let srgb = lowered(Color::new(Srgb, [1.0_f32, 0.0, 0.0], Opacity::<f32>::ONE));
+    let display_p3 = lowered(Color::new(DisplayP3, [1.0, 0.0, 0.0], Opacity::<f32>::ONE));
 
     assert_ne!(display_p3, srgb);
     assert!(display_p3.components()[0] > srgb.components()[0]);
@@ -24,14 +24,14 @@ fn logical_colors_are_lowered_from_their_authored_rgb_profile() {
 
 #[test]
 fn linear_gradient_splits_triangles_at_stop_boundaries() {
-    let green = lowered(Color::rgb8(0, 255, 0));
+    let green = lowered(Color::new(Srgb, [0_u8, 255, 0], Opacity::<u8>::ONE));
     let gradient = LinearGradient::new(
         Point::new(0.0, 0.0),
         Point::new(10.0, 0.0),
         [
-            GradientStop::new(0.0, Color::rgb8(255, 0, 0)).unwrap(),
-            GradientStop::new(0.5, Color::rgb8(0, 255, 0)).unwrap(),
-            GradientStop::new(1.0, Color::rgb8(0, 0, 255)).unwrap(),
+            GradientStop::new(0.0, Color::new(Srgb, [255_u8, 0, 0], Opacity::<u8>::ONE)).unwrap(),
+            GradientStop::new(0.5, Color::new(Srgb, [0_u8, 255, 0], Opacity::<u8>::ONE)).unwrap(),
+            GradientStop::new(1.0, Color::new(Srgb, [0_u8, 0, 255], Opacity::<u8>::ONE)).unwrap(),
         ],
         LinearSrgb,
     )
@@ -69,13 +69,13 @@ fn linear_gradient_splits_triangles_at_stop_boundaries() {
 
 #[test]
 fn linear_gradient_clamps_colors_outside_its_axis() {
-    let red = lowered(Color::rgb8(255, 0, 0));
+    let red = lowered(Color::new(Srgb, [255_u8, 0, 0], Opacity::<u8>::ONE));
     let gradient = LinearGradient::new(
         Point::new(0.0, 0.0),
         Point::new(10.0, 0.0),
         [
-            GradientStop::new(0.2, Color::rgb8(255, 0, 0)).unwrap(),
-            GradientStop::new(0.8, Color::rgb8(0, 0, 255)).unwrap(),
+            GradientStop::new(0.2, Color::new(Srgb, [255_u8, 0, 0], Opacity::<u8>::ONE)).unwrap(),
+            GradientStop::new(0.8, Color::new(Srgb, [0_u8, 0, 255], Opacity::<u8>::ONE)).unwrap(),
         ],
         LinearSrgb,
     )
@@ -99,10 +99,14 @@ fn nonlinear_gradient_interpolation_is_resolved_before_gpu_interpolation() {
         Point::new(0.0, 0.0),
         Point::new(10.0, 0.0),
         [
-            GradientStop::new(0.0, Color::rgb8(0, 0, 0)).unwrap(),
-            GradientStop::new(1.0, Color::rgb8(255, 255, 255)).unwrap(),
+            GradientStop::new(0.0, Color::new(Srgb, [0_u8, 0, 0], Opacity::<u8>::ONE)).unwrap(),
+            GradientStop::new(
+                1.0,
+                Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE),
+            )
+            .unwrap(),
         ],
-        crate::color::Srgb,
+        Srgb,
     )
     .unwrap();
     let triangles = paint_triangle(
@@ -133,9 +137,9 @@ fn triangular_mesh_gradient_reproduces_its_vertex_colors() {
         Point::new(0.0, 10.0),
     ];
     let colors = [
-        Color::rgb8(255, 0, 0),
-        Color::rgb8(0, 255, 0),
-        Color::rgb8(0, 0, 255),
+        Color::new(Srgb, [255_u8, 0, 0], Opacity::<u8>::ONE),
+        Color::new(Srgb, [0_u8, 255, 0], Opacity::<u8>::ONE),
+        Color::new(Srgb, [0_u8, 0, 255], Opacity::<u8>::ONE),
     ];
     let gradient = MeshGradient::from_triangle(
         std::array::from_fn(|index| GradientPoint::new(positions[index], colors[index])),
@@ -158,9 +162,18 @@ fn triangular_mesh_gradient_reproduces_its_vertex_colors() {
 #[test]
 fn mesh_gradient_clips_painted_geometry_to_its_patch() {
     let patch = [
-        GradientPoint::new(Point::new(0.0, 0.0), Color::rgb8(255, 0, 0)),
-        GradientPoint::new(Point::new(4.0, 0.0), Color::rgb8(0, 255, 0)),
-        GradientPoint::new(Point::new(0.0, 4.0), Color::rgb8(0, 0, 255)),
+        GradientPoint::new(
+            Point::new(0.0, 0.0),
+            Color::new(Srgb, [255_u8, 0, 0], Opacity::<u8>::ONE),
+        ),
+        GradientPoint::new(
+            Point::new(4.0, 0.0),
+            Color::new(Srgb, [0_u8, 255, 0], Opacity::<u8>::ONE),
+        ),
+        GradientPoint::new(
+            Point::new(0.0, 4.0),
+            Color::new(Srgb, [0_u8, 0, 255], Opacity::<u8>::ONE),
+        ),
     ];
     let gradient = MeshGradient::from_triangle(patch, LinearSrgb).unwrap();
     let triangles = paint_triangle(
@@ -183,8 +196,8 @@ fn mesh_gradient_clips_painted_geometry_to_its_patch() {
 
 #[test]
 fn radial_gradient_samples_center_and_radius_colors() {
-    let red = Color::rgb8(255, 0, 0);
-    let blue = Color::rgb8(0, 0, 255);
+    let red = Color::new(Srgb, [255_u8, 0, 0], Opacity::<u8>::ONE);
+    let blue = Color::new(Srgb, [0_u8, 0, 255], Opacity::<u8>::ONE);
     let gradient = RadialGradient::new(
         Point::new(0.0, 0.0),
         10.0,
@@ -229,8 +242,8 @@ fn two_circle_radial_gradient_is_transparent_where_no_circle_reaches() {
         Point::new(10.0, 0.0),
         1.0,
         [
-            GradientStop::new(0.0, Color::rgb8(255, 0, 0)).unwrap(),
-            GradientStop::new(1.0, Color::rgb8(0, 0, 255)).unwrap(),
+            GradientStop::new(0.0, Color::new(Srgb, [255_u8, 0, 0], Opacity::<u8>::ONE)).unwrap(),
+            GradientStop::new(1.0, Color::new(Srgb, [0_u8, 0, 255], Opacity::<u8>::ONE)).unwrap(),
         ],
         LinearSrgb,
     )
@@ -260,8 +273,8 @@ fn coincident_radial_circles_paint_nothing() {
         Point::new(2.0, 3.0),
         4.0,
         [
-            GradientStop::new(0.0, Color::rgb8(255, 0, 0)).unwrap(),
-            GradientStop::new(1.0, Color::rgb8(0, 0, 255)).unwrap(),
+            GradientStop::new(0.0, Color::new(Srgb, [255_u8, 0, 0], Opacity::<u8>::ONE)).unwrap(),
+            GradientStop::new(1.0, Color::new(Srgb, [0_u8, 0, 255], Opacity::<u8>::ONE)).unwrap(),
         ],
         LinearSrgb,
     )
@@ -285,8 +298,8 @@ fn coincident_radial_circles_paint_nothing() {
 
 #[test]
 fn signed_radial_gradient_uses_only_nonnegative_radius_solutions() {
-    let red = Color::rgb8(255, 0, 0);
-    let blue = Color::rgb8(0, 0, 255);
+    let red = Color::new(Srgb, [255_u8, 0, 0], Opacity::<u8>::ONE);
+    let blue = Color::new(Srgb, [0_u8, 0, 255], Opacity::<u8>::ONE);
     let gradient = RadialGradient::between_circles(
         Point::new(0.0, 0.0),
         -1.0,
@@ -325,7 +338,7 @@ fn signed_radial_gradient_uses_only_nonnegative_radius_solutions() {
 
 #[test]
 fn negative_radial_endpoints_can_reach_a_positive_extended_cone() {
-    let red = Color::rgb8(255, 0, 0);
+    let red = Color::new(Srgb, [255_u8, 0, 0], Opacity::<u8>::ONE);
     let gradient = RadialGradient::between_circles(
         Point::new(0.0, 0.0),
         -1.0,
@@ -333,7 +346,7 @@ fn negative_radial_endpoints_can_reach_a_positive_extended_cone() {
         -2.0,
         [
             GradientStop::new(0.0, red).unwrap(),
-            GradientStop::new(1.0, Color::rgb8(0, 0, 255)).unwrap(),
+            GradientStop::new(1.0, Color::new(Srgb, [0_u8, 0, 255], Opacity::<u8>::ONE)).unwrap(),
         ],
         LinearSrgb,
     )
@@ -358,9 +371,9 @@ fn negative_radial_endpoints_can_reach_a_positive_extended_cone() {
 
 #[test]
 fn conic_gradient_uses_positive_parameter_angle() {
-    let red = Color::rgb8(255, 0, 0);
-    let green = Color::rgb8(0, 255, 0);
-    let blue = Color::rgb8(0, 0, 255);
+    let red = Color::new(Srgb, [255_u8, 0, 0], Opacity::<u8>::ONE);
+    let green = Color::new(Srgb, [0_u8, 255, 0], Opacity::<u8>::ONE);
+    let blue = Color::new(Srgb, [0_u8, 0, 255], Opacity::<u8>::ONE);
     let gradient = ConicGradient::new(
         Point::new(0.0, 0.0),
         0.0,
@@ -400,8 +413,8 @@ fn conic_gradient_uses_positive_parameter_angle() {
 
 #[test]
 fn partial_conic_gradient_pads_on_the_absolute_turn() {
-    let red = Color::rgb8(255, 0, 0);
-    let blue = Color::rgb8(0, 0, 255);
+    let red = Color::new(Srgb, [255_u8, 0, 0], Opacity::<u8>::ONE);
+    let blue = Color::new(Srgb, [0_u8, 0, 255], Opacity::<u8>::ONE);
     let gradient = ConicGradient::sweeping(
         Point::new(0.0, 0.0),
         std::f32::consts::FRAC_PI_2,
@@ -437,8 +450,8 @@ fn partial_conic_gradient_pads_on_the_absolute_turn() {
 
 #[test]
 fn coincident_conic_angles_form_a_pad_step() {
-    let red = Color::rgb8(255, 0, 0);
-    let blue = Color::rgb8(0, 0, 255);
+    let red = Color::new(Srgb, [255_u8, 0, 0], Opacity::<u8>::ONE);
+    let blue = Color::new(Srgb, [0_u8, 0, 255], Opacity::<u8>::ONE);
     let gradient = ConicGradient::sweeping(
         Point::new(0.0, 0.0),
         std::f32::consts::FRAC_PI_2,
@@ -482,8 +495,8 @@ fn coincident_repeating_conic_angles_paint_nothing() {
         0.0,
         0.0,
         [
-            GradientStop::new(0.0, Color::rgb8(255, 0, 0)).unwrap(),
-            GradientStop::new(1.0, Color::rgb8(0, 0, 255)).unwrap(),
+            GradientStop::new(0.0, Color::new(Srgb, [255_u8, 0, 0], Opacity::<u8>::ONE)).unwrap(),
+            GradientStop::new(1.0, Color::new(Srgb, [0_u8, 0, 255], Opacity::<u8>::ONE)).unwrap(),
         ],
         LinearSrgb,
     )

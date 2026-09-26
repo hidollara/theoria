@@ -1,5 +1,6 @@
 use std::f32::consts::PI;
 
+use theoria::color::{Opacity, Srgb};
 use theoria::{
     canvas::{Canvas, CanvasView, Composite, Composition, Coverage},
     color::{Color, LinearSrgb},
@@ -71,13 +72,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let canvas = context.create_computed(move |context| {
                     let count = *context.read(&controller_value);
                     let color = match count % 3 {
-                        0 => Color::rgb8(255, 188, 54),
-                        1 => Color::rgb8(83, 220, 255),
-                        _ => Color::rgb8(255, 103, 181),
+                        0 => Color::new(Srgb, [255_u8, 188, 54], Opacity::<u8>::ONE),
+                        1 => Color::new(Srgb, [83_u8, 220, 255], Opacity::<u8>::ONE),
+                        _ => Color::new(Srgb, [255_u8, 103, 181], Opacity::<u8>::ONE),
                     };
                     let fill = Canvas::draw(color, Coverage::fill(controller_star.clone()));
                     let outline = Canvas::draw(
-                        Color::rgb8(255, 246, 214),
+                        Color::new(Srgb, [255_u8, 246, 214], Opacity::<u8>::ONE),
                         Coverage::stroke(
                             controller_star.clone(),
                             StrokeStyle::new(7.0)
@@ -91,7 +92,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .push(format!("Shared count: {count}"))
                         .layout()
                         .expect("the counter text is valid")
-                        .to_canvas(Color::rgb8(232, 240, 255))
+                        .to_canvas(Color::new(Srgb, [232_u8, 240, 255], Opacity::<u8>::ONE))
                         .expect("the counter glyphs can be realized")
                         .expect("the counter contains drawable glyphs")
                         .transformed(Affine2::from_translation(Vector2::new(210.0, 390.0)));
@@ -122,7 +123,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .push("The other Window changed this value")
                         .layout()
                         .expect("the heading text is valid")
-                        .to_canvas(Color::rgb8(145, 168, 205))
+                        .to_canvas(Color::new(Srgb, [145_u8, 168, 205], Opacity::<u8>::ONE))
                         .expect("the heading glyphs can be realized")
                         .expect("the heading contains drawable glyphs")
                         .transformed(Affine2::from_translation(Vector2::new(90.0, 145.0)));
@@ -130,7 +131,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .push(count.to_string())
                         .layout()
                         .expect("the shared value text is valid")
-                        .to_canvas(Color::rgb8(90, 220, 255))
+                        .to_canvas(Color::new(Srgb, [90_u8, 220, 255], Opacity::<u8>::ONE))
                         .expect("the shared value glyphs can be realized")
                         .expect("the shared value contains drawable glyphs")
                         .transformed(Affine2::from_translation(Vector2::new(285.0, 300.0)));
@@ -144,9 +145,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .layout()
                         .expect("the lifecycle status text is valid")
                         .to_canvas(if controller_open {
-                            Color::rgb8(116, 221, 147)
+                            Color::new(Srgb, [116_u8, 221, 147], Opacity::<u8>::ONE)
                         } else {
-                            Color::rgb8(255, 188, 96)
+                            Color::new(Srgb, [255_u8, 188, 96], Opacity::<u8>::ONE)
                         })
                         .expect("the lifecycle status glyphs can be realized")
                         .expect("the lifecycle status contains drawable glyphs")
@@ -176,7 +177,11 @@ fn window_content(
         let height = size.height.max(1) as f32;
         let view = CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(width, height))
             .expect("a positive surface extent has a non-degenerate view");
-        SurfaceContent::new(canvas, view, Color::rgb8(6, 9, 14))
+        SurfaceContent::new(
+            canvas,
+            view,
+            Color::new(Srgb, [6_u8, 9, 14], Opacity::<u8>::ONE),
+        )
     })
 }
 

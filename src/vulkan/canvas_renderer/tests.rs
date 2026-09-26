@@ -8,13 +8,16 @@ use crate::canvas::{
 use crate::canvas_renderer::canvas_plan::{
     can_record_directly, collect_images, required_scratch_images,
 };
-use crate::color::{Color, LinearSrgb, Srgb};
+use crate::color::{Color, LinearSrgb, Opacity, Srgb};
 use crate::geometry::Point;
 use crate::image::Srgba8Image;
 use crate::transform::Projective2;
 
 fn sample_canvas() -> Canvas {
-    Canvas::draw(Color::rgb8(255, 255, 255), Coverage::all())
+    Canvas::draw(
+        Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE),
+        Coverage::all(),
+    )
 }
 
 #[test]
@@ -108,7 +111,10 @@ fn only_coverage_boundaries_reserve_independent_results() {
 
 #[test]
 fn non_source_over_composites_create_group_boundaries() {
-    let leaf = Canvas::draw(Color::rgb8(255, 255, 255), Coverage::all());
+    let leaf = Canvas::draw(
+        Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE),
+        Coverage::all(),
+    );
     let grouped = leaf
         .clone()
         .composite(leaf, Composition::new(Composite::SourceIn, LinearSrgb));
@@ -124,8 +130,14 @@ fn non_source_over_composites_create_group_boundaries() {
 
 #[test]
 fn destination_reading_blends_reserve_source_and_backdrop_images() {
-    let backdrop = Canvas::draw(Color::rgb8(64, 128, 255), Coverage::all());
-    let source = Canvas::draw(Color::rgb8(255, 128, 64), Coverage::all());
+    let backdrop = Canvas::draw(
+        Color::new(Srgb, [64_u8, 128, 255], Opacity::<u8>::ONE),
+        Coverage::all(),
+    );
+    let source = Canvas::draw(
+        Color::new(Srgb, [255_u8, 128, 64], Opacity::<u8>::ONE),
+        Coverage::all(),
+    );
     let blended = backdrop.composite(
         source,
         Composition::new(Composite::SourceOver, LinearSrgb)
@@ -138,8 +150,14 @@ fn destination_reading_blends_reserve_source_and_backdrop_images() {
 
 #[test]
 fn nonlinear_composition_uses_the_destination_reading_path() {
-    let backdrop = Canvas::draw(Color::rgb8(64, 128, 255), Coverage::all());
-    let source = Canvas::draw(Color::rgb8(255, 128, 64), Coverage::all());
+    let backdrop = Canvas::draw(
+        Color::new(Srgb, [64_u8, 128, 255], Opacity::<u8>::ONE),
+        Coverage::all(),
+    );
+    let source = Canvas::draw(
+        Color::new(Srgb, [255_u8, 128, 64], Opacity::<u8>::ONE),
+        Coverage::all(),
+    );
     let nonlinear = backdrop.clone().composite(
         source.clone(),
         Composition::new(Composite::SourceOver, Srgb),

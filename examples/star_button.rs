@@ -1,5 +1,6 @@
 use std::{cell::RefCell, f32::consts::PI, rc::Rc};
 
+use theoria::color::{Opacity, Srgb};
 use theoria::{
     canvas::{Canvas, CanvasView, Composite, Composition, Coverage},
     color::{Color, LinearSrgb},
@@ -179,13 +180,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let count = *context.read(&canvas_count);
                 let center = *context.read(&canvas_center);
                 let star_color = match count % 3 {
-                    0 => Color::rgb8(255, 188, 54),
-                    1 => Color::rgb8(83, 220, 255),
-                    _ => Color::rgb8(255, 103, 181),
+                    0 => Color::new(Srgb, [255_u8, 188, 54], Opacity::<u8>::ONE),
+                    1 => Color::new(Srgb, [83_u8, 220, 255], Opacity::<u8>::ONE),
+                    _ => Color::new(Srgb, [255_u8, 103, 181], Opacity::<u8>::ONE),
                 };
                 let fill = Canvas::draw(star_color, Coverage::fill(star.clone()));
                 let outline = Canvas::draw(
-                    Color::rgb8(255, 246, 214),
+                    Color::new(Srgb, [255_u8, 246, 214], Opacity::<u8>::ONE),
                     Coverage::stroke(
                         star.clone(),
                         StrokeStyle::new(8.0)
@@ -200,7 +201,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .push(format!("Clicks: {count}"))
                     .layout()
                     .expect("the counter text is valid")
-                    .to_canvas(Color::rgb8(235, 242, 255))
+                    .to_canvas(Color::new(Srgb, [235_u8, 242, 255], Opacity::<u8>::ONE))
                     .expect("the counter glyphs can be realized")
                     .expect("the counter contains drawable glyphs")
                     .transformed(Affine2::from_translation(Vector2::new(385.0, 470.0)));
@@ -208,7 +209,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .push("Click or drag the star")
                     .layout()
                     .expect("the hint text is valid")
-                    .to_canvas(Color::rgb8(150, 167, 198))
+                    .to_canvas(Color::new(Srgb, [150_u8, 167, 198], Opacity::<u8>::ONE))
                     .expect("the hint glyphs can be realized")
                     .expect("the hint contains drawable glyphs")
                     .transformed(Affine2::from_translation(Vector2::new(375.0, 535.0)));
@@ -227,7 +228,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let view =
                     CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(width, height))
                         .expect("a positive surface extent has a non-degenerate view");
-                SurfaceContent::new(canvas, view, Color::rgb8(6, 9, 14))
+                SurfaceContent::new(
+                    canvas,
+                    view,
+                    Color::new(Srgb, [6_u8, 9, 14], Opacity::<u8>::ONE),
+                )
             })
         },
     )?;

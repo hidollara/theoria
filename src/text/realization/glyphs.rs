@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use crate::{
     canvas::{Canvas, ColorField, Coverage},
-    color::Color,
+    color::{Color, Opacity, Srgb},
     font::{GlyphPresentationError, GlyphRealizationRequest, RealizedGlyph},
     math::Vector2,
     transform::Affine2,
@@ -64,8 +64,11 @@ impl LayoutRun {
             match self.font.glyph_ref(positioned.glyph_id).outline() {
                 RealizedGlyph::Outline(path) => {
                     let placement = glyph_placement(scale, pen + positioned.offset);
-                    let glyph_mask = Canvas::draw(Color::rgb8(255, 255, 255), Coverage::fill(path))
-                        .transformed(placement);
+                    let glyph_mask = Canvas::draw(
+                        Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE),
+                        Coverage::fill(path),
+                    )
+                    .transformed(placement);
                     mask = overlay(mask, Some(glyph_mask));
                 }
                 RealizedGlyph::Empty => {}

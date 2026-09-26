@@ -1,5 +1,6 @@
 use std::f32::consts::TAU;
 
+use theoria::color::{Opacity, Srgb};
 use theoria::{
     canvas::{Canvas, CanvasView, Composite, Composition, Coverage},
     color::{Color, LinearSrgb},
@@ -72,7 +73,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .then(Affine2::from_translation(center));
 
                 let glow = Canvas::draw(
-                    Color::rgba(0.14, 0.68, 1.0, 0.20).expect("the sample color is valid"),
+                    Color::new(
+                        Srgb,
+                        [0.14_f32, 0.68, 1.0],
+                        Opacity::<f32>::new(0.20).expect("the sample opacity is valid"),
+                    ),
                     Coverage::stroke(
                         star.clone(),
                         StrokeStyle::new(30.0)
@@ -80,9 +85,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             .with_join(LineJoin::Round),
                     ),
                 );
-                let fill = Canvas::draw(Color::rgb8(255, 184, 48), Coverage::fill(star.clone()));
+                let fill = Canvas::draw(
+                    Color::new(Srgb, [255_u8, 184, 48], Opacity::<u8>::ONE),
+                    Coverage::fill(star.clone()),
+                );
                 let outline = Canvas::draw(
-                    Color::rgb8(255, 247, 210),
+                    Color::new(Srgb, [255_u8, 247, 210], Opacity::<u8>::ONE),
                     Coverage::stroke(
                         star.clone(),
                         StrokeStyle::new(7.0)
@@ -97,7 +105,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let view =
                     CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(width, height))
                         .expect("a positive surface extent has a non-degenerate view");
-                SurfaceContent::new(canvas, view, Color::rgb8(7, 10, 18))
+                SurfaceContent::new(
+                    canvas,
+                    view,
+                    Color::new(Srgb, [7_u8, 10, 18], Opacity::<u8>::ONE),
+                )
             })
         },
     )?;

@@ -9,7 +9,7 @@ use crate::canvas::CanvasColor;
 use crate::canvas_renderer::{WorkingColor, color_space};
 
 #[cfg(test)]
-use crate::color::Color;
+use crate::color::{Color, Opacity, Srgb};
 
 /// Vulkan Canvas working color in premultiplied renderer-selected RGB coordinates.
 ///
@@ -87,7 +87,11 @@ mod tests {
 
     #[test]
     fn lowering_associates_linear_rgb_with_alpha() {
-        let lowered = PremultipliedWorkingRgba::from_color(Color::rgba8(255, 128, 64, 128));
+        let lowered = PremultipliedWorkingRgba::from_color(Color::new(
+            Srgb,
+            [255_u8, 128, 64],
+            Opacity::<u8>::from(128),
+        ));
         let [red, green, blue, alpha] = lowered.components();
 
         assert_eq!(alpha, 128.0 / 255.0);
@@ -98,8 +102,12 @@ mod tests {
 
     #[test]
     fn lowering_decodes_srgb_into_the_vulkan_working_space() {
-        let [red, green, blue, alpha] =
-            PremultipliedWorkingRgba::from_color(Color::rgb(0.5, 0.5, 0.5).unwrap()).components();
+        let [red, green, blue, alpha] = PremultipliedWorkingRgba::from_color(Color::new(
+            Srgb,
+            [0.5_f32, 0.5, 0.5],
+            Opacity::<f32>::ONE,
+        ))
+        .components();
 
         for component in [red, green, blue] {
             assert!((component - 0.214_041_14).abs() < 0.000_001);
@@ -110,7 +118,11 @@ mod tests {
     #[test]
     fn interpolation_operates_on_associated_components() {
         let transparent = PremultipliedWorkingRgba::TRANSPARENT;
-        let opaque = PremultipliedWorkingRgba::from_color(Color::rgb8(255, 0, 0));
+        let opaque = PremultipliedWorkingRgba::from_color(Color::new(
+            Srgb,
+            [255_u8, 0, 0],
+            Opacity::<u8>::ONE,
+        ));
 
         assert_eq!(
             transparent
