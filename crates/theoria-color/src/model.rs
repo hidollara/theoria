@@ -1,12 +1,10 @@
 mod cmyk;
-mod device_n;
 mod lab;
 mod rgb;
 mod xyz;
 mod ycbcr;
 
 pub use cmyk::Cmyk;
-pub use device_n::DeviceN;
 pub use lab::Lab;
 pub use rgb::Rgb;
 pub use xyz::Xyz;
@@ -36,8 +34,6 @@ mod tests {
     fn models_accept_whole_coordinate_representations() {
         accepts::<Rgb, [u8; 3]>();
         accepts::<Cmyk, [f32; 4]>();
-        accepts::<DeviceN<7>, [f64; 7]>();
         assert_eq!(Rgb::COMPONENTS, 3);
-        assert_eq!(DeviceN::<7>::COMPONENTS, 7);
     }
 }

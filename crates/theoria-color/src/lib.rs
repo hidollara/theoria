@@ -19,7 +19,7 @@ pub use color_transform::{ColorTransform, ColorTransformError};
 pub use connection::XyzD50Profile;
 pub use icc::{IccPcs, IccTransfer, IccTransferDirection, IccTransferError};
 pub use icc_profile::{IccProfile, IccProfileError, IccRenderingIntent};
-pub use model::{Cmyk, ColorCoordinates, ColorModel, DeviceN, Lab, Rgb, Xyz, Ycbcr};
+pub use model::{Cmyk, ColorCoordinates, ColorModel, Lab, Rgb, Xyz, Ycbcr};
 pub use profile::{
     ColorProfile, ColorSpaceKey, DisplayP3, LabD50, LinearDisplayP3, LinearSrgb, MatrixRgbProfile,
     RgbColorSpace, Srgb, XyzD50, XyzD65,
