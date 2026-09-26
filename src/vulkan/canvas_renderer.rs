@@ -89,7 +89,9 @@ impl CanvasRenderer {
     ) -> Result<Arc<VulkanImage>> {
         let prepared = prepare_colors(canvas)?;
         let extent = vk::Extent2D { width, height };
-        let format = vk::Format::R8G8B8A8_SRGB;
+        // A CanvasImage is an intermediate result, not an output image. Keep
+        // it in the same linear working format as the renderer's scratch images.
+        let format = self.working_format();
         self.gpu.ensure_image_cache(&self.device)?;
         let backing = self
             .gpu
@@ -219,14 +221,7 @@ impl CanvasRenderer {
             )
             .into());
         }
-        let working_format = if self
-            .device
-            .supports_canvas_working_format(vk::Format::R16G16B16A16_SFLOAT)
-        {
-            vk::Format::R16G16B16A16_SFLOAT
-        } else {
-            vk::Format::R8G8B8A8_UNORM
-        };
+        let working_format = self.working_format();
         let sample_count = preferred_sample_count(&self.device, working_format);
         let target_region = target_region(viewport, extent);
         self.gpu.ensure_image_cache(&self.device)?;
@@ -291,6 +286,17 @@ impl CanvasRenderer {
         );
         recorder.record(canvas, image_view, clear_color, present_pipeline);
         Ok(())
+    }
+
+    fn working_format(&self) -> vk::Format {
+        if self
+            .device
+            .supports_canvas_working_format(vk::Format::R16G16B16A16_SFLOAT)
+        {
+            vk::Format::R16G16B16A16_SFLOAT
+        } else {
+            vk::Format::R8G8B8A8_UNORM
+        }
     }
 }
 
