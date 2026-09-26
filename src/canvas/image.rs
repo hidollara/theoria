@@ -252,7 +252,7 @@ impl From<IccRasterImage> for Image {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::canvas_renderer::raster::convert_icc8_to_rgba8;
+    use crate::canvas_renderer::raster::convert_icc8_to_linear_rgba16;
 
     #[test]
     fn icc_image_preserves_samples_until_renderer_conversion() {
@@ -281,11 +281,19 @@ mod tests {
             panic!("ICC samples were replaced before renderer conversion")
         };
         assert_eq!(pixels, source.as_ref());
-        let converted = convert_icc8_to_rgba8(1, pixels, profile, intent, has_alpha).unwrap();
-        for (actual, expected) in converted.samples()[..3].iter().zip([64, 128, 192]) {
-            assert!(actual.abs_diff(expected) <= 2);
+        let converted =
+            convert_icc8_to_linear_rgba16(1, pixels, profile, intent, has_alpha).unwrap();
+        let expected = crate::color::convert_rgb(
+            [64.0 / 255.0, 128.0 / 255.0, 192.0 / 255.0],
+            RgbColorSpace::Srgb,
+            RgbColorSpace::LinearSrgb,
+        );
+        for (actual, expected) in converted.samples()[..3].iter().zip(expected) {
+            assert!((half::f16::from_bits(*actual).to_f32() - expected).abs() < 0.02);
         }
-        assert_eq!(converted.samples()[3], 77);
+        assert!(
+            (half::f16::from_bits(converted.samples()[3]).to_f32() - 77.0 / 255.0).abs() < 0.002
+        );
     }
 
     #[test]

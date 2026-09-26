@@ -1,21 +1,25 @@
+use std::io;
+
+use half::f16;
+
 use crate::{
     color::{ColorTransform, IccProfile, IccRenderingIntent, RgbColorSpace},
     image::RasterPlane,
 };
 
-/// Converts ICC device samples at the renderer boundary. The returned plane
-/// uses encoded sRGB coordinates and straight alpha for the existing upload
-/// path; the source image remains in its original ICC representation.
-pub(crate) fn convert_icc8_to_rgba8(
+/// Converts ICC device samples at the renderer boundary to straight-alpha
+/// linear-sRGB half floats. The source retains its device samples and profile.
+/// Unlike the old RGBA8 upload path, this does not clamp out-of-gamut colors.
+pub(crate) fn convert_icc8_to_linear_rgba16(
     width: u32,
     pixels: &[u8],
     profile: &IccProfile,
     intent: IccRenderingIntent,
     has_alpha: bool,
-) -> Result<RasterPlane<u8>, Box<dyn std::error::Error>> {
+) -> Result<RasterPlane<u16>, Box<dyn std::error::Error>> {
     let to_pcs = profile.to_pcs(intent)?;
-    let to_srgb = ColorTransform::pcs_to_rgb(profile.pcs(), RgbColorSpace::Srgb)?;
-    let transfer = to_pcs.then(&to_srgb)?;
+    let to_working = ColorTransform::pcs_to_rgb(profile.pcs(), RgbColorSpace::LinearSrgb)?;
+    let transfer = to_pcs.then(&to_working)?;
     let channels = profile.device_channels();
     let mut output = Vec::with_capacity(pixels.len() / (channels + usize::from(has_alpha)) * 4);
     for pixel in pixels.chunks_exact(channels + usize::from(has_alpha)) {
@@ -25,9 +29,22 @@ pub(crate) fn convert_icc8_to_rgba8(
             .collect();
         let rgb = transfer.transfer().evaluate(&coordinates)?;
         for &sample in &rgb[..3] {
-            output.push((sample.clamp(0.0, 1.0) * 255.0).round() as u8);
+            let sample = sample as f32;
+            if !sample.is_finite() || sample.abs() > f32::from(f16::MAX) {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "ICC color is outside the finite RGBA16F upload range",
+                )
+                .into());
+            }
+            output.push(f16::from_f32(sample).to_bits());
         }
-        output.push(if has_alpha { pixel[channels] } else { u8::MAX });
+        let alpha = if has_alpha {
+            f32::from(pixel[channels]) / 255.0
+        } else {
+            1.0
+        };
+        output.push(f16::from_f32(alpha).to_bits());
     }
     Ok(RasterPlane::new(usize::try_from(width)? * 4, output))
 }
@@ -61,6 +78,25 @@ pub(crate) fn expand_rgb8_to_rgba8(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn icc_upload_keeps_out_of_srgb_gamut_coordinates() {
+        let profile =
+            IccProfile::from_bytes(include_bytes!("../color/fixtures/DisplayP3-v4.icc")).unwrap();
+        let converted = convert_icc8_to_linear_rgba16(
+            1,
+            &[255, 0, 0],
+            &profile,
+            IccRenderingIntent::RelativeColorimetric,
+            false,
+        )
+        .unwrap();
+        let rgba: [f32; 4] =
+            std::array::from_fn(|index| f16::from_bits(converted.samples()[index]).to_f32());
+        assert!(rgba[0] > 1.0, "red was clipped: {}", rgba[0]);
+        assert!(rgba[1] < 0.0, "green was clipped: {}", rgba[1]);
+        assert_eq!(rgba[3], 1.0);
+    }
 
     #[test]
     fn rgb_expansion_discards_row_padding_and_supplies_opaque_alpha() {

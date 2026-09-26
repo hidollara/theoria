@@ -79,18 +79,28 @@ impl RenderDevice {
     }
 
     pub(crate) fn supports_canvas_working_format(&self, format: vk::Format) -> bool {
-        let features = unsafe {
-            self.0
-                .instance
-                .get_physical_device_format_properties(self.0.physical_device, format)
-                .optimal_tiling_features
-        };
-        features.contains(
+        self.format_features(format).contains(
             vk::FormatFeatureFlags::COLOR_ATTACHMENT
                 | vk::FormatFeatureFlags::COLOR_ATTACHMENT_BLEND
                 | vk::FormatFeatureFlags::SAMPLED_IMAGE
                 | vk::FormatFeatureFlags::SAMPLED_IMAGE_FILTER_LINEAR,
         )
+    }
+
+    pub(crate) fn supports_filterable_sampled_format(&self, format: vk::Format) -> bool {
+        self.format_features(format).contains(
+            vk::FormatFeatureFlags::SAMPLED_IMAGE
+                | vk::FormatFeatureFlags::SAMPLED_IMAGE_FILTER_LINEAR,
+        )
+    }
+
+    fn format_features(&self, format: vk::Format) -> vk::FormatFeatureFlags {
+        unsafe {
+            self.0
+                .instance
+                .get_physical_device_format_properties(self.0.physical_device, format)
+                .optimal_tiling_features
+        }
     }
 
     pub(crate) fn find_memory_type(

@@ -21,13 +21,30 @@ pub(super) struct GpuImage {
 enum UploadPlane<'a> {
     Borrowed(&'a crate::image::RasterPlane<u8>),
     Expanded(crate::image::RasterPlane<u8>),
+    Linear16(crate::image::RasterPlane<u16>),
 }
 
 impl UploadPlane<'_> {
-    fn as_ref(&self) -> &crate::image::RasterPlane<u8> {
+    fn bytes(&self) -> &[u8] {
         match self {
-            Self::Borrowed(plane) => plane,
-            Self::Expanded(plane) => plane,
+            Self::Borrowed(plane) => plane.samples(),
+            Self::Expanded(plane) => plane.samples(),
+            Self::Linear16(plane) => bytemuck::cast_slice(plane.samples()),
+        }
+    }
+
+    fn row_stride_bytes(&self) -> usize {
+        match self {
+            Self::Borrowed(plane) => plane.row_stride(),
+            Self::Expanded(plane) => plane.row_stride(),
+            Self::Linear16(plane) => plane.row_stride() * 2,
+        }
+    }
+
+    fn format(&self) -> wgpu::TextureFormat {
+        match self {
+            Self::Borrowed(_) | Self::Expanded(_) => wgpu::TextureFormat::Rgba8Unorm,
+            Self::Linear16(_) => wgpu::TextureFormat::Rgba16Float,
         }
     }
 }
@@ -63,14 +80,16 @@ impl ImageCache {
                 intent,
                 has_alpha,
             } => (
-                UploadPlane::Expanded(crate::canvas_renderer::raster::convert_icc8_to_rgba8(
-                    image.width(),
-                    pixels,
-                    profile,
-                    intent,
-                    has_alpha,
-                )?),
-                RgbColorSpace::Srgb,
+                UploadPlane::Linear16(
+                    crate::canvas_renderer::raster::convert_icc8_to_linear_rgba16(
+                        image.width(),
+                        pixels,
+                        profile,
+                        intent,
+                        has_alpha,
+                    )?,
+                ),
+                RgbColorSpace::LinearSrgb,
                 false,
             ),
             RasterImageView::Rgb8 { plane, color_space } => {
@@ -91,7 +110,6 @@ impl ImageCache {
                 alpha == AlphaAssociation::Premultiplied,
             ),
         };
-        let plane = plane.as_ref();
         let size = extent(image.width(), image.height());
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("theoria WebGPU RGBA8 image"),
@@ -99,7 +117,7 @@ impl ImageCache {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
+            format: plane.format(),
             usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
@@ -110,10 +128,10 @@ impl ImageCache {
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
-            plane.samples(),
+            plane.bytes(),
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
-                bytes_per_row: Some(u32::try_from(plane.row_stride()).unwrap()),
+                bytes_per_row: Some(u32::try_from(plane.row_stride_bytes()).unwrap()),
                 rows_per_image: Some(image.height()),
             },
             size,

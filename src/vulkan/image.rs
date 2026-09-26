@@ -20,7 +20,7 @@ mod upload;
 use descriptors::ImageDescriptors;
 pub(super) use descriptors::{GpuImage, SampledImageBinding};
 pub(super) use storage::VulkanImage;
-use upload::upload_rgba8;
+use upload::{upload_rgba8, upload_rgba16f};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -120,7 +120,13 @@ impl ImageCache {
                 intent,
                 has_alpha,
             } => {
-                let plane = crate::canvas_renderer::raster::convert_icc8_to_rgba8(
+                if !self
+                    .device
+                    .supports_filterable_sampled_format(vk::Format::R16G16B16A16_SFLOAT)
+                {
+                    return Err("ICC image sampling requires filterable RGBA16F support".into());
+                }
+                let plane = crate::canvas_renderer::raster::convert_icc8_to_linear_rgba16(
                     source.width(),
                     pixels,
                     profile,
@@ -128,11 +134,11 @@ impl ImageCache {
                     has_alpha,
                 )?;
                 let backing =
-                    upload_rgba8(self.device.clone(), source.width(), source.height(), &plane)?;
+                    upload_rgba16f(self.device.clone(), source.width(), source.height(), &plane)?;
                 self.descriptors.bind_backing(
                     backing,
                     RgbAlphaAssociation::Straight,
-                    crate::color::RgbColorSpace::Srgb,
+                    crate::color::RgbColorSpace::LinearSrgb,
                 )
             }
             RasterImageView::Rgb8 { plane, color_space } => {

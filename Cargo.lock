@@ -1330,6 +1330,7 @@ dependencies = [
  "bytemuck",
  "flate2",
  "font-test-data",
+ "half",
  "harfrust 0.13.2",
  "icu_locale_core",
  "icu_properties",

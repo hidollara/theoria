@@ -977,6 +977,28 @@ mod tests {
         }
     }
 
+    #[test]
+    fn icc_raster_keeps_out_of_srgb_gamut_values_through_upload() {
+        let profile =
+            IccProfile::from_bytes(include_bytes!("../color/fixtures/DisplayP3-v4.icc")).unwrap();
+        let image = crate::canvas::Image::from_icc_u8(
+            1,
+            1,
+            vec![255, 0, 0],
+            profile,
+            IccRenderingIntent::RelativeColorimetric,
+            false,
+        )
+        .unwrap();
+        let canvas = Canvas::draw(image, Coverage::all());
+        if let Some(pixel) = render_pixel_bytes_in(&canvas, wgpu::TextureFormat::Rgba16Float, None)
+        {
+            let red =
+                half::f16::from_bits(u16::from_le_bytes(pixel[..2].try_into().unwrap())).to_f32();
+            assert!(red > 1.0, "ICC raster red was clipped during upload: {red}");
+        }
+    }
+
     fn render_pixel(canvas: &Canvas) -> Option<[u8; 4]> {
         render_pixel_in(canvas, wgpu::TextureFormat::Rgba8UnormSrgb, None)
     }

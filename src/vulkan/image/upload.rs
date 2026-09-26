@@ -1,4 +1,4 @@
-//! Upload of CPU RGBA8 pixels into device-local Vulkan images.
+//! Upload of CPU RGBA pixels into device-local Vulkan images.
 
 use std::{error::Error, sync::Arc};
 
@@ -22,7 +22,43 @@ pub(super) fn upload_rgba8(
     height: u32,
     plane: &RasterPlane<u8>,
 ) -> Result<Arc<VulkanImage>> {
-    let pixels = plane.samples();
+    upload_rgba(
+        device,
+        width,
+        height,
+        plane.samples(),
+        plane.row_stride(),
+        4,
+        vk::Format::R8G8B8A8_UNORM,
+    )
+}
+
+pub(super) fn upload_rgba16f(
+    device: RenderDevice,
+    width: u32,
+    height: u32,
+    plane: &RasterPlane<u16>,
+) -> Result<Arc<VulkanImage>> {
+    upload_rgba(
+        device,
+        width,
+        height,
+        bytemuck::cast_slice(plane.samples()),
+        plane.row_stride() * 2,
+        8,
+        vk::Format::R16G16B16A16_SFLOAT,
+    )
+}
+
+fn upload_rgba(
+    device: RenderDevice,
+    width: u32,
+    height: u32,
+    pixels: &[u8],
+    row_stride: usize,
+    bytes_per_pixel: usize,
+    format: vk::Format,
+) -> Result<Arc<VulkanImage>> {
     let staging = HostBuffer::new(
         device.clone(),
         pixels.len() as vk::DeviceSize,
@@ -35,7 +71,7 @@ pub(super) fn upload_rgba8(
         device.clone(),
         // Preserve stored coordinates exactly. Transfer decoding happens in
         // the image shader after straight/premultiplied alpha is interpreted.
-        vk::Format::R8G8B8A8_UNORM,
+        format,
         extent,
         vk::SampleCountFlags::TYPE_1,
         vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
@@ -56,7 +92,7 @@ pub(super) fn upload_rgba8(
             vk::AccessFlags2::TRANSFER_WRITE,
         );
         let region = vk::BufferImageCopy::default()
-            .buffer_row_length(u32::try_from(plane.row_stride() / 4)?)
+            .buffer_row_length(u32::try_from(row_stride / bytes_per_pixel)?)
             .image_subresource(
                 vk::ImageSubresourceLayers::default()
                     .aspect_mask(vk::ImageAspectFlags::COLOR)
