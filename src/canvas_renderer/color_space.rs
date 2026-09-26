@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::{
     canvas::{CanvasColor, CanvasIccColorError, CanvasProfile, Coordinates},
     color::{
@@ -6,18 +8,41 @@ use crate::{
     },
 };
 
-impl CanvasColor {
-    /// Performs fallible ICC lowering once before a renderer records commands.
-    /// Clones of a Canvas color share the prepared coordinates, while the
-    /// original profile and device coordinates remain available on the Canvas.
-    pub(crate) fn prepare_linear_srgb(&self) -> Result<(), CanvasIccColorError> {
-        self.try_straight_rgba_in(LinearSrgb.into()).map(|_| ())
+/// Renderer-owned conversions prepared before commands are recorded.
+///
+/// Keys identify colors within the borrowed, immutable Canvas for one render.
+/// The Canvas stays alive and unmoved until this cache is discarded.
+#[derive(Default)]
+pub(crate) struct PreparedColors {
+    premultiplied_linear_srgb: HashMap<usize, [f32; 4]>,
+}
+
+impl PreparedColors {
+    pub(crate) fn prepare(&mut self, color: &CanvasColor) -> Result<(), CanvasIccColorError> {
+        let key = color as *const CanvasColor as usize;
+        if let std::collections::hash_map::Entry::Vacant(entry) =
+            self.premultiplied_linear_srgb.entry(key)
+        {
+            let [red, green, blue, alpha] = color.try_straight_rgba_in(LinearSrgb.into())?;
+            entry.insert([red * alpha, green * alpha, blue * alpha, alpha]);
+        }
+        Ok(())
     }
 
+    pub(crate) fn lower(&self, color: &CanvasColor) -> [f32; 4] {
+        let key = color as *const CanvasColor as usize;
+        self.premultiplied_linear_srgb
+            .get(&key)
+            .copied()
+            .unwrap_or_else(|| lower_straight_color(color))
+    }
+}
+
+impl CanvasColor {
     /// Resolves the declared source color into a renderer-selected RGB space.
     pub(crate) fn straight_rgba_in(&self, space: RgbColorSpace) -> [f32; 4] {
         self.try_straight_rgba_in(space)
-            .expect("ICC colors must be prepared before infallible rendering")
+            .expect("this caller requires an ICC conversion known to succeed")
     }
 
     pub(crate) fn try_straight_rgba_in(
@@ -39,25 +64,11 @@ impl CanvasColor {
                 let xyz = LabD50.coordinates_to_xyz_d50(&self.coordinates.as_f64());
                 space.xyz_d50_to_coordinates(xyz).map(|value| value as f32)
             }
-            CanvasProfile::Icc {
-                profile,
-                intent,
-                prepared_linear_srgb,
-            } => {
+            CanvasProfile::Icc { profile, intent } => {
                 let Coordinates::Dynamic(coordinates) = &self.coordinates else {
                     unreachable!("ICC profile always stores dynamic device coordinates")
                 };
-                if space == RgbColorSpace::LinearSrgb {
-                    if let Some(cached) = prepared_linear_srgb.get() {
-                        *cached
-                    } else {
-                        let converted = convert_icc_color(profile, *intent, coordinates, space)?;
-                        let _ = prepared_linear_srgb.set(converted);
-                        converted
-                    }
-                } else {
-                    convert_icc_color(profile, *intent, coordinates, space)?
-                }
+                convert_icc_color(profile, *intent, coordinates, space)?
             }
         };
         Ok([rgb[0], rgb[1], rgb[2], self.opacity.as_f32()])
@@ -141,6 +152,59 @@ fn convert_premultiplied(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_solid_color_is_lowered_once_per_render() {
+        let color = CanvasColor::from(crate::color::Color::rgb8(255, 0, 0));
+        let mut prepared = PreparedColors::default();
+        prepared.prepare(&color).unwrap();
+        prepared.prepare(&color).unwrap();
+
+        assert_eq!(prepared.premultiplied_linear_srgb.len(), 1);
+        assert_eq!(prepared.lower(&color), [1.0, 0.0, 0.0, 1.0]);
+    }
+
+    #[test]
+    fn icc_transfer_failure_is_reported_during_renderer_preparation() {
+        let mut raw = moxcms::ColorProfile::new_srgb();
+        raw.red_trc = None;
+        raw.green_trc = None;
+        raw.blue_trc = None;
+        let profile = crate::color::IccProfile::from_bytes(&raw.encode().unwrap()).unwrap();
+        let color = CanvasColor::from_icc(
+            &profile,
+            vec![0.25, 0.5, 0.75],
+            crate::color::UnitF32::ONE,
+            crate::color::IccRenderingIntent::RelativeColorimetric,
+        )
+        .unwrap();
+
+        let mut prepared = PreparedColors::default();
+        assert!(prepared.prepare(&color).is_err());
+    }
+
+    #[test]
+    fn preparing_an_icc_color_does_not_rewrite_authored_data() {
+        let profile =
+            crate::color::IccProfile::from_bytes(include_bytes!("../color/fixtures/sRGB-v4.icc"))
+                .unwrap();
+        let color = CanvasColor::from_icc(
+            &profile,
+            vec![0.25, 0.5, 0.75],
+            crate::color::UnitF32::ONE,
+            crate::color::IccRenderingIntent::RelativeColorimetric,
+        )
+        .unwrap();
+        let original = color.clone();
+        let mut prepared = PreparedColors::default();
+        prepared.prepare(&color).unwrap();
+        assert_eq!(color, original);
+        assert!(prepared.lower(&color)[0] > 0.0);
+        assert_eq!(
+            color.coordinates,
+            Coordinates::Dynamic(vec![0.25, 0.5, 0.75].into())
+        );
+    }
 
     #[test]
     fn interpolation_is_performed_in_the_selected_space() {

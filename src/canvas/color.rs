@@ -1,8 +1,4 @@
-use std::{
-    error::Error,
-    fmt,
-    sync::{Arc, OnceLock},
-};
+use std::{error::Error, fmt, sync::Arc};
 
 use crate::color::{
     Color, ColorProfile, ColorTransformError, IccProfile, IccProfileError, IccRenderingIntent,
@@ -28,7 +24,6 @@ pub(crate) enum CanvasProfile {
     Icc {
         profile: Arc<IccProfile>,
         intent: IccRenderingIntent,
-        prepared_linear_srgb: Arc<OnceLock<[f32; 3]>>,
     },
 }
 
@@ -130,7 +125,6 @@ impl CanvasColor {
             profile: CanvasProfile::Icc {
                 profile: Arc::new(profile.clone()),
                 intent,
-                prepared_linear_srgb: Arc::new(OnceLock::new()),
             },
             coordinates: Coordinates::Dynamic(coordinates),
             opacity: Alpha::F32(opacity),
@@ -400,51 +394,6 @@ mod tests {
             ),
             Err(CanvasIccColorError::AbsoluteIntent)
         ));
-    }
-
-    #[test]
-    fn icc_transfer_failure_is_reported_during_renderer_preparation() {
-        let mut raw = moxcms::ColorProfile::new_srgb();
-        raw.red_trc = None;
-        raw.green_trc = None;
-        raw.blue_trc = None;
-        let profile = IccProfile::from_bytes(&raw.encode().unwrap()).unwrap();
-        let color = CanvasColor::from_icc(
-            &profile,
-            vec![0.25, 0.5, 0.75],
-            UnitF32::ONE,
-            IccRenderingIntent::RelativeColorimetric,
-        )
-        .unwrap();
-
-        assert!(color.prepare_linear_srgb().is_err());
-    }
-
-    #[test]
-    fn prepared_icc_color_is_shared_by_clones_without_rewriting_authored_data() {
-        let profile =
-            IccProfile::from_bytes(include_bytes!("../color/fixtures/sRGB-v4.icc")).unwrap();
-        let color = CanvasColor::from_icc(
-            &profile,
-            vec![0.25, 0.5, 0.75],
-            UnitF32::ONE,
-            IccRenderingIntent::RelativeColorimetric,
-        )
-        .unwrap();
-        let clone = color.clone();
-        color.prepare_linear_srgb().unwrap();
-        let CanvasProfile::Icc {
-            prepared_linear_srgb,
-            ..
-        } = &clone.profile
-        else {
-            unreachable!()
-        };
-        assert!(prepared_linear_srgb.get().is_some());
-        assert_eq!(
-            clone.coordinates,
-            Coordinates::Dynamic(vec![0.25, 0.5, 0.75].into())
-        );
     }
 
     #[test]

@@ -12,6 +12,7 @@ use crate::{
             can_record_directly, collect_blend_shaders, collect_images, prepare_colors,
             required_scratch_images,
         },
+        color_space::PreparedColors,
         mesh_paint::paint_triangle_prepared,
         output_color::OutputColorTransform,
         path_sampling::PathSampler,
@@ -122,10 +123,12 @@ impl CanvasRenderer {
         if target.size.width == 0 || target.size.height == 0 {
             return Ok(());
         }
-        prepare_colors(canvas)?;
-        target.clear_color.prepare_linear_srgb()?;
+        let prepared = prepare_colors(canvas)?;
+        target
+            .clear_color
+            .try_straight_rgba_in(crate::color::RgbColorSpace::LinearSrgb)?;
         self.materialize_canvas_resources(canvas)?;
-        self.render_to_view(target, viewport, canvas, view)?;
+        self.render_to_view(target, viewport, canvas, view, &prepared)?;
         Ok(())
     }
 
@@ -159,7 +162,7 @@ impl CanvasRenderer {
         if self.images.contains_canvas(image) {
             return Ok(());
         }
-        prepare_colors(image.content())?;
+        let prepared = prepare_colors(image.content())?;
         self.materialize_canvas_resources(image.content())?;
         let backing = create_working_image(
             &self.device,
@@ -180,6 +183,7 @@ impl CanvasRenderer {
             Viewport::new(0.0, 0.0, image.width() as f32, image.height() as f32),
             image.content(),
             image.view(),
+            &prepared,
         )?;
         self.images.insert_canvas(image, backing);
         Ok(())
@@ -191,6 +195,7 @@ impl CanvasRenderer {
         viewport: Viewport,
         canvas: &Canvas,
         view: CanvasView,
+        prepared: &PreparedColors,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let output = target
             .output_profile
@@ -230,6 +235,7 @@ impl CanvasRenderer {
                 size: target.size,
                 target_region,
                 view,
+                prepared,
                 next_image: 0,
             };
             recorder.evaluate(canvas, Projective2::IDENTITY)
@@ -311,6 +317,7 @@ struct CanvasRecorder<'a> {
     size: SurfaceSize,
     target_region: Option<TargetRegion>,
     view: CanvasView,
+    prepared: &'a PreparedColors,
     next_image: usize,
 }
 
@@ -559,6 +566,7 @@ impl CanvasRecorder<'_> {
                 points,
                 source,
                 path_sampler.as_ref(),
+                self.prepared,
             ) {
                 vertices.extend(TriangleVertex::encode(
                     painted.points,

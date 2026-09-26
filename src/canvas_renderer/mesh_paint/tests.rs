@@ -10,7 +10,7 @@ use crate::{
 };
 
 fn lowered(color: impl Into<crate::canvas::CanvasColor>) -> TestWorkingColor {
-    TestWorkingColor::from_color(&color.into())
+    TestWorkingColor::from_color(&color.into(), &super::PreparedColors::default())
 }
 
 #[test]

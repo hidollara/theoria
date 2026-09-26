@@ -5,8 +5,8 @@ use ash::vk;
 use crate::{
     canvas::{CanvasView, ColorField, Composite, Composition, ImagePattern},
     canvas_renderer::{
-        mesh_paint::paint_triangle_prepared, path_sampling::PathSampler,
-        view_space::screen_space_tolerance,
+        color_space::PreparedColors, mesh_paint::paint_triangle_prepared,
+        path_sampling::PathSampler, view_space::screen_space_tolerance,
     },
     geometry::Point,
     path::Path,
@@ -33,6 +33,7 @@ pub(super) struct CanvasCommandEncoder<'a> {
     attachment_area: vk::Rect2D,
     target_region: Option<(vk::Viewport, vk::Rect2D)>,
     view: CanvasView,
+    prepared: &'a PreparedColors,
 }
 
 impl<'a> CanvasCommandEncoder<'a> {
@@ -46,6 +47,7 @@ impl<'a> CanvasCommandEncoder<'a> {
         attachment_area: vk::Rect2D,
         target_region: Option<(vk::Viewport, vk::Rect2D)>,
         view: CanvasView,
+        prepared: &'a PreparedColors,
     ) -> Self {
         Self {
             device,
@@ -56,6 +58,7 @@ impl<'a> CanvasCommandEncoder<'a> {
             attachment_area,
             target_region,
             view,
+            prepared,
         }
     }
 
@@ -191,7 +194,9 @@ impl<'a> CanvasCommandEncoder<'a> {
                     mesh.vertices[triangle[1] as usize],
                     mesh.vertices[triangle[2] as usize],
                 ];
-                for painted in paint_triangle_prepared(points, source, path_sampler.as_ref()) {
+                for painted in
+                    paint_triangle_prepared(points, source, path_sampler.as_ref(), self.prepared)
+                {
                     let constants = TrianglePushConstants::new(
                         painted.points,
                         painted.colors,

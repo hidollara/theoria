@@ -5,7 +5,7 @@ use crate::{
     geometry::Point,
 };
 
-use super::{WorkingColor, path_sampling::PathSampler};
+use super::{WorkingColor, color_space::PreparedColors, path_sampling::PathSampler};
 
 #[cfg(test)]
 mod tests;
@@ -21,8 +21,11 @@ struct TestWorkingColor([f32; 4]);
 impl WorkingColor for TestWorkingColor {
     const TRANSPARENT: Self = Self([0.0; 4]);
 
-    fn from_color(color: &crate::canvas::CanvasColor) -> Self {
-        Self(super::color_space::lower_straight_color(color))
+    fn from_color(
+        color: &crate::canvas::CanvasColor,
+        prepared: &super::color_space::PreparedColors,
+    ) -> Self {
+        Self(prepared.lower(color))
     }
 
     fn from_components(components: [f32; 4]) -> Self {
@@ -62,23 +65,29 @@ fn paint_triangle(
         )),
         _ => None,
     };
-    paint_triangle_prepared(points, source, path_sampler.as_ref())
+    paint_triangle_prepared(
+        points,
+        source,
+        path_sampler.as_ref(),
+        &PreparedColors::default(),
+    )
 }
 
 pub(crate) fn paint_triangle_prepared<C: WorkingColor>(
     points: [Point; 3],
     source: &ColorField,
     path_sampler: Option<&PathSampler>,
+    prepared: &PreparedColors,
 ) -> Vec<PaintedTriangle<C>> {
     match source {
         ColorField::Transparent => Vec::new(),
         ColorField::Solid(color) => vec![PaintedTriangle {
             points,
-            colors: [C::from_color(color); 3],
+            colors: [C::from_color(color, prepared); 3],
         }],
-        ColorField::LinearGradient(gradient) => paint_linear_gradient(points, gradient),
+        ColorField::LinearGradient(gradient) => paint_linear_gradient(points, gradient, prepared),
         ColorField::RadialGradient(gradient) => {
-            let stops = prepare_gradient_stops(gradient.stops());
+            let stops = prepare_gradient_stops(gradient.stops(), prepared);
             paint_sampled_gradient(points, |point| {
                 radial_parameter(point, gradient).map_or(C::TRANSPARENT, |parameter| {
                     let offset = extend_parameter(parameter, gradient.extend());
@@ -87,7 +96,7 @@ pub(crate) fn paint_triangle_prepared<C: WorkingColor>(
             })
         }
         ColorField::ConicGradient(gradient) => {
-            let stops = prepare_gradient_stops(gradient.stops());
+            let stops = prepare_gradient_stops(gradient.stops(), prepared);
             paint_sampled_gradient(points, |point| {
                 conic_parameter(point, gradient).map_or(C::TRANSPARENT, |parameter| {
                     let offset = extend_parameter(parameter, gradient.extend());
@@ -97,7 +106,7 @@ pub(crate) fn paint_triangle_prepared<C: WorkingColor>(
         }
         ColorField::AlongPathGradient(gradient) => {
             let sampler = path_sampler.expect("along-Path sources prepare their Path once");
-            let stops = prepare_gradient_stops(gradient.ramp().stops());
+            let stops = prepare_gradient_stops(gradient.ramp().stops(), prepared);
             paint_sampled_gradient(points, |point| {
                 let offset = sampler.nearest_offset(point).unwrap_or(0.0);
                 evaluate_gradient_stops(&stops, offset, gradient.ramp().interpolation_space())
@@ -105,7 +114,7 @@ pub(crate) fn paint_triangle_prepared<C: WorkingColor>(
         }
         ColorField::AcrossPathGradient(gradient) => {
             let sampler = path_sampler.expect("across-Path sources prepare their Path once");
-            let stops = prepare_gradient_stops(gradient.ramp().stops());
+            let stops = prepare_gradient_stops(gradient.ramp().stops(), prepared);
             paint_sampled_gradient(points, |point| {
                 let distance = sampler
                     .nearest_sample(point)
@@ -115,7 +124,7 @@ pub(crate) fn paint_triangle_prepared<C: WorkingColor>(
                 evaluate_gradient_stops(&stops, offset, gradient.ramp().interpolation_space())
             })
         }
-        ColorField::MeshGradient(gradient) => paint_mesh_gradient(points, gradient),
+        ColorField::MeshGradient(gradient) => paint_mesh_gradient(points, gradient, prepared),
         ColorField::Image(_) => {
             unreachable!("image color fields use the sampled-image pipeline")
         }
@@ -157,11 +166,12 @@ fn conic_parameter(point: Point, gradient: &crate::canvas::ConicGradient) -> Opt
 fn paint_linear_gradient<C: WorkingColor>(
     points: [Point; 3],
     gradient: &LinearGradient,
+    prepared: &PreparedColors,
 ) -> Vec<PaintedTriangle<C>> {
     if gradient.extend() != GradientExtend::Pad || !gradient.interpolation_space().is_linear() {
         let axis = gradient.end() - gradient.start();
         let length_squared = axis.dot(axis);
-        let stops = prepare_gradient_stops(gradient.stops());
+        let stops = prepare_gradient_stops(gradient.stops(), prepared);
         return paint_sampled_gradient(points, |point| {
             let offset = (point - gradient.start()).dot(axis) / length_squared;
             evaluate_gradient_stops(
@@ -190,8 +200,8 @@ fn paint_linear_gradient<C: WorkingColor>(
         &before,
         first.offset(),
         first.offset(),
-        C::from_color(first.color()),
-        C::from_color(first.color()),
+        C::from_color(first.color(), prepared),
+        C::from_color(first.color(), prepared),
         gradient.interpolation_space(),
     );
     remaining = clip_gradient_polygon(&remaining, first.offset(), false);
@@ -204,8 +214,8 @@ fn paint_linear_gradient<C: WorkingColor>(
             &band,
             from.offset(),
             to.offset(),
-            C::from_color(from.color()),
-            C::from_color(to.color()),
+            C::from_color(from.color(), prepared),
+            C::from_color(to.color(), prepared),
             gradient.interpolation_space(),
         );
         remaining = clip_gradient_polygon(&remaining, to.offset(), false);
@@ -217,8 +227,8 @@ fn paint_linear_gradient<C: WorkingColor>(
         &remaining,
         last.offset(),
         last.offset(),
-        C::from_color(last.color()),
-        C::from_color(last.color()),
+        C::from_color(last.color(), prepared),
+        C::from_color(last.color(), prepared),
         gradient.interpolation_space(),
     );
     output
@@ -336,10 +346,13 @@ fn append_gradient_polygon<C: WorkingColor>(
     }
 }
 
-fn prepare_gradient_stops<C: WorkingColor>(stops: &[GradientStop]) -> Vec<(f32, C)> {
+fn prepare_gradient_stops<C: WorkingColor>(
+    stops: &[GradientStop],
+    prepared: &PreparedColors,
+) -> Vec<(f32, C)> {
     stops
         .iter()
-        .map(|stop| (stop.offset(), C::from_color(stop.color())))
+        .map(|stop| (stop.offset(), C::from_color(stop.color(), prepared)))
         .collect()
 }
 
@@ -437,6 +450,7 @@ fn color_difference<C: WorkingColor>(first: C, second: C) -> f32 {
 fn paint_mesh_gradient<C: WorkingColor>(
     points: [Point; 3],
     gradient: &MeshGradient,
+    prepared: &PreparedColors,
 ) -> Vec<PaintedTriangle<C>> {
     let mut output = Vec::new();
     for patch in gradient.triangles() {
@@ -462,12 +476,13 @@ fn paint_mesh_gradient<C: WorkingColor>(
             if gradient.interpolation_space().is_linear() {
                 output.push(PaintedTriangle {
                     points: triangle_points,
-                    colors: triangle_points
-                        .map(|point| mesh_color_at(point, patch, gradient.interpolation_space())),
+                    colors: triangle_points.map(|point| {
+                        mesh_color_at(point, patch, gradient.interpolation_space(), prepared)
+                    }),
                 });
             } else {
                 output.extend(paint_sampled_gradient(triangle_points, |point| {
-                    mesh_color_at(point, patch, gradient.interpolation_space())
+                    mesh_color_at(point, patch, gradient.interpolation_space(), prepared)
                 }));
             }
         }
@@ -511,6 +526,7 @@ fn mesh_color_at<C: WorkingColor>(
     point: Point,
     patch: &[GradientPoint; 3],
     interpolation_space: crate::color::RgbColorSpace,
+    prepared: &PreparedColors,
 ) -> C {
     let positions = std::array::from_fn(|index| patch[index].position());
     let denominator = signed_area(positions);
@@ -519,7 +535,7 @@ fn mesh_color_at<C: WorkingColor>(
         edge_side(positions[2], positions[0], point) / denominator,
         edge_side(positions[0], positions[1], point) / denominator,
     ];
-    let colors = std::array::from_fn(|index| C::from_color(patch[index].color()));
+    let colors = std::array::from_fn(|index| C::from_color(patch[index].color(), prepared));
     C::mix(colors, weights, interpolation_space)
 }
 

@@ -17,7 +17,7 @@ pub(crate) mod view_space;
 pub(crate) trait WorkingColor: Copy {
     const TRANSPARENT: Self;
 
-    fn from_color(color: &CanvasColor) -> Self;
+    fn from_color(color: &CanvasColor, prepared: &color_space::PreparedColors) -> Self;
     fn from_components(components: [f32; 4]) -> Self;
     fn components(self) -> [f32; 4];
 

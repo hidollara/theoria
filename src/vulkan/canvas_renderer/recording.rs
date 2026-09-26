@@ -7,7 +7,7 @@ use crate::{
         Canvas, CanvasNode, CanvasView, ColorField, Composite, Composition, Coverage, CoverageNode,
         Draw,
     },
-    canvas_renderer::canvas_plan::can_record_directly,
+    canvas_renderer::{canvas_plan::can_record_directly, color_space::PreparedColors},
     color::Color,
     tessellation::{Mesh, tessellate_fill_with_tolerance, tessellate_stroke_with_tolerance},
     transform::Projective2,
@@ -33,6 +33,7 @@ impl<'a> CanvasRecorder<'a> {
         attachment_area: vk::Rect2D,
         target_region: Option<(vk::Viewport, vk::Rect2D)>,
         view: CanvasView,
+        prepared: &'a PreparedColors,
     ) -> Self {
         Self {
             commands: CanvasCommandEncoder::new(
@@ -44,6 +45,7 @@ impl<'a> CanvasRecorder<'a> {
                 attachment_area,
                 target_region,
                 view,
+                prepared,
             ),
             next_image: 0,
         }

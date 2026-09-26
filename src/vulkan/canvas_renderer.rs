@@ -28,6 +28,7 @@ mod resources;
 use crate::canvas_renderer::canvas_plan::{
     collect_blend_shaders, collect_images, prepare_colors, required_scratch_images,
 };
+use crate::canvas_renderer::color_space::PreparedColors;
 use crate::vulkan::one_shot::OneShotCommands;
 use recording::CanvasRecorder;
 use resources::CanvasGpuResources;
@@ -59,9 +60,9 @@ impl CanvasRenderer {
         canvas: &Canvas,
         view: CanvasView,
     ) -> Result<()> {
-        prepare_colors(canvas)?;
+        let prepared = prepare_colors(canvas)?;
         let clear_color = target.clear_color();
-        clear_color.prepare_linear_srgb()?;
+        clear_color.try_straight_rgba_in(crate::color::RgbColorSpace::LinearSrgb)?;
         let output_profile = target.output_profile();
         self.materialize_canvas_resources(canvas)?;
         let (image_view, format, extent) = target.surface();
@@ -75,6 +76,7 @@ impl CanvasRenderer {
             view,
             PremultipliedLinearSrgba::from_color(clear_color),
             output_profile,
+            &prepared,
         )
     }
 
@@ -85,7 +87,7 @@ impl CanvasRenderer {
         canvas: &Canvas,
         view: CanvasView,
     ) -> Result<Arc<VulkanImage>> {
-        prepare_colors(canvas)?;
+        let prepared = prepare_colors(canvas)?;
         let extent = vk::Extent2D { width, height };
         let format = vk::Format::R8G8B8A8_SRGB;
         self.gpu.ensure_image_cache(&self.device)?;
@@ -120,6 +122,7 @@ impl CanvasRenderer {
             view,
             PremultipliedLinearSrgba::TRANSPARENT,
             None,
+            &prepared,
         )?;
         unsafe {
             transition_image(
@@ -199,6 +202,7 @@ impl CanvasRenderer {
         view: CanvasView,
         clear_color: PremultipliedLinearSrgba,
         output_profile: Option<(&IccProfile, IccRenderingIntent)>,
+        prepared: &PreparedColors,
     ) -> Result<()> {
         let output = output_profile
             .map(|(profile, intent)| OutputColorTransform::new(profile, intent))
@@ -283,6 +287,7 @@ impl CanvasRenderer {
             attachment_area,
             target_region,
             view,
+            prepared,
         );
         recorder.record(canvas, image_view, clear_color, present_pipeline);
         Ok(())

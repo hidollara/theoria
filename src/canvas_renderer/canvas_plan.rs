@@ -1,65 +1,78 @@
+use super::color_space::PreparedColors;
 use crate::canvas::{
     BlendShader, Canvas, CanvasIccColorError, CanvasNode, ColorField, Composite, CoverageNode,
     Draw, image::Image,
 };
 
 /// Resolves fallible authored colors before either backend starts recording.
-/// The prepared linear-sRGB values are shared with the Canvas's cloned colors.
-pub(crate) fn prepare_colors(canvas: &Canvas) -> Result<(), CanvasIccColorError> {
+/// The converted values belong to this render, not to the Canvas definition.
+pub(crate) fn prepare_colors(canvas: &Canvas) -> Result<PreparedColors, CanvasIccColorError> {
+    let mut prepared = PreparedColors::default();
+    prepare_canvas_colors(canvas, &mut prepared)?;
+    Ok(prepared)
+}
+
+fn prepare_canvas_colors(
+    canvas: &Canvas,
+    prepared: &mut PreparedColors,
+) -> Result<(), CanvasIccColorError> {
     match canvas.node() {
         CanvasNode::Draw(draw) => {
-            prepare_color_field(&draw.source)?;
+            prepare_color_field(&draw.source, prepared)?;
             if let CoverageNode::AlphaOf(source) = draw.coverage.node() {
-                prepare_color_field(source)?;
+                prepare_color_field(source, prepared)?;
             }
         }
-        CanvasNode::Transform { content, .. } => prepare_colors(content)?,
+        CanvasNode::Transform { content, .. } => prepare_canvas_colors(content, prepared)?,
         CanvasNode::Composite {
             backdrop, source, ..
         } => {
-            prepare_colors(backdrop)?;
-            prepare_colors(source)?;
+            prepare_canvas_colors(backdrop, prepared)?;
+            prepare_canvas_colors(source, prepared)?;
         }
     }
     Ok(())
 }
 
-fn prepare_color_field(source: &ColorField) -> Result<(), CanvasIccColorError> {
+fn prepare_color_field(
+    source: &ColorField,
+    prepared: &mut PreparedColors,
+) -> Result<(), CanvasIccColorError> {
     match source {
-        ColorField::Solid(color) => color.prepare_linear_srgb()?,
+        ColorField::Solid(color) => prepared.prepare(color)?,
         ColorField::LinearGradient(gradient) => {
             for stop in gradient.stops() {
-                stop.color().prepare_linear_srgb()?;
+                prepared.prepare(stop.color())?;
             }
         }
         ColorField::RadialGradient(gradient) => {
             for stop in gradient.stops() {
-                stop.color().prepare_linear_srgb()?;
+                prepared.prepare(stop.color())?;
             }
         }
         ColorField::ConicGradient(gradient) => {
             for stop in gradient.stops() {
-                stop.color().prepare_linear_srgb()?;
+                prepared.prepare(stop.color())?;
             }
         }
         ColorField::AlongPathGradient(gradient) => {
             for stop in gradient.ramp().stops() {
-                stop.color().prepare_linear_srgb()?;
+                prepared.prepare(stop.color())?;
             }
         }
         ColorField::AcrossPathGradient(gradient) => {
             for stop in gradient.ramp().stops() {
-                stop.color().prepare_linear_srgb()?;
+                prepared.prepare(stop.color())?;
             }
         }
         ColorField::MeshGradient(gradient) => {
             for triangle in gradient.triangles() {
                 for point in triangle {
-                    point.color().prepare_linear_srgb()?;
+                    prepared.prepare(point.color())?;
                 }
             }
         }
-        ColorField::Canvas(canvas) => prepare_colors(canvas)?,
+        ColorField::Canvas(canvas) => prepare_canvas_colors(canvas, prepared)?,
         ColorField::Image(_) | ColorField::Transparent => {}
     }
     Ok(())
@@ -242,7 +255,23 @@ mod tests {
         )
         .unwrap();
         let canvas = Canvas::draw(color.clone(), Coverage::all());
-        prepare_colors(&canvas).unwrap();
-        assert!(color.straight_rgba_in(crate::color::RgbColorSpace::LinearSrgb)[0] > 0.0);
+        let prepared = prepare_colors(&canvas).unwrap();
+        assert!(prepared.lower(&color)[0] > 0.0);
+    }
+
+    #[test]
+    fn renderer_prepares_solid_colors_without_changing_canvas_storage() {
+        let color = crate::canvas::CanvasColor::from(Color::rgb8(255, 128, 0));
+        let canvas = Canvas::draw(color.clone(), Coverage::all());
+        let prepared = prepare_colors(&canvas).unwrap();
+        let CanvasNode::Draw(draw) = canvas.node() else {
+            unreachable!()
+        };
+        let ColorField::Solid(stored) = &draw.source else {
+            unreachable!()
+        };
+
+        assert_eq!(stored, &color);
+        assert_eq!(prepared.lower(stored)[0], 1.0);
     }
 }

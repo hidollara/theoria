@@ -50,8 +50,8 @@ impl PremultipliedLinearSrgba {
 impl WorkingColor for PremultipliedLinearSrgba {
     const TRANSPARENT: Self = Self::TRANSPARENT;
 
-    fn from_color(color: &CanvasColor) -> Self {
-        Self::from_canvas_color(color)
+    fn from_color(color: &CanvasColor, prepared: &color_space::PreparedColors) -> Self {
+        Self(prepared.lower(color))
     }
 
     fn from_components(components: [f32; 4]) -> Self {
