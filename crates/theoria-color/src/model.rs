@@ -64,14 +64,41 @@ fixed_model!(Ycbcr, 3);
 /// A sample representation with a defined expansion to reference coordinates
 /// for this model. Floating-point values are already coordinates; integer
 /// code values are currently defined only for RGB, where they are normalized.
-pub trait ReferenceSample<M: ColorModel>: Sample {}
+pub trait ReferenceSample<M: ColorModel>: Sample {
+    /// Expands an authored coordinate for an explicit CPU reference conversion.
+    fn to_reference_f64(self) -> f64;
+}
 
-impl<M: ColorModel> ReferenceSample<M> for f32 {}
-impl<M: ColorModel> ReferenceSample<M> for f64 {}
-impl<M: ColorModel> ReferenceSample<M> for UnitF32 {}
-impl<M: ColorModel> ReferenceSample<M> for UnitF64 {}
-impl ReferenceSample<Rgb> for u8 {}
-impl ReferenceSample<Rgb> for u16 {}
+impl<M: ColorModel> ReferenceSample<M> for f32 {
+    fn to_reference_f64(self) -> f64 {
+        f64::from(self)
+    }
+}
+impl<M: ColorModel> ReferenceSample<M> for f64 {
+    fn to_reference_f64(self) -> f64 {
+        self
+    }
+}
+impl<M: ColorModel> ReferenceSample<M> for UnitF32 {
+    fn to_reference_f64(self) -> f64 {
+        f64::from(self.get())
+    }
+}
+impl<M: ColorModel> ReferenceSample<M> for UnitF64 {
+    fn to_reference_f64(self) -> f64 {
+        self.get()
+    }
+}
+impl ReferenceSample<Rgb> for u8 {
+    fn to_reference_f64(self) -> f64 {
+        f64::from(self) / f64::from(u8::MAX)
+    }
+}
+impl ReferenceSample<Rgb> for u16 {
+    fn to_reference_f64(self) -> f64 {
+        f64::from(self) / f64::from(u16::MAX)
+    }
+}
 
 /// A device color model with a statically known number of channels.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -107,7 +134,7 @@ mod tests {
     #[test]
     fn mapping_samples_preserves_model_and_channel_order() {
         assert_eq!(
-            Rgb::map_samples(&[0_u8, 128, 255], Sample::to_f64),
+            Rgb::map_samples(&[0_u8, 128, 255], ReferenceSample::<Rgb>::to_reference_f64),
             [0.0, 128.0 / 255.0, 1.0]
         );
         assert_eq!(

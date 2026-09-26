@@ -76,7 +76,10 @@ where
     /// This reference conversion does not perform gamut mapping or select an
     /// ICC rendering intent, and it does not set renderer working precision.
     pub fn convert_to<Q: XyzD50Profile>(&self, profile: Q) -> Result<Color<Q, f64, A>, ColorError> {
-        let source = <P::Model as ColorModel>::map_samples(&self.coordinates, Sample::to_f64);
+        let source = <P::Model as ColorModel>::map_samples(
+            &self.coordinates,
+            ReferenceSample::<P::Model>::to_reference_f64,
+        );
         let xyz = self.profile.coordinates_to_xyz_d50(&source);
         let coordinates = profile.xyz_d50_to_coordinates(xyz);
         Color::new(profile, coordinates, self.opacity)

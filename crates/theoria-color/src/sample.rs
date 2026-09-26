@@ -7,20 +7,11 @@ use std::{error::Error, fmt};
 /// outside the unit interval when their color profile permits it.
 pub trait Sample: Copy + fmt::Debug + PartialEq + 'static {
     fn is_finite(self) -> bool;
-
-    /// Expands this authored sample for an explicit reference color conversion.
-    /// Integer samples are normalized code values; floating samples retain
-    /// their numerical value, including values outside the unit interval.
-    fn to_f64(self) -> f64;
 }
 
 impl Sample for u8 {
     fn is_finite(self) -> bool {
         true
-    }
-
-    fn to_f64(self) -> f64 {
-        f64::from(self) / f64::from(u8::MAX)
     }
 }
 
@@ -28,29 +19,17 @@ impl Sample for u16 {
     fn is_finite(self) -> bool {
         true
     }
-
-    fn to_f64(self) -> f64 {
-        f64::from(self) / f64::from(u16::MAX)
-    }
 }
 
 impl Sample for f32 {
     fn is_finite(self) -> bool {
         self.is_finite()
     }
-
-    fn to_f64(self) -> f64 {
-        f64::from(self)
-    }
 }
 
 impl Sample for f64 {
     fn is_finite(self) -> bool {
         self.is_finite()
-    }
-
-    fn to_f64(self) -> f64 {
-        self
     }
 }
 
@@ -91,10 +70,6 @@ impl Sample for UnitF32 {
     fn is_finite(self) -> bool {
         true
     }
-
-    fn to_f64(self) -> f64 {
-        f64::from(self.0)
-    }
 }
 impl UnitSample for UnitF32 {}
 
@@ -125,10 +100,6 @@ impl UnitF64 {
 impl Sample for UnitF64 {
     fn is_finite(self) -> bool {
         true
-    }
-
-    fn to_f64(self) -> f64 {
-        self.0
     }
 }
 impl UnitSample for UnitF64 {}
@@ -185,14 +156,5 @@ mod tests {
     fn opacity_retains_its_input_representation() {
         assert_eq!(Opacity::new(128_u8).sample(), 128);
         assert_eq!(Opacity::new(UnitF32::new(0.5).unwrap()).sample().get(), 0.5);
-    }
-
-    #[test]
-    fn reference_expansion_normalizes_only_integer_samples() {
-        assert_eq!(u8::MAX.to_f64(), 1.0);
-        assert_eq!(u16::MAX.to_f64(), 1.0);
-        assert_eq!(0_u8.to_f64(), 0.0);
-        assert_eq!(2.0_f32.to_f64(), 2.0);
-        assert_eq!(2.0_f64.to_f64(), 2.0);
     }
 }
