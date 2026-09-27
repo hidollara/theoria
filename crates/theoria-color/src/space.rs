@@ -11,7 +11,7 @@ use super::icc_profile::IccRenderingIntent;
 use super::profile::{ColorProfile, ProfileConnectionError, ProfileDefinition, require_relative};
 use super::transfer::{Transfer, TransferCurve, TransferError, TransferMatrix, TransferStage};
 use super::transform::multiply_f64;
-use super::{ColorModel, Rgb, RgbTransfer};
+use super::{ColorModel, Rgb};
 
 /// Associates a statically typed color space with its coordinate model.
 ///
@@ -136,13 +136,22 @@ fn rgb_direct_to(
 impl RgbColorSpace {
     /// Whether straight RGB coordinates in this space are linear-light.
     pub const fn is_linear(self) -> bool {
-        matches!(self.transfer_curve(), RgbTransfer::Linear)
+        matches!(self, Self::LinearSrgb | Self::LinearDisplayP3)
     }
 
-    pub(crate) const fn transfer_curve(self) -> RgbTransfer {
-        match self {
-            Self::Srgb | Self::DisplayP3 => RgbTransfer::Srgb,
-            Self::LinearSrgb | Self::LinearDisplayP3 => RgbTransfer::Linear,
+    pub(crate) const fn decode_curve(self) -> TransferCurve {
+        if self.is_linear() {
+            TransferCurve::IDENTITY
+        } else {
+            TransferCurve::SRGB_DECODE
+        }
+    }
+
+    pub(crate) const fn encode_curve(self) -> TransferCurve {
+        if self.is_linear() {
+            TransferCurve::IDENTITY
+        } else {
+            TransferCurve::SRGB_ENCODE
         }
     }
 
@@ -156,30 +165,22 @@ impl RgbColorSpace {
     }
 
     pub(crate) fn to_xyz_d65_transfer(self) -> Result<Transfer, TransferError> {
-        let curve = match self.transfer_curve() {
-            RgbTransfer::Linear => TransferCurve::IDENTITY,
-            RgbTransfer::Srgb => TransferCurve::SRGB_DECODE,
-        };
-        rgb_to_xyz_d65_transfer(self.matrices().0, curve)
+        rgb_to_xyz_d65_transfer(self.matrices().0, self.decode_curve())
     }
 
     pub(crate) fn xyz_d65_to_rgb_transfer(self) -> Result<Transfer, TransferError> {
-        let curve = match self.transfer_curve() {
-            RgbTransfer::Linear => TransferCurve::IDENTITY,
-            RgbTransfer::Srgb => TransferCurve::SRGB_ENCODE,
-        };
-        xyz_d65_to_rgb_transfer(self.matrices().1, curve)
+        xyz_d65_to_rgb_transfer(self.matrices().1, self.encode_curve())
     }
 
     pub(crate) fn to_xyz_d65_f64(self, rgb: [f64; 3]) -> [f64; 3] {
         multiply_f64(
             self.matrices().0,
-            rgb.map(|value| self.transfer_curve().decode_f64(value)),
+            rgb.map(|value| self.decode_curve().evaluate(value)),
         )
     }
 
     pub(crate) fn xyz_d65_to_rgb_f64(self, xyz: [f64; 3]) -> [f64; 3] {
-        multiply_f64(self.matrices().1, xyz).map(|value| self.transfer_curve().encode_f64(value))
+        multiply_f64(self.matrices().1, xyz).map(|value| self.encode_curve().evaluate(value))
     }
 }
 

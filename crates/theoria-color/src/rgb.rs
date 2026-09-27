@@ -1,4 +1,4 @@
-use super::{RgbColorSpace, RgbTransfer};
+use super::{RgbColorSpace, transform};
 
 /// Converts straight RGB coordinates between the predefined Canvas spaces.
 ///
@@ -8,14 +8,26 @@ pub fn convert_rgb(rgb: [f32; 3], from: RgbColorSpace, to: RgbColorSpace) -> [f3
     if from == to {
         rgb
     } else {
-        let source = from.transfer_curve();
-        let destination = to.transfer_curve();
+        let decode = |value| {
+            if from.is_linear() {
+                value
+            } else {
+                transform::decode_srgb(value)
+            }
+        };
+        let encode = |value| {
+            if to.is_linear() {
+                value
+            } else {
+                transform::encode_srgb(value)
+            }
+        };
         if from.matrices().0 == to.matrices().0 {
-            rgb.map(|value| destination.encode(source.decode(value)))
+            rgb.map(|value| encode(decode(value)))
         } else {
-            let linear = rgb.map(|value| source.decode(value));
+            let linear = rgb.map(decode);
             let xyz = multiply(from.matrices().0, linear);
-            multiply(to.matrices().1, xyz).map(|value| destination.encode(value))
+            multiply(to.matrices().1, xyz).map(encode)
         }
     }
 }
@@ -27,7 +39,7 @@ fn multiply(matrix: [[f64; 3]; 3], vector: [f32; 3]) -> [f32; 3] {
 }
 
 pub fn encode_srgb(value: f32) -> f32 {
-    RgbTransfer::Srgb.encode(value)
+    transform::encode_srgb(value)
 }
 
 #[cfg(test)]
@@ -55,7 +67,7 @@ mod tests {
         let color = [0.0, 0.5, 1.0];
         assert_eq!(
             convert_rgb(color, RgbColorSpace::Srgb, RgbColorSpace::LinearSrgb),
-            color.map(|value| RgbTransfer::Srgb.decode(value))
+            color.map(transform::decode_srgb)
         );
         assert_eq!(
             convert_rgb(
@@ -63,7 +75,7 @@ mod tests {
                 RgbColorSpace::DisplayP3,
                 RgbColorSpace::LinearDisplayP3
             ),
-            color.map(|value| RgbTransfer::Srgb.decode(value))
+            color.map(transform::decode_srgb)
         );
     }
 }

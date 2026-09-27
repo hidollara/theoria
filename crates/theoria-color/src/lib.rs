@@ -29,7 +29,6 @@ pub use transfer::{
     Transfer, TransferClut, TransferCurve, TransferError, TransferMatrix, TransferShader,
     TransferStage,
 };
-pub(crate) use transform::RgbTransfer;
 pub use value::Color;
 pub use white_point::{WhitePoint, WhitePointError};
 

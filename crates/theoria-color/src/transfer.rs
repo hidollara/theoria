@@ -1,6 +1,6 @@
 use std::{error::Error, fmt, sync::Arc};
 
-use super::{RgbTransfer, pcs, transform};
+use super::{pcs, transform};
 
 /// A directed sequence of color-coordinate operations.
 ///
@@ -724,8 +724,8 @@ impl TransferCurve {
                 .find(|segment| value <= segment.upper)
                 .unwrap_or_else(|| segments.last().unwrap())
                 .evaluate(value),
-            CurveKind::SrgbDecode => RgbTransfer::Srgb.decode_f64(value),
-            CurveKind::SrgbEncode => RgbTransfer::Srgb.encode_f64(value),
+            CurveKind::SrgbDecode => transform::decode_srgb_f64(value),
+            CurveKind::SrgbEncode => transform::encode_srgb_f64(value),
         }
     }
 
@@ -1110,7 +1110,7 @@ mod tests {
         )
         .unwrap();
         for input in [0.0, 0.02, 0.04, 0.05, 0.25, 0.5, 1.0] {
-            assert!((curve.evaluate(input) - RgbTransfer::Srgb.decode_f64(input)).abs() < 1e-12);
+            assert!((curve.evaluate(input) - transform::decode_srgb_f64(input)).abs() < 1e-12);
         }
         assert_eq!(curve.evaluate(-0.5), 0.0);
         assert_eq!(curve.evaluate(1.5), 1.0);
