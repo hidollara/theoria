@@ -118,7 +118,7 @@ mod tests {
 
     #[test]
     fn distinct_profile_handle_can_be_used_as_working_profile() {
-        let profile = ColorProfile::new(Srgb);
+        let profile = crate::test_support::distinct_color_profile(Srgb);
         let source = assemble_for(include_str!("../shaders/webgpu/image.wgsl"), &profile).unwrap();
         let module = naga::front::wgsl::parse_str(&source).unwrap();
         naga::valid::Validator::new(

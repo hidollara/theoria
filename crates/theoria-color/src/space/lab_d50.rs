@@ -5,11 +5,11 @@ use super::{
 use crate::model::Lab;
 
 named_space!(LabD50, Lab);
-predefined_space!(LabD50, LAB_D50_KEY);
+predefined_space!(LabD50, LabD50Profile, LAB_D50_KEY);
 
-impl ProfileDefinition for LabD50 {
+impl ProfileDefinition for LabD50Profile {
     fn space(&self) -> ColorSpace {
-        (*self).into()
+        LabD50.into()
     }
 
     fn pcs(&self) -> Pcs {

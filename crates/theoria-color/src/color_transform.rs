@@ -200,9 +200,7 @@ impl Error for ColorTransformError {
 mod tests {
     use super::*;
     use crate::space::{LabD50, LinearSrgb, Srgb, XyzD50};
-    use crate::{
-        IccProfile, IccRenderingIntent, ProfileDefinition, TransferCurve, connect_profiles,
-    };
+    use crate::{ColorProfile, IccProfile, IccRenderingIntent, TransferCurve, connect_profiles};
 
     #[test]
     fn matching_channel_counts_do_not_imply_matching_spaces() {
@@ -236,7 +234,7 @@ mod tests {
     fn builtin_rgb_connects_to_icc_profile_through_pcs() {
         let bytes = moxcms::ColorProfile::new_srgb().encode().unwrap();
         let profile = IccProfile::from_bytes(&bytes).unwrap();
-        let source = Srgb
+        let source = ColorProfile::from(Srgb)
             .space_to_pcs(IccRenderingIntent::RelativeColorimetric)
             .unwrap();
         let destination = profile
@@ -255,7 +253,7 @@ mod tests {
             .space_to_pcs(IccRenderingIntent::RelativeColorimetric)
             .unwrap()
             .then(
-                &Srgb
+                &ColorProfile::from(Srgb)
                     .pcs_to_space(IccRenderingIntent::RelativeColorimetric)
                     .unwrap(),
             )
@@ -265,7 +263,7 @@ mod tests {
 
     #[test]
     fn pcs_bridge_joins_transforms_with_different_pcs() {
-        let xyz = LinearSrgb
+        let xyz = ColorProfile::from(LinearSrgb)
             .space_to_pcs(IccRenderingIntent::RelativeColorimetric)
             .unwrap();
         let bridge = ColorTransform::between_pcs(Pcs::XyzD50, Pcs::LabD50).unwrap();
@@ -274,7 +272,7 @@ mod tests {
         let reverse = ColorTransform::between_pcs(Pcs::LabD50, Pcs::XyzD50)
             .unwrap()
             .then(
-                &LinearSrgb
+                &ColorProfile::from(LinearSrgb)
                     .pcs_to_space(IccRenderingIntent::RelativeColorimetric)
                     .unwrap(),
             )

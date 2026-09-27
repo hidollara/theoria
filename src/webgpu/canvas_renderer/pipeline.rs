@@ -463,7 +463,7 @@ mod tests {
                     &profile,
                     intent,
                     has_alpha,
-                    ColorProfile::new(crate::color::LinearSrgb),
+                    crate::test_support::distinct_color_profile(crate::color::LinearSrgb),
                     include_str!("../../../shaders/webgpu/icc_image.wgsl"),
                 )
                 .unwrap();

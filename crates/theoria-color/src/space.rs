@@ -19,6 +19,8 @@ use super::transfer::{Transfer, TransferCurve, TransferError, TransferMatrix, Tr
 ///
 /// This is a compile-time constraint on color values. The runtime space
 /// identifies their meaning; conversion is supplied by a profile separately.
+/// Named spaces convert to one shared standard profile rather than defining
+/// a new profile themselves.
 pub trait TypedColorSpace: 'static {
     type Model: ColorModel;
 
@@ -158,26 +160,28 @@ impl fmt::Debug for ColorSpace {
 }
 
 macro_rules! predefined_space {
-    ($profile:ty, $key:ident) => {
+    ($space:ty, $definition:ident, $key:ident) => {
+        struct $definition;
+
         static $key: std::sync::LazyLock<ColorSpace> =
             std::sync::LazyLock::new(|| ColorSpace::new(std::num::NonZeroUsize::new(3).unwrap()));
 
-        impl From<$profile> for ColorSpace {
-            fn from(_: $profile) -> Self {
+        impl From<$space> for ColorSpace {
+            fn from(_: $space) -> Self {
                 (*$key).clone()
             }
         }
 
-        impl From<$profile> for ColorProfile {
-            fn from(_: $profile) -> Self {
+        impl From<$space> for ColorProfile {
+            fn from(_: $space) -> Self {
                 static PROFILE: std::sync::LazyLock<ColorProfile> =
-                    std::sync::LazyLock::new(|| ColorProfile::new(<$profile>::default()));
+                    std::sync::LazyLock::new(|| ColorProfile::new($definition));
                 PROFILE.clone()
             }
         }
 
-        impl From<&$profile> for ColorProfile {
-            fn from(profile: &$profile) -> Self {
+        impl From<&$space> for ColorProfile {
+            fn from(profile: &$space) -> Self {
                 (*profile).into()
             }
         }
@@ -212,6 +216,19 @@ mod tests {
         assert_eq!(ColorSpace::from(Srgb), ColorSpace::from(Srgb));
         assert_ne!(ColorSpace::from(Srgb), ColorSpace::from(LinearSrgb));
         assert_ne!(ColorSpace::from(XyzD50), ColorSpace::from(XyzD65));
+        assert_eq!(ColorProfile::from(Srgb), ColorProfile::from(Srgb));
+        assert_eq!(
+            ColorProfile::from(LinearSrgb),
+            ColorProfile::from(LinearSrgb)
+        );
+        assert_eq!(ColorProfile::from(DisplayP3), ColorProfile::from(DisplayP3));
+        assert_eq!(
+            ColorProfile::from(LinearDisplayP3),
+            ColorProfile::from(LinearDisplayP3)
+        );
+        assert_eq!(ColorProfile::from(LabD50), ColorProfile::from(LabD50));
+        assert_eq!(ColorProfile::from(XyzD50), ColorProfile::from(XyzD50));
+        assert_eq!(ColorProfile::from(XyzD65), ColorProfile::from(XyzD65));
     }
 
     #[test]

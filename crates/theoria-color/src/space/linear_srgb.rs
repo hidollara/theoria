@@ -12,11 +12,11 @@ impl LinearSrgb {
     pub(crate) const FROM_XYZ_D65: [[f64; 3]; 3] = Srgb::FROM_XYZ_D65;
 }
 
-predefined_space!(LinearSrgb, LINEAR_SRGB_KEY);
+predefined_space!(LinearSrgb, LinearSrgbProfile, LINEAR_SRGB_KEY);
 
-impl ProfileDefinition for LinearSrgb {
+impl ProfileDefinition for LinearSrgbProfile {
     fn space(&self) -> ColorSpace {
-        (*self).into()
+        LinearSrgb.into()
     }
 
     fn pcs(&self) -> Pcs {
@@ -30,7 +30,7 @@ impl ProfileDefinition for LinearSrgb {
         require_relative(intent)?;
         Ok(ColorTransform::rgb_to_pcs_from(
             self.space(),
-            rgb_to_xyz_d65_transfer(Self::TO_XYZ_D65, TransferCurve::IDENTITY)?,
+            rgb_to_xyz_d65_transfer(LinearSrgb::TO_XYZ_D65, TransferCurve::IDENTITY)?,
             self.pcs(),
         )?)
     }
@@ -43,7 +43,7 @@ impl ProfileDefinition for LinearSrgb {
         Ok(ColorTransform::pcs_to_rgb_from(
             self.pcs(),
             self.space(),
-            xyz_d65_to_rgb_transfer(Self::FROM_XYZ_D65, TransferCurve::IDENTITY)?,
+            xyz_d65_to_rgb_transfer(LinearSrgb::FROM_XYZ_D65, TransferCurve::IDENTITY)?,
         )?)
     }
 
@@ -53,7 +53,7 @@ impl ProfileDefinition for LinearSrgb {
         intent: IccRenderingIntent,
     ) -> Result<Option<ColorTransform>, ProfileConnectionError> {
         rgb_direct_to(
-            (*self).into(),
+            LinearSrgb.into(),
             Srgb.into(),
             TransferCurve::SRGB_ENCODE,
             destination,

@@ -346,7 +346,7 @@ mod tests {
 
     #[test]
     fn interpolation_accepts_a_noncanonical_profile_handle() {
-        let profile = ColorProfile::new(Srgb);
+        let profile = crate::test_support::distinct_color_profile(Srgb);
         assert_ne!(profile, ColorProfile::from(Srgb));
         let mut prepared = PreparedColors::default();
         prepared.prepare_interpolation(&profile).unwrap();

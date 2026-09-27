@@ -6,7 +6,7 @@ use crate::color_transform::adaptation;
 use crate::model::Xyz;
 
 named_space!(XyzD65, Xyz);
-predefined_space!(XyzD65, XYZ_D65_KEY);
+predefined_space!(XyzD65, XyzD65Profile, XYZ_D65_KEY);
 
 impl XyzD65 {
     // Linear Bradford adaptation from the CSS Color 4 conversion sample.
@@ -43,9 +43,9 @@ impl XyzD65 {
     ];
 }
 
-impl ProfileDefinition for XyzD65 {
+impl ProfileDefinition for XyzD65Profile {
     fn space(&self) -> ColorSpace {
-        (*self).into()
+        XyzD65.into()
     }
 
     fn pcs(&self) -> Pcs {
@@ -60,7 +60,7 @@ impl ProfileDefinition for XyzD65 {
         Ok(ColorTransform::new(
             self.space(),
             XyzD50.into(),
-            adaptation(Self::TO_XYZ_D50)?,
+            adaptation(XyzD65::TO_XYZ_D50)?,
         )?)
     }
 
@@ -72,7 +72,7 @@ impl ProfileDefinition for XyzD65 {
         Ok(ColorTransform::new(
             XyzD50.into(),
             self.space(),
-            adaptation(Self::FROM_XYZ_D50)?,
+            adaptation(XyzD65::FROM_XYZ_D50)?,
         )?)
     }
 }

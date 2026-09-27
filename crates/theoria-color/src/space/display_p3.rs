@@ -34,11 +34,11 @@ impl DisplayP3 {
     ];
 }
 
-predefined_space!(DisplayP3, DISPLAY_P3_KEY);
+predefined_space!(DisplayP3, DisplayP3Profile, DISPLAY_P3_KEY);
 
-impl ProfileDefinition for DisplayP3 {
+impl ProfileDefinition for DisplayP3Profile {
     fn space(&self) -> ColorSpace {
-        (*self).into()
+        DisplayP3.into()
     }
 
     fn pcs(&self) -> Pcs {
@@ -52,7 +52,7 @@ impl ProfileDefinition for DisplayP3 {
         require_relative(intent)?;
         Ok(ColorTransform::rgb_to_pcs_from(
             self.space(),
-            rgb_to_xyz_d65_transfer(Self::TO_XYZ_D65, TransferCurve::SRGB_DECODE)?,
+            rgb_to_xyz_d65_transfer(DisplayP3::TO_XYZ_D65, TransferCurve::SRGB_DECODE)?,
             self.pcs(),
         )?)
     }
@@ -65,7 +65,7 @@ impl ProfileDefinition for DisplayP3 {
         Ok(ColorTransform::pcs_to_rgb_from(
             self.pcs(),
             self.space(),
-            xyz_d65_to_rgb_transfer(Self::FROM_XYZ_D65, TransferCurve::SRGB_ENCODE)?,
+            xyz_d65_to_rgb_transfer(DisplayP3::FROM_XYZ_D65, TransferCurve::SRGB_ENCODE)?,
         )?)
     }
 
@@ -75,7 +75,7 @@ impl ProfileDefinition for DisplayP3 {
         intent: IccRenderingIntent,
     ) -> Result<Option<ColorTransform>, ProfileConnectionError> {
         rgb_direct_to(
-            (*self).into(),
+            DisplayP3.into(),
             super::LinearDisplayP3.into(),
             TransferCurve::SRGB_DECODE,
             destination,

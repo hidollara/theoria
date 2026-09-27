@@ -5,11 +5,11 @@ use super::{
 use crate::model::Xyz;
 
 named_space!(XyzD50, Xyz);
-predefined_space!(XyzD50, XYZ_D50_KEY);
+predefined_space!(XyzD50, XyzD50Profile, XYZ_D50_KEY);
 
-impl ProfileDefinition for XyzD50 {
+impl ProfileDefinition for XyzD50Profile {
     fn space(&self) -> ColorSpace {
-        (*self).into()
+        XyzD50.into()
     }
 
     fn pcs(&self) -> Pcs {

@@ -31,6 +31,7 @@ pub struct ColorProfile(Arc<dyn ProfileDefinition>);
 
 impl ColorProfile {
     /// Owns a definition as a new profile. Each call creates a distinct handle.
+    /// Named standard spaces use their canonical `Into<ColorProfile>` conversion instead.
     pub fn new(definition: impl ProfileDefinition + 'static) -> Self {
         Self(Arc::new(definition))
     }
@@ -234,10 +235,14 @@ mod tests {
     use std::collections::HashSet;
 
     #[test]
-    fn predefined_profiles_share_handles_while_new_definitions_are_distinct() {
+    fn predefined_profiles_share_handles_while_other_definitions_are_distinct() {
         let canonical = ColorProfile::from(Srgb);
         let another_reference = ColorProfile::from(Srgb);
-        let custom = ColorProfile::new(Srgb);
+        let custom = IccProfile::from_bytes(&moxcms::ColorProfile::new_srgb().encode().unwrap())
+            .unwrap()
+            .with_device_space(Srgb.into())
+            .unwrap()
+            .profile();
         assert_eq!(canonical, another_reference);
         assert_eq!(canonical.space(), custom.space());
         assert_ne!(canonical, custom);
@@ -272,7 +277,7 @@ mod tests {
         assert_eq!(icc.device_space(), Srgb.into());
         assert_ne!(icc.profile(), Srgb.into());
         assert!(
-            LinearSrgb
+            ColorProfile::from(LinearSrgb)
                 .direct_to(&icc.profile(), IccRenderingIntent::RelativeColorimetric)
                 .unwrap()
                 .is_none()
@@ -288,11 +293,11 @@ mod tests {
             IccRenderingIntent::RelativeColorimetric,
         )
         .unwrap();
-        let expected = Srgb
+        let expected = ColorProfile::from(Srgb)
             .space_to_pcs(IccRenderingIntent::RelativeColorimetric)
             .unwrap()
             .then(
-                &DisplayP3
+                &ColorProfile::from(DisplayP3)
                     .pcs_to_space(IccRenderingIntent::RelativeColorimetric)
                     .unwrap(),
             )
@@ -350,7 +355,7 @@ mod tests {
                 &self,
                 _: IccRenderingIntent,
             ) -> Result<ColorTransform, ProfileConnectionError> {
-                Srgb.space_to_pcs(IccRenderingIntent::RelativeColorimetric)
+                ColorProfile::from(Srgb).space_to_pcs(IccRenderingIntent::RelativeColorimetric)
             }
 
             fn pcs_to_space(

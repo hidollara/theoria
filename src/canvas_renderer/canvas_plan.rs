@@ -308,8 +308,8 @@ mod tests {
                 Coverage::all(),
             )
         };
-        let first = ColorProfile::new(Srgb);
-        let second = ColorProfile::new(Srgb);
+        let first = crate::test_support::distinct_color_profile(Srgb);
+        let second = crate::test_support::distinct_color_profile(Srgb);
         let canvas = leaf()
             .composite(leaf(), Composition::new(Composite::SourceOver, &first))
             .composite(leaf(), Composition::new(Composite::SourceOver, &second));
