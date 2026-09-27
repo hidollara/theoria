@@ -1,7 +1,7 @@
 use std::{error::Error, fmt, num::NonZeroUsize, sync::LazyLock};
 
-use super::icc::IccPcs;
 use super::icc_profile::IccRenderingIntent;
+use super::profile::Pcs;
 use super::space::{ColorSpace, LabD50, XyzD50, XyzD65};
 use super::transfer::{Transfer, TransferError, TransferMatrix, TransferStage};
 
@@ -48,22 +48,22 @@ impl ColorTransform {
     pub(crate) fn rgb_to_pcs_from(
         from: ColorSpace,
         mut transfer: Transfer,
-        to: IccPcs,
+        to: Pcs,
     ) -> Result<Self, ColorTransformError> {
         transfer = transfer.then(&adaptation(XyzD65::TO_XYZ_D50)?)?;
-        if to == IccPcs::LabD50 {
+        if to == Pcs::LabD50 {
             transfer = transfer.then(&Transfer::new(3, [TransferStage::XyzD50ToLabD50])?)?;
         }
         Self::new(from, pcs_key(to), transfer)
     }
 
     pub(crate) fn pcs_to_rgb_from(
-        from: IccPcs,
+        from: Pcs,
         to: ColorSpace,
         xyz_d65_to_rgb: Transfer,
     ) -> Result<Self, ColorTransformError> {
         let mut transfer = Transfer::new(3, Vec::<TransferStage>::new())?;
-        if from == IccPcs::LabD50 {
+        if from == Pcs::LabD50 {
             transfer = transfer.then(&Transfer::new(3, [TransferStage::LabD50ToXyzD50])?)?;
         }
         transfer = transfer.then(&adaptation(XyzD65::FROM_XYZ_D50)?)?;
@@ -72,7 +72,7 @@ impl ColorTransform {
     }
 
     /// Bridges the two media-relative D50 PCS representations without changing color.
-    pub fn between_pcs(from: IccPcs, to: IccPcs) -> Result<Self, ColorTransformError> {
+    pub fn between_pcs(from: Pcs, to: Pcs) -> Result<Self, ColorTransformError> {
         Self::between_pcs_for_intent(from, to, IccRenderingIntent::RelativeColorimetric)
     }
 
@@ -80,13 +80,13 @@ impl ColorTransform {
     /// Absolute PCS coordinates have a distinct identity from media-relative
     /// coordinates even when both use the same XYZ or Lab representation.
     pub fn between_pcs_for_intent(
-        from: IccPcs,
-        to: IccPcs,
+        from: Pcs,
+        to: Pcs,
         intent: IccRenderingIntent,
     ) -> Result<Self, ColorTransformError> {
         let stages = match (from, to) {
-            (IccPcs::XyzD50, IccPcs::LabD50) => vec![TransferStage::XyzD50ToLabD50],
-            (IccPcs::LabD50, IccPcs::XyzD50) => vec![TransferStage::LabD50ToXyzD50],
+            (Pcs::XyzD50, Pcs::LabD50) => vec![TransferStage::XyzD50ToLabD50],
+            (Pcs::LabD50, Pcs::XyzD50) => vec![TransferStage::LabD50ToXyzD50],
             _ => Vec::new(),
         };
         Self::new(
@@ -124,10 +124,10 @@ impl ColorTransform {
     }
 }
 
-pub(crate) fn pcs_key(pcs: IccPcs) -> ColorSpace {
+pub(crate) fn pcs_key(pcs: Pcs) -> ColorSpace {
     match pcs {
-        IccPcs::XyzD50 => XyzD50.into(),
-        IccPcs::LabD50 => LabD50.into(),
+        Pcs::XyzD50 => XyzD50.into(),
+        Pcs::LabD50 => LabD50.into(),
     }
 }
 
@@ -136,11 +136,11 @@ static ABSOLUTE_XYZ_D50_KEY: LazyLock<ColorSpace> =
 static ABSOLUTE_LAB_D50_KEY: LazyLock<ColorSpace> =
     LazyLock::new(|| ColorSpace::new(NonZeroUsize::new(3).unwrap()));
 
-pub(crate) fn pcs_key_for_intent(pcs: IccPcs, intent: IccRenderingIntent) -> ColorSpace {
+pub(crate) fn pcs_key_for_intent(pcs: Pcs, intent: IccRenderingIntent) -> ColorSpace {
     if intent == IccRenderingIntent::AbsoluteColorimetric {
         match pcs {
-            IccPcs::XyzD50 => (*ABSOLUTE_XYZ_D50_KEY).clone(),
-            IccPcs::LabD50 => (*ABSOLUTE_LAB_D50_KEY).clone(),
+            Pcs::XyzD50 => (*ABSOLUTE_XYZ_D50_KEY).clone(),
+            Pcs::LabD50 => (*ABSOLUTE_LAB_D50_KEY).clone(),
         }
     } else {
         pcs_key(pcs)
@@ -268,10 +268,10 @@ mod tests {
         let xyz = LinearSrgb
             .space_to_pcs(IccRenderingIntent::RelativeColorimetric)
             .unwrap();
-        let bridge = ColorTransform::between_pcs(IccPcs::XyzD50, IccPcs::LabD50).unwrap();
+        let bridge = ColorTransform::between_pcs(Pcs::XyzD50, Pcs::LabD50).unwrap();
         let lab = xyz.then(&bridge).unwrap();
         assert_eq!(lab.to(), &ColorSpace::from(LabD50));
-        let reverse = ColorTransform::between_pcs(IccPcs::LabD50, IccPcs::XyzD50)
+        let reverse = ColorTransform::between_pcs(Pcs::LabD50, Pcs::XyzD50)
             .unwrap()
             .then(
                 &LinearSrgb

@@ -9,9 +9,10 @@ use super::ColorModel;
 #[cfg(test)]
 use super::Rgb;
 use super::color_transform::ColorTransform;
-use super::icc::IccPcs;
 use super::icc_profile::IccRenderingIntent;
-use super::profile::{ColorProfile, ProfileConnectionError, ProfileDefinition, require_relative};
+use super::profile::{
+    ColorProfile, Pcs, ProfileConnectionError, ProfileDefinition, require_relative,
+};
 use super::transfer::{Transfer, TransferCurve, TransferError, TransferMatrix, TransferStage};
 
 /// Associates a statically typed color space with its coordinate model.

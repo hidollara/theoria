@@ -1,5 +1,5 @@
 use super::{
-    ColorProfile, ColorSpace, ColorTransform, IccPcs, IccRenderingIntent, ProfileConnectionError,
+    ColorProfile, ColorSpace, ColorTransform, IccRenderingIntent, Pcs, ProfileConnectionError,
     ProfileDefinition, TypedColorSpace, require_relative,
 };
 use crate::model::Lab;
@@ -12,8 +12,8 @@ impl ProfileDefinition for LabD50 {
         (*self).into()
     }
 
-    fn pcs(&self) -> IccPcs {
-        IccPcs::LabD50
+    fn pcs(&self) -> Pcs {
+        Pcs::LabD50
     }
 
     fn space_to_pcs(

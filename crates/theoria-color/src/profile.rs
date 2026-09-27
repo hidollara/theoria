@@ -7,10 +7,20 @@ use std::{
 };
 
 use super::color_transform::{ColorTransform, ColorTransformError, pcs_key_for_intent};
-use super::icc::IccPcs;
 use super::icc_profile::{IccProfileError, IccRenderingIntent};
 use super::space::ColorSpace;
 use super::transfer::TransferError;
+
+/// The coordinate representation used to connect color profiles.
+///
+/// Each variant denotes a different D50 color space, not one shared space.
+/// Profile conversions expose actual XYZ or Lab coordinates here, rather than
+/// the normalized encodings used inside some ICC LUT tags.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Pcs {
+    XyzD50,
+    LabD50,
+}
 
 /// A shared profile and the identity of its conversion definition.
 ///
@@ -78,7 +88,7 @@ impl fmt::Debug for ColorProfile {
 /// Definitions are `Send + Sync` so their handles can be shared by renderers.
 pub trait ProfileDefinition: Send + Sync {
     fn space(&self) -> ColorSpace;
-    fn pcs(&self) -> IccPcs;
+    fn pcs(&self) -> Pcs;
     fn space_to_pcs(
         &self,
         intent: IccRenderingIntent,
@@ -332,8 +342,8 @@ mod tests {
                 Srgb.into()
             }
 
-            fn pcs(&self) -> IccPcs {
-                IccPcs::XyzD50
+            fn pcs(&self) -> Pcs {
+                Pcs::XyzD50
             }
 
             fn space_to_pcs(
@@ -411,8 +421,8 @@ mod tests {
                 Srgb.into()
             }
 
-            fn pcs(&self) -> IccPcs {
-                IccPcs::XyzD50
+            fn pcs(&self) -> Pcs {
+                Pcs::XyzD50
             }
 
             fn space_to_pcs(
@@ -462,8 +472,8 @@ mod tests {
                 Srgb.into()
             }
 
-            fn pcs(&self) -> IccPcs {
-                IccPcs::XyzD50
+            fn pcs(&self) -> Pcs {
+                Pcs::XyzD50
             }
 
             fn space_to_pcs(

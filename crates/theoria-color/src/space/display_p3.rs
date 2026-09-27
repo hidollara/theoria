@@ -1,5 +1,5 @@
 use super::{
-    ColorProfile, ColorSpace, ColorTransform, IccPcs, IccRenderingIntent, ProfileConnectionError,
+    ColorProfile, ColorSpace, ColorTransform, IccRenderingIntent, Pcs, ProfileConnectionError,
     ProfileDefinition, TransferCurve, TypedColorSpace, require_relative, rgb_direct_to,
     rgb_to_xyz_d65_transfer, xyz_d65_to_rgb_transfer,
 };
@@ -41,8 +41,8 @@ impl ProfileDefinition for DisplayP3 {
         (*self).into()
     }
 
-    fn pcs(&self) -> IccPcs {
-        IccPcs::XyzD50
+    fn pcs(&self) -> Pcs {
+        Pcs::XyzD50
     }
 
     fn space_to_pcs(

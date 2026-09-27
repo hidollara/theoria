@@ -6,10 +6,11 @@ use moxcms::{
 };
 
 use super::color_transform::{ColorTransform, ColorTransformError, pcs_key_for_intent};
-use super::icc::{IccPcs, IccTransfer, IccTransferDirection, IccTransferError};
 use super::icc_mpe::MpeTags;
 use super::pcs::ICC_D50;
-use super::profile::{ColorProfile, ProfileConnectionError, ProfileDefinition};
+use super::profile::{
+    ColorProfile, Pcs, ProfileConnectionError, ProfileDefinition, connect_profiles,
+};
 use super::space::ColorSpace;
 use super::transfer::{
     Transfer, TransferClut, TransferCurve, TransferError, TransferMatrix, TransferStage,
@@ -22,6 +23,13 @@ pub enum IccRenderingIntent {
     RelativeColorimetric,
     Saturation,
     AbsoluteColorimetric,
+}
+
+/// Selects one direction while decoding an ICC profile's conversion data.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum IccTransferDirection {
+    DeviceToPcs,
+    PcsToDevice,
 }
 
 /// A parsed ICC v2/v4 profile whose supported transforms can be lowered to
@@ -42,7 +50,7 @@ pub struct IccProfile {
 struct IccProfileData {
     parsed: Arc<ParsedProfile>,
     original_bytes: Option<Arc<[u8]>>,
-    pcs: IccPcs,
+    pcs: Pcs,
     device_space: ColorSpace,
     mpe: MpeTags,
 }
@@ -75,8 +83,8 @@ impl IccProfile {
             return Err(IccProfileError::UnsupportedProfileClass);
         }
         let pcs = match parsed.pcs {
-            DataColorSpace::Xyz => IccPcs::XyzD50,
-            DataColorSpace::Lab => IccPcs::LabD50,
+            DataColorSpace::Xyz => Pcs::XyzD50,
+            DataColorSpace::Lab => Pcs::LabD50,
             _ => return Err(IccProfileError::UnsupportedPcs),
         };
         let mpe = MpeTags::parse(bytes).map_err(|_| IccProfileError::MalformedTransfer)?;
@@ -87,7 +95,7 @@ impl IccProfile {
         Ok(profile)
     }
 
-    fn from_parsed(parsed: ParsedProfile, pcs: IccPcs) -> Self {
+    fn from_parsed(parsed: ParsedProfile, pcs: Pcs) -> Self {
         let channels = NonZeroUsize::new(color_space_channels(parsed.color_space)).unwrap();
         Self {
             inner: Arc::new(IccProfileData {
@@ -100,7 +108,7 @@ impl IccProfile {
         }
     }
 
-    pub fn pcs(&self) -> IccPcs {
+    pub fn pcs(&self) -> Pcs {
         self.inner.pcs
     }
 
@@ -168,52 +176,34 @@ impl IccProfileData {
         direction: IccTransferDirection,
         intent: IccRenderingIntent,
     ) -> Result<ColorTransform, IccProfileError> {
-        let transfer = self.transfer(direction, intent)?;
+        let transfer = self.selected_transfer(direction, intent)?;
         let pcs = pcs_key_for_intent(self.pcs, intent);
         let device = self.device_space.clone();
         let (from, to) = match direction {
             IccTransferDirection::DeviceToPcs => (device, pcs),
             IccTransferDirection::PcsToDevice => (pcs, device),
         };
-        ColorTransform::new(from, to, transfer.into_transfer()).map_err(Into::into)
+        ColorTransform::new(from, to, transfer).map_err(Into::into)
     }
 }
 
 impl IccProfile {
     /// Connects this profile's device coordinates to another profile's.
     ///
-    /// Selects this profile's device-to-PCS transfer and the destination's
-    /// PCS-to-device transfer independently. ICC PCS differences are bridged
-    /// before the semantic endpoints are attached to the result. Absolute and
-    /// media-relative intent spaces cannot be mixed without an explicit
-    /// media-white conversion, so this method rejects that combination.
+    /// Selects this profile's device-to-PCS conversion and the destination's
+    /// PCS-to-device conversion through the shared profile connection path.
     pub fn connect_to(
         &self,
         destination: &Self,
         source_intent: IccRenderingIntent,
         destination_intent: IccRenderingIntent,
-    ) -> Result<ColorTransform, IccProfileError> {
-        if (source_intent == IccRenderingIntent::AbsoluteColorimetric)
-            != (destination_intent == IccRenderingIntent::AbsoluteColorimetric)
-        {
-            return Err(IccProfileError::IncompatibleIntentSpaces);
-        }
-        let source = self.transfer(IccTransferDirection::DeviceToPcs, source_intent)?;
-        let target = destination.transfer(IccTransferDirection::PcsToDevice, destination_intent)?;
-        ColorTransform::new(
-            self.device_space(),
-            destination.device_space(),
-            source.connect(&target)?,
+    ) -> Result<ColorTransform, ProfileConnectionError> {
+        connect_profiles(
+            self.profile(),
+            destination.profile(),
+            source_intent,
+            destination_intent,
         )
-        .map_err(Into::into)
-    }
-
-    pub fn transfer(
-        &self,
-        direction: IccTransferDirection,
-        intent: IccRenderingIntent,
-    ) -> Result<IccTransfer, IccProfileError> {
-        self.inner.transfer(direction, intent)
     }
 }
 
@@ -222,11 +212,11 @@ impl IccProfileData {
         self.device_space.channels()
     }
 
-    fn transfer(
+    fn selected_transfer(
         &self,
         direction: IccTransferDirection,
         intent: IccRenderingIntent,
-    ) -> Result<IccTransfer, IccProfileError> {
+    ) -> Result<Transfer, IccProfileError> {
         let intent_index = match intent {
             IccRenderingIntent::Perceptual => 0,
             IccRenderingIntent::RelativeColorimetric => 1,
@@ -238,7 +228,7 @@ impl IccProfileData {
             IccTransferDirection::PcsToDevice => &self.mpe.from_pcs[intent_index],
         };
         if let Some(transfer) = mpe {
-            return self.wrap_transfer(direction, transfer.clone());
+            return self.validate_transfer(direction, transfer.clone());
         }
         if intent == IccRenderingIntent::AbsoluteColorimetric {
             return self.absolute_transfer(direction);
@@ -292,19 +282,19 @@ impl IccProfileData {
             Transfer::new(input_channels, stages)?
         } else if self.parsed.color_space == DataColorSpace::Gray {
             gray_trc(&self.parsed, direction, self.pcs)?
-        } else if self.parsed.color_space == DataColorSpace::Rgb && self.pcs == IccPcs::XyzD50 {
+        } else if self.parsed.color_space == DataColorSpace::Rgb && self.pcs == Pcs::XyzD50 {
             rgb_matrix_trc(&self.parsed, direction)?
         } else {
             return Err(IccProfileError::MissingTransfer);
         };
-        self.wrap_transfer(direction, transfer)
+        self.validate_transfer(direction, transfer)
     }
 
-    fn wrap_transfer(
+    fn validate_transfer(
         &self,
         direction: IccTransferDirection,
         transfer: Transfer,
-    ) -> Result<IccTransfer, IccProfileError> {
+    ) -> Result<Transfer, IccProfileError> {
         let device_channels = match direction {
             IccTransferDirection::DeviceToPcs => transfer.input_channels(),
             IccTransferDirection::PcsToDevice => transfer.output_channels(),
@@ -312,17 +302,20 @@ impl IccProfileData {
         if device_channels != self.device_channels() {
             return Err(IccProfileError::MalformedTransfer);
         }
-        if direction == IccTransferDirection::DeviceToPcs {
-            IccTransfer::device_to_pcs(self.pcs, transfer).map_err(Into::into)
-        } else {
-            IccTransfer::pcs_to_device(self.pcs, transfer).map_err(Into::into)
+        let pcs_channels = match direction {
+            IccTransferDirection::DeviceToPcs => transfer.output_channels(),
+            IccTransferDirection::PcsToDevice => transfer.input_channels(),
+        };
+        if pcs_channels != 3 {
+            return Err(IccProfileError::MalformedTransfer);
         }
+        Ok(transfer)
     }
 
     fn absolute_transfer(
         &self,
         direction: IccTransferDirection,
-    ) -> Result<IccTransfer, IccProfileError> {
+    ) -> Result<Transfer, IccProfileError> {
         let media_white = self
             .parsed
             .media_white_point
@@ -340,29 +333,21 @@ impl IccProfileData {
             IccTransferDirection::PcsToDevice => pcs_white[index] / media_white[index],
         });
         let mut stages = Vec::new();
-        if self.pcs == IccPcs::LabD50 {
+        if self.pcs == Pcs::LabD50 {
             stages.push(TransferStage::LabD50ToXyzD50);
         }
         stages.push(diagonal(scale, [0.0; 3])?);
-        if self.pcs == IccPcs::LabD50 {
+        if self.pcs == Pcs::LabD50 {
             stages.push(TransferStage::XyzD50ToLabD50);
         }
         let adjustment = Transfer::new(3, stages)?;
-        let relative = self
-            .transfer(direction, IccRenderingIntent::RelativeColorimetric)?
-            .into_transfer();
+        let relative =
+            self.selected_transfer(direction, IccRenderingIntent::RelativeColorimetric)?;
         let transfer = match direction {
             IccTransferDirection::DeviceToPcs => relative.then(&adjustment)?,
             IccTransferDirection::PcsToDevice => adjustment.then(&relative)?,
         };
-        match direction {
-            IccTransferDirection::DeviceToPcs => {
-                IccTransfer::device_to_pcs(self.pcs, transfer).map_err(Into::into)
-            }
-            IccTransferDirection::PcsToDevice => {
-                IccTransfer::pcs_to_device(self.pcs, transfer).map_err(Into::into)
-            }
-        }
+        self.validate_transfer(direction, transfer)
     }
 }
 
@@ -484,10 +469,10 @@ fn table_curves(
 fn legacy_lut(
     lut: &LutDataType,
     direction: IccTransferDirection,
-    pcs: IccPcs,
+    pcs: Pcs,
 ) -> Result<Vec<TransferStage>, IccProfileError> {
     // ICC does not define an 8-bit PCSXYZ encoding for lut8Type.
-    if lut.lut_type == LutType::Lut8 && pcs == IccPcs::XyzD50 {
+    if lut.lut_type == LutType::Lut8 && pcs == Pcs::XyzD50 {
         return Err(IccProfileError::MalformedTransfer);
     }
     let inputs = usize::from(lut.num_input_channels);
@@ -495,7 +480,7 @@ fn legacy_lut(
     let mut stages = Vec::new();
     // The legacy LUT matrix is only meaningful for a three-channel PCSXYZ
     // input; conforming tags use identity in all other cases.
-    if direction == IccTransferDirection::PcsToDevice && pcs == IccPcs::XyzD50 && inputs == 3 {
+    if direction == IccTransferDirection::PcsToDevice && pcs == Pcs::XyzD50 && inputs == 3 {
         stages.push(matrix(&lut.matrix, [0.0; 3])?);
     }
     stages.push(table_curves(
@@ -565,24 +550,24 @@ fn multidimensional_lut(
     Ok(stages)
 }
 
-fn pcs_decoding(pcs: IccPcs, tag: &LutWarehouse) -> Result<TransferStage, IccProfileError> {
+fn pcs_decoding(pcs: Pcs, tag: &LutWarehouse) -> Result<TransferStage, IccProfileError> {
     let legacy_lab = matches!(tag, LutWarehouse::Lut(lut) if lut.lut_type == LutType::Lut16);
     let (scale, offsets) = match pcs {
-        IccPcs::XyzD50 => ([65535.0 / 32768.0; 3], [0.0; 3]),
-        IccPcs::LabD50 if legacy_lab => (
+        Pcs::XyzD50 => ([65535.0 / 32768.0; 3], [0.0; 3]),
+        Pcs::LabD50 if legacy_lab => (
             [100.0 * 65535.0 / 65280.0, 65535.0 / 256.0, 65535.0 / 256.0],
             [0.0, -128.0, -128.0],
         ),
-        IccPcs::LabD50 => ([100.0, 255.0, 255.0], [0.0, -128.0, -128.0]),
+        Pcs::LabD50 => ([100.0, 255.0, 255.0], [0.0, -128.0, -128.0]),
     };
     diagonal(scale, offsets)
 }
 
-fn pcs_encoding(pcs: IccPcs, tag: &LutWarehouse) -> Result<TransferStage, IccProfileError> {
+fn pcs_encoding(pcs: Pcs, tag: &LutWarehouse) -> Result<TransferStage, IccProfileError> {
     let legacy_lab = matches!(tag, LutWarehouse::Lut(lut) if lut.lut_type == LutType::Lut16);
     let (scale, offsets) = match pcs {
-        IccPcs::XyzD50 => ([32768.0 / 65535.0; 3], [0.0; 3]),
-        IccPcs::LabD50 if legacy_lab => (
+        Pcs::XyzD50 => ([32768.0 / 65535.0; 3], [0.0; 3]),
+        Pcs::LabD50 if legacy_lab => (
             [
                 65280.0 / (100.0 * 65535.0),
                 256.0 / 65535.0,
@@ -590,7 +575,7 @@ fn pcs_encoding(pcs: IccPcs, tag: &LutWarehouse) -> Result<TransferStage, IccPro
             ],
             [0.0, 128.0 * 256.0 / 65535.0, 128.0 * 256.0 / 65535.0],
         ),
-        IccPcs::LabD50 => (
+        Pcs::LabD50 => (
             [0.01, 1.0 / 255.0, 1.0 / 255.0],
             [0.0, 128.0 / 255.0, 128.0 / 255.0],
         ),
@@ -650,7 +635,7 @@ fn rgb_matrix_trc(
 fn gray_trc(
     profile: &ParsedProfile,
     direction: IccTransferDirection,
-    pcs: IccPcs,
+    pcs: Pcs,
 ) -> Result<Transfer, IccProfileError> {
     let trc = profile
         .gray_trc
@@ -659,8 +644,8 @@ fn gray_trc(
     let (input_channels, stages) = match direction {
         IccTransferDirection::DeviceToPcs => {
             let coefficients = match pcs {
-                IccPcs::XyzD50 => ICC_D50,
-                IccPcs::LabD50 => [100.0, 0.0, 0.0],
+                Pcs::XyzD50 => ICC_D50,
+                Pcs::LabD50 => [100.0, 0.0, 0.0],
             };
             (
                 1,
@@ -672,8 +657,8 @@ fn gray_trc(
         }
         IccTransferDirection::PcsToDevice => {
             let coefficients = match pcs {
-                IccPcs::XyzD50 => [0.0, 1.0, 0.0],
-                IccPcs::LabD50 => [0.01, 0.0, 0.0],
+                Pcs::XyzD50 => [0.0, 1.0, 0.0],
+                Pcs::LabD50 => [0.01, 0.0, 0.0],
             };
             (
                 3,
@@ -695,23 +680,15 @@ pub enum IccProfileError {
     UnsupportedPcs,
     IncompatibleSpaceChannels,
     MissingMediaWhitePoint,
-    IncompatibleIntentSpaces,
     MissingTransfer,
     MalformedTransfer,
     Transfer(TransferError),
-    IccTransfer(IccTransferError),
     ColorTransform(ColorTransformError),
 }
 
 impl From<TransferError> for IccProfileError {
     fn from(error: TransferError) -> Self {
         Self::Transfer(error)
-    }
-}
-
-impl From<IccTransferError> for IccProfileError {
-    fn from(error: IccTransferError) -> Self {
-        Self::IccTransfer(error)
     }
 }
 
@@ -736,9 +713,6 @@ impl fmt::Display for IccProfileError {
             Self::MissingMediaWhitePoint => {
                 f.write_str("absolute-colorimetric ICC links require a media white point")
             }
-            Self::IncompatibleIntentSpaces => f.write_str(
-                "absolute and media-relative ICC PCS values cannot be connected directly",
-            ),
             Self::MissingTransfer => {
                 f.write_str("the ICC profile has no transfer for this direction and intent")
             }
@@ -746,7 +720,6 @@ impl fmt::Display for IccProfileError {
                 f.write_str("the ICC profile transfer is malformed or unsupported")
             }
             Self::Transfer(error) => error.fmt(f),
-            Self::IccTransfer(error) => error.fmt(f),
             Self::ColorTransform(error) => error.fmt(f),
         }
     }
@@ -757,7 +730,6 @@ impl Error for IccProfileError {
         match self {
             Self::Parse(error) => Some(error),
             Self::Transfer(error) => Some(error),
-            Self::IccTransfer(error) => Some(error),
             Self::ColorTransform(error) => Some(error),
             _ => None,
         }
@@ -769,7 +741,7 @@ impl ProfileDefinition for IccProfileData {
         self.device_space.clone()
     }
 
-    fn pcs(&self) -> IccPcs {
+    fn pcs(&self) -> Pcs {
         self.pcs
     }
 
@@ -807,7 +779,7 @@ mod tests {
 
     #[test]
     fn generic_profile_connection_matches_icc_connection() {
-        let profile = IccProfile::from_parsed(ParsedProfile::new_srgb(), IccPcs::XyzD50);
+        let profile = IccProfile::from_parsed(ParsedProfile::new_srgb(), Pcs::XyzD50);
         for intent in [
             IccRenderingIntent::RelativeColorimetric,
             IccRenderingIntent::Perceptual,
@@ -875,11 +847,11 @@ mod tests {
 
     #[test]
     fn lut_selection_falls_back_by_direction_before_matrix_trc() {
-        let matrix_only = IccProfile::from_parsed(ParsedProfile::new_srgb(), IccPcs::XyzD50);
+        let matrix_only = IccProfile::from_parsed(ParsedProfile::new_srgb(), Pcs::XyzD50);
         let mut raw = ParsedProfile::new_srgb();
         raw.lut_a_to_b_perceptual = Some(simple_lut(ToneReprCurve::Lut(Vec::new())));
         raw.lut_a_to_b_colorimetric = Some(simple_lut(ToneReprCurve::Lut(vec![512])));
-        let profile = IccProfile::from_parsed(raw, IccPcs::XyzD50);
+        let profile = IccProfile::from_parsed(raw, Pcs::XyzD50);
 
         let perceptual = profile
             .space_to_pcs(IccRenderingIntent::Perceptual)
@@ -929,7 +901,7 @@ mod tests {
     fn pcs_to_device_uses_its_own_zero_lut_before_matrix_trc() {
         let mut raw = ParsedProfile::new_srgb();
         raw.lut_b_to_a_perceptual = Some(simple_lut(ToneReprCurve::Lut(Vec::new())));
-        let profile = IccProfile::from_parsed(raw, IccPcs::XyzD50);
+        let profile = IccProfile::from_parsed(raw, Pcs::XyzD50);
         let perceptual = profile
             .pcs_to_space(IccRenderingIntent::Perceptual)
             .unwrap();
@@ -939,7 +911,7 @@ mod tests {
         assert_eq!(saturation.transfer(), perceptual.transfer());
         assert_ne!(
             saturation.transfer(),
-            IccProfile::from_parsed(ParsedProfile::new_srgb(), IccPcs::XyzD50)
+            IccProfile::from_parsed(ParsedProfile::new_srgb(), Pcs::XyzD50)
                 .pcs_to_space(IccRenderingIntent::Saturation)
                 .unwrap()
                 .transfer()
@@ -950,25 +922,19 @@ mod tests {
     fn parses_matrix_trc_profile_and_connects_both_directions() {
         let bytes = ParsedProfile::new_srgb().encode().unwrap();
         let profile = IccProfile::from_bytes(&bytes).unwrap();
-        assert_eq!(profile.pcs(), IccPcs::XyzD50);
+        assert_eq!(profile.pcs(), Pcs::XyzD50);
         let forward = profile
-            .transfer(
-                IccTransferDirection::DeviceToPcs,
-                IccRenderingIntent::RelativeColorimetric,
-            )
+            .space_to_pcs(IccRenderingIntent::RelativeColorimetric)
             .unwrap();
         let backward = profile
-            .transfer(
-                IccTransferDirection::PcsToDevice,
-                IccRenderingIntent::RelativeColorimetric,
-            )
+            .pcs_to_space(IccRenderingIntent::RelativeColorimetric)
             .unwrap();
         let xyz = forward.transfer().evaluate(&[0.4, 0.5, 0.6]).unwrap();
         let rgb = backward.transfer().evaluate(&xyz).unwrap();
         for (actual, expected) in rgb.into_iter().zip([0.4, 0.5, 0.6]) {
             assert!((actual - expected).abs() < 0.003);
         }
-        assert!(forward.connect(&backward).is_ok());
+        assert!(forward.then(&backward).is_ok());
         let semantic = profile
             .connect_to(
                 &profile,
@@ -984,12 +950,39 @@ mod tests {
         }
         assert!(
             profile
-                .transfer(
-                    IccTransferDirection::DeviceToPcs,
-                    IccRenderingIntent::AbsoluteColorimetric
-                )
+                .space_to_pcs(IccRenderingIntent::AbsoluteColorimetric)
                 .is_ok()
         );
+    }
+
+    #[test]
+    fn icc_profiles_with_different_pcs_connect_through_a_semantic_bridge() {
+        let source = IccProfile::from_parsed(ParsedProfile::new_gray_with_gamma(1.0), Pcs::XyzD50);
+        let destination =
+            IccProfile::from_parsed(ParsedProfile::new_gray_with_gamma(1.0), Pcs::LabD50);
+        let to_pcs = source
+            .space_to_pcs(IccRenderingIntent::RelativeColorimetric)
+            .unwrap();
+        let from_pcs = destination
+            .pcs_to_space(IccRenderingIntent::RelativeColorimetric)
+            .unwrap();
+        assert_eq!(
+            to_pcs.then(&from_pcs),
+            Err(ColorTransformError::SpaceMismatch)
+        );
+        let connected = source
+            .connect_to(
+                &destination,
+                IccRenderingIntent::RelativeColorimetric,
+                IccRenderingIntent::RelativeColorimetric,
+            )
+            .unwrap();
+        assert_eq!(connected.from(), &source.device_space());
+        assert_eq!(connected.to(), &destination.device_space());
+        let result = connected.transfer().evaluate(&[0.4]).unwrap();
+        let relative_xyz = ICC_D50.map(|component| component * 0.4);
+        let expected = crate::pcs::xyz_to_lab(relative_xyz, ICC_D50)[0] / 100.0;
+        assert!((result[0] - expected).abs() < 1e-8);
     }
 
     #[test]
@@ -998,7 +991,7 @@ mod tests {
         for trc in [&mut raw.red_trc, &mut raw.green_trc, &mut raw.blue_trc] {
             *trc = Some(ToneReprCurve::Lut(vec![512]));
         }
-        let profile = IccProfile::from_parsed(raw, IccPcs::XyzD50);
+        let profile = IccProfile::from_parsed(raw, Pcs::XyzD50);
         let forward = profile
             .space_to_pcs(IccRenderingIntent::RelativeColorimetric)
             .unwrap();
@@ -1053,7 +1046,7 @@ mod tests {
             y: 0.8,
             z: 0.6,
         });
-        let profile = IccProfile::from_parsed(raw, IccPcs::XyzD50);
+        let profile = IccProfile::from_parsed(raw, Pcs::XyzD50);
         let relative = profile
             .space_to_pcs(IccRenderingIntent::RelativeColorimetric)
             .unwrap();
@@ -1103,7 +1096,7 @@ mod tests {
                 IccRenderingIntent::AbsoluteColorimetric,
                 IccRenderingIntent::RelativeColorimetric,
             ),
-            Err(IccProfileError::IncompatibleIntentSpaces)
+            Err(ProfileConnectionError::IncompatibleIntentSpaces)
         ));
     }
 
@@ -1115,7 +1108,7 @@ mod tests {
             y: 0.8,
             z: 0.6,
         });
-        let profile = IccProfile::from_parsed(raw, IccPcs::LabD50);
+        let profile = IccProfile::from_parsed(raw, Pcs::LabD50);
         let absolute_lab = profile
             .space_to_pcs(IccRenderingIntent::AbsoluteColorimetric)
             .unwrap()
@@ -1156,7 +1149,7 @@ mod tests {
     fn absolute_intent_requires_valid_media_white() {
         let mut raw = ParsedProfile::new_srgb();
         raw.media_white_point = None;
-        let profile = IccProfile::from_parsed(raw, IccPcs::XyzD50);
+        let profile = IccProfile::from_parsed(raw, Pcs::XyzD50);
         assert!(matches!(
             profile.space_to_pcs(IccRenderingIntent::AbsoluteColorimetric),
             Err(IccProfileError::MissingMediaWhitePoint)
@@ -1167,7 +1160,7 @@ mod tests {
             y: 1.0,
             z: 1.0,
         });
-        let profile = IccProfile::from_parsed(raw, IccPcs::XyzD50);
+        let profile = IccProfile::from_parsed(raw, Pcs::XyzD50);
         assert!(matches!(
             profile.space_to_pcs(IccRenderingIntent::AbsoluteColorimetric),
             Err(IccProfileError::MalformedTransfer)
@@ -1178,7 +1171,7 @@ mod tests {
     fn direct_absolute_mpe_does_not_require_media_white() {
         let mut raw = ParsedProfile::new_srgb();
         raw.media_white_point = None;
-        let mut profile = IccProfile::from_parsed(raw, IccPcs::XyzD50);
+        let mut profile = IccProfile::from_parsed(raw, Pcs::XyzD50);
         Arc::get_mut(&mut profile.inner).unwrap().mpe.to_pcs[3] =
             Some(Transfer::new(3, Vec::<TransferStage>::new()).unwrap());
         let actual = profile
@@ -1194,7 +1187,7 @@ mod tests {
     fn gray_trc_fallback_does_not_accept_wrong_channel_count_from_lut() {
         let mut raw = ParsedProfile::new_gray_with_gamma(2.2);
         raw.lut_a_to_b_perceptual = Some(simple_lut(ToneReprCurve::Lut(Vec::new())));
-        let profile = IccProfile::from_parsed(raw, IccPcs::XyzD50);
+        let profile = IccProfile::from_parsed(raw, Pcs::XyzD50);
         assert!(
             profile
                 .pcs_to_space(IccRenderingIntent::RelativeColorimetric)
@@ -1258,7 +1251,7 @@ mod tests {
             &shared_space
         );
 
-        let gray = IccProfile::from_parsed(ParsedProfile::new_gray_with_gamma(2.2), IccPcs::XyzD50);
+        let gray = IccProfile::from_parsed(ParsedProfile::new_gray_with_gamma(2.2), Pcs::XyzD50);
         assert!(matches!(
             gray.with_device_space(shared_space),
             Err(IccProfileError::IncompatibleSpaceChannels)
@@ -1300,10 +1293,7 @@ mod tests {
         bytes[9] = 0x10;
         let profile = IccProfile::from_bytes(&bytes).unwrap();
         let transfer = profile
-            .transfer(
-                IccTransferDirection::DeviceToPcs,
-                IccRenderingIntent::RelativeColorimetric,
-            )
+            .space_to_pcs(IccRenderingIntent::RelativeColorimetric)
             .unwrap();
         let xyz = transfer.transfer().evaluate(&[1.0, 1.0, 1.0]).unwrap();
         assert!((xyz[1] - 1.0).abs() < 0.01);
@@ -1338,16 +1328,10 @@ mod tests {
         raw.lut_b_to_a_colorimetric = Some(LutWarehouse::Multidimensional(lut));
         let profile = IccProfile::from_bytes(&raw.encode().unwrap()).unwrap();
         let forward = profile
-            .transfer(
-                IccTransferDirection::DeviceToPcs,
-                IccRenderingIntent::RelativeColorimetric,
-            )
+            .space_to_pcs(IccRenderingIntent::RelativeColorimetric)
             .unwrap();
         let backward = profile
-            .transfer(
-                IccTransferDirection::PcsToDevice,
-                IccRenderingIntent::RelativeColorimetric,
-            )
+            .pcs_to_space(IccRenderingIntent::RelativeColorimetric)
             .unwrap();
         let encoded = [0.25, 0.5, 0.75];
         let xyz = forward.transfer().evaluate(&encoded).unwrap();
@@ -1373,7 +1357,7 @@ mod tests {
             lut_type: LutType::Lut16,
         };
         let tag = LutWarehouse::Lut(lut);
-        let decoded = Transfer::new(3, [pcs_decoding(IccPcs::LabD50, &tag).unwrap()]).unwrap();
+        let decoded = Transfer::new(3, [pcs_decoding(Pcs::LabD50, &tag).unwrap()]).unwrap();
         let lab = decoded
             .evaluate(&[65280.0 / 65535.0, 32768.0 / 65535.0, 32768.0 / 65535.0])
             .unwrap();
@@ -1408,17 +1392,14 @@ mod tests {
                 matrix: moxcms::Matrix3d::IDENTITY,
                 bias: moxcms::Vector3d { v: [0.0; 3] },
             }));
-        let profile = IccProfile::from_parsed(raw, IccPcs::XyzD50);
+        let profile = IccProfile::from_parsed(raw, Pcs::XyzD50);
         assert_eq!(profile.device_channels(), 4);
         assert!(matches!(
             profile.pcs_to_space(IccRenderingIntent::RelativeColorimetric),
             Err(IccProfileError::MissingTransfer)
         ));
         let transfer = profile
-            .transfer(
-                IccTransferDirection::DeviceToPcs,
-                IccRenderingIntent::RelativeColorimetric,
-            )
+            .space_to_pcs(IccRenderingIntent::RelativeColorimetric)
             .unwrap();
         let result = transfer.transfer().evaluate(&[0.8, 0.2, 0.6, 0.5]).unwrap();
         let xyz_scale = 65535.0 / 32768.0;
