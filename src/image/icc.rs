@@ -1,6 +1,6 @@
 use std::{error::Error, fmt, sync::Arc};
 
-use crate::color::{IccProfile, IccRenderingIntent, RgbColorSpace, connect_profiles};
+use crate::color::{IccProfile, IccRenderingIntent, Srgb, connect_profiles};
 
 use super::{RasterImageInstanceKey, Srgba8Image};
 
@@ -32,7 +32,7 @@ impl IccRasterImage {
             return Err(Box::new(IccImageError::AbsoluteIntent));
         }
         let transform = connect_profiles(
-            RgbColorSpace::Srgb,
+            Srgb,
             &profile,
             IccRenderingIntent::RelativeColorimetric,
             intent,
@@ -190,14 +190,20 @@ mod tests {
             .chunks_exact(4)
             .zip(source.pixels().chunks_exact(4))
         {
-            let source_rgb = std::array::from_fn(|index| f32::from(expected[index]) / 255.0);
-            let linear = crate::color::convert_rgb(
-                source_rgb,
-                RgbColorSpace::Srgb,
-                RgbColorSpace::LinearSrgb,
-            );
+            let source_rgb: [f32; 3] =
+                std::array::from_fn(|index| f32::from(expected[index]) / 255.0);
+            let linear = crate::color::connect_profiles(
+                Srgb,
+                crate::color::LinearSrgb,
+                IccRenderingIntent::RelativeColorimetric,
+                IccRenderingIntent::RelativeColorimetric,
+            )
+            .unwrap()
+            .transfer()
+            .evaluate(&source_rgb.map(f64::from))
+            .unwrap();
             for (actual, expected) in actual[..3].iter().zip(linear) {
-                assert!((half::f16::from_bits(*actual).to_f32() - expected).abs() < 0.03);
+                assert!((half::f16::from_bits(*actual).to_f32() - expected as f32).abs() < 0.03);
             }
             assert!(
                 (half::f16::from_bits(actual[3]).to_f32() - f32::from(expected[3]) / 255.0).abs()

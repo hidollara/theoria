@@ -1,4 +1,4 @@
-use crate::color::{ColorProfile, Rgb, RgbColorSpace, TypedColorSpace};
+use crate::color::{ColorProfile, Rgb, TypedColorSpace};
 
 use super::{Blend, BlendOperation, BlendShader};
 
@@ -114,7 +114,7 @@ impl Composition {
         }
     }
 
-    pub(crate) fn requires_destination_read_in(&self, working_space: RgbColorSpace) -> bool {
-        self.blend.is_some() || self.composite_space != ColorProfile::from(working_space)
+    pub(crate) fn requires_destination_read_in(&self, working_profile: &ColorProfile) -> bool {
+        self.blend.is_some() || &self.composite_space != working_profile
     }
 }

@@ -4,7 +4,7 @@ use crate::{
     canvas::{CanvasColor, CanvasIccColorError, ColorValue},
     color::{
         ColorProfile, ColorTransform, IccRenderingIntent, LinearDisplayP3, LinearSrgb,
-        RgbColorSpace, connect_profiles, convert_rgb,
+        connect_profiles,
     },
 };
 
@@ -13,7 +13,7 @@ use crate::{
 /// Keys identify colors within the borrowed, immutable Canvas for one render.
 /// The Canvas stays alive and unmoved until this cache is discarded.
 pub(crate) struct PreparedColors {
-    working_space: RgbColorSpace,
+    working_profile: ColorProfile,
     premultiplied: HashMap<usize, [f32; 4]>,
     interpolations: HashMap<ColorProfile, PreparedInterpolation>,
 }
@@ -50,21 +50,21 @@ impl PreparedInterpolation {
 
 impl Default for PreparedColors {
     fn default() -> Self {
-        Self::new(RgbColorSpace::LinearSrgb)
+        Self::new(LinearSrgb)
     }
 }
 
 impl PreparedColors {
-    pub(crate) fn new(working_space: RgbColorSpace) -> Self {
+    pub(crate) fn new(working_profile: impl Into<ColorProfile>) -> Self {
         Self {
-            working_space,
+            working_profile: working_profile.into(),
             premultiplied: HashMap::new(),
             interpolations: HashMap::new(),
         }
     }
 
-    pub(crate) fn working_space(&self) -> RgbColorSpace {
-        self.working_space
+    pub(crate) fn working_profile(&self) -> &ColorProfile {
+        &self.working_profile
     }
 
     pub(crate) fn prepare_interpolation(
@@ -79,12 +79,12 @@ impl PreparedColors {
                 profile.space().channels(),
             ));
         }
-        let working = ColorProfile::from(self.working_space);
+        let working = &self.working_profile;
         let intent = IccRenderingIntent::RelativeColorimetric;
         let plan = PreparedInterpolation {
-            to_interpolation: connect_profiles(&working, profile, intent, intent)?,
-            to_working: connect_profiles(profile, &working, intent, intent)?,
-            identity: *profile == working,
+            to_interpolation: connect_profiles(working, profile, intent, intent)?,
+            to_working: connect_profiles(profile, working, intent, intent)?,
+            identity: profile == working,
             linear_builtin: *profile == ColorProfile::from(LinearSrgb)
                 || *profile == ColorProfile::from(LinearDisplayP3),
         };
@@ -99,7 +99,7 @@ impl PreparedColors {
     pub(crate) fn prepare(&mut self, color: &CanvasColor) -> Result<(), CanvasIccColorError> {
         let key = color as *const CanvasColor as usize;
         if let std::collections::hash_map::Entry::Vacant(entry) = self.premultiplied.entry(key) {
-            let [red, green, blue, alpha] = color.try_straight_rgba_in(self.working_space)?;
+            let [red, green, blue, alpha] = color.try_straight_rgba_in(&self.working_profile)?;
             entry.insert([red * alpha, green * alpha, blue * alpha, alpha]);
         }
         Ok(())
@@ -110,26 +110,31 @@ impl PreparedColors {
         self.premultiplied
             .get(&key)
             .copied()
-            .unwrap_or_else(|| lower_straight_color_in(color, self.working_space))
+            .unwrap_or_else(|| lower_straight_color_in(color, &self.working_profile))
     }
 }
 
 impl CanvasColor {
     /// Resolves the declared source color into a renderer-selected RGB space.
-    pub(crate) fn straight_rgba_in(&self, space: RgbColorSpace) -> [f32; 4] {
-        self.try_straight_rgba_in(space)
+    pub(crate) fn straight_rgba_in(&self, profile: impl Into<ColorProfile>) -> [f32; 4] {
+        self.try_straight_rgba_in(profile)
             .expect("this caller requires an ICC conversion known to succeed")
     }
 
     pub(crate) fn try_straight_rgba_in(
         &self,
-        space: RgbColorSpace,
+        profile: impl Into<ColorProfile>,
     ) -> Result<[f32; 4], CanvasIccColorError> {
         let coordinates: Vec<f64> = match &self.value {
             ColorValue::Dynamic(coordinates, _) => coordinates.to_vec(),
             _ => self.value.coordinates_as_f64().to_vec(),
         };
-        let destination = ColorProfile::from(space);
+        let destination = profile.into();
+        if destination.space().channels() != 3 {
+            return Err(CanvasIccColorError::UnsupportedColorChannels(
+                destination.space().channels(),
+            ));
+        }
         let converted = if self.profile == destination {
             coordinates
         } else {
@@ -168,11 +173,14 @@ impl ColorValue {
 
 #[cfg(test)]
 pub(crate) fn lower_straight_color(color: &CanvasColor) -> [f32; 4] {
-    lower_straight_color_in(color, RgbColorSpace::LinearSrgb)
+    lower_straight_color_in(color, LinearSrgb)
 }
 
-pub(crate) fn lower_straight_color_in(color: &CanvasColor, space: RgbColorSpace) -> [f32; 4] {
-    let [red, green, blue, alpha] = color.straight_rgba_in(space);
+pub(crate) fn lower_straight_color_in(
+    color: &CanvasColor,
+    profile: impl Into<ColorProfile>,
+) -> [f32; 4] {
+    let [red, green, blue, alpha] = color.straight_rgba_in(profile);
     [red * alpha, green * alpha, blue * alpha, alpha]
 }
 
@@ -207,13 +215,30 @@ pub(super) fn mix_premultiplied_rgba(
 
 pub(crate) fn convert_premultiplied_space(
     value: [f32; 4],
-    from: RgbColorSpace,
-    to: RgbColorSpace,
-) -> [f32; 4] {
+    from: &ColorProfile,
+    to: &ColorProfile,
+) -> Result<[f32; 4], Box<dyn std::error::Error>> {
     if from == to {
-        return value;
+        return Ok(value);
     }
-    convert_premultiplied(value, |rgb| convert_rgb(rgb, from, to))
+    if value[3] == 0.0 {
+        return Ok([0.0; 4]);
+    }
+    let transform = connect_profiles(
+        from,
+        to,
+        IccRenderingIntent::RelativeColorimetric,
+        IccRenderingIntent::RelativeColorimetric,
+    )?;
+    let alpha = value[3];
+    let straight = [value[0] / alpha, value[1] / alpha, value[2] / alpha];
+    let converted = transform.transfer().evaluate(&straight.map(f64::from))?;
+    Ok([
+        converted[0] as f32 * alpha,
+        converted[1] as f32 * alpha,
+        converted[2] as f32 * alpha,
+        alpha,
+    ])
 }
 
 fn convert_premultiplied(
@@ -341,7 +366,7 @@ mod tests {
             [0.5_f32, 0.5, 0.5],
             Opacity::<f32>::ONE,
         ));
-        let mut prepared = PreparedColors::new(RgbColorSpace::Srgb);
+        let mut prepared = PreparedColors::new(Srgb);
         prepared.prepare(&color).unwrap();
         assert_eq!(prepared.lower(&color), [0.5, 0.5, 0.5, 1.0]);
     }
@@ -350,17 +375,22 @@ mod tests {
     fn interpolation_returns_coordinates_in_the_working_space() {
         let black = [0.0, 0.0, 0.0, 1.0];
         let white = [1.0, 1.0, 1.0, 1.0];
-        let mut prepared = PreparedColors::new(RgbColorSpace::LinearDisplayP3);
+        let mut prepared = PreparedColors::new(LinearDisplayP3);
         prepared.prepare_interpolation(&Srgb.into()).unwrap();
         let actual =
             interpolate_premultiplied_rgba(black, white, 0.5, prepared.interpolation(&Srgb.into()));
-        let expected = convert_rgb(
-            [0.5; 3],
-            RgbColorSpace::Srgb,
-            RgbColorSpace::LinearDisplayP3,
-        );
+        let expected = connect_profiles(
+            Srgb,
+            LinearDisplayP3,
+            IccRenderingIntent::RelativeColorimetric,
+            IccRenderingIntent::RelativeColorimetric,
+        )
+        .unwrap()
+        .transfer()
+        .evaluate(&[0.5; 3])
+        .unwrap();
         for (actual, expected) in actual[..3].iter().zip(expected) {
-            assert!((actual - expected).abs() < 0.000_01);
+            assert!((actual - expected as f32).abs() < 0.000_01);
         }
         assert_eq!(actual[3], 1.0);
     }

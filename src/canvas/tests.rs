@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    color::{Color, DisplayP3, LinearSrgb, Opacity, RgbColorSpace, Srgb},
+    color::{Color, ColorProfile, DisplayP3, LinearSrgb, Opacity, Srgb},
     geometry::Point,
     image::{AlphaAssociation, RasterImage, RasterPlane, Rgba8, Srgba8Image},
     math::Vector2,
@@ -213,7 +213,7 @@ fn canvas_retains_typed_rgba8_raster_metadata_until_renderer_lowering() {
 
     assert_eq!(source.instance_key(), image.instance_key());
     assert_eq!(plane.samples(), &[255, 128, 64, 128]);
-    assert_eq!(color_space, RgbColorSpace::DisplayP3);
+    assert_eq!(color_space, ColorProfile::from(DisplayP3));
     assert_eq!(alpha, AlphaAssociation::Premultiplied);
 }
 
@@ -239,7 +239,7 @@ fn canvas_retains_an_opaque_rgb8_raster_without_inventing_alpha_metadata() {
     };
 
     assert_eq!(plane.samples(), &[255, 128, 64]);
-    assert_eq!(color_space, RgbColorSpace::DisplayP3);
+    assert_eq!(color_space, ColorProfile::from(DisplayP3));
 }
 
 #[test]

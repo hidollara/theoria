@@ -8,14 +8,14 @@ use wgpu::util::DeviceExt;
 use crate::canvas::{Composite, Composition, composition_shader::Binding};
 use crate::canvas_renderer::icc_image_shader;
 use crate::canvas_renderer::output_color::OutputColorTransform;
-use crate::color::{ColorProfile, IccProfile, IccRenderingIntent, RgbColorSpace};
+use crate::color::{ColorProfile, IccProfile, IccRenderingIntent};
 
 use super::encoding::{CompositionUniform, ImageVertex, TriangleVertex};
 
 pub(super) const WORKING_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 
 pub(super) struct Pipelines {
-    working_space: RgbColorSpace,
+    working_profile: ColorProfile,
     pub(super) texture_layout: wgpu::BindGroupLayout,
     pub(super) blend_uniform_layout: wgpu::BindGroupLayout,
     pub(super) triangle: wgpu::RenderPipeline,
@@ -36,7 +36,10 @@ pub(super) struct IccImagePipeline {
 }
 
 impl Pipelines {
-    pub(super) fn new(device: &wgpu::Device, working_space: RgbColorSpace) -> Self {
+    pub(super) fn new(
+        device: &wgpu::Device,
+        working_profile: &ColorProfile,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let texture_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("theoria WebGPU sampled image"),
             entries: &[
@@ -82,8 +85,8 @@ impl Pipelines {
         );
         let image_source = crate::rgb_shader::assemble_for(
             include_str!("../../../shaders/webgpu/image.wgsl"),
-            crate::canvas_renderer::composition_encoding::encode_space(working_space),
-        );
+            working_profile,
+        )?;
         let image_shader = shader(device, "theoria WebGPU image shader", &image_source);
         let composite_shader = shader(
             device,
@@ -137,8 +140,8 @@ impl Pipelines {
             &[Some(&texture_layout)],
             composite_blend_state(Composite::DestinationIn),
         );
-        Self {
-            working_space,
+        Ok(Self {
+            working_profile: working_profile.clone(),
             texture_layout,
             blend_uniform_layout,
             triangle,
@@ -149,7 +152,7 @@ impl Pipelines {
             presents: HashMap::new(),
             icc_presents: HashMap::new(),
             icc_images: HashMap::new(),
-        }
+        })
     }
 
     pub(super) fn ensure_icc_image(
@@ -158,7 +161,7 @@ impl Pipelines {
         profile: &IccProfile,
         intent: IccRenderingIntent,
         has_alpha: bool,
-        working_space: RgbColorSpace,
+        working_profile: &ColorProfile,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let key = (profile.profile(), intent, has_alpha);
         if self.icc_images.contains_key(&key) {
@@ -168,7 +171,7 @@ impl Pipelines {
             profile,
             intent,
             has_alpha,
-            working_space,
+            working_profile,
             include_str!("../../../shaders/webgpu/icc_image.wgsl"),
         )?;
         let shader = shader(device, "theoria WebGPU ICC image shader", lowered.source);
@@ -247,7 +250,7 @@ impl Pipelines {
         device: &wgpu::Device,
         compositions: &[Composition],
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let working = ColorProfile::from(self.working_space);
+        let working = self.working_profile.clone();
         for composition in compositions {
             if self.compositions.contains_key(composition) {
                 continue;
@@ -286,14 +289,14 @@ impl Pipelines {
         &mut self,
         device: &wgpu::Device,
         format: wgpu::TextureFormat,
-    ) -> &wgpu::RenderPipeline {
-        self.presents.entry(format).or_insert_with(|| {
+    ) -> Result<&wgpu::RenderPipeline, Box<dyn std::error::Error>> {
+        if !self.presents.contains_key(&format) {
             let source = crate::rgb_shader::assemble_for(
                 include_str!("../../../shaders/canvas_renderer/present.wgsl"),
-                crate::canvas_renderer::composition_encoding::encode_space(self.working_space),
-            );
+                &self.working_profile,
+            )?;
             let shader = shader(device, "theoria WebGPU present shader", source);
-            create_pipeline(
+            let pipeline = create_pipeline(
                 device,
                 "theoria WebGPU present pipeline",
                 format,
@@ -301,8 +304,10 @@ impl Pipelines {
                 &[],
                 &[Some(&self.texture_layout)],
                 composite_blend_state(Composite::SourceOver),
-            )
-        })
+            );
+            self.presents.insert(format, pipeline);
+        }
+        Ok(&self.presents[&format])
     }
 
     pub(super) fn icc_present(

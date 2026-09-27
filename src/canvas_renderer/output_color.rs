@@ -94,7 +94,7 @@ impl OutputColorTransform {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::color::{LinearSrgb, RgbColorSpace};
+    use crate::color::{LinearSrgb, Srgb};
 
     #[test]
     fn real_display_profile_output_compiles_as_a_fragment_shader() {
@@ -133,7 +133,7 @@ mod tests {
             OutputColorTransform::new(
                 &profile,
                 IccRenderingIntent::RelativeColorimetric,
-                RgbColorSpace::LinearSrgb
+                LinearSrgb
             ),
             Err(OutputColorError::UnsupportedChannels(1))
         ));
@@ -149,15 +149,12 @@ mod tests {
         let linear = OutputColorTransform::new(
             &profile,
             IccRenderingIntent::RelativeColorimetric,
-            RgbColorSpace::LinearSrgb,
+            LinearSrgb,
         )
         .unwrap();
-        let encoded = OutputColorTransform::new(
-            &profile,
-            IccRenderingIntent::RelativeColorimetric,
-            RgbColorSpace::Srgb,
-        )
-        .unwrap();
+        let encoded =
+            OutputColorTransform::new(&profile, IccRenderingIntent::RelativeColorimetric, Srgb)
+                .unwrap();
         let from_linear = linear
             .convert_premultiplied([0.214_041_14, 0.0, 0.0, 1.0])
             .unwrap();

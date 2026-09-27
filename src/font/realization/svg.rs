@@ -36,7 +36,7 @@ pub(super) fn canvas(
     let foreground_color = match foreground {
         ColorField::Solid(color) => Some(css_rgba_f32(
             color
-                .try_straight_rgba_in(crate::color::RgbColorSpace::Srgb)
+                .try_straight_rgba_in(crate::color::Srgb)
                 .map_err(|_| GlyphPresentationError::UnsupportedSvg)?,
         )),
         _ => None,

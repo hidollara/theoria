@@ -9,7 +9,7 @@ use crate::{
         image::{Image, ImageKind},
     },
     canvas_renderer::output_color::OutputColorTransform,
-    color::{IccProfile, IccRenderingIntent, RgbColorSpace},
+    color::{ColorProfile, IccProfile, IccRenderingIntent, LinearSrgb},
     surface::Viewport,
 };
 
@@ -38,21 +38,24 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 /// Translates backend-independent Canvas commands into Vulkan commands.
 pub struct CanvasRenderer {
     device: RenderDevice,
-    working_space: RgbColorSpace,
+    working_profile: ColorProfile,
     gpu: CanvasGpuResources,
 }
 
 impl CanvasRenderer {
     pub fn new(device: RenderDevice) -> Self {
-        Self::new_with_working_space(device, RgbColorSpace::LinearSrgb)
+        Self::new_with_working_space(device, LinearSrgb)
     }
 
     /// Selects the RGB coordinates used for intermediate Canvas evaluation.
     /// The choice is fixed for this renderer so cached Canvas images keep one meaning.
-    pub fn new_with_working_space(device: RenderDevice, working_space: RgbColorSpace) -> Self {
+    pub fn new_with_working_space(
+        device: RenderDevice,
+        working_profile: impl Into<ColorProfile>,
+    ) -> Self {
         Self {
             device,
-            working_space,
+            working_profile: working_profile.into(),
             gpu: CanvasGpuResources::new(),
         }
     }
@@ -68,9 +71,9 @@ impl CanvasRenderer {
         canvas: &Canvas,
         view: CanvasView,
     ) -> Result<()> {
-        let prepared = prepare_colors_in(canvas, self.working_space)?;
+        let prepared = prepare_colors_in(canvas, &self.working_profile)?;
         let clear_color = target.clear_color();
-        clear_color.try_straight_rgba_in(self.working_space)?;
+        clear_color.try_straight_rgba_in(&self.working_profile)?;
         let output_profile = target.output_profile();
         self.materialize_canvas_resources(canvas)?;
         let (image_view, format, extent) = target.surface();
@@ -85,7 +88,7 @@ impl CanvasRenderer {
             PremultipliedWorkingRgba::from_components(
                 crate::canvas_renderer::color_space::lower_straight_color_in(
                     &clear_color,
-                    self.working_space,
+                    &self.working_profile,
                 ),
             ),
             output_profile,
@@ -101,13 +104,13 @@ impl CanvasRenderer {
         canvas: &Canvas,
         view: CanvasView,
     ) -> Result<Arc<VulkanImage>> {
-        let prepared = prepare_colors_in(canvas, self.working_space)?;
+        let prepared = prepare_colors_in(canvas, &self.working_profile)?;
         let extent = vk::Extent2D { width, height };
         // A CanvasImage is an intermediate result, not an output image. Keep
         // it in the same working format as the renderer's scratch images.
         let format = self.working_format();
         self.gpu
-            .ensure_image_cache(&self.device, self.working_space)?;
+            .ensure_image_cache(&self.device, &self.working_profile)?;
         let backing = self
             .gpu
             .image_cache
@@ -172,7 +175,7 @@ impl CanvasRenderer {
         match image.kind() {
             ImageKind::Raster(image) => {
                 self.gpu
-                    .ensure_image_cache(&self.device, self.working_space)?;
+                    .ensure_image_cache(&self.device, &self.working_profile)?;
                 self.gpu
                     .image_cache
                     .as_mut()
@@ -185,7 +188,7 @@ impl CanvasRenderer {
 
     fn materialize_canvas_image(&mut self, image: &CanvasImage) -> Result<()> {
         self.gpu
-            .ensure_image_cache(&self.device, self.working_space)?;
+            .ensure_image_cache(&self.device, &self.working_profile)?;
         if self
             .gpu
             .image_cache
@@ -226,7 +229,9 @@ impl CanvasRenderer {
         prepared: &PreparedColors,
     ) -> Result<()> {
         let output = output_profile
-            .map(|(profile, intent)| OutputColorTransform::new(profile, intent, self.working_space))
+            .map(|(profile, intent)| {
+                OutputColorTransform::new(profile, intent, &self.working_profile)
+            })
             .transpose()?;
         if output.is_some()
             && !matches!(
@@ -244,13 +249,13 @@ impl CanvasRenderer {
         let sample_count = preferred_sample_count(&self.device, working_format);
         let target_region = target_region(viewport, extent);
         self.gpu
-            .ensure_image_cache(&self.device, self.working_space)?;
+            .ensure_image_cache(&self.device, &self.working_profile)?;
         self.gpu.ensure_pipelines(
             &self.device,
             working_format,
             format,
             sample_count,
-            self.working_space,
+            &self.working_profile,
         )?;
         let icc_layout = self
             .gpu
@@ -285,14 +290,14 @@ impl CanvasRenderer {
             }
         }
         let mut compositions = Vec::new();
-        collect_compositions_in(canvas, &mut compositions, self.working_space);
+        collect_compositions_in(canvas, &mut compositions, &self.working_profile);
         self.gpu.ensure_compositions(&self.device, &compositions)?;
         self.gpu.ensure_scratch_images(
             &self.device,
             working_format,
             extent,
             sample_count,
-            required_scratch_images_in(canvas, self.working_space),
+            required_scratch_images_in(canvas, &self.working_profile),
         )?;
         let pipelines = self.gpu.pipelines.as_ref().unwrap();
         let present_pipeline = match output_profile {
@@ -308,9 +313,9 @@ impl CanvasRenderer {
             None => PremultipliedWorkingRgba::from_components(
                 crate::canvas_renderer::color_space::convert_premultiplied_space(
                     clear_color.components(),
-                    self.working_space,
-                    RgbColorSpace::LinearSrgb,
-                ),
+                    &self.working_profile,
+                    &ColorProfile::from(LinearSrgb),
+                )?,
             ),
         };
         let image_cache = self.gpu.image_cache.as_ref().unwrap();

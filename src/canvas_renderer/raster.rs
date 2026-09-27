@@ -4,7 +4,7 @@ use std::io;
 use half::f16;
 
 #[cfg(test)]
-use crate::color::{IccProfile, IccRenderingIntent, RgbColorSpace, connect_profiles};
+use crate::color::{IccProfile, IccRenderingIntent, LinearSrgb, connect_profiles};
 use crate::image::RasterPlane;
 
 pub(crate) struct PackedIccSamples {
@@ -57,7 +57,7 @@ pub(crate) fn convert_icc8_to_linear_rgba16(
 ) -> Result<RasterPlane<u16>, Box<dyn std::error::Error>> {
     let transfer = connect_profiles(
         profile,
-        RgbColorSpace::LinearSrgb,
+        LinearSrgb,
         intent,
         IccRenderingIntent::RelativeColorimetric,
     )?;

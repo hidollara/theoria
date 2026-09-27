@@ -2,7 +2,7 @@ use std::{fmt, sync::Arc};
 
 use crate::{
     color::{
-        DisplayP3, IccProfile, IccRenderingIntent, LinearDisplayP3, LinearSrgb, RgbColorSpace, Srgb,
+        ColorProfile, DisplayP3, IccProfile, IccRenderingIntent, LinearDisplayP3, LinearSrgb, Srgb,
     },
     image::{
         AlphaAssociation, IccRasterImage, RasterImage, RasterImageInstanceKey, RasterPlane, Rgb8,
@@ -34,11 +34,11 @@ pub(crate) enum ImageKind {
 pub(crate) enum RasterImageView<'a> {
     Rgb8 {
         plane: &'a RasterPlane<u8>,
-        color_space: RgbColorSpace,
+        color_space: ColorProfile,
     },
     Rgba8 {
         plane: &'a RasterPlane<u8>,
-        color_space: RgbColorSpace,
+        color_space: ColorProfile,
         alpha: AlphaAssociation,
     },
     Icc8 {
@@ -78,7 +78,7 @@ where
     P: crate::color::TypedColorSpace<Model = crate::color::Rgb>,
 {
     image: RasterImage<Rgb8, P>,
-    color_space: RgbColorSpace,
+    color_space: ColorProfile,
 }
 
 impl<P> RasterImageSource for Rgb8Source<P>
@@ -100,7 +100,7 @@ where
     fn view(&self) -> RasterImageView<'_> {
         RasterImageView::Rgb8 {
             plane: &self.image.planes()[0],
-            color_space: self.color_space,
+            color_space: self.color_space.clone(),
         }
     }
 }
@@ -118,7 +118,7 @@ where
     P: crate::color::TypedColorSpace<Model = crate::color::Rgb>,
 {
     image: RasterImage<Rgba8, P>,
-    color_space: RgbColorSpace,
+    color_space: ColorProfile,
 }
 
 impl<P> RasterImageSource for Rgba8Source<P>
@@ -140,7 +140,7 @@ where
     fn view(&self) -> RasterImageView<'_> {
         RasterImageView::Rgba8 {
             plane: &self.image.planes()[0],
-            color_space: self.color_space,
+            color_space: self.color_space.clone(),
             alpha: self.image.alpha_association(),
         }
     }
@@ -195,13 +195,13 @@ impl Image {
 }
 
 macro_rules! rgba8_image {
-    ($profile:ty, $space:expr) => {
+    ($profile:ty) => {
         impl From<RasterImage<Rgba8, $profile>> for Image {
             fn from(image: RasterImage<Rgba8, $profile>) -> Self {
                 Self {
                     kind: ImageKind::Raster(Arc::new(Rgba8Source {
                         image,
-                        color_space: $space,
+                        color_space: <$profile>::default().into(),
                     })),
                 }
             }
@@ -210,13 +210,13 @@ macro_rules! rgba8_image {
 }
 
 macro_rules! rgb8_image {
-    ($profile:ty, $space:expr) => {
+    ($profile:ty) => {
         impl From<RasterImage<Rgb8, $profile>> for Image {
             fn from(image: RasterImage<Rgb8, $profile>) -> Self {
                 Self {
                     kind: ImageKind::Raster(Arc::new(Rgb8Source {
                         image,
-                        color_space: $space,
+                        color_space: <$profile>::default().into(),
                     })),
                 }
             }
@@ -224,14 +224,14 @@ macro_rules! rgb8_image {
     };
 }
 
-rgb8_image!(Srgb, RgbColorSpace::Srgb);
-rgb8_image!(LinearSrgb, RgbColorSpace::LinearSrgb);
-rgb8_image!(DisplayP3, RgbColorSpace::DisplayP3);
-rgb8_image!(LinearDisplayP3, RgbColorSpace::LinearDisplayP3);
-rgba8_image!(Srgb, RgbColorSpace::Srgb);
-rgba8_image!(LinearSrgb, RgbColorSpace::LinearSrgb);
-rgba8_image!(DisplayP3, RgbColorSpace::DisplayP3);
-rgba8_image!(LinearDisplayP3, RgbColorSpace::LinearDisplayP3);
+rgb8_image!(Srgb);
+rgb8_image!(LinearSrgb);
+rgb8_image!(DisplayP3);
+rgb8_image!(LinearDisplayP3);
+rgba8_image!(Srgb);
+rgba8_image!(LinearSrgb);
+rgba8_image!(DisplayP3);
+rgba8_image!(LinearDisplayP3);
 
 impl From<CanvasImage> for Image {
     fn from(image: CanvasImage) -> Self {
@@ -286,13 +286,18 @@ mod tests {
         assert_eq!(pixels, source.as_ref());
         let converted =
             convert_icc8_to_linear_rgba16(1, pixels, profile, intent, has_alpha).unwrap();
-        let expected = crate::color::convert_rgb(
-            [64.0 / 255.0, 128.0 / 255.0, 192.0 / 255.0],
-            RgbColorSpace::Srgb,
-            RgbColorSpace::LinearSrgb,
-        );
+        let expected = crate::color::connect_profiles(
+            Srgb,
+            LinearSrgb,
+            IccRenderingIntent::RelativeColorimetric,
+            IccRenderingIntent::RelativeColorimetric,
+        )
+        .unwrap()
+        .transfer()
+        .evaluate(&[64.0 / 255.0, 128.0 / 255.0, 192.0 / 255.0])
+        .unwrap();
         for (actual, expected) in converted.samples()[..3].iter().zip(expected) {
-            assert!((half::f16::from_bits(*actual).to_f32() - expected).abs() < 0.02);
+            assert!((half::f16::from_bits(*actual).to_f32() - expected as f32).abs() < 0.02);
         }
         assert!(
             (half::f16::from_bits(converted.samples()[3]).to_f32() - 77.0 / 255.0).abs() < 0.002

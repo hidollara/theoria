@@ -61,7 +61,7 @@ impl ImageVertex {
     pub(super) fn encode(
         pattern: &ImagePattern,
         rgb_is_premultiplied: bool,
-        rgb_color_space: crate::color::RgbColorSpace,
+        image_profile_index: u32,
         points: [Point; 3],
         image_to_root: Projective2,
         view: CanvasView,
@@ -82,7 +82,7 @@ impl ImageVertex {
                 metadata: [
                     u32::from(pattern.extend_x() == ImageExtend::Transparent),
                     u32::from(pattern.extend_y() == ImageExtend::Transparent),
-                    crate::canvas_renderer::composition_encoding::encode_space(rgb_color_space),
+                    image_profile_index,
                     u32::from(pattern.sampling() == crate::canvas::ImageSampling::Linear),
                 ],
             }

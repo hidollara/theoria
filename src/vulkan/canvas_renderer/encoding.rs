@@ -3,7 +3,6 @@ use std::{mem::size_of, slice};
 use crate::{
     canvas::{CanvasView, Composition, ImageExtend, ImagePattern, ImageSampling},
     canvas_renderer::{composition_encoding, view_space::transformed_point_to_clip},
-    color::RgbColorSpace,
     geometry::Point,
     transform::Projective2,
 };
@@ -81,7 +80,7 @@ impl ImagePushConstants {
         let mut result = Self::new(
             pattern,
             RgbAlphaAssociation::Straight,
-            RgbColorSpace::LinearSrgb,
+            4,
             points,
             image_to_root,
             view,
@@ -95,7 +94,7 @@ impl ImagePushConstants {
     pub(super) fn new(
         pattern: &ImagePattern,
         rgb_alpha_association: RgbAlphaAssociation,
-        rgb_color_space: RgbColorSpace,
+        image_profile_index: u32,
         points: [Point; 3],
         image_to_root: Projective2,
         view: CanvasView,
@@ -105,7 +104,7 @@ impl ImagePushConstants {
             pattern.image().height(),
             pattern.canvas_to_image(),
             rgb_alpha_association,
-            rgb_color_space,
+            image_profile_index,
             points,
             image_to_root,
             view,
@@ -118,7 +117,7 @@ impl ImagePushConstants {
         height: u32,
         canvas_to_image: Projective2,
         rgb_alpha_association: RgbAlphaAssociation,
-        rgb_color_space: RgbColorSpace,
+        image_profile_index: u32,
         points: [Point; 3],
         image_to_root: Projective2,
         view: CanvasView,
@@ -143,7 +142,7 @@ impl ImagePushConstants {
                     ],
                 }
             }),
-            metadata: [composition_encoding::encode_space(rgb_color_space), 0, 0, 0],
+            metadata: [image_profile_index, 0, 0, 0],
         }
     }
 

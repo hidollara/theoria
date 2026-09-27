@@ -10,10 +10,8 @@ use std::{
 use ash::vk;
 
 use crate::canvas::{Composite, Composition, composition_shader::Binding};
-use crate::canvas_renderer::{
-    composition_encoding::encode_space, output_color::OutputColorTransform,
-};
-use crate::color::{ColorProfile, IccProfile, IccRenderingIntent, RgbColorSpace};
+use crate::canvas_renderer::output_color::OutputColorTransform;
+use crate::color::{ColorProfile, IccProfile, IccRenderingIntent, LinearSrgb};
 
 use super::encoding::{CompositionPushConstants, ImagePushConstants, TrianglePushConstants};
 
@@ -84,7 +82,7 @@ impl Drop for PipelineGuard<'_> {
 }
 
 pub(super) struct Pipelines {
-    pub(super) working_space: RgbColorSpace,
+    pub(super) working_profile: ColorProfile,
     pub(super) working_format: vk::Format,
     pub(super) output_format: vk::Format,
     pub(super) sample_count: vk::SampleCountFlags,
@@ -203,7 +201,7 @@ impl Pipelines {
         image_descriptor_set_layout: vk::DescriptorSetLayout,
         compositions: &[Composition],
     ) -> Result<()> {
-        let working = ColorProfile::from(self.working_space);
+        let working = self.working_profile.clone();
         for composition in compositions {
             if self.compositions.contains_key(composition) {
                 continue;
@@ -265,15 +263,15 @@ pub(super) unsafe fn create_pipelines(
     output_format: vk::Format,
     sample_count: vk::SampleCountFlags,
     image_descriptor_set_layout: vk::DescriptorSetLayout,
-    working_space: RgbColorSpace,
+    working_profile: &ColorProfile,
 ) -> Result<Pipelines> {
-    let image_fragment: Cow<'_, [u8]> = if working_space == RgbColorSpace::LinearSrgb {
+    let image_fragment: Cow<'_, [u8]> = if working_profile == &LinearSrgb.into() {
         Cow::Borrowed(IMAGE_FRAGMENT_SHADER)
     } else {
         let source = crate::rgb_shader::assemble_for(
             include_str!("../../../shaders/vulkan/image.wgsl"),
-            encode_space(working_space),
-        );
+            working_profile,
+        )?;
         Cow::Owned(
             compile_fragment(&source)?
                 .into_iter()
@@ -281,13 +279,13 @@ pub(super) unsafe fn create_pipelines(
                 .collect(),
         )
     };
-    let present_fragment: Cow<'_, [u8]> = if working_space == RgbColorSpace::LinearSrgb {
+    let present_fragment: Cow<'_, [u8]> = if working_profile == &LinearSrgb.into() {
         Cow::Borrowed(COMPOSITE_FRAGMENT_SHADER)
     } else {
         let source = crate::rgb_shader::assemble_for(
             include_str!("../../../shaders/canvas_renderer/present.wgsl"),
-            encode_space(working_space),
-        );
+            working_profile,
+        )?;
         Cow::Owned(
             compile_fragment(&source)?
                 .into_iter()
@@ -381,7 +379,7 @@ pub(super) unsafe fn create_pipelines(
         )?
     };
     Ok(Pipelines {
-        working_space,
+        working_profile: working_profile.clone(),
         working_format,
         output_format,
         sample_count,
@@ -583,7 +581,7 @@ mod tests {
             &profile,
             IccRenderingIntent::Perceptual,
             true,
-            crate::color::RgbColorSpace::LinearSrgb,
+            crate::color::LinearSrgb,
             include_str!("../../../shaders/vulkan/icc_image.wgsl"),
         )
         .unwrap();

@@ -8,7 +8,7 @@ use crate::{
         image::{Image, ImageKind, RasterImageSource, RasterImageView},
     },
     canvas_renderer::{icc_image_shader, raster::pack_icc_samples},
-    color::RgbColorSpace,
+    color::ColorProfile,
     image::RasterImageInstanceKey,
 };
 
@@ -32,18 +32,18 @@ pub(super) struct ImageCache {
     canvas: HashMap<CanvasImageInstanceKey, GpuImage>,
     descriptors: ImageDescriptors,
     device: RenderDevice,
-    working_space: RgbColorSpace,
+    working_profile: ColorProfile,
 }
 
 impl ImageCache {
-    pub(super) fn new(device: RenderDevice, working_space: RgbColorSpace) -> Result<Self> {
+    pub(super) fn new(device: RenderDevice, working_profile: ColorProfile) -> Result<Self> {
         let descriptors = ImageDescriptors::new(device.clone())?;
         Ok(Self {
             raster: HashMap::new(),
             canvas: HashMap::new(),
             descriptors,
             device,
-            working_space,
+            working_profile,
         })
     }
 
@@ -74,7 +74,7 @@ impl ImageCache {
         let gpu_image = self.descriptors.bind_backing(
             backing,
             RgbAlphaAssociation::Premultiplied,
-            self.working_space,
+            self.working_profile.clone(),
         )?;
         self.canvas.insert(image.instance_key(), gpu_image);
         Ok(())
@@ -173,7 +173,7 @@ impl ImageCache {
                     profile,
                     intent,
                     has_alpha,
-                    self.working_space,
+                    &self.working_profile,
                     include_str!("../../shaders/vulkan/icc_image.wgsl"),
                 )?;
                 self.descriptors.bind_icc_backing(

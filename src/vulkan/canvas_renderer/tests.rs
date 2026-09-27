@@ -65,7 +65,7 @@ fn image_sampling_respects_the_sampled_rgb_alpha_association() {
     let straight_constants = ImagePushConstants::new(
         &ImagePattern::new(straight),
         RgbAlphaAssociation::Straight,
-        LinearSrgb.into(),
+        4,
         points,
         Projective2::IDENTITY,
         view,
@@ -73,7 +73,7 @@ fn image_sampling_respects_the_sampled_rgb_alpha_association() {
     let premultiplied_constants = ImagePushConstants::new(
         &ImagePattern::new(canvas_image),
         RgbAlphaAssociation::Premultiplied,
-        LinearSrgb.into(),
+        4,
         points,
         Projective2::IDENTITY,
         view,

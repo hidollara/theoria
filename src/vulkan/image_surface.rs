@@ -5,7 +5,7 @@ use std::error::Error;
 use ash::vk;
 
 use crate::{
-    color::{IccProfile, IccRenderingIntent, RgbColorSpace},
+    color::{ColorProfile, IccProfile, IccRenderingIntent, LinearSrgb},
     image::{IccRasterImage, Srgba8Image},
     surface::{SurfaceContent, SurfaceSize, Viewport},
     vulkan::{
@@ -39,12 +39,15 @@ pub struct ImageSurface {
 impl ImageSurface {
     /// Creates an offscreen image Surface with a fixed non-zero extent.
     pub fn new(size: SurfaceSize) -> Result<Self> {
-        Self::new_with_working_space(size, RgbColorSpace::LinearSrgb)
+        Self::new_with_working_space(size, LinearSrgb)
     }
 
     /// Creates an offscreen Surface using the specified RGB working space.
     /// Readback is still returned as sRGBA8 unless an ICC output is requested.
-    pub fn new_with_working_space(size: SurfaceSize, working_space: RgbColorSpace) -> Result<Self> {
+    pub fn new_with_working_space(
+        size: SurfaceSize,
+        working_profile: impl Into<ColorProfile>,
+    ) -> Result<Self> {
         let byte_len = pixel_byte_len(size)?;
         let device = RenderDevice::independent()?;
         let extent = vk::Extent2D {
@@ -65,7 +68,7 @@ impl ImageSurface {
         )?;
         Ok(Self {
             size,
-            renderer: CanvasRenderer::new_with_working_space(device, working_space),
+            renderer: CanvasRenderer::new_with_working_space(device, working_profile),
             target,
             readback,
             target_initialized: false,
@@ -242,7 +245,9 @@ mod tests {
     use super::{ImageSurface, pixel_byte_len};
     use crate::{
         canvas::{Canvas, CanvasView, Composite, Composition, Coverage, ImageExtend, ImagePattern},
-        color::{Color, IccProfile, IccRenderingIntent, Opacity, RgbColorSpace, Srgb},
+        color::{
+            Color, IccProfile, IccRenderingIntent, LinearDisplayP3, LinearSrgb, Opacity, Srgb,
+        },
         geometry::Point,
         surface::{SurfaceContent, SurfaceSize},
     };
@@ -281,8 +286,7 @@ mod tests {
         let Ok(mut linear_srgb) = ImageSurface::new(size) else {
             return; // Vulkan may be unavailable on the test host.
         };
-        let mut linear_p3 =
-            ImageSurface::new_with_working_space(size, RgbColorSpace::LinearDisplayP3).unwrap();
+        let mut linear_p3 = ImageSurface::new_with_working_space(size, LinearDisplayP3).unwrap();
         let view = CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(1.0, 1.0)).unwrap();
         let profile = IccProfile::from_bytes(include_bytes!(concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -317,10 +321,7 @@ mod tests {
             Coverage::all(),
         );
         let content = SurfaceContent::new(
-            backdrop.composite(
-                source,
-                Composition::new(Composite::SourceOver, RgbColorSpace::LinearSrgb),
-            ),
+            backdrop.composite(source, Composition::new(Composite::SourceOver, LinearSrgb)),
             view,
             Color::new(Srgb, [0_u8, 0, 0], Opacity::<u8>::from(0)),
         );

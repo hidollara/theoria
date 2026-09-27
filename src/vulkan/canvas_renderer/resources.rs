@@ -5,7 +5,7 @@ use std::error::Error;
 use ash::vk;
 
 use crate::canvas::Composition;
-use crate::color::RgbColorSpace;
+use crate::color::ColorProfile;
 use crate::vulkan::{image::ImageCache, presenter::RenderDevice, scratch_image::ScratchImage};
 
 use super::pipeline::{Pipelines, create_pipelines};
@@ -30,10 +30,10 @@ impl CanvasGpuResources {
     pub(super) fn ensure_image_cache(
         &mut self,
         device: &RenderDevice,
-        working_space: RgbColorSpace,
+        working_profile: &ColorProfile,
     ) -> Result<()> {
         if self.image_cache.is_none() {
-            self.image_cache = Some(ImageCache::new(device.clone(), working_space)?);
+            self.image_cache = Some(ImageCache::new(device.clone(), working_profile.clone())?);
         }
         Ok(())
     }
@@ -44,13 +44,13 @@ impl CanvasGpuResources {
         working_format: vk::Format,
         output_format: vk::Format,
         sample_count: vk::SampleCountFlags,
-        working_space: RgbColorSpace,
+        working_profile: &ColorProfile,
     ) -> Result<()> {
         if self.pipelines.as_ref().is_some_and(|pipelines| {
             pipelines.working_format == working_format
                 && pipelines.output_format == output_format
                 && pipelines.sample_count == sample_count
-                && pipelines.working_space == working_space
+                && &pipelines.working_profile == working_profile
         }) {
             return Ok(());
         }
@@ -63,7 +63,7 @@ impl CanvasGpuResources {
                 output_format,
                 sample_count,
                 descriptor_layout,
-                working_space,
+                working_profile,
             )?
         });
         Ok(())

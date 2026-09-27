@@ -491,12 +491,8 @@ mod tests {
             ])
             .unwrap();
 
-        let first = stops[0]
-            .color()
-            .straight_rgba_in(crate::color::RgbColorSpace::Srgb);
-        let last = stops[1]
-            .color()
-            .straight_rgba_in(crate::color::RgbColorSpace::Srgb);
+        let first = stops[0].color().straight_rgba_in(crate::color::Srgb);
+        let last = stops[1].color().straight_rgba_in(crate::color::Srgb);
         assert!((first[3] - 64.0 / 255.0).abs() < 0.000_001);
         assert!((last[3] - 128.0 / 255.0).abs() < 0.000_001);
         for component in 0..3 {

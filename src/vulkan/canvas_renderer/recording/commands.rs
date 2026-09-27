@@ -242,13 +242,20 @@ impl<'a> CanvasCommandEncoder<'a> {
                 let constants = if icc {
                     ImagePushConstants::new_icc(pattern, points, mesh_to_root, self.view)
                 } else {
-                    let GpuImageColor::Rgb { association, space } = &gpu_image.color else {
+                    let GpuImageColor::Rgb {
+                        association,
+                        profile,
+                    } = &gpu_image.color
+                    else {
                         unreachable!()
                     };
                     ImagePushConstants::new(
                         pattern,
                         *association,
-                        *space,
+                        crate::canvas_renderer::composition_encoding::encode_image_profile(
+                            profile,
+                            self.prepared.working_profile(),
+                        ),
                         points,
                         mesh_to_root,
                         self.view,

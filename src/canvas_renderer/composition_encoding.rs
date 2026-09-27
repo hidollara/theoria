@@ -1,6 +1,6 @@
 use crate::{
     canvas::{Composite, Composition},
-    color::RgbColorSpace,
+    color::{ColorProfile, DisplayP3, LinearDisplayP3, LinearSrgb, Srgb},
 };
 
 /// Encodes only the operation flags. Profile conversions are baked into the
@@ -28,12 +28,22 @@ fn encode_composite(composite: Composite) -> u32 {
     }
 }
 
-pub(crate) fn encode_space(space: RgbColorSpace) -> u32 {
-    match space {
-        RgbColorSpace::Srgb => 0,
-        RgbColorSpace::LinearSrgb => 1,
-        RgbColorSpace::DisplayP3 => 2,
-        RgbColorSpace::LinearDisplayP3 => 3,
+/// Raster upload uses four named input profiles; cached Canvas images are
+/// already in the renderer's working profile (index 4).
+pub(crate) fn encode_image_profile(profile: &ColorProfile, working: &ColorProfile) -> u32 {
+    if profile == working {
+        return 4;
+    }
+    if profile == &Srgb.into() {
+        0
+    } else if profile == &LinearSrgb.into() {
+        1
+    } else if profile == &DisplayP3.into() {
+        2
+    } else if profile == &LinearDisplayP3.into() {
+        3
+    } else {
+        unreachable!("RGB raster images have one of the four named profiles")
     }
 }
 

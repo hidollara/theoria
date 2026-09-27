@@ -8,7 +8,7 @@ use crate::{
         Draw,
     },
     canvas_renderer::{canvas_plan::can_record_directly_in, color_space::PreparedColors},
-    color::{Color, Opacity, RgbColorSpace, Srgb},
+    color::{Color, ColorProfile, Opacity, Srgb},
     tessellation::{Mesh, tessellate_fill_with_tolerance, tessellate_stroke_with_tolerance},
     transform::Projective2,
     vulkan::{color::PremultipliedWorkingRgba, image::ImageCache, scratch_image::ScratchImage},
@@ -20,7 +20,7 @@ use super::pipeline::{Pipeline, Pipelines};
 pub(super) struct CanvasRecorder<'a> {
     commands: CanvasCommandEncoder<'a>,
     next_image: usize,
-    working_space: RgbColorSpace,
+    working_profile: ColorProfile,
 }
 
 impl<'a> CanvasRecorder<'a> {
@@ -49,7 +49,7 @@ impl<'a> CanvasRecorder<'a> {
                 prepared,
             ),
             next_image: 0,
-            working_space: prepared.working_space(),
+            working_profile: prepared.working_profile().clone(),
         }
     }
 
@@ -92,15 +92,14 @@ impl<'a> CanvasRecorder<'a> {
                 self.render_node(accumulator, backdrop, canvas_to_root);
                 if composition.blend().is_none()
                     && composition.composite() == Composite::SourceOver
-                    && composition.composite_space()
-                        == &crate::color::ColorProfile::from(self.working_space)
-                    && can_record_directly_in(source, self.working_space)
+                    && composition.composite_space() == &self.working_profile
+                    && can_record_directly_in(source, &self.working_profile)
                 {
                     self.render_node(accumulator, source, canvas_to_root);
                 } else {
                     self.commands.end_rendering();
                     let source_image = self.evaluate(source, canvas_to_root);
-                    if !composition.requires_destination_read_in(self.working_space) {
+                    if !composition.requires_destination_read_in(&self.working_profile) {
                         self.commands.resume_accumulator(accumulator);
                         self.commands
                             .draw_composite(source_image, composition.composite());

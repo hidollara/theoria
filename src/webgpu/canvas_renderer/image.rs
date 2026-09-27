@@ -6,7 +6,7 @@ use crate::{
         image::{Image, ImageKind, RasterImageSource, RasterImageView},
     },
     canvas_renderer::raster::{PackedIccSamples, pack_icc_samples},
-    color::{ColorProfile, IccRenderingIntent, RgbColorSpace},
+    color::{ColorProfile, IccRenderingIntent},
     image::{AlphaAssociation, RasterImageInstanceKey},
 };
 
@@ -21,7 +21,7 @@ pub(super) struct GpuImage {
 pub(super) enum GpuImageColor {
     Rgb {
         premultiplied: bool,
-        space: RgbColorSpace,
+        profile: ColorProfile,
     },
     Icc {
         key: (ColorProfile, IccRenderingIntent, bool),
@@ -117,7 +117,7 @@ impl ImageCache {
                     UploadPlane::Expanded(expanded),
                     GpuImageColor::Rgb {
                         premultiplied: false,
-                        space: color_space,
+                        profile: color_space,
                     },
                 )
             }
@@ -129,7 +129,7 @@ impl ImageCache {
                 UploadPlane::Borrowed(plane),
                 GpuImageColor::Rgb {
                     premultiplied: alpha == AlphaAssociation::Premultiplied,
-                    space: color_space,
+                    profile: color_space,
                 },
             ),
         };
@@ -215,7 +215,7 @@ pub(super) fn create_working_image(
     width: u32,
     height: u32,
     label: &'static str,
-    working_space: RgbColorSpace,
+    working_profile: &ColorProfile,
 ) -> GpuImage {
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some(label),
@@ -233,7 +233,7 @@ pub(super) fn create_working_image(
         view,
         color: GpuImageColor::Rgb {
             premultiplied: true,
-            space: working_space,
+            profile: working_profile.clone(),
         },
     }
 }
