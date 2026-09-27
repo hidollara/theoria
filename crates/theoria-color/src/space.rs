@@ -4,9 +4,9 @@ use std::{
     sync::Weak,
 };
 
-use super::ColorModel;
 #[cfg(test)]
 use super::Rgb;
+use super::TypedColorModel;
 use super::color_transform::{pcs_to_rgb_transfer, rgb_to_pcs_transfer};
 use super::icc_profile::IccRenderingIntent;
 use super::profile::{
@@ -21,7 +21,7 @@ use super::transfer::{Transfer, TransferCurve, TransferError, TransferMatrix, Tr
 /// Named spaces convert to one shared standard profile rather than defining
 /// a new profile themselves.
 pub trait TypedColorSpace: 'static {
-    type Model: ColorModel;
+    type Model: TypedColorModel;
 
     fn color_space(&self) -> ColorSpace;
 }
@@ -181,7 +181,15 @@ macro_rules! predefined_space {
         impl From<$space> for $crate::profile::ColorSpace {
             fn from(_: $space) -> Self {
                 static PROFILE: std::sync::LazyLock<$crate::profile::ColorSpace> =
-                    std::sync::LazyLock::new(|| $crate::profile::ColorSpace::new($definition));
+                    std::sync::LazyLock::new(|| {
+                        let space = $crate::profile::ColorSpace::new($definition);
+                        assert_eq!(
+                            space.model(),
+                            <<$space as $crate::space::TypedColorSpace>::Model as $crate::model::TypedColorModel>::ERASED,
+                            "typed and runtime color models differ"
+                        );
+                        space
+                    });
                 PROFILE.clone()
             }
         }

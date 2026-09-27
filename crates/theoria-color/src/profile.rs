@@ -7,6 +7,7 @@ use std::{
 
 use super::color_transform::{ColorTransform, ColorTransformError, pcs_key_for_intent};
 use super::icc_profile::{IccProfileError, IccRenderingIntent};
+use super::model::ColorModel;
 use super::space::ColorSpaceId;
 use super::transfer::{Transfer, TransferError};
 
@@ -30,20 +31,32 @@ impl ColorSpace {
     /// Owns a definition as a new color space. Named spaces use their canonical
     /// `Into<ColorSpace>` conversion instead.
     pub fn new(definition: impl ProfileDefinition + 'static) -> Self {
+        assert!(
+            definition.model().channels() > 0,
+            "color model needs channels"
+        );
         Self(Arc::new(definition))
     }
 
     /// Reuses an already shared definition without another allocation.
     pub fn from_arc<D: ProfileDefinition + 'static>(definition: Arc<D>) -> Self {
+        assert!(
+            definition.model().channels() > 0,
+            "color model needs channels"
+        );
         Self(definition)
     }
 
     pub fn channels(&self) -> usize {
-        self.0.channels()
+        self.model().channels()
+    }
+
+    pub fn model(&self) -> ColorModel {
+        self.0.model()
     }
 
     pub(crate) fn id(&self) -> ColorSpaceId {
-        ColorSpaceId::of(Arc::downgrade(&self.0), self.0.channels())
+        ColorSpaceId::of(Arc::downgrade(&self.0), self.channels())
     }
 
     pub fn pcs(&self) -> Pcs {
@@ -114,11 +127,12 @@ impl fmt::Debug for ColorSpace {
     }
 }
 
-/// Coordinate shape and directed conversions defining one runtime color space.
+/// Coordinate model and directed conversions defining one runtime color space.
 /// The two PCS directions are independent, and a direct link is optional.
 /// Definitions are `Send + Sync` so their handles can be shared by renderers.
+/// `model` and `pcs` must remain stable for the lifetime of the definition.
 pub trait ProfileDefinition: Send + Sync {
-    fn channels(&self) -> usize;
+    fn model(&self) -> ColorModel;
     fn pcs(&self) -> Pcs;
     fn to_pcs_transfer(
         &self,
@@ -249,6 +263,7 @@ mod tests {
             .unwrap()
             .profile();
         assert_eq!(canonical, another_reference);
+        assert_eq!(canonical.model(), ColorModel::Rgb);
         assert_ne!(canonical, custom);
         assert_ne!(canonical.id(), custom.id());
         let handles = HashSet::from([canonical.clone(), another_reference, custom]);
@@ -345,8 +360,8 @@ mod tests {
         struct LinkedSpace;
 
         impl ProfileDefinition for LinkedSpace {
-            fn channels(&self) -> usize {
-                3
+            fn model(&self) -> ColorModel {
+                ColorModel::Rgb
             }
 
             fn pcs(&self) -> Pcs {
@@ -422,8 +437,8 @@ mod tests {
         struct InvalidLink;
 
         impl ProfileDefinition for InvalidLink {
-            fn channels(&self) -> usize {
-                3
+            fn model(&self) -> ColorModel {
+                ColorModel::Rgb
             }
 
             fn pcs(&self) -> Pcs {
@@ -471,8 +486,8 @@ mod tests {
         struct InvalidPcs;
 
         impl ProfileDefinition for InvalidPcs {
-            fn channels(&self) -> usize {
-                3
+            fn model(&self) -> ColorModel {
+                ColorModel::Rgb
             }
 
             fn pcs(&self) -> Pcs {

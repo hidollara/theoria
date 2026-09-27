@@ -37,8 +37,8 @@ impl DisplayP3 {
 predefined_space!(DisplayP3, DisplayP3Profile);
 
 impl ProfileDefinition for DisplayP3Profile {
-    fn channels(&self) -> usize {
-        3
+    fn model(&self) -> crate::model::ColorModel {
+        crate::model::ColorModel::Rgb
     }
 
     fn pcs(&self) -> Pcs {

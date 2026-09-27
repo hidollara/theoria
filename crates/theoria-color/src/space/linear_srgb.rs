@@ -15,8 +15,8 @@ impl LinearSrgb {
 predefined_space!(LinearSrgb, LinearSrgbProfile);
 
 impl ProfileDefinition for LinearSrgbProfile {
-    fn channels(&self) -> usize {
-        3
+    fn model(&self) -> crate::model::ColorModel {
+        crate::model::ColorModel::Rgb
     }
 
     fn pcs(&self) -> Pcs {

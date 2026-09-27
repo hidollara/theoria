@@ -38,8 +38,8 @@ impl Srgb {
 predefined_space!(Srgb, SrgbProfile);
 
 impl ProfileDefinition for SrgbProfile {
-    fn channels(&self) -> usize {
-        3
+    fn model(&self) -> crate::model::ColorModel {
+        crate::model::ColorModel::Rgb
     }
 
     fn pcs(&self) -> Pcs {

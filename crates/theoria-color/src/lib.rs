@@ -16,7 +16,7 @@ mod white_point;
 pub use color_transform::{ColorTransform, ColorTransformError};
 pub use connection::XyzD50Profile;
 pub use icc_profile::{IccProfile, IccProfileError, IccRenderingIntent};
-pub use model::{Cmyk, ColorCoordinates, ColorModel, Lab, Rgb, Xyz, Ycbcr};
+pub use model::{Cmyk, ColorCoordinates, ColorModel, Lab, Rgb, TypedColorModel, Xyz, Ycbcr};
 pub use profile::{ColorSpace, Pcs, ProfileConnectionError, ProfileDefinition, connect_profiles};
 pub use sample::{Opacity, OpacityError, OpacitySample};
 pub use space::{

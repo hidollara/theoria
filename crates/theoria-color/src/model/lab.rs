@@ -1,10 +1,11 @@
-use super::{ColorCoordinates, ColorModel};
+use super::{ColorCoordinates, ColorModel, TypedColorModel};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Lab;
 
-impl ColorModel for Lab {
+impl TypedColorModel for Lab {
     const COMPONENTS: usize = 3;
+    const ERASED: ColorModel = ColorModel::Lab;
 }
 
 impl ColorCoordinates<Lab> for [f32; 3] {}

@@ -121,8 +121,9 @@ mod tests {
 
     struct LogicalModel;
 
-    impl ColorModel for LogicalModel {
+    impl crate::TypedColorModel for LogicalModel {
         const COMPONENTS: usize = 2;
+        const ERASED: ColorModel = ColorModel::Channels(2);
     }
 
     struct LogicalSpace;
@@ -130,8 +131,8 @@ mod tests {
     struct LogicalProfile;
 
     impl ProfileDefinition for LogicalProfile {
-        fn channels(&self) -> usize {
-            2
+        fn model(&self) -> ColorModel {
+            ColorModel::Channels(2)
         }
 
         fn pcs(&self) -> Pcs {

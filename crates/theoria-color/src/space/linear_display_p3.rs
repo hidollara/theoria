@@ -15,8 +15,8 @@ impl LinearDisplayP3 {
 predefined_space!(LinearDisplayP3, LinearDisplayP3Profile);
 
 impl ProfileDefinition for LinearDisplayP3Profile {
-    fn channels(&self) -> usize {
-        3
+    fn model(&self) -> crate::model::ColorModel {
+        crate::model::ColorModel::Rgb
     }
 
     fn pcs(&self) -> Pcs {

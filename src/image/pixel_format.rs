@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::color::{ColorModel, Rgb};
+use crate::color::{Rgb, TypedColorModel};
 
 use super::{RasterImageError, RasterPlane};
 
@@ -47,7 +47,7 @@ pub enum AlphaAssociation {
 /// A format defines storage only. [`crate::color::TypedColorSpace`] gives the
 /// decoded coordinates colorimetric meaning.
 pub trait PixelFormat: Copy + fmt::Debug + 'static {
-    type Model: ColorModel;
+    type Model: TypedColorModel;
     type Storage: Copy + fmt::Debug + 'static;
     type Alpha: AlphaLayout;
 

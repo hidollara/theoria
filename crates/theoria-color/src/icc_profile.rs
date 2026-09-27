@@ -7,6 +7,7 @@ use moxcms::{
 
 use super::color_transform::{ColorTransform, ColorTransformError, pcs_key_for_intent};
 use super::icc_mpe::MpeTags;
+use super::model::ColorModel;
 use super::pcs::ICC_D50;
 use super::profile::{
     ColorSpace, Pcs, ProfileConnectionError, ProfileDefinition, connect_profiles,
@@ -184,7 +185,11 @@ impl IccProfile {
 
 impl IccProfileData {
     fn device_channels(&self) -> usize {
-        color_space_channels(self.parsed.color_space)
+        self.device_model().channels()
+    }
+
+    fn device_model(&self) -> ColorModel {
+        color_model(self.parsed.color_space)
     }
 
     fn selected_transfer(
@@ -326,23 +331,33 @@ impl IccProfileData {
     }
 }
 
-fn color_space_channels(space: DataColorSpace) -> usize {
+fn color_model(space: DataColorSpace) -> ColorModel {
     match space {
-        DataColorSpace::Gray => 1,
-        DataColorSpace::Color2 => 2,
-        DataColorSpace::Cmyk | DataColorSpace::Color4 => 4,
-        DataColorSpace::Color5 => 5,
-        DataColorSpace::Color6 => 6,
-        DataColorSpace::Color7 => 7,
-        DataColorSpace::Color8 => 8,
-        DataColorSpace::Color9 => 9,
-        DataColorSpace::Color10 => 10,
-        DataColorSpace::Color11 => 11,
-        DataColorSpace::Color12 => 12,
-        DataColorSpace::Color13 => 13,
-        DataColorSpace::Color14 => 14,
-        DataColorSpace::Color15 => 15,
-        _ => 3,
+        DataColorSpace::Xyz => ColorModel::Xyz,
+        DataColorSpace::Lab => ColorModel::Lab,
+        DataColorSpace::Luv => ColorModel::Luv,
+        DataColorSpace::YCbr => ColorModel::Ycbcr,
+        DataColorSpace::Yxy => ColorModel::Yxy,
+        DataColorSpace::Rgb => ColorModel::Rgb,
+        DataColorSpace::Gray => ColorModel::Gray,
+        DataColorSpace::Hsv => ColorModel::Hsv,
+        DataColorSpace::Hls => ColorModel::Hls,
+        DataColorSpace::Cmyk => ColorModel::Cmyk,
+        DataColorSpace::Cmy => ColorModel::Cmy,
+        DataColorSpace::Color2 => ColorModel::Channels(2),
+        DataColorSpace::Color3 => ColorModel::Channels(3),
+        DataColorSpace::Color4 => ColorModel::Channels(4),
+        DataColorSpace::Color5 => ColorModel::Channels(5),
+        DataColorSpace::Color6 => ColorModel::Channels(6),
+        DataColorSpace::Color7 => ColorModel::Channels(7),
+        DataColorSpace::Color8 => ColorModel::Channels(8),
+        DataColorSpace::Color9 => ColorModel::Channels(9),
+        DataColorSpace::Color10 => ColorModel::Channels(10),
+        DataColorSpace::Color11 => ColorModel::Channels(11),
+        DataColorSpace::Color12 => ColorModel::Channels(12),
+        DataColorSpace::Color13 => ColorModel::Channels(13),
+        DataColorSpace::Color14 => ColorModel::Channels(14),
+        DataColorSpace::Color15 => ColorModel::Channels(15),
     }
 }
 
@@ -708,8 +723,8 @@ impl Error for IccProfileError {
 }
 
 impl ProfileDefinition for IccProfileData {
-    fn channels(&self) -> usize {
-        self.device_channels()
+    fn model(&self) -> ColorModel {
+        self.device_model()
     }
 
     fn pcs(&self) -> Pcs {
@@ -748,6 +763,14 @@ mod tests {
     use super::*;
     use crate::space::ColorSpaceId;
     use crate::{XyzD50, connect_profiles};
+
+    #[test]
+    fn icc_data_model_is_not_inferred_from_channel_count() {
+        assert_eq!(color_model(DataColorSpace::Rgb), ColorModel::Rgb);
+        assert_eq!(color_model(DataColorSpace::Xyz), ColorModel::Xyz);
+        assert_eq!(color_model(DataColorSpace::Color3), ColorModel::Channels(3));
+        assert_eq!(color_model(DataColorSpace::Cmyk).channels(), 4);
+    }
 
     #[test]
     fn generic_profile_connection_matches_icc_connection() {

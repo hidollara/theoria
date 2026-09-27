@@ -8,8 +8,8 @@ named_space!(XyzD50, Xyz);
 predefined_space!(XyzD50, XyzD50Profile);
 
 impl ProfileDefinition for XyzD50Profile {
-    fn channels(&self) -> usize {
-        3
+    fn model(&self) -> crate::model::ColorModel {
+        crate::model::ColorModel::Xyz
     }
 
     fn pcs(&self) -> Pcs {

@@ -8,8 +8,8 @@ named_space!(LabD50, Lab);
 predefined_space!(LabD50, LabD50Profile);
 
 impl ProfileDefinition for LabD50Profile {
-    fn channels(&self) -> usize {
-        3
+    fn model(&self) -> crate::model::ColorModel {
+        crate::model::ColorModel::Lab
     }
 
     fn pcs(&self) -> Pcs {

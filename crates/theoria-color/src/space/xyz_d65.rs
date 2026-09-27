@@ -44,8 +44,8 @@ impl XyzD65 {
 }
 
 impl ProfileDefinition for XyzD65Profile {
-    fn channels(&self) -> usize {
-        3
+    fn model(&self) -> crate::model::ColorModel {
+        crate::model::ColorModel::Xyz
     }
 
     fn pcs(&self) -> Pcs {
