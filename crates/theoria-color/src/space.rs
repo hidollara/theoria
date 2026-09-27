@@ -1,14 +1,13 @@
 use std::{
     fmt,
     hash::{Hash, Hasher},
-    num::NonZeroUsize,
-    sync::Arc,
+    sync::Weak,
 };
 
 use super::ColorModel;
 #[cfg(test)]
 use super::Rgb;
-use super::color_transform::ColorTransform;
+use super::color_transform::{pcs_to_rgb_transfer, rgb_to_pcs_transfer};
 use super::icc_profile::IccRenderingIntent;
 use super::profile::{
     ColorSpace, Pcs, ProfileConnectionError, ProfileDefinition, require_relative,
@@ -24,7 +23,7 @@ use super::transfer::{Transfer, TransferCurve, TransferError, TransferMatrix, Tr
 pub trait TypedColorSpace: 'static {
     type Model: ColorModel;
 
-    fn color_space(&self) -> ColorSpaceId;
+    fn color_space(&self) -> ColorSpace;
 }
 
 macro_rules! named_space {
@@ -35,7 +34,7 @@ macro_rules! named_space {
         impl TypedColorSpace for $name {
             type Model = $model;
 
-            fn color_space(&self) -> ColorSpaceId {
+            fn color_space(&self) -> $crate::profile::ColorSpace {
                 (*self).into()
             }
         }
@@ -48,31 +47,23 @@ fn rgb_direct_to(
     counterpart_curve: TransferCurve,
     destination: &ColorSpace,
     intent: IccRenderingIntent,
-) -> Result<Option<ColorTransform>, ProfileConnectionError> {
+) -> Result<Option<Transfer>, ProfileConnectionError> {
     if intent != IccRenderingIntent::RelativeColorimetric {
         return Ok(None);
     }
     if source == *destination {
-        return Ok(Some(ColorTransform::new(
-            source.space(),
-            destination.space(),
-            Transfer::new(3, Vec::<TransferStage>::new())?,
-        )?));
+        return Ok(Some(Transfer::new(3, Vec::<TransferStage>::new())?));
     }
     if counterpart != *destination {
         return Ok(None);
     }
-    Ok(Some(ColorTransform::new(
-        source.space(),
-        destination.space(),
-        Transfer::new(
-            3,
-            [TransferStage::curves([
-                counterpart_curve.clone(),
-                counterpart_curve.clone(),
-                counterpart_curve,
-            ])?],
-        )?,
+    Ok(Some(Transfer::new(
+        3,
+        [TransferStage::curves([
+            counterpart_curve.clone(),
+            counterpart_curve.clone(),
+            counterpart_curve,
+        ])?],
     )?))
 }
 
@@ -111,33 +102,39 @@ fn rgb_matrix(matrix: [[f64; 3]; 3]) -> Result<TransferStage, TransferError> {
     )?))
 }
 
-#[derive(Debug)]
-struct ColorSpaceIdentity {
-    channels: NonZeroUsize,
+/// A transform endpoint that does not retain a profile's conversion data.
+/// Keeping a weak reference also prevents an allocation address from being
+/// reused while a transform still refers to that endpoint.
+#[derive(Clone)]
+pub(crate) enum ColorSpaceId {
+    Space(Weak<dyn ProfileDefinition>, usize),
+    AbsolutePcs(Pcs),
 }
 
-/// One runtime color space, identified independently of any profile data.
-///
-/// Clones denote the same coordinate space. Constructing another instance,
-/// even with the same channel count, denotes a different space. It keeps only
-/// its identity alive, not an ICC profile or its LUTs.
-#[derive(Clone)]
-pub struct ColorSpaceId(Arc<ColorSpaceIdentity>);
-
 impl ColorSpaceId {
-    /// Creates a distinct space with the specified number of channels.
-    pub fn new(channels: NonZeroUsize) -> Self {
-        Self(Arc::new(ColorSpaceIdentity { channels }))
+    pub(crate) fn of(definition: Weak<dyn ProfileDefinition>, channels: usize) -> Self {
+        Self::Space(definition, channels)
+    }
+
+    pub(crate) fn absolute_pcs(pcs: Pcs) -> Self {
+        Self::AbsolutePcs(pcs)
     }
 
     pub fn channels(&self) -> usize {
-        self.0.channels.get()
+        match self {
+            Self::Space(_, channels) => *channels,
+            Self::AbsolutePcs(_) => 3,
+        }
     }
 }
 
 impl PartialEq for ColorSpaceId {
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0)
+        match (self, other) {
+            (Self::Space(left, _), Self::Space(right, _)) => Weak::ptr_eq(left, right),
+            (Self::AbsolutePcs(left), Self::AbsolutePcs(right)) => left == right,
+            _ => false,
+        }
     }
 }
 
@@ -145,42 +142,51 @@ impl Eq for ColorSpaceId {}
 
 impl Hash for ColorSpaceId {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        Arc::as_ptr(&self.0).hash(state);
+        match self {
+            Self::Space(definition, _) => {
+                0_u8.hash(state);
+                (definition.as_ptr() as *const ()).hash(state);
+            }
+            Self::AbsolutePcs(pcs) => {
+                1_u8.hash(state);
+                pcs.hash(state);
+            }
+        }
     }
 }
 
 impl fmt::Debug for ColorSpaceId {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("ColorSpaceId")
-            .field("identity", &Arc::as_ptr(&self.0))
-            .field("channels", &self.channels())
-            .finish()
+        match self {
+            Self::Space(definition, _) => formatter
+                .debug_struct("ColorSpaceId")
+                .field("identity", &(definition.as_ptr() as *const ()))
+                .field("channels", &self.channels())
+                .finish(),
+            Self::AbsolutePcs(pcs) => formatter.debug_tuple("AbsolutePcs").field(pcs).finish(),
+        }
     }
 }
 
 macro_rules! predefined_space {
-    ($space:ty, $definition:ident, $key:ident) => {
+    ($space:ty, $definition:ident) => {
         struct $definition;
 
-        static $key: std::sync::LazyLock<ColorSpaceId> =
-            std::sync::LazyLock::new(|| ColorSpaceId::new(std::num::NonZeroUsize::new(3).unwrap()));
-
-        impl From<$space> for ColorSpaceId {
+        impl From<$space> for $crate::space::ColorSpaceId {
             fn from(_: $space) -> Self {
-                (*$key).clone()
+                $crate::profile::ColorSpace::from(<$space>::default()).id()
             }
         }
 
-        impl From<$space> for ColorSpace {
+        impl From<$space> for $crate::profile::ColorSpace {
             fn from(_: $space) -> Self {
-                static PROFILE: std::sync::LazyLock<ColorSpace> =
-                    std::sync::LazyLock::new(|| ColorSpace::new($definition));
+                static PROFILE: std::sync::LazyLock<$crate::profile::ColorSpace> =
+                    std::sync::LazyLock::new(|| $crate::profile::ColorSpace::new($definition));
                 PROFILE.clone()
             }
         }
 
-        impl From<&$space> for ColorSpace {
+        impl From<&$space> for $crate::profile::ColorSpace {
             fn from(profile: &$space) -> Self {
                 (*profile).into()
             }
@@ -217,10 +223,7 @@ mod tests {
         assert_ne!(ColorSpaceId::from(Srgb), ColorSpaceId::from(LinearSrgb));
         assert_ne!(ColorSpaceId::from(XyzD50), ColorSpaceId::from(XyzD65));
         assert_eq!(ColorSpace::from(Srgb), ColorSpace::from(Srgb));
-        assert_eq!(
-            ColorSpace::from(LinearSrgb),
-            ColorSpace::from(LinearSrgb)
-        );
+        assert_eq!(ColorSpace::from(LinearSrgb), ColorSpace::from(LinearSrgb));
         assert_eq!(ColorSpace::from(DisplayP3), ColorSpace::from(DisplayP3));
         assert_eq!(
             ColorSpace::from(LinearDisplayP3),
@@ -232,13 +235,20 @@ mod tests {
     }
 
     #[test]
-    fn cloned_custom_space_preserves_identity_without_equating_channel_counts() {
-        let first = ColorSpaceId::new(NonZeroUsize::new(4).unwrap());
+    fn loaded_spaces_preserve_identity_without_equating_channel_counts() {
+        let bytes = moxcms::ColorProfile::new_srgb().encode().unwrap();
+        let first = crate::IccProfile::from_bytes(&bytes)
+            .unwrap()
+            .device_space()
+            .id();
         let same = first.clone();
-        let separate = ColorSpaceId::new(NonZeroUsize::new(4).unwrap());
+        let separate = crate::IccProfile::from_bytes(&bytes)
+            .unwrap()
+            .device_space()
+            .id();
         assert_eq!(first, same);
         assert_ne!(first, separate);
-        assert_eq!(first.channels(), 4);
+        assert_eq!(first.channels(), 3);
         let keys = HashSet::from([first]);
         assert!(keys.contains(&same));
         assert!(!keys.contains(&separate));

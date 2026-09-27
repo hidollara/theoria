@@ -1,7 +1,7 @@
 use super::{
-    ColorSpace, ColorSpaceId, ColorTransform, IccRenderingIntent, Pcs, ProfileConnectionError,
-    ProfileDefinition, Srgb, TransferCurve, TypedColorSpace, require_relative, rgb_direct_to,
-    rgb_to_xyz_d65_transfer, xyz_d65_to_rgb_transfer,
+    ColorSpace, IccRenderingIntent, Pcs, ProfileConnectionError, ProfileDefinition, Srgb, Transfer,
+    TransferCurve, TypedColorSpace, pcs_to_rgb_transfer, require_relative, rgb_direct_to,
+    rgb_to_pcs_transfer, rgb_to_xyz_d65_transfer, xyz_d65_to_rgb_transfer,
 };
 use crate::model::Rgb;
 
@@ -12,46 +12,44 @@ impl LinearSrgb {
     pub(crate) const FROM_XYZ_D65: [[f64; 3]; 3] = Srgb::FROM_XYZ_D65;
 }
 
-predefined_space!(LinearSrgb, LinearSrgbProfile, LINEAR_SRGB_KEY);
+predefined_space!(LinearSrgb, LinearSrgbProfile);
 
 impl ProfileDefinition for LinearSrgbProfile {
-    fn space(&self) -> ColorSpaceId {
-        LinearSrgb.into()
+    fn channels(&self) -> usize {
+        3
     }
 
     fn pcs(&self) -> Pcs {
         Pcs::XyzD50
     }
 
-    fn space_to_pcs(
+    fn to_pcs_transfer(
         &self,
         intent: IccRenderingIntent,
-    ) -> Result<ColorTransform, ProfileConnectionError> {
+    ) -> Result<Transfer, ProfileConnectionError> {
         require_relative(intent)?;
-        Ok(ColorTransform::rgb_to_pcs_from(
-            self.space(),
+        Ok(rgb_to_pcs_transfer(
             rgb_to_xyz_d65_transfer(LinearSrgb::TO_XYZ_D65, TransferCurve::IDENTITY)?,
             self.pcs(),
         )?)
     }
 
-    fn pcs_to_space(
+    fn from_pcs_transfer(
         &self,
         intent: IccRenderingIntent,
-    ) -> Result<ColorTransform, ProfileConnectionError> {
+    ) -> Result<Transfer, ProfileConnectionError> {
         require_relative(intent)?;
-        Ok(ColorTransform::pcs_to_rgb_from(
+        Ok(pcs_to_rgb_transfer(
             self.pcs(),
-            self.space(),
             xyz_d65_to_rgb_transfer(LinearSrgb::FROM_XYZ_D65, TransferCurve::IDENTITY)?,
         )?)
     }
 
-    fn direct_to(
+    fn direct_transfer_to(
         &self,
         destination: &ColorSpace,
         intent: IccRenderingIntent,
-    ) -> Result<Option<ColorTransform>, ProfileConnectionError> {
+    ) -> Result<Option<Transfer>, ProfileConnectionError> {
         rgb_direct_to(
             LinearSrgb.into(),
             Srgb.into(),

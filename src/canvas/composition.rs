@@ -86,11 +86,7 @@ impl Composition {
         self
     }
 
-    pub fn with_blend_shader(
-        mut self,
-        shader: BlendShader,
-        space: impl Into<ColorSpace>,
-    ) -> Self {
+    pub fn with_blend_shader(mut self, shader: BlendShader, space: impl Into<ColorSpace>) -> Self {
         self.blend = Some(Blend::from_shader(shader, space));
         self
     }

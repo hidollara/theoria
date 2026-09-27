@@ -253,10 +253,7 @@ pub(crate) fn can_record_directly_in(canvas: &Canvas, working_profile: &ColorSpa
     }
 }
 
-fn required_color_field_scratch_images(
-    source: &ColorField,
-    working_profile: &ColorSpace,
-) -> usize {
+fn required_color_field_scratch_images(source: &ColorField, working_profile: &ColorSpace) -> usize {
     match source {
         ColorField::Canvas(canvas) => required_scratch_images_in(canvas, working_profile),
         _ => 1,

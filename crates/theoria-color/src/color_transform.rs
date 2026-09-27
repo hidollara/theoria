@@ -1,6 +1,7 @@
-use std::{error::Error, fmt, num::NonZeroUsize, sync::LazyLock};
+use std::{error::Error, fmt};
 
 use super::icc_profile::IccRenderingIntent;
+use super::profile::ColorSpace;
 use super::profile::Pcs;
 use super::space::{ColorSpaceId, LabD50, XyzD50, XyzD65};
 use super::transfer::{Transfer, TransferError, TransferMatrix, TransferStage};
@@ -26,6 +27,14 @@ impl ColorTransform {
     /// only channel arity can be checked here. Prefer constructors that derive
     /// the stages and endpoints together when one is available.
     pub fn new(
+        from: ColorSpace,
+        to: ColorSpace,
+        transfer: Transfer,
+    ) -> Result<Self, ColorTransformError> {
+        Self::from_ids(from.id(), to.id(), transfer)
+    }
+
+    pub(crate) fn from_ids(
         from: ColorSpaceId,
         to: ColorSpaceId,
         transfer: Transfer,
@@ -43,32 +52,6 @@ impl ColorTransform {
             });
         }
         Ok(Self { from, to, transfer })
-    }
-
-    pub(crate) fn rgb_to_pcs_from(
-        from: ColorSpaceId,
-        mut transfer: Transfer,
-        to: Pcs,
-    ) -> Result<Self, ColorTransformError> {
-        transfer = transfer.then(&adaptation(XyzD65::TO_XYZ_D50)?)?;
-        if to == Pcs::LabD50 {
-            transfer = transfer.then(&Transfer::new(3, [TransferStage::XyzD50ToLabD50])?)?;
-        }
-        Self::new(from, pcs_key(to), transfer)
-    }
-
-    pub(crate) fn pcs_to_rgb_from(
-        from: Pcs,
-        to: ColorSpaceId,
-        xyz_d65_to_rgb: Transfer,
-    ) -> Result<Self, ColorTransformError> {
-        let mut transfer = Transfer::new(3, Vec::<TransferStage>::new())?;
-        if from == Pcs::LabD50 {
-            transfer = transfer.then(&Transfer::new(3, [TransferStage::LabD50ToXyzD50])?)?;
-        }
-        transfer = transfer.then(&adaptation(XyzD65::FROM_XYZ_D50)?)?;
-        transfer = transfer.then(&xyz_d65_to_rgb)?;
-        Self::new(pcs_key(from), to, transfer)
     }
 
     /// Bridges the two media-relative D50 PCS representations without changing color.
@@ -89,18 +72,20 @@ impl ColorTransform {
             (Pcs::LabD50, Pcs::XyzD50) => vec![TransferStage::LabD50ToXyzD50],
             _ => Vec::new(),
         };
-        Self::new(
+        Self::from_ids(
             pcs_key_for_intent(from, intent),
             pcs_key_for_intent(to, intent),
             Transfer::new(3, stages)?,
         )
     }
 
-    pub const fn from(&self) -> &ColorSpaceId {
+    #[cfg(test)]
+    pub(crate) const fn from(&self) -> &ColorSpaceId {
         &self.from
     }
 
-    pub const fn to(&self) -> &ColorSpaceId {
+    #[cfg(test)]
+    pub(crate) const fn to(&self) -> &ColorSpaceId {
         &self.to
     }
 
@@ -116,12 +101,35 @@ impl ColorTransform {
         if self.to != next.from {
             return Err(ColorTransformError::SpaceMismatch);
         }
-        Self::new(
+        Self::from_ids(
             self.from.clone(),
             next.to.clone(),
             self.transfer.then(&next.transfer)?,
         )
     }
+}
+
+pub(crate) fn rgb_to_pcs_transfer(
+    mut transfer: Transfer,
+    to: Pcs,
+) -> Result<Transfer, TransferError> {
+    transfer = transfer.then(&adaptation(XyzD65::TO_XYZ_D50)?)?;
+    if to == Pcs::LabD50 {
+        transfer = transfer.then(&Transfer::new(3, [TransferStage::XyzD50ToLabD50])?)?;
+    }
+    Ok(transfer)
+}
+
+pub(crate) fn pcs_to_rgb_transfer(
+    from: Pcs,
+    xyz_d65_to_rgb: Transfer,
+) -> Result<Transfer, TransferError> {
+    let mut transfer = Transfer::new(3, Vec::<TransferStage>::new())?;
+    if from == Pcs::LabD50 {
+        transfer = transfer.then(&Transfer::new(3, [TransferStage::LabD50ToXyzD50])?)?;
+    }
+    transfer = transfer.then(&adaptation(XyzD65::FROM_XYZ_D50)?)?;
+    transfer.then(&xyz_d65_to_rgb)
 }
 
 pub(crate) fn pcs_key(pcs: Pcs) -> ColorSpaceId {
@@ -131,17 +139,9 @@ pub(crate) fn pcs_key(pcs: Pcs) -> ColorSpaceId {
     }
 }
 
-static ABSOLUTE_XYZ_D50_KEY: LazyLock<ColorSpaceId> =
-    LazyLock::new(|| ColorSpaceId::new(NonZeroUsize::new(3).unwrap()));
-static ABSOLUTE_LAB_D50_KEY: LazyLock<ColorSpaceId> =
-    LazyLock::new(|| ColorSpaceId::new(NonZeroUsize::new(3).unwrap()));
-
 pub(crate) fn pcs_key_for_intent(pcs: Pcs, intent: IccRenderingIntent) -> ColorSpaceId {
     if intent == IccRenderingIntent::AbsoluteColorimetric {
-        match pcs {
-            Pcs::XyzD50 => (*ABSOLUTE_XYZ_D50_KEY).clone(),
-            Pcs::LabD50 => (*ABSOLUTE_LAB_D50_KEY).clone(),
-        }
+        ColorSpaceId::absolute_pcs(pcs)
     } else {
         pcs_key(pcs)
     }
@@ -247,7 +247,7 @@ mod tests {
             assert!((actual - expected).abs() < 0.004);
         }
         assert_eq!(connected.from(), &ColorSpaceId::from(Srgb));
-        assert_eq!(connected.to(), &profile.device_space());
+        assert_eq!(connected.to(), &profile.device_space().id());
 
         let reverse = profile
             .space_to_pcs(IccRenderingIntent::RelativeColorimetric)

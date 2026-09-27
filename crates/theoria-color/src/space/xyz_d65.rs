@@ -1,12 +1,12 @@
 use super::{
-    ColorSpace, ColorSpaceId, ColorTransform, IccRenderingIntent, Pcs, ProfileConnectionError,
-    ProfileDefinition, TypedColorSpace, XyzD50, require_relative,
+    IccRenderingIntent, Pcs, ProfileConnectionError, ProfileDefinition, Transfer, TypedColorSpace,
+    require_relative,
 };
 use crate::color_transform::adaptation;
 use crate::model::Xyz;
 
 named_space!(XyzD65, Xyz);
-predefined_space!(XyzD65, XyzD65Profile, XYZ_D65_KEY);
+predefined_space!(XyzD65, XyzD65Profile);
 
 impl XyzD65 {
     // Linear Bradford adaptation from the CSS Color 4 conversion sample.
@@ -44,35 +44,27 @@ impl XyzD65 {
 }
 
 impl ProfileDefinition for XyzD65Profile {
-    fn space(&self) -> ColorSpaceId {
-        XyzD65.into()
+    fn channels(&self) -> usize {
+        3
     }
 
     fn pcs(&self) -> Pcs {
         Pcs::XyzD50
     }
 
-    fn space_to_pcs(
+    fn to_pcs_transfer(
         &self,
         intent: IccRenderingIntent,
-    ) -> Result<ColorTransform, ProfileConnectionError> {
+    ) -> Result<Transfer, ProfileConnectionError> {
         require_relative(intent)?;
-        Ok(ColorTransform::new(
-            self.space(),
-            XyzD50.into(),
-            adaptation(XyzD65::TO_XYZ_D50)?,
-        )?)
+        Ok(adaptation(XyzD65::TO_XYZ_D50)?)
     }
 
-    fn pcs_to_space(
+    fn from_pcs_transfer(
         &self,
         intent: IccRenderingIntent,
-    ) -> Result<ColorTransform, ProfileConnectionError> {
+    ) -> Result<Transfer, ProfileConnectionError> {
         require_relative(intent)?;
-        Ok(ColorTransform::new(
-            XyzD50.into(),
-            self.space(),
-            adaptation(XyzD65::FROM_XYZ_D50)?,
-        )?)
+        Ok(adaptation(XyzD65::FROM_XYZ_D50)?)
     }
 }

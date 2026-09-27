@@ -127,7 +127,7 @@ impl BlendShader {
         ];
         let mut wgsl = String::new();
         for (id, (from, to, name)) in conversions.into_iter().enumerate() {
-            if from.space().channels() != 3 || to.space().channels() != 3 {
+            if from.channels() != 3 || to.channels() != 3 {
                 return Err(std::io::Error::other(
                     "Canvas composition requires three-channel color profiles",
                 )

@@ -101,8 +101,11 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ColorModel, ColorSpaceId, Rgb, TypedColorSpace};
-    use std::{num::NonZeroUsize, sync::LazyLock};
+    use crate::{
+        ColorModel, ColorSpace, IccRenderingIntent, Pcs, ProfileConnectionError, ProfileDefinition,
+        Rgb, Transfer, TypedColorSpace,
+    };
+    use std::sync::LazyLock;
 
     struct AuthoredRgb([u8; 3]);
 
@@ -124,13 +127,37 @@ mod tests {
 
     struct LogicalSpace;
 
+    struct LogicalProfile;
+
+    impl ProfileDefinition for LogicalProfile {
+        fn channels(&self) -> usize {
+            2
+        }
+
+        fn pcs(&self) -> Pcs {
+            Pcs::XyzD50
+        }
+
+        fn to_pcs_transfer(
+            &self,
+            intent: IccRenderingIntent,
+        ) -> Result<Transfer, ProfileConnectionError> {
+            Err(ProfileConnectionError::UnsupportedIntent(intent))
+        }
+
+        fn from_pcs_transfer(
+            &self,
+            intent: IccRenderingIntent,
+        ) -> Result<Transfer, ProfileConnectionError> {
+            Err(ProfileConnectionError::UnsupportedIntent(intent))
+        }
+    }
+
     impl TypedColorSpace for LogicalSpace {
         type Model = LogicalModel;
 
-        fn color_space(&self) -> ColorSpaceId {
-            static SPACE: LazyLock<ColorSpaceId> = LazyLock::new(|| {
-                ColorSpaceId::new(NonZeroUsize::new(LogicalModel::COMPONENTS).unwrap())
-            });
+        fn color_space(&self) -> ColorSpace {
+            static SPACE: LazyLock<ColorSpace> = LazyLock::new(|| ColorSpace::new(LogicalProfile));
             SPACE.clone()
         }
     }

@@ -1,7 +1,7 @@
 use super::{
-    ColorSpace, ColorSpaceId, ColorTransform, IccRenderingIntent, Pcs, ProfileConnectionError,
-    ProfileDefinition, TransferCurve, TypedColorSpace, require_relative, rgb_direct_to,
-    rgb_to_xyz_d65_transfer, xyz_d65_to_rgb_transfer,
+    ColorSpace, IccRenderingIntent, Pcs, ProfileConnectionError, ProfileDefinition, Transfer,
+    TransferCurve, TypedColorSpace, pcs_to_rgb_transfer, require_relative, rgb_direct_to,
+    rgb_to_pcs_transfer, rgb_to_xyz_d65_transfer, xyz_d65_to_rgb_transfer,
 };
 use crate::model::Rgb;
 
@@ -34,46 +34,44 @@ impl DisplayP3 {
     ];
 }
 
-predefined_space!(DisplayP3, DisplayP3Profile, DISPLAY_P3_KEY);
+predefined_space!(DisplayP3, DisplayP3Profile);
 
 impl ProfileDefinition for DisplayP3Profile {
-    fn space(&self) -> ColorSpaceId {
-        DisplayP3.into()
+    fn channels(&self) -> usize {
+        3
     }
 
     fn pcs(&self) -> Pcs {
         Pcs::XyzD50
     }
 
-    fn space_to_pcs(
+    fn to_pcs_transfer(
         &self,
         intent: IccRenderingIntent,
-    ) -> Result<ColorTransform, ProfileConnectionError> {
+    ) -> Result<Transfer, ProfileConnectionError> {
         require_relative(intent)?;
-        Ok(ColorTransform::rgb_to_pcs_from(
-            self.space(),
+        Ok(rgb_to_pcs_transfer(
             rgb_to_xyz_d65_transfer(DisplayP3::TO_XYZ_D65, TransferCurve::SRGB_DECODE)?,
             self.pcs(),
         )?)
     }
 
-    fn pcs_to_space(
+    fn from_pcs_transfer(
         &self,
         intent: IccRenderingIntent,
-    ) -> Result<ColorTransform, ProfileConnectionError> {
+    ) -> Result<Transfer, ProfileConnectionError> {
         require_relative(intent)?;
-        Ok(ColorTransform::pcs_to_rgb_from(
+        Ok(pcs_to_rgb_transfer(
             self.pcs(),
-            self.space(),
             xyz_d65_to_rgb_transfer(DisplayP3::FROM_XYZ_D65, TransferCurve::SRGB_ENCODE)?,
         )?)
     }
 
-    fn direct_to(
+    fn direct_transfer_to(
         &self,
         destination: &ColorSpace,
         intent: IccRenderingIntent,
-    ) -> Result<Option<ColorTransform>, ProfileConnectionError> {
+    ) -> Result<Option<Transfer>, ProfileConnectionError> {
         rgb_direct_to(
             DisplayP3.into(),
             super::LinearDisplayP3.into(),

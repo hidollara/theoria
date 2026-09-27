@@ -74,9 +74,9 @@ impl PreparedColors {
         if self.interpolations.contains_key(profile) {
             return Ok(());
         }
-        if profile.space().channels() != 3 {
+        if profile.channels() != 3 {
             return Err(CanvasIccColorError::UnsupportedColorChannels(
-                profile.space().channels(),
+                profile.channels(),
             ));
         }
         let working = &self.working_profile;
@@ -130,9 +130,9 @@ impl CanvasColor {
             _ => self.value.coordinates_as_f64().to_vec(),
         };
         let destination = profile.into();
-        if destination.space().channels() != 3 {
+        if destination.channels() != 3 {
             return Err(CanvasIccColorError::UnsupportedColorChannels(
-                destination.space().channels(),
+                destination.channels(),
             ));
         }
         let converted = if self.profile == destination {

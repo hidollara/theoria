@@ -20,8 +20,7 @@ pub use model::{Cmyk, ColorCoordinates, ColorModel, Lab, Rgb, Xyz, Ycbcr};
 pub use profile::{ColorSpace, Pcs, ProfileConnectionError, ProfileDefinition, connect_profiles};
 pub use sample::{Opacity, OpacityError, OpacitySample};
 pub use space::{
-    ColorSpaceId, DisplayP3, LabD50, LinearDisplayP3, LinearSrgb, Srgb, TypedColorSpace, XyzD50,
-    XyzD65,
+    DisplayP3, LabD50, LinearDisplayP3, LinearSrgb, Srgb, TypedColorSpace, XyzD50, XyzD65,
 };
 pub use transfer::{
     Transfer, TransferClut, TransferCurve, TransferError, TransferMatrix, TransferShader,

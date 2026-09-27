@@ -2,8 +2,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use crate::{
     color::{
-        ColorSpace, ColorSpaceId, ColorTransform, IccRenderingIntent, Pcs, ProfileConnectionError,
-        ProfileDefinition,
+        ColorSpace, IccRenderingIntent, Pcs, ProfileConnectionError, ProfileDefinition, Transfer,
     },
     component::{ComponentInstance, MountContext},
     event::{DispatchQueue, DynDispatch, EventSink, SubmissionOutcome},
@@ -16,34 +15,37 @@ pub(crate) fn distinct_color_profile(profile: impl Into<ColorSpace>) -> ColorSpa
     struct Distinct(ColorSpace);
 
     impl ProfileDefinition for Distinct {
-        fn space(&self) -> ColorSpaceId {
-            self.0.space()
+        fn channels(&self) -> usize {
+            self.0.channels()
         }
 
         fn pcs(&self) -> Pcs {
             self.0.pcs()
         }
 
-        fn space_to_pcs(
+        fn to_pcs_transfer(
             &self,
             intent: IccRenderingIntent,
-        ) -> Result<ColorTransform, ProfileConnectionError> {
-            self.0.space_to_pcs(intent)
+        ) -> Result<Transfer, ProfileConnectionError> {
+            Ok(self.0.space_to_pcs(intent)?.into_transfer())
         }
 
-        fn pcs_to_space(
+        fn from_pcs_transfer(
             &self,
             intent: IccRenderingIntent,
-        ) -> Result<ColorTransform, ProfileConnectionError> {
-            self.0.pcs_to_space(intent)
+        ) -> Result<Transfer, ProfileConnectionError> {
+            Ok(self.0.pcs_to_space(intent)?.into_transfer())
         }
 
-        fn direct_to(
+        fn direct_transfer_to(
             &self,
             destination: &ColorSpace,
             intent: IccRenderingIntent,
-        ) -> Result<Option<ColorTransform>, ProfileConnectionError> {
-            self.0.direct_to(destination, intent)
+        ) -> Result<Option<Transfer>, ProfileConnectionError> {
+            Ok(self
+                .0
+                .direct_to(destination, intent)?
+                .map(|transform| transform.into_transfer()))
         }
     }
 

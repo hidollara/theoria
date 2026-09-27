@@ -321,13 +321,10 @@ mod tests {
     }
 
     #[test]
-    fn icc_colors_with_distinct_profiles_are_not_equal_even_in_the_same_space() {
+    fn icc_colors_from_separately_loaded_spaces_are_not_equal() {
         let bytes = moxcms::ColorProfile::new_srgb().encode().unwrap();
         let first = IccProfile::from_bytes(&bytes).unwrap();
-        let second = IccProfile::from_bytes(&bytes)
-            .unwrap()
-            .with_device_space(first.device_space())
-            .unwrap();
+        let second = IccProfile::from_bytes(&bytes).unwrap();
         let color = |profile: &IccProfile| {
             CanvasColor::from_icc(
                 profile,

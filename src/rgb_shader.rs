@@ -2,8 +2,7 @@
 //! Also compiled by build.rs for the default Vulkan shader validation.
 
 use theoria_color::{
-    ColorSpace, DisplayP3, IccRenderingIntent, LinearDisplayP3, LinearSrgb, Srgb,
-    connect_profiles,
+    ColorSpace, DisplayP3, IccRenderingIntent, LinearDisplayP3, LinearSrgb, Srgb, connect_profiles,
 };
 
 const MARKER: &str = "// @theoria-rgb-conversions";
@@ -17,7 +16,7 @@ pub(crate) fn assemble_for(
     source: &str,
     working_profile: &ColorSpace,
 ) -> Result<String, Box<dyn std::error::Error>> {
-    if working_profile.space().channels() != 3 {
+    if working_profile.channels() != 3 {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             "Canvas working profile must have three color channels",
@@ -85,7 +84,7 @@ pub(crate) fn assemble_output_for(
     output_profile: &ColorSpace,
     output_intent: IccRenderingIntent,
 ) -> Result<String, Box<dyn std::error::Error>> {
-    if working_profile.space().channels() != 3 || output_profile.space().channels() != 3 {
+    if working_profile.channels() != 3 || output_profile.channels() != 3 {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             "Canvas output requires three-channel profiles",

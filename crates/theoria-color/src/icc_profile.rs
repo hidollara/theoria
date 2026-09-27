@@ -1,4 +1,4 @@
-use std::{error::Error, fmt, num::NonZeroUsize, sync::Arc};
+use std::{error::Error, fmt, sync::Arc};
 
 use moxcms::{
     ColorProfile as ParsedProfile, DataColorSpace, LutDataType, LutMultidimensionalType, LutStore,
@@ -11,7 +11,6 @@ use super::pcs::ICC_D50;
 use super::profile::{
     ColorSpace, Pcs, ProfileConnectionError, ProfileDefinition, connect_profiles,
 };
-use super::space::ColorSpaceId;
 use super::transfer::{
     Transfer, TransferClut, TransferCurve, TransferError, TransferMatrix, TransferStage,
 };
@@ -51,7 +50,6 @@ struct IccProfileData {
     parsed: Arc<ParsedProfile>,
     original_bytes: Option<Arc<[u8]>>,
     pcs: Pcs,
-    device_space: ColorSpaceId,
     mpe: MpeTags,
 }
 
@@ -96,13 +94,11 @@ impl IccProfile {
     }
 
     fn from_parsed(parsed: ParsedProfile, pcs: Pcs) -> Self {
-        let channels = NonZeroUsize::new(color_space_channels(parsed.color_space)).unwrap();
         Self {
             inner: Arc::new(IccProfileData {
                 parsed: Arc::new(parsed),
                 original_bytes: None,
                 pcs,
-                device_space: ColorSpaceId::new(channels),
                 mpe: MpeTags::default(),
             }),
         }
@@ -119,31 +115,17 @@ impl IccProfile {
     }
 
     pub fn device_channels(&self) -> usize {
-        self.inner.device_space.channels()
+        self.inner.device_channels()
     }
 
     /// The device coordinates of this particular loaded profile.
-    pub fn device_space(&self) -> ColorSpaceId {
-        self.inner.device_space.clone()
+    pub fn device_space(&self) -> ColorSpace {
+        self.profile()
     }
 
     /// A type-erased handle to the same profile definition.
     pub fn profile(&self) -> ColorSpace {
         ColorSpace::from_arc(self.inner.clone())
-    }
-
-    /// Associates this profile with an already identified coordinate space.
-    /// The caller must ensure that its device coordinates have that space's meaning.
-    pub fn with_device_space(mut self, space: ColorSpaceId) -> Result<Self, IccProfileError> {
-        if space.channels() != self.device_channels() {
-            return Err(IccProfileError::IncompatibleSpaceChannels);
-        }
-        if self.inner.device_space != space {
-            let mut data = (*self.inner).clone();
-            data.device_space = space;
-            self.inner = Arc::new(data);
-        }
-        Ok(self)
     }
 
     /// Selects this profile's device-to-PCS transfer for the given intent.
@@ -154,8 +136,13 @@ impl IccProfile {
         &self,
         intent: IccRenderingIntent,
     ) -> Result<ColorTransform, IccProfileError> {
-        self.inner
-            .color_transform(IccTransferDirection::DeviceToPcs, intent)
+        ColorTransform::from_ids(
+            self.profile().id(),
+            pcs_key_for_intent(self.pcs(), intent),
+            self.inner
+                .selected_transfer(IccTransferDirection::DeviceToPcs, intent)?,
+        )
+        .map_err(Into::into)
     }
 
     /// Selects this profile's PCS-to-device transfer for the given intent.
@@ -165,25 +152,13 @@ impl IccProfile {
         &self,
         intent: IccRenderingIntent,
     ) -> Result<ColorTransform, IccProfileError> {
-        self.inner
-            .color_transform(IccTransferDirection::PcsToDevice, intent)
-    }
-}
-
-impl IccProfileData {
-    fn color_transform(
-        &self,
-        direction: IccTransferDirection,
-        intent: IccRenderingIntent,
-    ) -> Result<ColorTransform, IccProfileError> {
-        let transfer = self.selected_transfer(direction, intent)?;
-        let pcs = pcs_key_for_intent(self.pcs, intent);
-        let device = self.device_space.clone();
-        let (from, to) = match direction {
-            IccTransferDirection::DeviceToPcs => (device, pcs),
-            IccTransferDirection::PcsToDevice => (pcs, device),
-        };
-        ColorTransform::new(from, to, transfer).map_err(Into::into)
+        ColorTransform::from_ids(
+            pcs_key_for_intent(self.pcs(), intent),
+            self.profile().id(),
+            self.inner
+                .selected_transfer(IccTransferDirection::PcsToDevice, intent)?,
+        )
+        .map_err(Into::into)
     }
 }
 
@@ -209,7 +184,7 @@ impl IccProfile {
 
 impl IccProfileData {
     fn device_channels(&self) -> usize {
-        self.device_space.channels()
+        color_space_channels(self.parsed.color_space)
     }
 
     fn selected_transfer(
@@ -678,7 +653,6 @@ pub enum IccProfileError {
     UnsupportedVersion,
     UnsupportedProfileClass,
     UnsupportedPcs,
-    IncompatibleSpaceChannels,
     MissingMediaWhitePoint,
     MissingTransfer,
     MalformedTransfer,
@@ -707,9 +681,6 @@ impl fmt::Display for IccProfileError {
                 f.write_str("the ICC profile class does not connect device coordinates to a PCS")
             }
             Self::UnsupportedPcs => f.write_str("the ICC profile uses an unsupported PCS"),
-            Self::IncompatibleSpaceChannels => {
-                f.write_str("the color space and ICC profile have different channel counts")
-            }
             Self::MissingMediaWhitePoint => {
                 f.write_str("absolute-colorimetric ICC links require a media white point")
             }
@@ -737,26 +708,26 @@ impl Error for IccProfileError {
 }
 
 impl ProfileDefinition for IccProfileData {
-    fn space(&self) -> ColorSpaceId {
-        self.device_space.clone()
+    fn channels(&self) -> usize {
+        self.device_channels()
     }
 
     fn pcs(&self) -> Pcs {
         self.pcs
     }
 
-    fn space_to_pcs(
+    fn to_pcs_transfer(
         &self,
         intent: IccRenderingIntent,
-    ) -> Result<ColorTransform, ProfileConnectionError> {
-        Ok(self.color_transform(IccTransferDirection::DeviceToPcs, intent)?)
+    ) -> Result<Transfer, ProfileConnectionError> {
+        Ok(self.selected_transfer(IccTransferDirection::DeviceToPcs, intent)?)
     }
 
-    fn pcs_to_space(
+    fn from_pcs_transfer(
         &self,
         intent: IccRenderingIntent,
-    ) -> Result<ColorTransform, ProfileConnectionError> {
-        Ok(self.color_transform(IccTransferDirection::PcsToDevice, intent)?)
+    ) -> Result<Transfer, ProfileConnectionError> {
+        Ok(self.selected_transfer(IccTransferDirection::PcsToDevice, intent)?)
     }
 }
 
@@ -775,6 +746,7 @@ impl From<&IccProfile> for ColorSpace {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::space::ColorSpaceId;
     use crate::{XyzD50, connect_profiles};
 
     #[test]
@@ -942,8 +914,8 @@ mod tests {
                 IccRenderingIntent::RelativeColorimetric,
             )
             .unwrap();
-        assert_eq!(semantic.from(), &profile.device_space());
-        assert_eq!(semantic.to(), &profile.device_space());
+        assert_eq!(semantic.from(), &profile.device_space().id());
+        assert_eq!(semantic.to(), &profile.device_space().id());
         let restored = semantic.transfer().evaluate(&[0.4, 0.5, 0.6]).unwrap();
         for (actual, expected) in restored.into_iter().zip([0.4, 0.5, 0.6]) {
             assert!((actual - expected).abs() < 0.003);
@@ -977,8 +949,8 @@ mod tests {
                 IccRenderingIntent::RelativeColorimetric,
             )
             .unwrap();
-        assert_eq!(connected.from(), &source.device_space());
-        assert_eq!(connected.to(), &destination.device_space());
+        assert_eq!(connected.from(), &source.device_space().id());
+        assert_eq!(connected.to(), &destination.device_space().id());
         let result = connected.transfer().evaluate(&[0.4]).unwrap();
         let relative_xyz = ICC_D50.map(|component| component * 0.4);
         let expected = crate::pcs::xyz_to_lab(relative_xyz, ICC_D50)[0] / 100.0;
@@ -1025,7 +997,7 @@ mod tests {
         let gray = backward.transfer().evaluate(&xyz).unwrap();
         assert!((gray[0] - 0.5).abs() < 0.002, "gray={gray:?}, xyz={xyz:?}");
         assert_eq!(forward.to(), &ColorSpaceId::from(XyzD50));
-        assert_eq!(backward.to(), &profile.device_space());
+        assert_eq!(backward.to(), &profile.device_space().id());
         assert!(forward.then(&backward).is_ok());
         let shader = forward.transfer().wgsl_with_storage(22, 1, 4).unwrap();
         let module = naga::front::wgsl::parse_str(shader.source())
@@ -1217,45 +1189,31 @@ mod tests {
         let from_pcs = separate_load
             .pcs_to_space(IccRenderingIntent::RelativeColorimetric)
             .unwrap();
-        assert_eq!(to_pcs.from(), &source.device_space());
+        assert_eq!(to_pcs.from(), &source.device_space().id());
         assert_eq!(to_pcs.to(), &ColorSpaceId::from(XyzD50));
         assert_eq!(from_pcs.from(), &ColorSpaceId::from(XyzD50));
-        assert_eq!(from_pcs.to(), &separate_load.device_space());
+        assert_eq!(from_pcs.to(), &separate_load.device_space().id());
         let connected = to_pcs.then(&from_pcs).unwrap();
-        assert_eq!(connected.to(), &separate_load.device_space());
+        assert_eq!(connected.to(), &separate_load.device_space().id());
     }
 
     #[test]
-    fn profile_identity_is_distinct_from_shared_space_identity() {
+    fn loaded_profile_identity_is_its_runtime_space_identity() {
         let bytes = ParsedProfile::new_srgb().encode().unwrap();
         let first = IccProfile::from_bytes(&bytes).unwrap();
-        let shared_space = first.device_space();
-        let second = IccProfile::from_bytes(&bytes)
-            .unwrap()
-            .with_device_space(shared_space.clone())
-            .unwrap();
+        let second = IccProfile::from_bytes(&bytes).unwrap();
 
-        assert_eq!(first.device_space(), second.device_space());
+        assert_eq!(first.device_space(), first.clone().device_space());
+        assert_ne!(first.device_space(), second.device_space());
         assert_eq!(first.profile(), first.clone().profile());
         assert_ne!(first.profile(), second.profile());
-        let rebound_clone = first
-            .clone()
-            .with_device_space(ColorSpaceId::new(NonZeroUsize::new(3).unwrap()))
-            .unwrap();
-        assert_ne!(first.profile(), rebound_clone.profile());
         assert_eq!(
-            second
+            first
                 .space_to_pcs(IccRenderingIntent::RelativeColorimetric)
                 .unwrap()
                 .from(),
-            &shared_space
+            &first.device_space().id()
         );
-
-        let gray = IccProfile::from_parsed(ParsedProfile::new_gray_with_gamma(2.2), Pcs::XyzD50);
-        assert!(matches!(
-            gray.with_device_space(shared_space),
-            Err(IccProfileError::IncompatibleSpaceChannels)
-        ));
     }
 
     #[test]
@@ -1263,7 +1221,7 @@ mod tests {
         let bytes = ParsedProfile::new_srgb().encode().unwrap();
         let profile = IccProfile::from_bytes(&bytes).unwrap();
         let parsed = Arc::downgrade(&profile.inner.parsed);
-        let device = profile.device_space();
+        let device = profile.device_space().id();
         let transform = profile
             .space_to_pcs(IccRenderingIntent::RelativeColorimetric)
             .unwrap();

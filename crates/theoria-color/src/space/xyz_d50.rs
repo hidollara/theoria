@@ -1,33 +1,33 @@
 use super::{
-    ColorSpace, ColorSpaceId, ColorTransform, IccRenderingIntent, Pcs, ProfileConnectionError,
-    ProfileDefinition, TypedColorSpace, require_relative,
+    IccRenderingIntent, Pcs, ProfileConnectionError, ProfileDefinition, Transfer, TypedColorSpace,
+    require_relative,
 };
 use crate::model::Xyz;
 
 named_space!(XyzD50, Xyz);
-predefined_space!(XyzD50, XyzD50Profile, XYZ_D50_KEY);
+predefined_space!(XyzD50, XyzD50Profile);
 
 impl ProfileDefinition for XyzD50Profile {
-    fn space(&self) -> ColorSpaceId {
-        XyzD50.into()
+    fn channels(&self) -> usize {
+        3
     }
 
     fn pcs(&self) -> Pcs {
         Pcs::XyzD50
     }
 
-    fn space_to_pcs(
+    fn to_pcs_transfer(
         &self,
         intent: IccRenderingIntent,
-    ) -> Result<ColorTransform, ProfileConnectionError> {
+    ) -> Result<Transfer, ProfileConnectionError> {
         require_relative(intent)?;
-        Ok(ColorTransform::between_pcs(self.pcs(), self.pcs())?)
+        Ok(Transfer::new(3, [])?)
     }
 
-    fn pcs_to_space(
+    fn from_pcs_transfer(
         &self,
         intent: IccRenderingIntent,
-    ) -> Result<ColorTransform, ProfileConnectionError> {
-        self.space_to_pcs(intent)
+    ) -> Result<Transfer, ProfileConnectionError> {
+        self.to_pcs_transfer(intent)
     }
 }
