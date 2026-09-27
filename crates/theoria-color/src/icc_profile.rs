@@ -1,20 +1,15 @@
-use std::{
-    error::Error,
-    fmt,
-    num::NonZeroUsize,
-    sync::{Arc, LazyLock},
-};
+use std::{error::Error, fmt, num::NonZeroUsize, sync::Arc};
 
 use moxcms::{
     ColorProfile as ParsedProfile, DataColorSpace, LutDataType, LutMultidimensionalType, LutStore,
     LutType, LutWarehouse, ProfileClass, ProfileVersion, ToneReprCurve,
 };
 
-use super::color_transform::{ColorTransform, ColorTransformError};
+use super::color_transform::{ColorTransform, ColorTransformError, pcs_key_for_intent};
 use super::icc::{IccPcs, IccTransfer, IccTransferDirection, IccTransferError};
 use super::icc_mpe::MpeTags;
 use super::pcs::ICC_D50;
-use super::profile::{ColorSpaceKey, LabD50, XyzD50};
+use super::profile::ColorSpaceKey;
 use super::transfer::{
     Transfer, TransferClut, TransferCurve, TransferError, TransferMatrix, TransferStage,
 };
@@ -27,11 +22,6 @@ pub enum IccRenderingIntent {
     Saturation,
     AbsoluteColorimetric,
 }
-
-static ABSOLUTE_XYZ_D50_KEY: LazyLock<ColorSpaceKey> =
-    LazyLock::new(|| ColorSpaceKey::new(NonZeroUsize::new(3).unwrap()));
-static ABSOLUTE_LAB_D50_KEY: LazyLock<ColorSpaceKey> =
-    LazyLock::new(|| ColorSpaceKey::new(NonZeroUsize::new(3).unwrap()));
 
 /// A parsed ICC v2/v4 profile whose supported transforms can be lowered to
 /// [`Transfer`] for both CPU evaluation and WGSL generation.
@@ -141,16 +131,7 @@ impl IccProfile {
         intent: IccRenderingIntent,
     ) -> Result<ColorTransform, IccProfileError> {
         let transfer = self.transfer(direction, intent)?;
-        let pcs = match (self.pcs, intent) {
-            (IccPcs::XyzD50, IccRenderingIntent::AbsoluteColorimetric) => {
-                (*ABSOLUTE_XYZ_D50_KEY).clone()
-            }
-            (IccPcs::LabD50, IccRenderingIntent::AbsoluteColorimetric) => {
-                (*ABSOLUTE_LAB_D50_KEY).clone()
-            }
-            (IccPcs::XyzD50, _) => ColorSpaceKey::from(XyzD50),
-            (IccPcs::LabD50, _) => ColorSpaceKey::from(LabD50),
-        };
+        let pcs = pcs_key_for_intent(self.pcs, intent);
         let device = self.device_space();
         let (from, to) = match direction {
             IccTransferDirection::DeviceToPcs => (device, pcs),
@@ -728,6 +709,7 @@ impl Error for IccProfileError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::XyzD50;
 
     #[test]
     fn real_v4_profiles_round_trip_device_coordinates() {

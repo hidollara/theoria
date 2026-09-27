@@ -1,6 +1,7 @@
-use std::{error::Error, fmt};
+use std::{error::Error, fmt, num::NonZeroUsize, sync::LazyLock};
 
 use super::icc::IccPcs;
+use super::icc_profile::IccRenderingIntent;
 use super::profile::{ColorSpaceKey, LabD50, RgbColorSpace, XyzD50};
 use super::profile_data::{XYZ_D50_TO_XYZ_D65, XYZ_D65_TO_XYZ_D50};
 use super::transfer::{Transfer, TransferCurve, TransferError, TransferMatrix, TransferStage};
@@ -114,12 +115,27 @@ impl ColorTransform {
 
     /// Bridges the two media-relative D50 PCS representations without changing color.
     pub fn between_pcs(from: IccPcs, to: IccPcs) -> Result<Self, ColorTransformError> {
+        Self::between_pcs_for_intent(from, to, IccRenderingIntent::RelativeColorimetric)
+    }
+
+    /// Bridges PCS encodings while preserving their rendering-intent meaning.
+    /// Absolute PCS coordinates have a distinct identity from media-relative
+    /// coordinates even when both use the same XYZ or Lab representation.
+    pub fn between_pcs_for_intent(
+        from: IccPcs,
+        to: IccPcs,
+        intent: IccRenderingIntent,
+    ) -> Result<Self, ColorTransformError> {
         let stages = match (from, to) {
             (IccPcs::XyzD50, IccPcs::LabD50) => vec![TransferStage::XyzD50ToLabD50],
             (IccPcs::LabD50, IccPcs::XyzD50) => vec![TransferStage::LabD50ToXyzD50],
             _ => Vec::new(),
         };
-        Self::new(pcs_key(from), pcs_key(to), Transfer::new(3, stages)?)
+        Self::new(
+            pcs_key_for_intent(from, intent),
+            pcs_key_for_intent(to, intent),
+            Transfer::new(3, stages)?,
+        )
     }
 
     pub const fn from(&self) -> &ColorSpaceKey {
@@ -150,10 +166,26 @@ impl ColorTransform {
     }
 }
 
-fn pcs_key(pcs: IccPcs) -> ColorSpaceKey {
+pub(crate) fn pcs_key(pcs: IccPcs) -> ColorSpaceKey {
     match pcs {
         IccPcs::XyzD50 => XyzD50.into(),
         IccPcs::LabD50 => LabD50.into(),
+    }
+}
+
+static ABSOLUTE_XYZ_D50_KEY: LazyLock<ColorSpaceKey> =
+    LazyLock::new(|| ColorSpaceKey::new(NonZeroUsize::new(3).unwrap()));
+static ABSOLUTE_LAB_D50_KEY: LazyLock<ColorSpaceKey> =
+    LazyLock::new(|| ColorSpaceKey::new(NonZeroUsize::new(3).unwrap()));
+
+pub(crate) fn pcs_key_for_intent(pcs: IccPcs, intent: IccRenderingIntent) -> ColorSpaceKey {
+    if intent == IccRenderingIntent::AbsoluteColorimetric {
+        match pcs {
+            IccPcs::XyzD50 => (*ABSOLUTE_XYZ_D50_KEY).clone(),
+            IccPcs::LabD50 => (*ABSOLUTE_LAB_D50_KEY).clone(),
+        }
+    } else {
+        pcs_key(pcs)
     }
 }
 

@@ -6,6 +6,7 @@ mod icc_profile;
 mod model;
 mod pcs;
 mod profile;
+mod profile_connection;
 #[doc(hidden)]
 pub mod profile_data;
 mod rgb;
@@ -24,6 +25,7 @@ pub use profile::{
     ColorProfile, ColorSpaceKey, DisplayP3, LabD50, LinearDisplayP3, LinearSrgb, MatrixRgbProfile,
     RgbColorSpace, Srgb, XyzD50, XyzD65,
 };
+pub use profile_connection::{ProfileConnection, ProfileConnectionError, connect_profiles};
 pub use sample::{Opacity, OpacityError, OpacitySample};
 pub use transfer::{
     Transfer, TransferClut, TransferCurve, TransferError, TransferMatrix, TransferShader,
