@@ -98,39 +98,47 @@ impl ProfileDefinition for RgbColorSpace {
         destination: &ColorProfile,
         intent: IccRenderingIntent,
     ) -> Result<Option<ColorTransform>, ProfileConnectionError> {
-        rgb_direct_to(*self, destination, intent)
+        match self {
+            Self::Srgb => Srgb.direct_to(destination, intent),
+            Self::LinearSrgb => LinearSrgb.direct_to(destination, intent),
+            Self::DisplayP3 => DisplayP3.direct_to(destination, intent),
+            Self::LinearDisplayP3 => LinearDisplayP3.direct_to(destination, intent),
+        }
     }
 }
 
 fn rgb_direct_to(
-    from: RgbColorSpace,
+    source: ColorProfile,
+    counterpart: ColorProfile,
+    counterpart_curve: TransferCurve,
     destination: &ColorProfile,
     intent: IccRenderingIntent,
 ) -> Result<Option<ColorTransform>, ProfileConnectionError> {
     if intent != IccRenderingIntent::RelativeColorimetric {
         return Ok(None);
     }
-    for other in [
-        RgbColorSpace::Srgb,
-        RgbColorSpace::LinearSrgb,
-        RgbColorSpace::DisplayP3,
-        RgbColorSpace::LinearDisplayP3,
-    ] {
-        let same_primaries = matches!(
-            (from, other),
-            (
-                RgbColorSpace::Srgb | RgbColorSpace::LinearSrgb,
-                RgbColorSpace::Srgb | RgbColorSpace::LinearSrgb
-            ) | (
-                RgbColorSpace::DisplayP3 | RgbColorSpace::LinearDisplayP3,
-                RgbColorSpace::DisplayP3 | RgbColorSpace::LinearDisplayP3
-            )
-        );
-        if same_primaries && ColorProfile::from(other) == *destination {
-            return Ok(Some(ColorTransform::between_rgb(from, other)?));
-        }
+    if source == *destination {
+        return Ok(Some(ColorTransform::new(
+            source.space(),
+            destination.space(),
+            Transfer::new(3, Vec::<TransferStage>::new())?,
+        )?));
     }
-    Ok(None)
+    if counterpart != *destination {
+        return Ok(None);
+    }
+    Ok(Some(ColorTransform::new(
+        source.space(),
+        destination.space(),
+        Transfer::new(
+            3,
+            [TransferStage::curves([
+                counterpart_curve.clone(),
+                counterpart_curve.clone(),
+                counterpart_curve,
+            ])?],
+        )?,
+    )?))
 }
 
 impl RgbColorSpace {

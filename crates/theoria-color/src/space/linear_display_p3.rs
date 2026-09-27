@@ -53,6 +53,12 @@ impl ProfileDefinition for LinearDisplayP3 {
         destination: &ColorProfile,
         intent: IccRenderingIntent,
     ) -> Result<Option<ColorTransform>, ProfileConnectionError> {
-        rgb_direct_to(RgbColorSpace::LinearDisplayP3, destination, intent)
+        rgb_direct_to(
+            (*self).into(),
+            DisplayP3.into(),
+            TransferCurve::SRGB_ENCODE,
+            destination,
+            intent,
+        )
     }
 }

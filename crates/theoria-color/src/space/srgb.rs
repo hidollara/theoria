@@ -76,6 +76,12 @@ impl ProfileDefinition for Srgb {
         destination: &ColorProfile,
         intent: IccRenderingIntent,
     ) -> Result<Option<ColorTransform>, ProfileConnectionError> {
-        rgb_direct_to(RgbColorSpace::Srgb, destination, intent)
+        rgb_direct_to(
+            (*self).into(),
+            super::LinearSrgb.into(),
+            TransferCurve::SRGB_DECODE,
+            destination,
+            intent,
+        )
     }
 }

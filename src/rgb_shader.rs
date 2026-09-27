@@ -1,7 +1,10 @@
 //! Supplies the same RGB conversion definitions to every Canvas WGSL shader.
 //! Also compiled by build.rs when validating and compiling Vulkan shaders.
 
-use theoria_color::{ColorTransform, RgbColorSpace, Srgb, Transfer};
+use theoria_color::{
+    ColorProfile, DisplayP3, IccRenderingIntent, LinearDisplayP3, LinearSrgb, Srgb, Transfer,
+    connect_profiles,
+};
 
 const MARKER: &str = "// @theoria-rgb-conversions";
 
@@ -138,20 +141,25 @@ fn to_working(value: vec3<f32>, space: u32) -> vec3<f32> {
 }
 
 fn p3_transfer(encoded: bool, to_working: bool) -> Transfer {
-    let p3 = if encoded {
-        RgbColorSpace::DisplayP3
+    let p3: ColorProfile = if encoded {
+        DisplayP3.into()
     } else {
-        RgbColorSpace::LinearDisplayP3
+        LinearDisplayP3.into()
     };
-    let working = RgbColorSpace::LinearSrgb;
+    let working: ColorProfile = LinearSrgb.into();
     let (from, to) = if to_working {
         (p3, working)
     } else {
         (working, p3)
     };
-    ColorTransform::between_rgb(from, to)
-        .expect("built-in RGB profile transfer is valid")
-        .into_transfer()
+    connect_profiles(
+        from,
+        to,
+        IccRenderingIntent::RelativeColorimetric,
+        IccRenderingIntent::RelativeColorimetric,
+    )
+    .expect("built-in RGB profile transfer is valid")
+    .into_transfer()
 }
 
 fn literal(value: f32) -> String {
