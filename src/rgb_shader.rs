@@ -17,6 +17,13 @@ pub(crate) fn assemble_for(
     source: &str,
     working_profile: &ColorProfile,
 ) -> Result<String, Box<dyn std::error::Error>> {
+    if working_profile.space().channels() != 3 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Canvas working profile must have three color channels",
+        )
+        .into());
+    }
     assert_eq!(
         source.matches(MARKER).count(),
         1,
@@ -107,5 +114,18 @@ mod tests {
                 .unwrap();
             }
         }
+    }
+
+    #[test]
+    fn distinct_profile_handle_can_be_used_as_working_profile() {
+        let profile = ColorProfile::new(Srgb);
+        let source = assemble_for(include_str!("../shaders/webgpu/image.wgsl"), &profile).unwrap();
+        let module = naga::front::wgsl::parse_str(&source).unwrap();
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::all(),
+        )
+        .validate(&module)
+        .unwrap();
     }
 }

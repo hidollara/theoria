@@ -1,7 +1,7 @@
 use super::{
     ColorProfile, ColorSpace, ColorTransform, IccPcs, IccRenderingIntent, ProfileConnectionError,
-    ProfileDefinition, RgbColorSpace, TransferCurve, TypedColorSpace, require_relative,
-    rgb_direct_to, rgb_to_xyz_d65_transfer, xyz_d65_to_rgb_transfer,
+    ProfileDefinition, TransferCurve, TypedColorSpace, require_relative, rgb_direct_to,
+    rgb_to_xyz_d65_transfer, xyz_d65_to_rgb_transfer,
 };
 use crate::model::Rgb;
 
@@ -34,7 +34,6 @@ impl DisplayP3 {
     ];
 }
 
-rgb_color_space!(DisplayP3, DisplayP3);
 predefined_space!(DisplayP3, DISPLAY_P3_KEY);
 
 impl ProfileDefinition for DisplayP3 {

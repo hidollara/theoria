@@ -1170,33 +1170,6 @@ mod tests {
     }
 
     #[test]
-    fn predefined_rgb_transfers_agree_on_both_directions() {
-        use crate::RgbColorSpace;
-
-        fn check(space: RgbColorSpace) {
-            let rgb = [0.23, 0.51, 0.79];
-            let xyz = space.to_xyz_d65_f64(rgb);
-            let general_xyz = space.to_xyz_d65_transfer().unwrap().evaluate(&rgb).unwrap();
-            for (actual, expected) in general_xyz.into_iter().zip(xyz) {
-                assert!((actual - expected).abs() < 0.000_000_1);
-            }
-            let general_rgb = space
-                .xyz_d65_to_rgb_transfer()
-                .unwrap()
-                .evaluate(&xyz)
-                .unwrap();
-            for (actual, expected) in general_rgb.into_iter().zip(rgb) {
-                assert!((actual - expected).abs() < 0.000_01);
-            }
-        }
-
-        check(RgbColorSpace::Srgb);
-        check(RgbColorSpace::LinearSrgb);
-        check(RgbColorSpace::DisplayP3);
-        check(RgbColorSpace::LinearDisplayP3);
-    }
-
-    #[test]
     fn transfer_composition_rejects_mismatched_channel_counts() {
         let first = Transfer::new(2, Vec::<TransferStage>::new()).unwrap();
         let second = Transfer::new(3, Vec::<TransferStage>::new()).unwrap();

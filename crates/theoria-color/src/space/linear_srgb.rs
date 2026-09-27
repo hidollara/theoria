@@ -1,7 +1,7 @@
 use super::{
     ColorProfile, ColorSpace, ColorTransform, IccPcs, IccRenderingIntent, ProfileConnectionError,
-    ProfileDefinition, RgbColorSpace, Srgb, TransferCurve, TypedColorSpace, require_relative,
-    rgb_direct_to, rgb_to_xyz_d65_transfer, xyz_d65_to_rgb_transfer,
+    ProfileDefinition, Srgb, TransferCurve, TypedColorSpace, require_relative, rgb_direct_to,
+    rgb_to_xyz_d65_transfer, xyz_d65_to_rgb_transfer,
 };
 use crate::model::Rgb;
 
@@ -12,7 +12,6 @@ impl LinearSrgb {
     pub(crate) const FROM_XYZ_D65: [[f64; 3]; 3] = Srgb::FROM_XYZ_D65;
 }
 
-rgb_color_space!(LinearSrgb, LinearSrgb);
 predefined_space!(LinearSrgb, LINEAR_SRGB_KEY);
 
 impl ProfileDefinition for LinearSrgb {

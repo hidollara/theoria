@@ -122,10 +122,10 @@ pub(crate) fn collect_compositions_in(
             source,
             composition,
         } => {
-            if composition.requires_destination_read_in(working_profile) {
-                if !compositions.contains(composition) {
-                    compositions.push(composition.clone());
-                }
+            if composition.requires_destination_read_in(working_profile)
+                && !compositions.contains(composition)
+            {
+                compositions.push(composition.clone());
             }
             collect_compositions_in(backdrop, compositions, working_profile);
             collect_compositions_in(source, compositions, working_profile);

@@ -5,13 +5,14 @@ use std::{
     sync::Arc,
 };
 
+use super::ColorModel;
+#[cfg(test)]
+use super::Rgb;
 use super::color_transform::ColorTransform;
 use super::icc::IccPcs;
 use super::icc_profile::IccRenderingIntent;
 use super::profile::{ColorProfile, ProfileConnectionError, ProfileDefinition, require_relative};
 use super::transfer::{Transfer, TransferCurve, TransferError, TransferMatrix, TransferStage};
-use super::transform::multiply_f64;
-use super::{ColorModel, Rgb};
 
 /// Associates a statically typed color space with its coordinate model.
 ///
@@ -36,75 +37,6 @@ macro_rules! named_space {
             }
         }
     };
-}
-
-/// A predefined RGB space in which Canvas color operations can be evaluated.
-///
-/// This runtime value is the erased counterpart of the zero-sized color-space
-/// types. It remains separate from sample representation: an operation space
-/// says how coordinates are interpreted, not whether they arrived as `u8`,
-/// `f32`, or another representation.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum RgbColorSpace {
-    Srgb,
-    LinearSrgb,
-    DisplayP3,
-    LinearDisplayP3,
-}
-
-impl TypedColorSpace for RgbColorSpace {
-    type Model = Rgb;
-
-    fn color_space(&self) -> ColorSpace {
-        (*self).into()
-    }
-}
-
-impl ProfileDefinition for RgbColorSpace {
-    fn space(&self) -> ColorSpace {
-        (*self).into()
-    }
-
-    fn pcs(&self) -> IccPcs {
-        IccPcs::XyzD50
-    }
-
-    fn space_to_pcs(
-        &self,
-        intent: IccRenderingIntent,
-    ) -> Result<ColorTransform, ProfileConnectionError> {
-        match self {
-            Self::Srgb => Srgb.space_to_pcs(intent),
-            Self::LinearSrgb => LinearSrgb.space_to_pcs(intent),
-            Self::DisplayP3 => DisplayP3.space_to_pcs(intent),
-            Self::LinearDisplayP3 => LinearDisplayP3.space_to_pcs(intent),
-        }
-    }
-
-    fn pcs_to_space(
-        &self,
-        intent: IccRenderingIntent,
-    ) -> Result<ColorTransform, ProfileConnectionError> {
-        match self {
-            Self::Srgb => Srgb.pcs_to_space(intent),
-            Self::LinearSrgb => LinearSrgb.pcs_to_space(intent),
-            Self::DisplayP3 => DisplayP3.pcs_to_space(intent),
-            Self::LinearDisplayP3 => LinearDisplayP3.pcs_to_space(intent),
-        }
-    }
-
-    fn direct_to(
-        &self,
-        destination: &ColorProfile,
-        intent: IccRenderingIntent,
-    ) -> Result<Option<ColorTransform>, ProfileConnectionError> {
-        match self {
-            Self::Srgb => Srgb.direct_to(destination, intent),
-            Self::LinearSrgb => LinearSrgb.direct_to(destination, intent),
-            Self::DisplayP3 => DisplayP3.direct_to(destination, intent),
-            Self::LinearDisplayP3 => LinearDisplayP3.direct_to(destination, intent),
-        }
-    }
 }
 
 fn rgb_direct_to(
@@ -141,57 +73,6 @@ fn rgb_direct_to(
     )?))
 }
 
-impl RgbColorSpace {
-    /// Whether straight RGB coordinates in this space are linear-light.
-    pub const fn is_linear(self) -> bool {
-        matches!(self, Self::LinearSrgb | Self::LinearDisplayP3)
-    }
-
-    pub(crate) const fn decode_curve(self) -> TransferCurve {
-        if self.is_linear() {
-            TransferCurve::IDENTITY
-        } else {
-            TransferCurve::SRGB_DECODE
-        }
-    }
-
-    pub(crate) const fn encode_curve(self) -> TransferCurve {
-        if self.is_linear() {
-            TransferCurve::IDENTITY
-        } else {
-            TransferCurve::SRGB_ENCODE
-        }
-    }
-
-    pub(crate) const fn matrices(self) -> ([[f64; 3]; 3], [[f64; 3]; 3]) {
-        match self {
-            Self::Srgb => (Srgb::TO_XYZ_D65, Srgb::FROM_XYZ_D65),
-            Self::LinearSrgb => (LinearSrgb::TO_XYZ_D65, LinearSrgb::FROM_XYZ_D65),
-            Self::DisplayP3 => (DisplayP3::TO_XYZ_D65, DisplayP3::FROM_XYZ_D65),
-            Self::LinearDisplayP3 => (LinearDisplayP3::TO_XYZ_D65, LinearDisplayP3::FROM_XYZ_D65),
-        }
-    }
-
-    pub(crate) fn to_xyz_d65_transfer(self) -> Result<Transfer, TransferError> {
-        rgb_to_xyz_d65_transfer(self.matrices().0, self.decode_curve())
-    }
-
-    pub(crate) fn xyz_d65_to_rgb_transfer(self) -> Result<Transfer, TransferError> {
-        xyz_d65_to_rgb_transfer(self.matrices().1, self.encode_curve())
-    }
-
-    pub(crate) fn to_xyz_d65_f64(self, rgb: [f64; 3]) -> [f64; 3] {
-        multiply_f64(
-            self.matrices().0,
-            rgb.map(|value| self.decode_curve().evaluate(value)),
-        )
-    }
-
-    pub(crate) fn xyz_d65_to_rgb_f64(self, xyz: [f64; 3]) -> [f64; 3] {
-        multiply_f64(self.matrices().1, xyz).map(|value| self.encode_curve().evaluate(value))
-    }
-}
-
 pub(crate) fn rgb_to_xyz_d65_transfer(
     matrix: [[f64; 3]; 3],
     curve: TransferCurve,
@@ -225,16 +106,6 @@ fn rgb_matrix(matrix: [[f64; 3]; 3]) -> Result<TransferStage, TransferError> {
         matrix.into_iter().flatten().collect::<Vec<_>>(),
         [0.0; 3],
     )?))
-}
-
-macro_rules! rgb_color_space {
-    ($profile:ty, $variant:ident) => {
-        impl From<$profile> for RgbColorSpace {
-            fn from(_: $profile) -> Self {
-                Self::$variant
-            }
-        }
-    };
 }
 
 #[derive(Debug)]
@@ -328,34 +199,6 @@ pub use srgb::Srgb;
 pub use xyz_d50::XyzD50;
 pub use xyz_d65::XyzD65;
 
-impl From<RgbColorSpace> for ColorSpace {
-    fn from(space: RgbColorSpace) -> Self {
-        match space {
-            RgbColorSpace::Srgb => Srgb.into(),
-            RgbColorSpace::LinearSrgb => LinearSrgb.into(),
-            RgbColorSpace::DisplayP3 => DisplayP3.into(),
-            RgbColorSpace::LinearDisplayP3 => LinearDisplayP3.into(),
-        }
-    }
-}
-
-impl From<RgbColorSpace> for ColorProfile {
-    fn from(space: RgbColorSpace) -> Self {
-        match space {
-            RgbColorSpace::Srgb => Srgb.into(),
-            RgbColorSpace::LinearSrgb => LinearSrgb.into(),
-            RgbColorSpace::DisplayP3 => DisplayP3.into(),
-            RgbColorSpace::LinearDisplayP3 => LinearDisplayP3.into(),
-        }
-    }
-}
-
-impl From<&RgbColorSpace> for ColorProfile {
-    fn from(space: &RgbColorSpace) -> Self {
-        (*space).into()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -366,10 +209,6 @@ mod tests {
     #[test]
     fn predefined_spaces_have_canonical_identity() {
         assert_eq!(ColorSpace::from(Srgb), ColorSpace::from(Srgb));
-        assert_eq!(
-            ColorSpace::from(Srgb),
-            ColorSpace::from(RgbColorSpace::Srgb)
-        );
         assert_ne!(ColorSpace::from(Srgb), ColorSpace::from(LinearSrgb));
         assert_ne!(ColorSpace::from(XyzD50), ColorSpace::from(XyzD65));
     }
@@ -393,51 +232,5 @@ mod tests {
         assert_rgb_space::<LinearSrgb>();
         assert_rgb_space::<DisplayP3>();
         assert_rgb_space::<LinearDisplayP3>();
-    }
-
-    #[test]
-    fn predefined_rgb_spaces_erase_to_operation_spaces() {
-        assert_eq!(RgbColorSpace::from(Srgb), RgbColorSpace::Srgb);
-        assert_eq!(
-            RgbColorSpace::from(LinearDisplayP3),
-            RgbColorSpace::LinearDisplayP3
-        );
-    }
-
-    #[test]
-    fn predefined_rgb_profiles_match_the_legacy_rgb_transform_constructors() {
-        fn check(profile: impl ProfileDefinition, space: RgbColorSpace) {
-            let intent = IccRenderingIntent::RelativeColorimetric;
-            assert_eq!(
-                profile.space_to_pcs(intent).unwrap(),
-                ColorTransform::rgb_to_pcs(space, IccPcs::XyzD50).unwrap()
-            );
-            assert_eq!(
-                profile.pcs_to_space(intent).unwrap(),
-                ColorTransform::pcs_to_rgb(IccPcs::XyzD50, space).unwrap()
-            );
-        }
-
-        check(Srgb, RgbColorSpace::Srgb);
-        check(LinearSrgb, RgbColorSpace::LinearSrgb);
-        check(DisplayP3, RgbColorSpace::DisplayP3);
-        check(LinearDisplayP3, RgbColorSpace::LinearDisplayP3);
-    }
-
-    #[test]
-    fn rgb_spaces_round_trip_through_xyz_d65() {
-        fn check(space: RgbColorSpace) {
-            let rgb = [0.23, 0.51, 0.79];
-            let xyz = space.to_xyz_d65_f64(rgb);
-            let actual = space.xyz_d65_to_rgb_f64(xyz);
-            for (actual, expected) in actual.into_iter().zip(rgb) {
-                assert!((actual - expected).abs() < 0.000_01);
-            }
-        }
-
-        check(RgbColorSpace::Srgb);
-        check(RgbColorSpace::LinearSrgb);
-        check(RgbColorSpace::DisplayP3);
-        check(RgbColorSpace::LinearDisplayP3);
     }
 }

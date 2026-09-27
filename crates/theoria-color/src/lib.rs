@@ -22,8 +22,8 @@ pub use model::{Cmyk, ColorCoordinates, ColorModel, Lab, Rgb, Xyz, Ycbcr};
 pub use profile::{ColorProfile, ProfileConnectionError, ProfileDefinition, connect_profiles};
 pub use sample::{Opacity, OpacityError, OpacitySample};
 pub use space::{
-    ColorSpace, DisplayP3, LabD50, LinearDisplayP3, LinearSrgb, RgbColorSpace, Srgb,
-    TypedColorSpace, XyzD50, XyzD65,
+    ColorSpace, DisplayP3, LabD50, LinearDisplayP3, LinearSrgb, Srgb, TypedColorSpace, XyzD50,
+    XyzD65,
 };
 pub use transfer::{
     Transfer, TransferClut, TransferCurve, TransferError, TransferMatrix, TransferShader,
@@ -33,4 +33,4 @@ pub use value::Color;
 pub use white_point::{WhitePoint, WhitePointError};
 
 #[doc(hidden)]
-pub use rgb::{convert_rgb, encode_srgb};
+pub use rgb::encode_srgb;

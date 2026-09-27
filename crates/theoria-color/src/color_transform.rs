@@ -2,8 +2,8 @@ use std::{error::Error, fmt, num::NonZeroUsize, sync::LazyLock};
 
 use super::icc::IccPcs;
 use super::icc_profile::IccRenderingIntent;
-use super::space::{ColorSpace, LabD50, RgbColorSpace, XyzD50, XyzD65};
-use super::transfer::{Transfer, TransferCurve, TransferError, TransferMatrix, TransferStage};
+use super::space::{ColorSpace, LabD50, XyzD50, XyzD65};
+use super::transfer::{Transfer, TransferError, TransferMatrix, TransferStage};
 
 /// A transfer together with the meanings of its input and output coordinates.
 ///
@@ -45,56 +45,6 @@ impl ColorTransform {
         Ok(Self { from, to, transfer })
     }
 
-    /// Converts between predefined RGB spaces without an ICC profile.
-    ///
-    /// When only the sRGB transfer function differs, this leaves a single
-    /// recognizable curve stage for a renderer to lower at an image-format
-    /// boundary. Changes of primaries go through XYZ D65 instead.
-    pub fn between_rgb(
-        from: RgbColorSpace,
-        to: RgbColorSpace,
-    ) -> Result<Self, ColorTransformError> {
-        let same_primaries = matches!(
-            (from, to),
-            (
-                RgbColorSpace::Srgb | RgbColorSpace::LinearSrgb,
-                RgbColorSpace::Srgb | RgbColorSpace::LinearSrgb
-            ) | (
-                RgbColorSpace::DisplayP3 | RgbColorSpace::LinearDisplayP3,
-                RgbColorSpace::DisplayP3 | RgbColorSpace::LinearDisplayP3
-            )
-        );
-        let transfer = if from == to {
-            Transfer::new(3, Vec::<TransferStage>::new())?
-        } else if same_primaries {
-            let curve = if from.is_linear() {
-                TransferCurve::SRGB_ENCODE
-            } else {
-                TransferCurve::SRGB_DECODE
-            };
-            Transfer::new(
-                3,
-                [TransferStage::curves([
-                    curve.clone(),
-                    curve.clone(),
-                    curve,
-                ])?],
-            )?
-        } else {
-            from.to_xyz_d65_transfer()?
-                .then(&to.xyz_d65_to_rgb_transfer()?)?
-        };
-        Self::new(from.into(), to.into(), transfer)
-    }
-
-    /// Converts predefined RGB coordinates to the media-relative D50 XYZ or Lab PCS.
-    ///
-    /// The RGB primary matrix is followed by D65-to-D50 adaptation. The PCS
-    /// endpoint uses the same canonical identity as a loaded ICC profile.
-    pub fn rgb_to_pcs(from: RgbColorSpace, to: IccPcs) -> Result<Self, ColorTransformError> {
-        Self::rgb_to_pcs_from(from.into(), from.to_xyz_d65_transfer()?, to)
-    }
-
     pub(crate) fn rgb_to_pcs_from(
         from: ColorSpace,
         mut transfer: Transfer,
@@ -105,11 +55,6 @@ impl ColorTransform {
             transfer = transfer.then(&Transfer::new(3, [TransferStage::XyzD50ToLabD50])?)?;
         }
         Self::new(from, pcs_key(to), transfer)
-    }
-
-    /// Converts a media-relative D50 XYZ or Lab PCS to predefined RGB coordinates.
-    pub fn pcs_to_rgb(from: IccPcs, to: RgbColorSpace) -> Result<Self, ColorTransformError> {
-        Self::pcs_to_rgb_from(from, to.into(), to.xyz_d65_to_rgb_transfer()?)
     }
 
     pub(crate) fn pcs_to_rgb_from(
@@ -255,7 +200,9 @@ impl Error for ColorTransformError {
 mod tests {
     use super::*;
     use crate::space::{LabD50, LinearSrgb, Srgb, XyzD50};
-    use crate::{IccProfile, IccRenderingIntent};
+    use crate::{
+        IccProfile, IccRenderingIntent, ProfileDefinition, TransferCurve, connect_profiles,
+    };
 
     #[test]
     fn matching_channel_counts_do_not_imply_matching_spaces() {
@@ -267,8 +214,13 @@ mod tests {
 
     #[test]
     fn srgb_encoding_change_is_one_recognizable_stage() {
-        let transform =
-            ColorTransform::between_rgb(RgbColorSpace::Srgb, RgbColorSpace::LinearSrgb).unwrap();
+        let transform = connect_profiles(
+            Srgb,
+            LinearSrgb,
+            IccRenderingIntent::RelativeColorimetric,
+            IccRenderingIntent::RelativeColorimetric,
+        )
+        .unwrap();
         assert_eq!(
             transform.transfer().stages(),
             &[TransferStage::curves([TransferCurve::SRGB_DECODE; 3]).unwrap()]
@@ -284,7 +236,9 @@ mod tests {
     fn builtin_rgb_connects_to_icc_profile_through_pcs() {
         let bytes = moxcms::ColorProfile::new_srgb().encode().unwrap();
         let profile = IccProfile::from_bytes(&bytes).unwrap();
-        let source = ColorTransform::rgb_to_pcs(RgbColorSpace::Srgb, IccPcs::XyzD50).unwrap();
+        let source = Srgb
+            .space_to_pcs(IccRenderingIntent::RelativeColorimetric)
+            .unwrap();
         let destination = profile
             .pcs_to_space(IccRenderingIntent::RelativeColorimetric)
             .unwrap();
@@ -300,19 +254,31 @@ mod tests {
         let reverse = profile
             .space_to_pcs(IccRenderingIntent::RelativeColorimetric)
             .unwrap()
-            .then(&ColorTransform::pcs_to_rgb(IccPcs::XyzD50, RgbColorSpace::Srgb).unwrap())
+            .then(
+                &Srgb
+                    .pcs_to_space(IccRenderingIntent::RelativeColorimetric)
+                    .unwrap(),
+            )
             .unwrap();
         assert_eq!(reverse.to(), &ColorSpace::from(Srgb));
     }
 
     #[test]
     fn pcs_bridge_joins_transforms_with_different_pcs() {
-        let xyz = ColorTransform::rgb_to_pcs(RgbColorSpace::LinearSrgb, IccPcs::XyzD50).unwrap();
+        let xyz = LinearSrgb
+            .space_to_pcs(IccRenderingIntent::RelativeColorimetric)
+            .unwrap();
         let bridge = ColorTransform::between_pcs(IccPcs::XyzD50, IccPcs::LabD50).unwrap();
         let lab = xyz.then(&bridge).unwrap();
         assert_eq!(lab.to(), &ColorSpace::from(LabD50));
-        let reverse =
-            ColorTransform::pcs_to_rgb(IccPcs::LabD50, RgbColorSpace::LinearSrgb).unwrap();
+        let reverse = ColorTransform::between_pcs(IccPcs::LabD50, IccPcs::XyzD50)
+            .unwrap()
+            .then(
+                &LinearSrgb
+                    .pcs_to_space(IccRenderingIntent::RelativeColorimetric)
+                    .unwrap(),
+            )
+            .unwrap();
         let identity = lab.then(&reverse).unwrap();
         let sample = [0.2, 0.4, 0.6];
         for (actual, expected) in identity

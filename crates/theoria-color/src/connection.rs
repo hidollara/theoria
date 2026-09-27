@@ -1,8 +1,8 @@
 use super::pcs;
 use super::transform::multiply_f64;
 use super::{
-    DisplayP3, LabD50, LinearDisplayP3, LinearSrgb, RgbColorSpace, Srgb, TypedColorSpace,
-    WhitePoint, XyzD50, XyzD65,
+    DisplayP3, LabD50, LinearDisplayP3, LinearSrgb, Srgb, TypedColorSpace, WhitePoint, XyzD50,
+    XyzD65,
 };
 
 /// A profile with a reference conversion to and from D50-adapted CIE XYZ.
@@ -19,36 +19,33 @@ pub trait XyzD50Profile: TypedColorSpace {
 }
 
 macro_rules! rgb_profile {
-    ($($profile:ty),+ $(,)?) => {
+    ($($profile:ty => ($decode:expr, $encode:expr)),+ $(,)?) => {
         $(
             impl XyzD50Profile for $profile {
                 type ReferenceCoordinates = [f64; 3];
 
                 fn coordinates_to_xyz_d50(&self, coordinates: &[f64; 3]) -> [f64; 3] {
-                    adapt_d65_to_d50(RgbColorSpace::from(*self).to_xyz_d65_f64(*coordinates))
+                    adapt_d65_to_d50(multiply_f64(
+                        <$profile>::TO_XYZ_D65,
+                        coordinates.map(|value| $decode.evaluate(value)),
+                    ))
                 }
 
                 fn xyz_d50_to_coordinates(&self, xyz_d50: [f64; 3]) -> [f64; 3] {
-                    RgbColorSpace::from(*self).xyz_d65_to_rgb_f64(adapt_d50_to_d65(xyz_d50))
+                    multiply_f64(<$profile>::FROM_XYZ_D65, adapt_d50_to_d65(xyz_d50))
+                        .map(|value| $encode.evaluate(value))
                 }
             }
         )+
     };
 }
 
-rgb_profile!(Srgb, LinearSrgb, DisplayP3, LinearDisplayP3);
-
-impl XyzD50Profile for RgbColorSpace {
-    type ReferenceCoordinates = [f64; 3];
-
-    fn coordinates_to_xyz_d50(&self, coordinates: &[f64; 3]) -> [f64; 3] {
-        adapt_d65_to_d50(self.to_xyz_d65_f64(*coordinates))
-    }
-
-    fn xyz_d50_to_coordinates(&self, xyz_d50: [f64; 3]) -> [f64; 3] {
-        self.xyz_d65_to_rgb_f64(adapt_d50_to_d65(xyz_d50))
-    }
-}
+rgb_profile!(
+    Srgb => (crate::TransferCurve::SRGB_DECODE, crate::TransferCurve::SRGB_ENCODE),
+    LinearSrgb => (crate::TransferCurve::IDENTITY, crate::TransferCurve::IDENTITY),
+    DisplayP3 => (crate::TransferCurve::SRGB_DECODE, crate::TransferCurve::SRGB_ENCODE),
+    LinearDisplayP3 => (crate::TransferCurve::IDENTITY, crate::TransferCurve::IDENTITY),
+);
 
 impl XyzD50Profile for XyzD50 {
     type ReferenceCoordinates = [f64; 3];
@@ -147,7 +144,6 @@ mod tests {
         check(XyzD50, [0.23, 0.51, 0.79]);
         check(XyzD65, [0.23, 0.51, 0.79]);
         check(LabD50, [42.0, 15.0, -30.0]);
-        check(RgbColorSpace::Srgb, [0.23, 0.51, 0.79]);
     }
 
     #[test]

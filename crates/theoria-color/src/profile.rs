@@ -219,14 +219,14 @@ impl Error for ProfileConnectionError {
 mod tests {
     use super::*;
     use crate::icc_profile::IccProfile;
-    use crate::space::{LabD50, LinearSrgb, RgbColorSpace, Srgb};
+    use crate::space::{DisplayP3, LabD50, LinearSrgb, Srgb};
     use crate::transfer::{Transfer, TransferCurve, TransferStage};
     use std::collections::HashSet;
 
     #[test]
     fn predefined_profiles_share_handles_while_new_definitions_are_distinct() {
         let canonical = ColorProfile::from(Srgb);
-        let another_reference = ColorProfile::from(RgbColorSpace::Srgb);
+        let another_reference = ColorProfile::from(Srgb);
         let custom = ColorProfile::new(Srgb);
         assert_eq!(canonical, another_reference);
         assert_eq!(canonical.space(), custom.space());
@@ -248,8 +248,8 @@ mod tests {
             transform.transfer().stages(),
             &[TransferStage::curves([TransferCurve::SRGB_DECODE; 3]).unwrap()]
         );
-        assert_eq!(transform.from(), &ColorSpace::from(RgbColorSpace::Srgb));
-        assert_eq!(transform.to(), &ColorSpace::from(RgbColorSpace::LinearSrgb));
+        assert_eq!(transform.from(), &ColorSpace::from(Srgb));
+        assert_eq!(transform.to(), &ColorSpace::from(LinearSrgb));
     }
 
     #[test]
@@ -272,17 +272,17 @@ mod tests {
     #[test]
     fn differing_primaries_fall_back_to_profile_pcs_directions() {
         let actual = connect_profiles(
-            RgbColorSpace::Srgb,
-            RgbColorSpace::DisplayP3,
+            Srgb,
+            DisplayP3,
             IccRenderingIntent::RelativeColorimetric,
             IccRenderingIntent::RelativeColorimetric,
         )
         .unwrap();
-        let expected = RgbColorSpace::Srgb
+        let expected = Srgb
             .space_to_pcs(IccRenderingIntent::RelativeColorimetric)
             .unwrap()
             .then(
-                &RgbColorSpace::DisplayP3
+                &DisplayP3
                     .pcs_to_space(IccRenderingIntent::RelativeColorimetric)
                     .unwrap(),
             )
@@ -296,13 +296,13 @@ mod tests {
         let icc = IccProfile::from_bytes(&bytes).unwrap();
         let transform = connect_profiles(
             &icc,
-            RgbColorSpace::LinearSrgb,
+            LinearSrgb,
             IccRenderingIntent::RelativeColorimetric,
             IccRenderingIntent::RelativeColorimetric,
         )
         .unwrap();
         assert_eq!(transform.from(), &icc.device_space());
-        assert_eq!(transform.to(), &ColorSpace::from(RgbColorSpace::LinearSrgb));
+        assert_eq!(transform.to(), &ColorSpace::from(LinearSrgb));
         let converted = transform.transfer().evaluate(&[0.5; 3]).unwrap();
         assert!(converted.iter().all(|value| *value > 0.2 && *value < 0.23));
     }
@@ -340,10 +340,7 @@ mod tests {
                 &self,
                 _: IccRenderingIntent,
             ) -> Result<ColorTransform, ProfileConnectionError> {
-                Ok(ColorTransform::rgb_to_pcs(
-                    RgbColorSpace::Srgb,
-                    IccPcs::XyzD50,
-                )?)
+                Srgb.space_to_pcs(IccRenderingIntent::RelativeColorimetric)
             }
 
             fn pcs_to_space(
@@ -394,8 +391,8 @@ mod tests {
     fn unsupported_builtin_intent_is_not_misrepresented_as_relative() {
         assert!(matches!(
             connect_profiles(
-                RgbColorSpace::Srgb,
-                RgbColorSpace::LinearSrgb,
+                Srgb,
+                LinearSrgb,
                 IccRenderingIntent::Perceptual,
                 IccRenderingIntent::Perceptual,
             ),
@@ -411,7 +408,7 @@ mod tests {
 
         impl ProfileDefinition for InvalidLink {
             fn space(&self) -> ColorSpace {
-                RgbColorSpace::Srgb.into()
+                Srgb.into()
             }
 
             fn pcs(&self) -> IccPcs {
@@ -438,8 +435,8 @@ mod tests {
                 _: IccRenderingIntent,
             ) -> Result<Option<ColorTransform>, ProfileConnectionError> {
                 Ok(Some(ColorTransform::new(
-                    RgbColorSpace::DisplayP3.into(),
-                    RgbColorSpace::LinearSrgb.into(),
+                    DisplayP3.into(),
+                    LinearSrgb.into(),
                     Transfer::new(3, Vec::<TransferStage>::new()).unwrap(),
                 )?))
             }
@@ -448,7 +445,7 @@ mod tests {
         assert!(matches!(
             connect_profiles(
                 ColorProfile::new(InvalidLink),
-                RgbColorSpace::LinearSrgb,
+                LinearSrgb,
                 IccRenderingIntent::RelativeColorimetric,
                 IccRenderingIntent::RelativeColorimetric,
             ),
