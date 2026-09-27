@@ -92,23 +92,38 @@ impl ColorTransform {
     /// The RGB primary matrix is followed by D65-to-D50 adaptation. The PCS
     /// endpoint uses the same canonical identity as a loaded ICC profile.
     pub fn rgb_to_pcs(from: RgbColorSpace, to: IccPcs) -> Result<Self, ColorTransformError> {
-        let mut transfer = from.to_xyz_d65_transfer()?;
+        Self::rgb_to_pcs_from(from.into(), from.to_xyz_d65_transfer()?, to)
+    }
+
+    pub(crate) fn rgb_to_pcs_from(
+        from: ColorSpace,
+        mut transfer: Transfer,
+        to: IccPcs,
+    ) -> Result<Self, ColorTransformError> {
         transfer = transfer.then(&adaptation(XyzD65::TO_XYZ_D50)?)?;
         if to == IccPcs::LabD50 {
             transfer = transfer.then(&Transfer::new(3, [TransferStage::XyzD50ToLabD50])?)?;
         }
-        Self::new(from.into(), pcs_key(to), transfer)
+        Self::new(from, pcs_key(to), transfer)
     }
 
     /// Converts a media-relative D50 XYZ or Lab PCS to predefined RGB coordinates.
     pub fn pcs_to_rgb(from: IccPcs, to: RgbColorSpace) -> Result<Self, ColorTransformError> {
+        Self::pcs_to_rgb_from(from, to.into(), to.xyz_d65_to_rgb_transfer()?)
+    }
+
+    pub(crate) fn pcs_to_rgb_from(
+        from: IccPcs,
+        to: ColorSpace,
+        xyz_d65_to_rgb: Transfer,
+    ) -> Result<Self, ColorTransformError> {
         let mut transfer = Transfer::new(3, Vec::<TransferStage>::new())?;
         if from == IccPcs::LabD50 {
             transfer = transfer.then(&Transfer::new(3, [TransferStage::LabD50ToXyzD50])?)?;
         }
         transfer = transfer.then(&adaptation(XyzD65::FROM_XYZ_D50)?)?;
-        transfer = transfer.then(&to.xyz_d65_to_rgb_transfer()?)?;
-        Self::new(pcs_key(from), to.into(), transfer)
+        transfer = transfer.then(&xyz_d65_to_rgb)?;
+        Self::new(pcs_key(from), to, transfer)
     }
 
     /// Bridges the two media-relative D50 PCS representations without changing color.

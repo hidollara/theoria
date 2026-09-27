@@ -73,16 +73,24 @@ impl ProfileDefinition for RgbColorSpace {
         &self,
         intent: IccRenderingIntent,
     ) -> Result<ColorTransform, ProfileConnectionError> {
-        require_relative(intent)?;
-        Ok(ColorTransform::rgb_to_pcs(*self, self.pcs())?)
+        match self {
+            Self::Srgb => Srgb.space_to_pcs(intent),
+            Self::LinearSrgb => LinearSrgb.space_to_pcs(intent),
+            Self::DisplayP3 => DisplayP3.space_to_pcs(intent),
+            Self::LinearDisplayP3 => LinearDisplayP3.space_to_pcs(intent),
+        }
     }
 
     fn pcs_to_space(
         &self,
         intent: IccRenderingIntent,
     ) -> Result<ColorTransform, ProfileConnectionError> {
-        require_relative(intent)?;
-        Ok(ColorTransform::pcs_to_rgb(self.pcs(), *self)?)
+        match self {
+            Self::Srgb => Srgb.pcs_to_space(intent),
+            Self::LinearSrgb => LinearSrgb.pcs_to_space(intent),
+            Self::DisplayP3 => DisplayP3.pcs_to_space(intent),
+            Self::LinearDisplayP3 => LinearDisplayP3.pcs_to_space(intent),
+        }
     }
 
     fn direct_to(
@@ -90,67 +98,39 @@ impl ProfileDefinition for RgbColorSpace {
         destination: &ColorProfile,
         intent: IccRenderingIntent,
     ) -> Result<Option<ColorTransform>, ProfileConnectionError> {
-        if intent != IccRenderingIntent::RelativeColorimetric {
-            return Ok(None);
-        }
-        for other in [
-            RgbColorSpace::Srgb,
-            RgbColorSpace::LinearSrgb,
-            RgbColorSpace::DisplayP3,
-            RgbColorSpace::LinearDisplayP3,
-        ] {
-            let same_primaries = matches!(
-                (*self, other),
-                (
-                    RgbColorSpace::Srgb | RgbColorSpace::LinearSrgb,
-                    RgbColorSpace::Srgb | RgbColorSpace::LinearSrgb
-                ) | (
-                    RgbColorSpace::DisplayP3 | RgbColorSpace::LinearDisplayP3,
-                    RgbColorSpace::DisplayP3 | RgbColorSpace::LinearDisplayP3
-                )
-            );
-            if same_primaries && ColorProfile::from(other) == *destination {
-                return Ok(Some(ColorTransform::between_rgb(*self, other)?));
-            }
-        }
-        Ok(None)
+        rgb_direct_to(*self, destination, intent)
     }
 }
 
-macro_rules! predefined_rgb_profile {
-    ($profile:ty) => {
-        impl crate::profile::ProfileDefinition for $profile {
-            fn space(&self) -> ColorSpace {
-                (*self).into()
-            }
-
-            fn pcs(&self) -> IccPcs {
-                IccPcs::XyzD50
-            }
-
-            fn space_to_pcs(
-                &self,
-                intent: IccRenderingIntent,
-            ) -> Result<ColorTransform, ProfileConnectionError> {
-                RgbColorSpace::from(*self).space_to_pcs(intent)
-            }
-
-            fn pcs_to_space(
-                &self,
-                intent: IccRenderingIntent,
-            ) -> Result<ColorTransform, ProfileConnectionError> {
-                RgbColorSpace::from(*self).pcs_to_space(intent)
-            }
-
-            fn direct_to(
-                &self,
-                destination: &ColorProfile,
-                intent: IccRenderingIntent,
-            ) -> Result<Option<ColorTransform>, ProfileConnectionError> {
-                RgbColorSpace::from(*self).direct_to(destination, intent)
-            }
+fn rgb_direct_to(
+    from: RgbColorSpace,
+    destination: &ColorProfile,
+    intent: IccRenderingIntent,
+) -> Result<Option<ColorTransform>, ProfileConnectionError> {
+    if intent != IccRenderingIntent::RelativeColorimetric {
+        return Ok(None);
+    }
+    for other in [
+        RgbColorSpace::Srgb,
+        RgbColorSpace::LinearSrgb,
+        RgbColorSpace::DisplayP3,
+        RgbColorSpace::LinearDisplayP3,
+    ] {
+        let same_primaries = matches!(
+            (from, other),
+            (
+                RgbColorSpace::Srgb | RgbColorSpace::LinearSrgb,
+                RgbColorSpace::Srgb | RgbColorSpace::LinearSrgb
+            ) | (
+                RgbColorSpace::DisplayP3 | RgbColorSpace::LinearDisplayP3,
+                RgbColorSpace::DisplayP3 | RgbColorSpace::LinearDisplayP3
+            )
+        );
+        if same_primaries && ColorProfile::from(other) == *destination {
+            return Ok(Some(ColorTransform::between_rgb(from, other)?));
         }
-    };
+    }
+    Ok(None)
 }
 
 impl RgbColorSpace {
@@ -180,13 +160,7 @@ impl RgbColorSpace {
             RgbTransfer::Linear => TransferCurve::IDENTITY,
             RgbTransfer::Srgb => TransferCurve::SRGB_DECODE,
         };
-        Transfer::new(
-            3,
-            [
-                TransferStage::curves([curve.clone(), curve.clone(), curve])?,
-                rgb_matrix(self.matrices().0)?,
-            ],
-        )
+        rgb_to_xyz_d65_transfer(self.matrices().0, curve)
     }
 
     pub(crate) fn xyz_d65_to_rgb_transfer(self) -> Result<Transfer, TransferError> {
@@ -194,13 +168,7 @@ impl RgbColorSpace {
             RgbTransfer::Linear => TransferCurve::IDENTITY,
             RgbTransfer::Srgb => TransferCurve::SRGB_ENCODE,
         };
-        Transfer::new(
-            3,
-            [
-                rgb_matrix(self.matrices().1)?,
-                TransferStage::curves([curve.clone(), curve.clone(), curve])?,
-            ],
-        )
+        xyz_d65_to_rgb_transfer(self.matrices().1, curve)
     }
 
     pub(crate) fn to_xyz_d65_f64(self, rgb: [f64; 3]) -> [f64; 3] {
@@ -213,6 +181,32 @@ impl RgbColorSpace {
     pub(crate) fn xyz_d65_to_rgb_f64(self, xyz: [f64; 3]) -> [f64; 3] {
         multiply_f64(self.matrices().1, xyz).map(|value| self.transfer_curve().encode_f64(value))
     }
+}
+
+pub(crate) fn rgb_to_xyz_d65_transfer(
+    matrix: [[f64; 3]; 3],
+    curve: TransferCurve,
+) -> Result<Transfer, TransferError> {
+    Transfer::new(
+        3,
+        [
+            TransferStage::curves([curve.clone(), curve.clone(), curve])?,
+            rgb_matrix(matrix)?,
+        ],
+    )
+}
+
+pub(crate) fn xyz_d65_to_rgb_transfer(
+    matrix: [[f64; 3]; 3],
+    curve: TransferCurve,
+) -> Result<Transfer, TransferError> {
+    Transfer::new(
+        3,
+        [
+            rgb_matrix(matrix)?,
+            TransferStage::curves([curve.clone(), curve.clone(), curve])?,
+        ],
+    )
 }
 
 fn rgb_matrix(matrix: [[f64; 3]; 3]) -> Result<TransferStage, TransferError> {
@@ -399,6 +393,26 @@ mod tests {
             RgbColorSpace::from(LinearDisplayP3),
             RgbColorSpace::LinearDisplayP3
         );
+    }
+
+    #[test]
+    fn predefined_rgb_profiles_match_the_legacy_rgb_transform_constructors() {
+        fn check(profile: impl ProfileDefinition, space: RgbColorSpace) {
+            let intent = IccRenderingIntent::RelativeColorimetric;
+            assert_eq!(
+                profile.space_to_pcs(intent).unwrap(),
+                ColorTransform::rgb_to_pcs(space, IccPcs::XyzD50).unwrap()
+            );
+            assert_eq!(
+                profile.pcs_to_space(intent).unwrap(),
+                ColorTransform::pcs_to_rgb(IccPcs::XyzD50, space).unwrap()
+            );
+        }
+
+        check(Srgb, RgbColorSpace::Srgb);
+        check(LinearSrgb, RgbColorSpace::LinearSrgb);
+        check(DisplayP3, RgbColorSpace::DisplayP3);
+        check(LinearDisplayP3, RgbColorSpace::LinearDisplayP3);
     }
 
     #[test]

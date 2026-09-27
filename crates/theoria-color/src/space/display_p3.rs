@@ -1,6 +1,7 @@
 use super::{
     ColorProfile, ColorSpace, ColorTransform, IccPcs, IccRenderingIntent, ProfileConnectionError,
-    RgbColorSpace, TypedColorSpace,
+    ProfileDefinition, RgbColorSpace, TransferCurve, TypedColorSpace, require_relative,
+    rgb_direct_to, rgb_to_xyz_d65_transfer, xyz_d65_to_rgb_transfer,
 };
 use crate::model::Rgb;
 
@@ -35,4 +36,45 @@ impl DisplayP3 {
 
 rgb_color_space!(DisplayP3, DisplayP3);
 predefined_space!(DisplayP3, DISPLAY_P3_KEY);
-predefined_rgb_profile!(DisplayP3);
+
+impl ProfileDefinition for DisplayP3 {
+    fn space(&self) -> ColorSpace {
+        (*self).into()
+    }
+
+    fn pcs(&self) -> IccPcs {
+        IccPcs::XyzD50
+    }
+
+    fn space_to_pcs(
+        &self,
+        intent: IccRenderingIntent,
+    ) -> Result<ColorTransform, ProfileConnectionError> {
+        require_relative(intent)?;
+        Ok(ColorTransform::rgb_to_pcs_from(
+            self.space(),
+            rgb_to_xyz_d65_transfer(Self::TO_XYZ_D65, TransferCurve::SRGB_DECODE)?,
+            self.pcs(),
+        )?)
+    }
+
+    fn pcs_to_space(
+        &self,
+        intent: IccRenderingIntent,
+    ) -> Result<ColorTransform, ProfileConnectionError> {
+        require_relative(intent)?;
+        Ok(ColorTransform::pcs_to_rgb_from(
+            self.pcs(),
+            self.space(),
+            xyz_d65_to_rgb_transfer(Self::FROM_XYZ_D65, TransferCurve::SRGB_ENCODE)?,
+        )?)
+    }
+
+    fn direct_to(
+        &self,
+        destination: &ColorProfile,
+        intent: IccRenderingIntent,
+    ) -> Result<Option<ColorTransform>, ProfileConnectionError> {
+        rgb_direct_to(RgbColorSpace::DisplayP3, destination, intent)
+    }
+}
