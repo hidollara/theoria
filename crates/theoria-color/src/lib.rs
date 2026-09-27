@@ -6,11 +6,11 @@ mod icc_profile;
 mod model;
 mod pcs;
 mod profile;
-mod profile_connection;
 #[doc(hidden)]
 pub mod profile_data;
 mod rgb;
 mod sample;
+mod space;
 mod transfer;
 mod transform;
 mod value;
@@ -21,12 +21,12 @@ pub use connection::XyzD50Profile;
 pub use icc::{IccPcs, IccTransfer, IccTransferDirection, IccTransferError};
 pub use icc_profile::{IccProfile, IccProfileError, IccRenderingIntent};
 pub use model::{Cmyk, ColorCoordinates, ColorModel, Lab, Rgb, Xyz, Ycbcr};
-pub use profile::{
+pub use profile::{ColorProfile, ProfileConnectionError, connect_profiles};
+pub use sample::{Opacity, OpacityError, OpacitySample};
+pub use space::{
     ColorSpace, ColorSpaceKey, DisplayP3, LabD50, LinearDisplayP3, LinearSrgb, RgbColorSpace, Srgb,
     XyzD50, XyzD65,
 };
-pub use profile_connection::{ColorProfile, ProfileConnectionError, connect_profiles};
-pub use sample::{Opacity, OpacityError, OpacitySample};
 pub use transfer::{
     Transfer, TransferClut, TransferCurve, TransferError, TransferMatrix, TransferShader,
     TransferStage,

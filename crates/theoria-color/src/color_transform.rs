@@ -2,8 +2,8 @@ use std::{error::Error, fmt, num::NonZeroUsize, sync::LazyLock};
 
 use super::icc::IccPcs;
 use super::icc_profile::IccRenderingIntent;
-use super::profile::{ColorSpaceKey, LabD50, RgbColorSpace, XyzD50};
 use super::profile_data::{XYZ_D50_TO_XYZ_D65, XYZ_D65_TO_XYZ_D50};
+use super::space::{ColorSpaceKey, LabD50, RgbColorSpace, XyzD50};
 use super::transfer::{Transfer, TransferCurve, TransferError, TransferMatrix, TransferStage};
 
 /// A transfer together with the meanings of its input and output coordinates.
@@ -240,7 +240,7 @@ impl Error for ColorTransformError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::profile::{LabD50, LinearSrgb, Srgb, XyzD50};
+    use crate::space::{LabD50, LinearSrgb, Srgb, XyzD50};
     use crate::{IccProfile, IccRenderingIntent};
 
     #[test]

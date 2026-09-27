@@ -9,7 +9,8 @@ use super::color_transform::{ColorTransform, ColorTransformError, pcs_key_for_in
 use super::icc::{IccPcs, IccTransfer, IccTransferDirection, IccTransferError};
 use super::icc_mpe::MpeTags;
 use super::pcs::ICC_D50;
-use super::profile::ColorSpaceKey;
+use super::profile::{ColorProfile, ProfileConnectionError};
+use super::space::ColorSpaceKey;
 use super::transfer::{
     Transfer, TransferClut, TransferCurve, TransferError, TransferMatrix, TransferStage,
 };
@@ -709,6 +710,30 @@ impl Error for IccProfileError {
             Self::ColorTransform(error) => Some(error),
             _ => None,
         }
+    }
+}
+
+impl ColorProfile for IccProfile {
+    fn space(&self) -> ColorSpaceKey {
+        self.device_space()
+    }
+
+    fn pcs(&self) -> IccPcs {
+        self.pcs()
+    }
+
+    fn space_to_pcs(
+        &self,
+        intent: IccRenderingIntent,
+    ) -> Result<ColorTransform, ProfileConnectionError> {
+        Ok(IccProfile::space_to_pcs(self, intent)?)
+    }
+
+    fn pcs_to_space(
+        &self,
+        intent: IccRenderingIntent,
+    ) -> Result<ColorTransform, ProfileConnectionError> {
+        Ok(IccProfile::pcs_to_space(self, intent)?)
     }
 }
 
