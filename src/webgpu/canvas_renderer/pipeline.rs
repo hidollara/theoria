@@ -449,7 +449,7 @@ mod tests {
                     &profile,
                     intent,
                     has_alpha,
-                    RgbColorSpace::LinearSrgb,
+                    ColorProfile::new(crate::color::LinearSrgb),
                     include_str!("../../../shaders/webgpu/icc_image.wgsl"),
                 )
                 .unwrap();

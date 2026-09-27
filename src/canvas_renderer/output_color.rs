@@ -1,7 +1,7 @@
 use std::{error::Error, fmt};
 
 use crate::color::{
-    ColorTransform, IccProfile, IccRenderingIntent, RgbColorSpace, TransferError, connect_profiles,
+    ColorProfile, ColorTransform, IccProfile, IccRenderingIntent, TransferError, connect_profiles,
 };
 
 /// Conversion from the renderer's premultiplied RGB working image to
@@ -44,7 +44,7 @@ impl OutputColorTransform {
     pub(crate) fn new(
         profile: &IccProfile,
         intent: IccRenderingIntent,
-        working_space: RgbColorSpace,
+        working_profile: impl Into<ColorProfile>,
     ) -> Result<Self, OutputColorError> {
         if profile.device_channels() != 3 {
             return Err(OutputColorError::UnsupportedChannels(
@@ -55,7 +55,7 @@ impl OutputColorTransform {
             return Err(OutputColorError::AbsoluteIntent);
         }
         let transfer = connect_profiles(
-            working_space,
+            working_profile,
             profile,
             IccRenderingIntent::RelativeColorimetric,
             intent,
@@ -94,6 +94,7 @@ impl OutputColorTransform {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::color::{LinearSrgb, RgbColorSpace};
 
     #[test]
     fn real_display_profile_output_compiles_as_a_fragment_shader() {
@@ -105,7 +106,7 @@ mod tests {
         let output = OutputColorTransform::new(
             &profile,
             IccRenderingIntent::RelativeColorimetric,
-            RgbColorSpace::LinearSrgb,
+            ColorProfile::new(LinearSrgb),
         )
         .unwrap();
         let converted = output.convert_premultiplied([0.1, 0.2, 0.3, 0.5]).unwrap();
