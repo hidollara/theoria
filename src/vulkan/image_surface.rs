@@ -151,7 +151,7 @@ impl ImageSurface {
         );
         let output = match output_profile {
             Some((profile, intent)) => {
-                OutputImage::new(profile.profile(), intent, OutputAlpha::Straight)
+                OutputImage::new(profile.color_space(), intent, OutputAlpha::Straight)
             }
             None => OutputImage::new(
                 crate::color::Srgb,

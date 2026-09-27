@@ -247,12 +247,12 @@ mod tests {
         let bytes = moxcms::ColorProfile::new_srgb().encode().unwrap();
         let first = crate::IccProfile::from_bytes(&bytes)
             .unwrap()
-            .device_space()
+            .color_space()
             .id();
         let same = first.clone();
         let separate = crate::IccProfile::from_bytes(&bytes)
             .unwrap()
-            .device_space()
+            .color_space()
             .id();
         assert_eq!(first, same);
         assert_ne!(first, separate);

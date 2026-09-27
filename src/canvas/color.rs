@@ -113,7 +113,7 @@ impl CanvasColor {
             return Err(CanvasIccColorError::InvalidCoordinates);
         }
         Ok(Self {
-            profile: profile.profile(),
+            profile: profile.color_space(),
             intent,
             value: ColorValue::Dynamic(coordinates, Alpha::F32(opacity.sample())),
         })
@@ -305,7 +305,7 @@ mod tests {
         };
         assert!(Arc::ptr_eq(stored, &coordinates));
         assert_eq!(*stored_opacity, 0.5);
-        assert_eq!(color.profile, profile.profile());
+        assert_eq!(color.profile, profile.color_space());
         assert_eq!(color.intent, IccRenderingIntent::RelativeColorimetric);
         drop(profile);
         let rgba = color.straight_rgba_in(Srgb);

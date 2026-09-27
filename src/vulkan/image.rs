@@ -178,7 +178,7 @@ impl ImageCache {
                 )?;
                 self.descriptors.bind_icc_backing(
                     backing,
-                    (profile.profile(), intent, has_alpha),
+                    (profile.color_space(), intent, has_alpha),
                     lowered.source,
                     &lowered.tables,
                 )

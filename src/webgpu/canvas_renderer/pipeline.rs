@@ -177,7 +177,7 @@ impl Pipelines {
         has_alpha: bool,
         working_profile: &ColorSpace,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let key = (profile.profile(), intent, has_alpha);
+        let key = (profile.color_space(), intent, has_alpha);
         if self.icc_images.contains_key(&key) {
             return Ok(());
         }

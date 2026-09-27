@@ -261,7 +261,7 @@ mod tests {
         let another_reference = ColorSpace::from(Srgb);
         let custom = IccProfile::from_bytes(&moxcms::ColorProfile::new_srgb().encode().unwrap())
             .unwrap()
-            .profile();
+            .color_space();
         assert_eq!(canonical, another_reference);
         assert_eq!(canonical.model(), ColorModel::Rgb);
         assert_ne!(canonical, custom);
@@ -291,11 +291,10 @@ mod tests {
     fn builtin_direct_link_does_not_target_a_loaded_icc_space() {
         let bytes = moxcms::ColorProfile::new_srgb().encode().unwrap();
         let icc = IccProfile::from_bytes(&bytes).unwrap();
-        assert_ne!(icc.device_space(), Srgb.into());
-        assert_ne!(icc.profile(), Srgb.into());
+        assert_ne!(icc.color_space(), Srgb.into());
         assert!(
             ColorSpace::from(LinearSrgb)
-                .direct_to(&icc.profile(), IccRenderingIntent::RelativeColorimetric)
+                .direct_to(&icc.color_space(), IccRenderingIntent::RelativeColorimetric)
                 .unwrap()
                 .is_none()
         );
@@ -333,7 +332,7 @@ mod tests {
             IccRenderingIntent::RelativeColorimetric,
         )
         .unwrap();
-        assert_eq!(transform.from(), &icc.device_space().id());
+        assert_eq!(transform.from(), &icc.color_space().id());
         assert_eq!(transform.to(), &ColorSpaceId::from(LinearSrgb));
         let converted = transform.transfer().evaluate(&[0.5; 3]).unwrap();
         assert!(converted.iter().all(|value| *value > 0.2 && *value < 0.23));

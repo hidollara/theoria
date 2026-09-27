@@ -119,13 +119,8 @@ impl IccProfile {
         self.inner.device_channels()
     }
 
-    /// The device coordinates of this particular loaded profile.
-    pub fn device_space(&self) -> ColorSpace {
-        self.profile()
-    }
-
-    /// A type-erased handle to the same profile definition.
-    pub fn profile(&self) -> ColorSpace {
+    /// The color space defined by this particular loaded profile.
+    pub fn color_space(&self) -> ColorSpace {
         ColorSpace::from_arc(self.inner.clone())
     }
 
@@ -138,7 +133,7 @@ impl IccProfile {
         intent: IccRenderingIntent,
     ) -> Result<ColorTransform, IccProfileError> {
         ColorTransform::from_ids(
-            self.profile().id(),
+            self.color_space().id(),
             pcs_key_for_intent(self.pcs(), intent),
             self.inner
                 .selected_transfer(IccTransferDirection::DeviceToPcs, intent)?,
@@ -155,7 +150,7 @@ impl IccProfile {
     ) -> Result<ColorTransform, IccProfileError> {
         ColorTransform::from_ids(
             pcs_key_for_intent(self.pcs(), intent),
-            self.profile().id(),
+            self.color_space().id(),
             self.inner
                 .selected_transfer(IccTransferDirection::PcsToDevice, intent)?,
         )
@@ -175,8 +170,8 @@ impl IccProfile {
         destination_intent: IccRenderingIntent,
     ) -> Result<ColorTransform, ProfileConnectionError> {
         connect_profiles(
-            self.profile(),
-            destination.profile(),
+            self.color_space(),
+            destination.color_space(),
             source_intent,
             destination_intent,
         )
@@ -748,13 +743,13 @@ impl ProfileDefinition for IccProfileData {
 
 impl From<IccProfile> for ColorSpace {
     fn from(profile: IccProfile) -> Self {
-        profile.profile()
+        profile.color_space()
     }
 }
 
 impl From<&IccProfile> for ColorSpace {
     fn from(profile: &IccProfile) -> Self {
-        profile.profile()
+        profile.color_space()
     }
 }
 
@@ -937,8 +932,8 @@ mod tests {
                 IccRenderingIntent::RelativeColorimetric,
             )
             .unwrap();
-        assert_eq!(semantic.from(), &profile.device_space().id());
-        assert_eq!(semantic.to(), &profile.device_space().id());
+        assert_eq!(semantic.from(), &profile.color_space().id());
+        assert_eq!(semantic.to(), &profile.color_space().id());
         let restored = semantic.transfer().evaluate(&[0.4, 0.5, 0.6]).unwrap();
         for (actual, expected) in restored.into_iter().zip([0.4, 0.5, 0.6]) {
             assert!((actual - expected).abs() < 0.003);
@@ -972,8 +967,8 @@ mod tests {
                 IccRenderingIntent::RelativeColorimetric,
             )
             .unwrap();
-        assert_eq!(connected.from(), &source.device_space().id());
-        assert_eq!(connected.to(), &destination.device_space().id());
+        assert_eq!(connected.from(), &source.color_space().id());
+        assert_eq!(connected.to(), &destination.color_space().id());
         let result = connected.transfer().evaluate(&[0.4]).unwrap();
         let relative_xyz = ICC_D50.map(|component| component * 0.4);
         let expected = crate::pcs::xyz_to_lab(relative_xyz, ICC_D50)[0] / 100.0;
@@ -1020,7 +1015,7 @@ mod tests {
         let gray = backward.transfer().evaluate(&xyz).unwrap();
         assert!((gray[0] - 0.5).abs() < 0.002, "gray={gray:?}, xyz={xyz:?}");
         assert_eq!(forward.to(), &ColorSpaceId::from(XyzD50));
-        assert_eq!(backward.to(), &profile.device_space().id());
+        assert_eq!(backward.to(), &profile.color_space().id());
         assert!(forward.then(&backward).is_ok());
         let shader = forward.transfer().wgsl_with_storage(22, 1, 4).unwrap();
         let module = naga::front::wgsl::parse_str(shader.source())
@@ -1203,8 +1198,8 @@ mod tests {
         let source = IccProfile::from_bytes(&bytes).unwrap();
         let same_source = source.clone();
         let separate_load = IccProfile::from_bytes(&bytes).unwrap();
-        assert_eq!(source.device_space(), same_source.device_space());
-        assert_ne!(source.device_space(), separate_load.device_space());
+        assert_eq!(source.color_space(), same_source.color_space());
+        assert_ne!(source.color_space(), separate_load.color_space());
 
         let to_pcs = source
             .space_to_pcs(IccRenderingIntent::RelativeColorimetric)
@@ -1212,12 +1207,12 @@ mod tests {
         let from_pcs = separate_load
             .pcs_to_space(IccRenderingIntent::RelativeColorimetric)
             .unwrap();
-        assert_eq!(to_pcs.from(), &source.device_space().id());
+        assert_eq!(to_pcs.from(), &source.color_space().id());
         assert_eq!(to_pcs.to(), &ColorSpaceId::from(XyzD50));
         assert_eq!(from_pcs.from(), &ColorSpaceId::from(XyzD50));
-        assert_eq!(from_pcs.to(), &separate_load.device_space().id());
+        assert_eq!(from_pcs.to(), &separate_load.color_space().id());
         let connected = to_pcs.then(&from_pcs).unwrap();
-        assert_eq!(connected.to(), &separate_load.device_space().id());
+        assert_eq!(connected.to(), &separate_load.color_space().id());
     }
 
     #[test]
@@ -1226,16 +1221,14 @@ mod tests {
         let first = IccProfile::from_bytes(&bytes).unwrap();
         let second = IccProfile::from_bytes(&bytes).unwrap();
 
-        assert_eq!(first.device_space(), first.clone().device_space());
-        assert_ne!(first.device_space(), second.device_space());
-        assert_eq!(first.profile(), first.clone().profile());
-        assert_ne!(first.profile(), second.profile());
+        assert_eq!(first.color_space(), first.clone().color_space());
+        assert_ne!(first.color_space(), second.color_space());
         assert_eq!(
             first
                 .space_to_pcs(IccRenderingIntent::RelativeColorimetric)
                 .unwrap()
                 .from(),
-            &first.device_space().id()
+            &first.color_space().id()
         );
     }
 
@@ -1244,7 +1237,7 @@ mod tests {
         let bytes = ParsedProfile::new_srgb().encode().unwrap();
         let profile = IccProfile::from_bytes(&bytes).unwrap();
         let parsed = Arc::downgrade(&profile.inner.parsed);
-        let device = profile.device_space().id();
+        let device = profile.color_space().id();
         let transform = profile
             .space_to_pcs(IccRenderingIntent::RelativeColorimetric)
             .unwrap();
@@ -1258,8 +1251,8 @@ mod tests {
         let bytes = ParsedProfile::new_srgb().encode().unwrap();
         let profile = IccProfile::from_bytes(&bytes).unwrap();
         let parsed = Arc::downgrade(&profile.inner.parsed);
-        let erased = profile.profile();
-        assert_eq!(erased, profile.profile());
+        let erased = profile.color_space();
+        assert_eq!(erased, profile.color_space());
 
         drop(profile);
         assert!(parsed.upgrade().is_some());

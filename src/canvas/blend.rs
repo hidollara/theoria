@@ -392,11 +392,12 @@ mod tests {
         )))
         .unwrap();
         let shader = BlendShader::wgsl("return backdrop * source;").unwrap();
-        let composition = Composition::new(Composite::SourceOver, icc.profile()).with_blend_shader(
-            shader.clone(),
-            crate::test_support::distinct_color_profile(Srgb),
-        );
-        assert_eq!(composition.composite_space(), &icc.profile());
+        let composition = Composition::new(Composite::SourceOver, icc.color_space())
+            .with_blend_shader(
+                shader.clone(),
+                crate::test_support::distinct_color_profile(Srgb),
+            );
+        assert_eq!(composition.composite_space(), &icc.color_space());
         assert!(composition.blend().is_some());
         let source = shader
             .wgsl_module_for_profiles(

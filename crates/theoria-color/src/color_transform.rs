@@ -247,7 +247,7 @@ mod tests {
             assert!((actual - expected).abs() < 0.004);
         }
         assert_eq!(connected.from(), &ColorSpaceId::from(Srgb));
-        assert_eq!(connected.to(), &profile.device_space().id());
+        assert_eq!(connected.to(), &profile.color_space().id());
 
         let reverse = profile
             .space_to_pcs(IccRenderingIntent::RelativeColorimetric)

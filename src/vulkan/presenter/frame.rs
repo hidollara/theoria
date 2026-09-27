@@ -100,7 +100,7 @@ impl<'a> RenderTarget<'a> {
     /// Encodes the final working image into ICC device RGB coordinates.
     /// The target format must not perform an additional sRGB encoding.
     pub fn with_icc_output(mut self, profile: &IccProfile, intent: IccRenderingIntent) -> Self {
-        self.output = OutputImage::new(profile.profile(), intent, OutputAlpha::Premultiplied);
+        self.output = OutputImage::new(profile.color_space(), intent, OutputAlpha::Premultiplied);
         self
     }
 }

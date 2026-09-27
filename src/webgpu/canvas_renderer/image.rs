@@ -104,7 +104,7 @@ impl ImageCache {
                     has_alpha,
                 )?),
                 GpuImageColor::Icc {
-                    key: (profile.profile(), intent, has_alpha),
+                    key: (profile.color_space(), intent, has_alpha),
                 },
             ),
             RasterImageView::Rgb8 { plane, color_space } => {
