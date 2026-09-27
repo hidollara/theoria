@@ -83,7 +83,7 @@ impl ColorTransform {
             )?
         } else {
             from.to_xyz_d65_transfer()?
-                .then(&to.from_xyz_d65_transfer()?)?
+                .then(&to.xyz_d65_to_rgb_transfer()?)?
         };
         Self::new(from.into(), to.into(), transfer)
     }
@@ -108,7 +108,7 @@ impl ColorTransform {
             transfer = transfer.then(&Transfer::new(3, [TransferStage::LabD50ToXyzD50])?)?;
         }
         transfer = transfer.then(&adaptation(XYZ_D50_TO_XYZ_D65)?)?;
-        transfer = transfer.then(&to.from_xyz_d65_transfer()?)?;
+        transfer = transfer.then(&to.xyz_d65_to_rgb_transfer()?)?;
         Self::new(pcs_key(from), to.into(), transfer)
     }
 
@@ -188,7 +188,7 @@ pub(crate) fn pcs_key_for_intent(pcs: IccPcs, intent: IccRenderingIntent) -> Col
     }
 }
 
-fn adaptation(matrix: [[f64; 3]; 3]) -> Result<Transfer, TransferError> {
+pub(crate) fn adaptation(matrix: [[f64; 3]; 3]) -> Result<Transfer, TransferError> {
     Transfer::new(
         3,
         [TransferStage::Matrix(TransferMatrix::new(
@@ -259,7 +259,7 @@ mod tests {
             transform.transfer().stages(),
             &[TransferStage::curves([TransferCurve::SRGB_DECODE; 3]).unwrap()]
         );
-        let expected = crate::RgbTransfer::Srgb.decode_f64(0.5);
+        let expected = crate::transform::RgbTransfer::Srgb.decode_f64(0.5);
         let actual = transform.transfer().evaluate(&[0.5; 3]).unwrap();
         for value in actual {
             assert!((value - expected).abs() < 1e-12);

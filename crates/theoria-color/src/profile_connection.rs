@@ -1,6 +1,6 @@
 use std::{error::Error, fmt};
 
-use super::color_transform::{ColorTransform, ColorTransformError};
+use super::color_transform::{ColorTransform, ColorTransformError, adaptation, pcs_key_for_intent};
 use super::icc::IccPcs;
 use super::icc_profile::{IccProfile, IccProfileError, IccRenderingIntent};
 use super::profile::{
@@ -8,18 +8,20 @@ use super::profile::{
     XyzD65,
 };
 use super::profile_data::{XYZ_D50_TO_XYZ_D65, XYZ_D65_TO_XYZ_D50};
-use super::transfer::{Transfer, TransferError, TransferMatrix, TransferStage};
+use super::transfer::TransferError;
 
 /// Directed conversions supplied by a profile for one coordinate space.
 ///
 /// The space identity is separate from its conversion data: two profiles can
 /// interpret the same number of channels differently. The two PCS directions
 /// are independent, and a direct link is optional rather than an inverse of
-/// either direction.
+/// either direction. [`Self::space`] must return the same key on every call;
+/// clone a key stored by the profile rather than constructing a new one.
 pub trait ColorProfile {
     fn space(&self) -> ColorSpaceKey;
     fn pcs(&self) -> IccPcs;
     fn to_pcs(&self, intent: IccRenderingIntent) -> Result<ColorTransform, ProfileConnectionError>;
+    #[allow(clippy::wrong_self_convention)] // selects this profile's PCS-to-space direction
     fn from_pcs(
         &self,
         intent: IccRenderingIntent,
@@ -51,16 +53,22 @@ pub fn connect_profiles(
     {
         return Err(ProfileConnectionError::IncompatibleIntentSpaces);
     }
+    let source_space = source.space();
     let destination_space = destination.space();
-    if source_intent == destination_intent {
-        if let Some(direct) = source.direct_to(&destination_space, source_intent)? {
-            if direct.from() != &source.space() || direct.to() != &destination_space {
-                return Err(ProfileConnectionError::InvalidDirectLink);
-            }
-            return Ok(direct);
+    if source_intent == destination_intent
+        && let Some(direct) = source.direct_to(&destination_space, source_intent)?
+    {
+        if direct.from() != &source_space || direct.to() != &destination_space {
+            return Err(ProfileConnectionError::InvalidDirectLink);
         }
+        return Ok(direct);
     }
     let mut transform = source.to_pcs(source_intent)?;
+    if transform.from() != &source_space
+        || transform.to() != &pcs_key_for_intent(source.pcs(), source_intent)
+    {
+        return Err(ProfileConnectionError::InvalidProfileTransform);
+    }
     if source.pcs() != destination.pcs() {
         transform = transform.then(&ColorTransform::between_pcs_for_intent(
             source.pcs(),
@@ -68,7 +76,13 @@ pub fn connect_profiles(
             source_intent,
         )?)?;
     }
-    Ok(transform.then(&destination.from_pcs(destination_intent)?)?)
+    let destination_transform = destination.from_pcs(destination_intent)?;
+    if destination_transform.from() != &pcs_key_for_intent(destination.pcs(), destination_intent)
+        || destination_transform.to() != &destination_space
+    {
+        return Err(ProfileConnectionError::InvalidProfileTransform);
+    }
+    Ok(transform.then(&destination_transform)?)
 }
 
 impl ColorProfile for RgbColorSpace {
@@ -240,18 +254,6 @@ impl ColorProfile for XyzD65 {
     }
 }
 
-fn adaptation(matrix: [[f64; 3]; 3]) -> Result<Transfer, ProfileConnectionError> {
-    Ok(Transfer::new(
-        3,
-        [TransferStage::Matrix(TransferMatrix::new(
-            3,
-            3,
-            matrix.into_iter().flatten().collect::<Vec<_>>(),
-            [0.0; 3],
-        )?)],
-    )?)
-}
-
 impl ColorProfile for IccProfile {
     fn space(&self) -> ColorSpaceKey {
         self.device_space()
@@ -286,6 +288,7 @@ pub enum ProfileConnectionError {
     IncompatibleIntentSpaces,
     UnsupportedIntent(IccRenderingIntent),
     InvalidDirectLink,
+    InvalidProfileTransform,
     Transform(ColorTransformError),
     Icc(IccProfileError),
 }
@@ -321,6 +324,8 @@ impl fmt::Display for ProfileConnectionError {
             Self::InvalidDirectLink => {
                 formatter.write_str("direct profile link has incorrect coordinate-space endpoints")
             }
+            Self::InvalidProfileTransform => formatter
+                .write_str("profile-to-PCS transform has incorrect coordinate-space endpoints"),
             Self::Transform(error) => error.fmt(formatter),
             Self::Icc(error) => error.fmt(formatter),
         }
@@ -549,6 +554,49 @@ mod tests {
                 IccRenderingIntent::RelativeColorimetric,
             ),
             Err(ProfileConnectionError::InvalidDirectLink)
+        ));
+    }
+
+    #[test]
+    fn malformed_pcs_link_cannot_escape_with_a_matching_channel_count() {
+        struct InvalidPcs;
+
+        impl ColorProfile for InvalidPcs {
+            fn space(&self) -> ColorSpaceKey {
+                Srgb.into()
+            }
+
+            fn pcs(&self) -> IccPcs {
+                IccPcs::XyzD50
+            }
+
+            fn to_pcs(
+                &self,
+                _: IccRenderingIntent,
+            ) -> Result<ColorTransform, ProfileConnectionError> {
+                Ok(ColorTransform::new(
+                    Srgb.into(),
+                    LabD50.into(),
+                    Transfer::new(3, Vec::<TransferStage>::new())?,
+                )?)
+            }
+
+            fn from_pcs(
+                &self,
+                _: IccRenderingIntent,
+            ) -> Result<ColorTransform, ProfileConnectionError> {
+                unreachable!()
+            }
+        }
+
+        assert!(matches!(
+            connect_profiles(
+                &InvalidPcs,
+                &LinearSrgb,
+                IccRenderingIntent::RelativeColorimetric,
+                IccRenderingIntent::RelativeColorimetric,
+            ),
+            Err(ProfileConnectionError::InvalidProfileTransform)
         ));
     }
 }

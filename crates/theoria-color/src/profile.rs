@@ -82,7 +82,7 @@ impl RgbColorSpace {
         )
     }
 
-    pub(crate) fn from_xyz_d65_transfer(self) -> Result<Transfer, TransferError> {
+    pub(crate) fn xyz_d65_to_rgb_transfer(self) -> Result<Transfer, TransferError> {
         let curve = match self.transfer_curve() {
             RgbTransfer::Linear => TransferCurve::IDENTITY,
             RgbTransfer::Srgb => TransferCurve::SRGB_ENCODE,
@@ -103,7 +103,7 @@ impl RgbColorSpace {
         )
     }
 
-    pub(crate) fn from_xyz_d65_f64(self, xyz: [f64; 3]) -> [f64; 3] {
+    pub(crate) fn xyz_d65_to_rgb_f64(self, xyz: [f64; 3]) -> [f64; 3] {
         multiply_f64(self.matrices().1, xyz).map(|value| self.transfer_curve().encode_f64(value))
     }
 }
@@ -269,7 +269,7 @@ mod tests {
         fn check(space: RgbColorSpace) {
             let rgb = [0.23, 0.51, 0.79];
             let xyz = space.to_xyz_d65_f64(rgb);
-            let actual = space.from_xyz_d65_f64(xyz);
+            let actual = space.xyz_d65_to_rgb_f64(xyz);
             for (actual, expected) in actual.into_iter().zip(rgb) {
                 assert!((actual - expected).abs() < 0.000_01);
             }

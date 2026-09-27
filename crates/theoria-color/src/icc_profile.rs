@@ -709,7 +709,21 @@ impl Error for IccProfileError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::XyzD50;
+    use crate::{XyzD50, connect_profiles};
+
+    #[test]
+    fn generic_profile_connection_matches_icc_connection() {
+        let profile = IccProfile::from_parsed(ParsedProfile::new_srgb(), IccPcs::XyzD50);
+        for intent in [
+            IccRenderingIntent::RelativeColorimetric,
+            IccRenderingIntent::Perceptual,
+            IccRenderingIntent::AbsoluteColorimetric,
+        ] {
+            let generic = connect_profiles(&profile, &profile, intent, intent).unwrap();
+            let icc = profile.connect_to(&profile, intent, intent).unwrap();
+            assert_eq!(generic, icc);
+        }
+    }
 
     #[test]
     fn real_v4_profiles_round_trip_device_coordinates() {

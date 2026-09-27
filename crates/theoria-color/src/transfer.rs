@@ -1181,7 +1181,7 @@ mod tests {
                 assert!((actual - expected).abs() < 0.000_000_1);
             }
             let general_rgb = space
-                .from_xyz_d65_transfer()
+                .xyz_d65_to_rgb_transfer()
                 .unwrap()
                 .evaluate(&xyz)
                 .unwrap();

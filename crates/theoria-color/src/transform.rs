@@ -5,7 +5,7 @@ use super::profile_data::{
 
 /// The standard sRGB curve or a linear-light identity curve.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RgbTransfer {
+pub(crate) enum RgbTransfer {
     Linear,
     Srgb,
 }

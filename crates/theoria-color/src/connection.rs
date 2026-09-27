@@ -30,7 +30,7 @@ macro_rules! rgb_profile {
                 }
 
                 fn xyz_d50_to_coordinates(&self, xyz_d50: [f64; 3]) -> [f64; 3] {
-                    RgbColorSpace::from(*self).from_xyz_d65_f64(adapt_d50_to_d65(xyz_d50))
+                    RgbColorSpace::from(*self).xyz_d65_to_rgb_f64(adapt_d50_to_d65(xyz_d50))
                 }
             }
         )+
@@ -47,7 +47,7 @@ impl XyzD50Profile for RgbColorSpace {
     }
 
     fn xyz_d50_to_coordinates(&self, xyz_d50: [f64; 3]) -> [f64; 3] {
-        self.from_xyz_d65_f64(adapt_d50_to_d65(xyz_d50))
+        self.xyz_d65_to_rgb_f64(adapt_d50_to_d65(xyz_d50))
     }
 }
 
