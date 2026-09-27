@@ -2,13 +2,10 @@ use std::{
     fmt,
     hash::{Hash, Hasher},
     num::NonZeroUsize,
-    sync::{Arc, LazyLock},
+    sync::Arc,
 };
 
-use super::profile_data::{
-    LINEAR_P3_TO_XYZ_D65, LINEAR_SRGB_TO_XYZ_D65, XYZ_D65_TO_LINEAR_P3, XYZ_D65_TO_LINEAR_SRGB,
-};
-use super::{ColorModel, Lab, Rgb, RgbTransfer, RgbTransform, Xyz};
+use super::{ColorModel, Rgb, RgbTransfer, RgbTransform};
 
 /// Associates a profile with the coordinate model it accepts.
 ///
@@ -36,46 +33,6 @@ macro_rules! profile {
             type Model = $model;
         }
     };
-}
-
-profile!(Srgb, Rgb);
-profile!(LinearSrgb, Rgb);
-profile!(DisplayP3, Rgb);
-profile!(LinearDisplayP3, Rgb);
-profile!(XyzD50, Xyz);
-profile!(XyzD65, Xyz);
-profile!(LabD50, Lab);
-
-impl MatrixRgbProfile for Srgb {
-    const TRANSFORM: RgbTransform = RgbTransform::new(
-        RgbTransfer::Srgb,
-        LINEAR_SRGB_TO_XYZ_D65,
-        XYZ_D65_TO_LINEAR_SRGB,
-    );
-}
-
-impl MatrixRgbProfile for LinearSrgb {
-    const TRANSFORM: RgbTransform = RgbTransform::new(
-        RgbTransfer::Linear,
-        LINEAR_SRGB_TO_XYZ_D65,
-        XYZ_D65_TO_LINEAR_SRGB,
-    );
-}
-
-impl MatrixRgbProfile for DisplayP3 {
-    const TRANSFORM: RgbTransform = RgbTransform::new(
-        RgbTransfer::Srgb,
-        LINEAR_P3_TO_XYZ_D65,
-        XYZ_D65_TO_LINEAR_P3,
-    );
-}
-
-impl MatrixRgbProfile for LinearDisplayP3 {
-    const TRANSFORM: RgbTransform = RgbTransform::new(
-        RgbTransfer::Linear,
-        LINEAR_P3_TO_XYZ_D65,
-        XYZ_D65_TO_LINEAR_P3,
-    );
 }
 
 /// A predefined RGB space in which Canvas color operations can be evaluated.
@@ -122,11 +79,6 @@ macro_rules! rgb_color_space {
         }
     };
 }
-
-rgb_color_space!(Srgb, Srgb);
-rgb_color_space!(LinearSrgb, LinearSrgb);
-rgb_color_space!(DisplayP3, DisplayP3);
-rgb_color_space!(LinearDisplayP3, LinearDisplayP3);
 
 #[derive(Debug)]
 struct ColorSpaceIdentity {
@@ -178,8 +130,9 @@ impl fmt::Debug for ColorSpaceKey {
 
 macro_rules! predefined_space {
     ($profile:ty, $key:ident) => {
-        static $key: LazyLock<ColorSpaceKey> =
-            LazyLock::new(|| ColorSpaceKey::new(NonZeroUsize::new(3).unwrap()));
+        static $key: std::sync::LazyLock<ColorSpaceKey> = std::sync::LazyLock::new(|| {
+            ColorSpaceKey::new(std::num::NonZeroUsize::new(3).unwrap())
+        });
 
         impl From<$profile> for ColorSpaceKey {
             fn from(_: $profile) -> Self {
@@ -189,13 +142,21 @@ macro_rules! predefined_space {
     };
 }
 
-predefined_space!(Srgb, SRGB_KEY);
-predefined_space!(LinearSrgb, LINEAR_SRGB_KEY);
-predefined_space!(DisplayP3, DISPLAY_P3_KEY);
-predefined_space!(LinearDisplayP3, LINEAR_DISPLAY_P3_KEY);
-predefined_space!(XyzD50, XYZ_D50_KEY);
-predefined_space!(XyzD65, XYZ_D65_KEY);
-predefined_space!(LabD50, LAB_D50_KEY);
+mod display_p3;
+mod lab_d50;
+mod linear_display_p3;
+mod linear_srgb;
+mod srgb;
+mod xyz_d50;
+mod xyz_d65;
+
+pub use display_p3::DisplayP3;
+pub use lab_d50::LabD50;
+pub use linear_display_p3::LinearDisplayP3;
+pub use linear_srgb::LinearSrgb;
+pub use srgb::Srgb;
+pub use xyz_d50::XyzD50;
+pub use xyz_d65::XyzD65;
 
 impl From<RgbColorSpace> for ColorSpaceKey {
     fn from(space: RgbColorSpace) -> Self {
