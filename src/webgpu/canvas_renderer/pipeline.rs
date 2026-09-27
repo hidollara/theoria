@@ -8,7 +8,7 @@ use wgpu::util::DeviceExt;
 use crate::canvas::{BlendShader, Composite, composition_shader::Binding};
 use crate::canvas_renderer::icc_image_shader;
 use crate::canvas_renderer::output_color::OutputColorTransform;
-use crate::color::{ColorSpace, IccProfile, IccRenderingIntent, RgbColorSpace};
+use crate::color::{ColorProfile, IccProfile, IccRenderingIntent, RgbColorSpace};
 
 use super::encoding::{ImageVertex, TriangleVertex};
 
@@ -25,8 +25,8 @@ pub(super) struct Pipelines {
     blend_shaders: HashMap<BlendShader, wgpu::RenderPipeline>,
     presents: HashMap<wgpu::TextureFormat, wgpu::RenderPipeline>,
     icc_presents:
-        HashMap<(wgpu::TextureFormat, ColorSpace, IccRenderingIntent), wgpu::RenderPipeline>,
-    icc_images: HashMap<(ColorSpace, IccRenderingIntent, bool), IccImagePipeline>,
+        HashMap<(wgpu::TextureFormat, ColorProfile, IccRenderingIntent), wgpu::RenderPipeline>,
+    icc_images: HashMap<(ColorProfile, IccRenderingIntent, bool), IccImagePipeline>,
 }
 
 pub(super) struct IccImagePipeline {
@@ -158,7 +158,7 @@ impl Pipelines {
         has_alpha: bool,
         working_space: RgbColorSpace,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let key = (profile.device_space(), intent, has_alpha);
+        let key = (profile.profile(), intent, has_alpha);
         if self.icc_images.contains_key(&key) {
             return Ok(());
         }
@@ -228,14 +228,14 @@ impl Pipelines {
 
     pub(super) fn icc_image(
         &self,
-        key: &(ColorSpace, IccRenderingIntent, bool),
+        key: &(ColorProfile, IccRenderingIntent, bool),
     ) -> &IccImagePipeline {
         &self.icc_images[key]
     }
 
     pub(super) fn retain_icc_images(
         &mut self,
-        active: &HashSet<(ColorSpace, IccRenderingIntent, bool)>,
+        active: &HashSet<(ColorProfile, IccRenderingIntent, bool)>,
     ) {
         self.icc_images.retain(|key, _| active.contains(key));
     }
@@ -304,7 +304,7 @@ impl Pipelines {
         intent: IccRenderingIntent,
         transform: &OutputColorTransform,
     ) -> Result<&wgpu::RenderPipeline, Box<dyn std::error::Error>> {
-        let key = (format, profile.device_space(), intent);
+        let key = (format, profile.profile(), intent);
         if !self.icc_presents.contains_key(&key) {
             let source = transform.wgsl()?;
             let module = shader(device, "theoria WebGPU ICC present shader", source);

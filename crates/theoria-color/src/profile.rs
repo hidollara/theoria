@@ -1,4 +1,10 @@
-use std::{error::Error, fmt};
+use std::{
+    error::Error,
+    fmt,
+    hash::{Hash, Hasher},
+    ops::Deref,
+    sync::Arc,
+};
 
 use super::color_transform::{ColorTransform, ColorTransformError, pcs_key_for_intent};
 use super::icc::IccPcs;
@@ -6,14 +12,71 @@ use super::icc_profile::{IccProfileError, IccRenderingIntent};
 use super::space::ColorSpace;
 use super::transfer::TransferError;
 
+/// A shared profile and the identity of its conversion definition.
+///
+/// Clones retain the same definition. Two handles can describe the same color
+/// space while using different conversion data.
+#[derive(Clone)]
+pub struct ColorProfile(Arc<dyn ProfileDefinition>);
+
+impl ColorProfile {
+    /// Owns a definition as a new profile. Each call creates a distinct handle.
+    pub fn new(definition: impl ProfileDefinition + 'static) -> Self {
+        Self(Arc::new(definition))
+    }
+
+    /// Reuses an already shared definition without another allocation.
+    pub fn from_arc<D: ProfileDefinition + 'static>(definition: Arc<D>) -> Self {
+        Self(definition)
+    }
+}
+
+impl From<&ColorProfile> for ColorProfile {
+    fn from(profile: &ColorProfile) -> Self {
+        profile.clone()
+    }
+}
+
+impl Deref for ColorProfile {
+    type Target = dyn ProfileDefinition;
+
+    fn deref(&self) -> &Self::Target {
+        self.0.as_ref()
+    }
+}
+
+impl PartialEq for ColorProfile {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for ColorProfile {}
+
+impl Hash for ColorProfile {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        (Arc::as_ptr(&self.0) as *const ()).hash(state);
+    }
+}
+
+impl fmt::Debug for ColorProfile {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_tuple("ColorProfile")
+            .field(&(Arc::as_ptr(&self.0) as *const ()))
+            .finish()
+    }
+}
+
 /// Directed conversions supplied by a profile for one coordinate space.
 ///
 /// The space identity is separate from its conversion data: two profiles can
 /// interpret the same number of channels differently. The two PCS directions
 /// are independent, and a direct link is optional rather than an inverse of
 /// either direction. [`Self::space`] must identify the same space on every call;
-/// clone a space stored by the profile rather than constructing a new one.
-pub trait ColorProfile {
+/// clone a space stored by the definition rather than constructing a new one.
+/// Definitions are `Send + Sync` so their handles can be shared by renderers.
+pub trait ProfileDefinition: Send + Sync {
     fn space(&self) -> ColorSpace;
     fn pcs(&self) -> IccPcs;
     fn space_to_pcs(
@@ -25,13 +88,13 @@ pub trait ColorProfile {
         intent: IccRenderingIntent,
     ) -> Result<ColorTransform, ProfileConnectionError>;
 
-    /// A one-way conversion to a particular coordinate space, if available.
+    /// A one-way conversion to a particular destination profile, if available.
     ///
-    /// The intent is part of a link's meaning. A link for one intent must not
-    /// silently stand in for another, even if its endpoints happen to match.
+    /// The destination profile and intent are part of a link's meaning. A link
+    /// must not stand in for another merely because its space endpoints match.
     fn direct_to(
         &self,
-        _destination: &ColorSpace,
+        _destination: &ColorProfile,
         _intent: IccRenderingIntent,
     ) -> Result<Option<ColorTransform>, ProfileConnectionError> {
         Ok(None)
@@ -41,11 +104,13 @@ pub trait ColorProfile {
 /// Selects a direct link when the endpoints and intent match, otherwise joins
 /// the source and destination profiles through their PCS representations.
 pub fn connect_profiles(
-    source: &dyn ColorProfile,
-    destination: &dyn ColorProfile,
+    source: impl Into<ColorProfile>,
+    destination: impl Into<ColorProfile>,
     source_intent: IccRenderingIntent,
     destination_intent: IccRenderingIntent,
 ) -> Result<ColorTransform, ProfileConnectionError> {
+    let source = source.into();
+    let destination = destination.into();
     if (source_intent == IccRenderingIntent::AbsoluteColorimetric)
         != (destination_intent == IccRenderingIntent::AbsoluteColorimetric)
     {
@@ -54,7 +119,7 @@ pub fn connect_profiles(
     let source_space = source.space();
     let destination_space = destination.space();
     if source_intent == destination_intent
-        && let Some(direct) = source.direct_to(&destination_space, source_intent)?
+        && let Some(direct) = source.direct_to(&destination, source_intent)?
     {
         if direct.from() != &source_space || direct.to() != &destination_space {
             return Err(ProfileConnectionError::InvalidDirectLink);
@@ -156,12 +221,25 @@ mod tests {
     use crate::icc_profile::IccProfile;
     use crate::space::{LabD50, LinearSrgb, RgbColorSpace, Srgb};
     use crate::transfer::{Transfer, TransferCurve, TransferStage};
+    use std::collections::HashSet;
+
+    #[test]
+    fn predefined_profiles_share_handles_while_new_definitions_are_distinct() {
+        let canonical = ColorProfile::from(Srgb);
+        let another_reference = ColorProfile::from(RgbColorSpace::Srgb);
+        let custom = ColorProfile::new(Srgb);
+        assert_eq!(canonical, another_reference);
+        assert_eq!(canonical.space(), custom.space());
+        assert_ne!(canonical, custom);
+        let handles = HashSet::from([canonical.clone(), another_reference, custom]);
+        assert_eq!(handles.len(), 2);
+    }
 
     #[test]
     fn known_encoding_link_is_selected_without_a_pcs_round_trip() {
         let transform = connect_profiles(
-            &Srgb,
-            &LinearSrgb,
+            Srgb,
+            LinearSrgb,
             IccRenderingIntent::RelativeColorimetric,
             IccRenderingIntent::RelativeColorimetric,
         )
@@ -175,10 +253,27 @@ mod tests {
     }
 
     #[test]
+    fn builtin_direct_link_does_not_target_a_different_profile_of_the_same_space() {
+        let bytes = moxcms::ColorProfile::new_srgb().encode().unwrap();
+        let icc = IccProfile::from_bytes(&bytes)
+            .unwrap()
+            .with_device_space(Srgb.into())
+            .unwrap();
+        assert_eq!(icc.device_space(), Srgb.into());
+        assert_ne!(icc.profile(), Srgb.into());
+        assert!(
+            LinearSrgb
+                .direct_to(&icc.profile(), IccRenderingIntent::RelativeColorimetric)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
     fn differing_primaries_fall_back_to_profile_pcs_directions() {
         let actual = connect_profiles(
-            &RgbColorSpace::Srgb,
-            &RgbColorSpace::DisplayP3,
+            RgbColorSpace::Srgb,
+            RgbColorSpace::DisplayP3,
             IccRenderingIntent::RelativeColorimetric,
             IccRenderingIntent::RelativeColorimetric,
         )
@@ -201,7 +296,7 @@ mod tests {
         let icc = IccProfile::from_bytes(&bytes).unwrap();
         let transform = connect_profiles(
             &icc,
-            &RgbColorSpace::LinearSrgb,
+            RgbColorSpace::LinearSrgb,
             IccRenderingIntent::RelativeColorimetric,
             IccRenderingIntent::RelativeColorimetric,
         )
@@ -214,11 +309,11 @@ mod tests {
 
     #[test]
     fn profiles_can_be_connected_after_type_erasure() {
-        let source: &dyn ColorProfile = &Srgb;
-        let destination: &dyn ColorProfile = &LabD50;
+        let source: ColorProfile = Srgb.into();
+        let destination: ColorProfile = LabD50.into();
         let transform = connect_profiles(
-            source,
-            destination,
+            &source,
+            &destination,
             IccRenderingIntent::RelativeColorimetric,
             IccRenderingIntent::RelativeColorimetric,
         )
@@ -232,7 +327,7 @@ mod tests {
     fn direct_link_is_used_only_for_its_declared_intent() {
         struct LinkedSpace;
 
-        impl ColorProfile for LinkedSpace {
+        impl ProfileDefinition for LinkedSpace {
             fn space(&self) -> ColorSpace {
                 Srgb.into()
             }
@@ -260,15 +355,15 @@ mod tests {
 
             fn direct_to(
                 &self,
-                destination: &ColorSpace,
+                destination: &ColorProfile,
                 intent: IccRenderingIntent,
             ) -> Result<Option<ColorTransform>, ProfileConnectionError> {
-                if *destination == ColorSpace::from(LinearSrgb)
+                if *destination == ColorProfile::from(LinearSrgb)
                     && intent == IccRenderingIntent::Saturation
                 {
                     return Ok(Some(ColorTransform::new(
                         self.space(),
-                        destination.clone(),
+                        destination.space(),
                         Transfer::new(3, Vec::<TransferStage>::new())?,
                     )?));
                 }
@@ -277,8 +372,8 @@ mod tests {
         }
 
         let direct = connect_profiles(
-            &LinkedSpace,
-            &LinearSrgb,
+            ColorProfile::new(LinkedSpace),
+            LinearSrgb,
             IccRenderingIntent::Saturation,
             IccRenderingIntent::Saturation,
         )
@@ -286,8 +381,8 @@ mod tests {
         assert!(direct.transfer().stages().is_empty());
 
         let fallback = connect_profiles(
-            &LinkedSpace,
-            &LinearSrgb,
+            ColorProfile::new(LinkedSpace),
+            LinearSrgb,
             IccRenderingIntent::Saturation,
             IccRenderingIntent::RelativeColorimetric,
         )
@@ -299,8 +394,8 @@ mod tests {
     fn unsupported_builtin_intent_is_not_misrepresented_as_relative() {
         assert!(matches!(
             connect_profiles(
-                &RgbColorSpace::Srgb,
-                &RgbColorSpace::LinearSrgb,
+                RgbColorSpace::Srgb,
+                RgbColorSpace::LinearSrgb,
                 IccRenderingIntent::Perceptual,
                 IccRenderingIntent::Perceptual,
             ),
@@ -314,7 +409,7 @@ mod tests {
     fn malformed_direct_link_cannot_escape_with_a_matching_channel_count() {
         struct InvalidLink;
 
-        impl ColorProfile for InvalidLink {
+        impl ProfileDefinition for InvalidLink {
             fn space(&self) -> ColorSpace {
                 RgbColorSpace::Srgb.into()
             }
@@ -339,7 +434,7 @@ mod tests {
 
             fn direct_to(
                 &self,
-                _: &ColorSpace,
+                _: &ColorProfile,
                 _: IccRenderingIntent,
             ) -> Result<Option<ColorTransform>, ProfileConnectionError> {
                 Ok(Some(ColorTransform::new(
@@ -352,8 +447,8 @@ mod tests {
 
         assert!(matches!(
             connect_profiles(
-                &InvalidLink,
-                &RgbColorSpace::LinearSrgb,
+                ColorProfile::new(InvalidLink),
+                RgbColorSpace::LinearSrgb,
                 IccRenderingIntent::RelativeColorimetric,
                 IccRenderingIntent::RelativeColorimetric,
             ),
@@ -365,7 +460,7 @@ mod tests {
     fn malformed_pcs_link_cannot_escape_with_a_matching_channel_count() {
         struct InvalidPcs;
 
-        impl ColorProfile for InvalidPcs {
+        impl ProfileDefinition for InvalidPcs {
             fn space(&self) -> ColorSpace {
                 Srgb.into()
             }
@@ -395,8 +490,8 @@ mod tests {
 
         assert!(matches!(
             connect_profiles(
-                &InvalidPcs,
-                &LinearSrgb,
+                ColorProfile::new(InvalidPcs),
+                LinearSrgb,
                 IccRenderingIntent::RelativeColorimetric,
                 IccRenderingIntent::RelativeColorimetric,
             ),

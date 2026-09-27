@@ -8,7 +8,7 @@ use std::{
 use super::color_transform::ColorTransform;
 use super::icc::IccPcs;
 use super::icc_profile::IccRenderingIntent;
-use super::profile::{ColorProfile, ProfileConnectionError, require_relative};
+use super::profile::{ColorProfile, ProfileConnectionError, ProfileDefinition, require_relative};
 use super::transfer::{Transfer, TransferCurve, TransferError, TransferMatrix, TransferStage};
 use super::transform::multiply_f64;
 use super::{ColorModel, Rgb, RgbTransfer};
@@ -60,7 +60,7 @@ impl TypedColorSpace for RgbColorSpace {
     }
 }
 
-impl ColorProfile for RgbColorSpace {
+impl ProfileDefinition for RgbColorSpace {
     fn space(&self) -> ColorSpace {
         (*self).into()
     }
@@ -87,7 +87,7 @@ impl ColorProfile for RgbColorSpace {
 
     fn direct_to(
         &self,
-        destination: &ColorSpace,
+        destination: &ColorProfile,
         intent: IccRenderingIntent,
     ) -> Result<Option<ColorTransform>, ProfileConnectionError> {
         if intent != IccRenderingIntent::RelativeColorimetric {
@@ -109,7 +109,7 @@ impl ColorProfile for RgbColorSpace {
                     RgbColorSpace::DisplayP3 | RgbColorSpace::LinearDisplayP3
                 )
             );
-            if same_primaries && ColorSpace::from(other) == *destination {
+            if same_primaries && ColorProfile::from(other) == *destination {
                 return Ok(Some(ColorTransform::between_rgb(*self, other)?));
             }
         }
@@ -119,7 +119,7 @@ impl ColorProfile for RgbColorSpace {
 
 macro_rules! predefined_rgb_profile {
     ($profile:ty) => {
-        impl ColorProfile for $profile {
+        impl crate::profile::ProfileDefinition for $profile {
             fn space(&self) -> ColorSpace {
                 (*self).into()
             }
@@ -144,7 +144,7 @@ macro_rules! predefined_rgb_profile {
 
             fn direct_to(
                 &self,
-                destination: &ColorSpace,
+                destination: &ColorProfile,
                 intent: IccRenderingIntent,
             ) -> Result<Option<ColorTransform>, ProfileConnectionError> {
                 RgbColorSpace::from(*self).direct_to(destination, intent)
@@ -292,6 +292,20 @@ macro_rules! predefined_space {
                 (*$key).clone()
             }
         }
+
+        impl From<$profile> for ColorProfile {
+            fn from(_: $profile) -> Self {
+                static PROFILE: std::sync::LazyLock<ColorProfile> =
+                    std::sync::LazyLock::new(|| ColorProfile::new(<$profile>::default()));
+                PROFILE.clone()
+            }
+        }
+
+        impl From<&$profile> for ColorProfile {
+            fn from(profile: &$profile) -> Self {
+                (*profile).into()
+            }
+        }
     };
 }
 
@@ -319,6 +333,23 @@ impl From<RgbColorSpace> for ColorSpace {
             RgbColorSpace::DisplayP3 => DisplayP3.into(),
             RgbColorSpace::LinearDisplayP3 => LinearDisplayP3.into(),
         }
+    }
+}
+
+impl From<RgbColorSpace> for ColorProfile {
+    fn from(space: RgbColorSpace) -> Self {
+        match space {
+            RgbColorSpace::Srgb => Srgb.into(),
+            RgbColorSpace::LinearSrgb => LinearSrgb.into(),
+            RgbColorSpace::DisplayP3 => DisplayP3.into(),
+            RgbColorSpace::LinearDisplayP3 => LinearDisplayP3.into(),
+        }
+    }
+}
+
+impl From<&RgbColorSpace> for ColorProfile {
+    fn from(space: &RgbColorSpace) -> Self {
+        (*space).into()
     }
 }
 

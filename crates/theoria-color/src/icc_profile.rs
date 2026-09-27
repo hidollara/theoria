@@ -9,7 +9,7 @@ use super::color_transform::{ColorTransform, ColorTransformError, pcs_key_for_in
 use super::icc::{IccPcs, IccTransfer, IccTransferDirection, IccTransferError};
 use super::icc_mpe::MpeTags;
 use super::pcs::ICC_D50;
-use super::profile::{ColorProfile, ProfileConnectionError};
+use super::profile::{ColorProfile, ProfileConnectionError, ProfileDefinition};
 use super::space::ColorSpace;
 use super::transfer::{
     Transfer, TransferClut, TransferCurve, TransferError, TransferMatrix, TransferStage,
@@ -35,6 +35,11 @@ pub enum IccRenderingIntent {
 /// normalized integer encodings used inside LUT tags.
 #[derive(Clone, Debug)]
 pub struct IccProfile {
+    inner: Arc<IccProfileData>,
+}
+
+#[derive(Clone, Debug)]
+struct IccProfileData {
     parsed: Arc<ParsedProfile>,
     original_bytes: Option<Arc<[u8]>>,
     pcs: IccPcs,
@@ -76,39 +81,61 @@ impl IccProfile {
         };
         let mpe = MpeTags::parse(bytes).map_err(|_| IccProfileError::MalformedTransfer)?;
         let mut profile = Self::from_parsed(parsed, pcs);
-        profile.original_bytes = Some(Arc::from(bytes));
-        profile.mpe = mpe;
+        let data = Arc::get_mut(&mut profile.inner).expect("new profile has one owner");
+        data.original_bytes = Some(Arc::from(bytes));
+        data.mpe = mpe;
         Ok(profile)
     }
 
     fn from_parsed(parsed: ParsedProfile, pcs: IccPcs) -> Self {
         let channels = NonZeroUsize::new(color_space_channels(parsed.color_space)).unwrap();
         Self {
-            parsed: Arc::new(parsed),
-            original_bytes: None,
-            pcs,
-            device_space: ColorSpace::new(channels),
-            mpe: MpeTags::default(),
+            inner: Arc::new(IccProfileData {
+                parsed: Arc::new(parsed),
+                original_bytes: None,
+                pcs,
+                device_space: ColorSpace::new(channels),
+                mpe: MpeTags::default(),
+            }),
         }
     }
 
-    pub const fn pcs(&self) -> IccPcs {
-        self.pcs
+    pub fn pcs(&self) -> IccPcs {
+        self.inner.pcs
     }
 
     /// Returns the exact loaded ICC payload for embedding in an encoded image.
     /// Profiles synthesized internally for tests do not have source bytes.
     pub fn original_bytes(&self) -> Option<&[u8]> {
-        self.original_bytes.as_deref()
+        self.inner.original_bytes.as_deref()
     }
 
     pub fn device_channels(&self) -> usize {
-        self.device_space.channels()
+        self.inner.device_space.channels()
     }
 
     /// The device coordinates of this particular loaded profile.
     pub fn device_space(&self) -> ColorSpace {
-        self.device_space.clone()
+        self.inner.device_space.clone()
+    }
+
+    /// A type-erased handle to the same profile definition.
+    pub fn profile(&self) -> ColorProfile {
+        ColorProfile::from_arc(self.inner.clone())
+    }
+
+    /// Associates this profile with an already identified coordinate space.
+    /// The caller must ensure that its device coordinates have that space's meaning.
+    pub fn with_device_space(mut self, space: ColorSpace) -> Result<Self, IccProfileError> {
+        if space.channels() != self.device_channels() {
+            return Err(IccProfileError::IncompatibleSpaceChannels);
+        }
+        if self.inner.device_space != space {
+            let mut data = (*self.inner).clone();
+            data.device_space = space;
+            self.inner = Arc::new(data);
+        }
+        Ok(self)
     }
 
     /// Selects this profile's device-to-PCS transfer for the given intent.
@@ -119,7 +146,8 @@ impl IccProfile {
         &self,
         intent: IccRenderingIntent,
     ) -> Result<ColorTransform, IccProfileError> {
-        self.color_transform(IccTransferDirection::DeviceToPcs, intent)
+        self.inner
+            .color_transform(IccTransferDirection::DeviceToPcs, intent)
     }
 
     /// Selects this profile's PCS-to-device transfer for the given intent.
@@ -129,9 +157,12 @@ impl IccProfile {
         &self,
         intent: IccRenderingIntent,
     ) -> Result<ColorTransform, IccProfileError> {
-        self.color_transform(IccTransferDirection::PcsToDevice, intent)
+        self.inner
+            .color_transform(IccTransferDirection::PcsToDevice, intent)
     }
+}
 
+impl IccProfileData {
     fn color_transform(
         &self,
         direction: IccTransferDirection,
@@ -139,14 +170,16 @@ impl IccProfile {
     ) -> Result<ColorTransform, IccProfileError> {
         let transfer = self.transfer(direction, intent)?;
         let pcs = pcs_key_for_intent(self.pcs, intent);
-        let device = self.device_space();
+        let device = self.device_space.clone();
         let (from, to) = match direction {
             IccTransferDirection::DeviceToPcs => (device, pcs),
             IccTransferDirection::PcsToDevice => (pcs, device),
         };
         ColorTransform::new(from, to, transfer.into_transfer()).map_err(Into::into)
     }
+}
 
+impl IccProfile {
     /// Connects this profile's device coordinates to another profile's.
     ///
     /// Selects this profile's device-to-PCS transfer and the destination's
@@ -176,6 +209,20 @@ impl IccProfile {
     }
 
     pub fn transfer(
+        &self,
+        direction: IccTransferDirection,
+        intent: IccRenderingIntent,
+    ) -> Result<IccTransfer, IccProfileError> {
+        self.inner.transfer(direction, intent)
+    }
+}
+
+impl IccProfileData {
+    fn device_channels(&self) -> usize {
+        self.device_space.channels()
+    }
+
+    fn transfer(
         &self,
         direction: IccTransferDirection,
         intent: IccRenderingIntent,
@@ -646,6 +693,7 @@ pub enum IccProfileError {
     UnsupportedVersion,
     UnsupportedProfileClass,
     UnsupportedPcs,
+    IncompatibleSpaceChannels,
     MissingMediaWhitePoint,
     IncompatibleIntentSpaces,
     MissingTransfer,
@@ -682,6 +730,9 @@ impl fmt::Display for IccProfileError {
                 f.write_str("the ICC profile class does not connect device coordinates to a PCS")
             }
             Self::UnsupportedPcs => f.write_str("the ICC profile uses an unsupported PCS"),
+            Self::IncompatibleSpaceChannels => {
+                f.write_str("the color space and ICC profile have different channel counts")
+            }
             Self::MissingMediaWhitePoint => {
                 f.write_str("absolute-colorimetric ICC links require a media white point")
             }
@@ -713,27 +764,39 @@ impl Error for IccProfileError {
     }
 }
 
-impl ColorProfile for IccProfile {
+impl ProfileDefinition for IccProfileData {
     fn space(&self) -> ColorSpace {
-        self.device_space()
+        self.device_space.clone()
     }
 
     fn pcs(&self) -> IccPcs {
-        self.pcs()
+        self.pcs
     }
 
     fn space_to_pcs(
         &self,
         intent: IccRenderingIntent,
     ) -> Result<ColorTransform, ProfileConnectionError> {
-        Ok(IccProfile::space_to_pcs(self, intent)?)
+        Ok(self.color_transform(IccTransferDirection::DeviceToPcs, intent)?)
     }
 
     fn pcs_to_space(
         &self,
         intent: IccRenderingIntent,
     ) -> Result<ColorTransform, ProfileConnectionError> {
-        Ok(IccProfile::pcs_to_space(self, intent)?)
+        Ok(self.color_transform(IccTransferDirection::PcsToDevice, intent)?)
+    }
+}
+
+impl From<IccProfile> for ColorProfile {
+    fn from(profile: IccProfile) -> Self {
+        profile.profile()
+    }
+}
+
+impl From<&IccProfile> for ColorProfile {
+    fn from(profile: &IccProfile) -> Self {
+        profile.profile()
     }
 }
 
@@ -1116,7 +1179,8 @@ mod tests {
         let mut raw = ParsedProfile::new_srgb();
         raw.media_white_point = None;
         let mut profile = IccProfile::from_parsed(raw, IccPcs::XyzD50);
-        profile.mpe.to_pcs[3] = Some(Transfer::new(3, Vec::<TransferStage>::new()).unwrap());
+        Arc::get_mut(&mut profile.inner).unwrap().mpe.to_pcs[3] =
+            Some(Transfer::new(3, Vec::<TransferStage>::new()).unwrap());
         let actual = profile
             .space_to_pcs(IccRenderingIntent::AbsoluteColorimetric)
             .unwrap()
@@ -1169,10 +1233,43 @@ mod tests {
     }
 
     #[test]
+    fn profile_identity_is_distinct_from_shared_space_identity() {
+        let bytes = ParsedProfile::new_srgb().encode().unwrap();
+        let first = IccProfile::from_bytes(&bytes).unwrap();
+        let shared_space = first.device_space();
+        let second = IccProfile::from_bytes(&bytes)
+            .unwrap()
+            .with_device_space(shared_space.clone())
+            .unwrap();
+
+        assert_eq!(first.device_space(), second.device_space());
+        assert_eq!(first.profile(), first.clone().profile());
+        assert_ne!(first.profile(), second.profile());
+        let rebound_clone = first
+            .clone()
+            .with_device_space(ColorSpace::new(NonZeroUsize::new(3).unwrap()))
+            .unwrap();
+        assert_ne!(first.profile(), rebound_clone.profile());
+        assert_eq!(
+            second
+                .space_to_pcs(IccRenderingIntent::RelativeColorimetric)
+                .unwrap()
+                .from(),
+            &shared_space
+        );
+
+        let gray = IccProfile::from_parsed(ParsedProfile::new_gray_with_gamma(2.2), IccPcs::XyzD50);
+        assert!(matches!(
+            gray.with_device_space(shared_space),
+            Err(IccProfileError::IncompatibleSpaceChannels)
+        ));
+    }
+
+    #[test]
     fn transform_keeps_space_identity_without_retaining_parsed_profile() {
         let bytes = ParsedProfile::new_srgb().encode().unwrap();
         let profile = IccProfile::from_bytes(&bytes).unwrap();
-        let parsed = Arc::downgrade(&profile.parsed);
+        let parsed = Arc::downgrade(&profile.inner.parsed);
         let device = profile.device_space();
         let transform = profile
             .space_to_pcs(IccRenderingIntent::RelativeColorimetric)
@@ -1180,6 +1277,20 @@ mod tests {
         drop(profile);
         assert!(parsed.upgrade().is_none());
         assert_eq!(transform.from(), &device);
+    }
+
+    #[test]
+    fn erased_profile_handle_shares_the_icc_allocation() {
+        let bytes = ParsedProfile::new_srgb().encode().unwrap();
+        let profile = IccProfile::from_bytes(&bytes).unwrap();
+        let parsed = Arc::downgrade(&profile.inner.parsed);
+        let erased = profile.profile();
+        assert_eq!(erased, profile.profile());
+
+        drop(profile);
+        assert!(parsed.upgrade().is_some());
+        drop(erased);
+        assert!(parsed.upgrade().is_none());
     }
 
     #[test]

@@ -32,7 +32,7 @@ impl IccRasterImage {
             return Err(Box::new(IccImageError::AbsoluteIntent));
         }
         let transform = connect_profiles(
-            &RgbColorSpace::Srgb,
+            RgbColorSpace::Srgb,
             &profile,
             IccRenderingIntent::RelativeColorimetric,
             intent,

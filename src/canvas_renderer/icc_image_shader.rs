@@ -18,7 +18,7 @@ pub(crate) fn build(
 ) -> Result<IccImageShader, Box<dyn std::error::Error>> {
     let transform = connect_profiles(
         profile,
-        &working_space,
+        working_space,
         intent,
         IccRenderingIntent::RelativeColorimetric,
     )?;

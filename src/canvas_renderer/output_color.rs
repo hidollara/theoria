@@ -55,7 +55,7 @@ impl OutputColorTransform {
             return Err(OutputColorError::AbsoluteIntent);
         }
         let transfer = connect_profiles(
-            &working_space,
+            working_space,
             profile,
             IccRenderingIntent::RelativeColorimetric,
             intent,

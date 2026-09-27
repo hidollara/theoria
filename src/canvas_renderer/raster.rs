@@ -57,7 +57,7 @@ pub(crate) fn convert_icc8_to_linear_rgba16(
 ) -> Result<RasterPlane<u16>, Box<dyn std::error::Error>> {
     let transfer = connect_profiles(
         profile,
-        &RgbColorSpace::LinearSrgb,
+        RgbColorSpace::LinearSrgb,
         intent,
         IccRenderingIntent::RelativeColorimetric,
     )?;

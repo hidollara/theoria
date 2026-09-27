@@ -6,7 +6,7 @@ use crate::{
         image::{Image, ImageKind, RasterImageSource, RasterImageView},
     },
     canvas_renderer::raster::{PackedIccSamples, pack_icc_samples},
-    color::{ColorSpace, IccRenderingIntent, RgbColorSpace},
+    color::{ColorProfile, IccRenderingIntent, RgbColorSpace},
     image::{AlphaAssociation, RasterImageInstanceKey},
 };
 
@@ -24,7 +24,7 @@ pub(super) enum GpuImageColor {
         space: RgbColorSpace,
     },
     Icc {
-        key: (ColorSpace, IccRenderingIntent, bool),
+        key: (ColorProfile, IccRenderingIntent, bool),
     },
 }
 
@@ -104,7 +104,7 @@ impl ImageCache {
                     has_alpha,
                 )?),
                 GpuImageColor::Icc {
-                    key: (profile.device_space(), intent, has_alpha),
+                    key: (profile.profile(), intent, has_alpha),
                 },
             ),
             RasterImageView::Rgb8 { plane, color_space } => {
@@ -198,7 +198,7 @@ impl ImageCache {
 
     pub(super) fn active_icc_keys(
         &mut self,
-    ) -> std::collections::HashSet<(ColorSpace, IccRenderingIntent, bool)> {
+    ) -> std::collections::HashSet<(ColorProfile, IccRenderingIntent, bool)> {
         self.prune_unused();
         self.raster
             .values()

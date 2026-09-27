@@ -21,7 +21,7 @@ pub(crate) enum CanvasProfile {
     XyzD65,
     LabD50,
     Icc {
-        profile: Arc<IccProfile>,
+        profile: IccProfile,
         intent: IccRenderingIntent,
     },
 }
@@ -44,7 +44,7 @@ impl PartialEq for CanvasProfile {
                     intent: right_intent,
                     ..
                 },
-            ) => left.device_space() == right.device_space() && left_intent == right_intent,
+            ) => left.profile() == right.profile() && left_intent == right_intent,
             _ => false,
         }
     }
@@ -149,7 +149,7 @@ impl CanvasColor {
         }
         Ok(Self {
             profile: CanvasProfile::Icc {
-                profile: Arc::new(profile.clone()),
+                profile: profile.clone(),
                 intent,
             },
             value: ColorValue::Dynamic(coordinates, Alpha::F32(opacity.sample())),
@@ -379,6 +379,27 @@ mod tests {
         {
             assert!((actual - straight * 0.5).abs() < 1e-5);
         }
+    }
+
+    #[test]
+    fn icc_colors_with_distinct_profiles_are_not_equal_even_in_the_same_space() {
+        let bytes = moxcms::ColorProfile::new_srgb().encode().unwrap();
+        let first = IccProfile::from_bytes(&bytes).unwrap();
+        let second = IccProfile::from_bytes(&bytes)
+            .unwrap()
+            .with_device_space(first.device_space())
+            .unwrap();
+        let color = |profile: &IccProfile| {
+            CanvasColor::from_icc(
+                profile,
+                vec![0.25, 0.5, 0.75],
+                Opacity::<f32>::ONE,
+                IccRenderingIntent::RelativeColorimetric,
+            )
+            .unwrap()
+        };
+        assert_eq!(color(&first), color(&first));
+        assert_ne!(color(&first), color(&second));
     }
 
     #[test]

@@ -128,7 +128,7 @@ fn convert_icc_color(
 ) -> Result<[f32; 3], CanvasIccColorError> {
     let transfer = connect_profiles(
         profile,
-        &space,
+        space,
         intent,
         IccRenderingIntent::RelativeColorimetric,
     )?;

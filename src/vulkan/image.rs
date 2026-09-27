@@ -96,7 +96,7 @@ impl ImageCache {
         &mut self,
     ) -> Vec<(
         (
-            crate::color::ColorSpace,
+            crate::color::ColorProfile,
             crate::color::IccRenderingIntent,
             bool,
         ),
@@ -178,7 +178,7 @@ impl ImageCache {
                 )?;
                 self.descriptors.bind_icc_backing(
                     backing,
-                    (profile.device_space(), intent, has_alpha),
+                    (profile.profile(), intent, has_alpha),
                     lowered.source,
                     &lowered.tables,
                 )

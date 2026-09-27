@@ -21,7 +21,7 @@ pub use connection::XyzD50Profile;
 pub use icc::{IccPcs, IccTransfer, IccTransferDirection, IccTransferError};
 pub use icc_profile::{IccProfile, IccProfileError, IccRenderingIntent};
 pub use model::{Cmyk, ColorCoordinates, ColorModel, Lab, Rgb, Xyz, Ycbcr};
-pub use profile::{ColorProfile, ProfileConnectionError, connect_profiles};
+pub use profile::{ColorProfile, ProfileConnectionError, ProfileDefinition, connect_profiles};
 pub use sample::{Opacity, OpacityError, OpacitySample};
 pub use space::{
     ColorSpace, DisplayP3, LabD50, LinearDisplayP3, LinearSrgb, RgbColorSpace, Srgb,
