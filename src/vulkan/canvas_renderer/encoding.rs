@@ -13,7 +13,7 @@ use super::super::color::PremultipliedWorkingRgba;
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub(super) struct CompositionPushConstants {
-    values: [u32; 4],
+    values: [u32; 2],
 }
 
 impl CompositionPushConstants {

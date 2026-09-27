@@ -4,7 +4,7 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
-use crate::color::{Rgb, RgbColorSpace, TypedColorSpace};
+use crate::color::{ColorProfile, IccRenderingIntent, Rgb, TypedColorSpace, connect_profiles};
 
 use super::composition_shader::{self, Binding};
 
@@ -112,8 +112,50 @@ impl BlendShader {
         composition_shader::assemble(binding, &self.0.helpers, &self.0.body)
     }
 
-    pub(crate) fn wgsl_module_for(&self, binding: Binding, working_space: u32) -> String {
-        composition_shader::assemble_for(binding, &self.0.helpers, &self.0.body, working_space)
+    pub(crate) fn wgsl_module_for_profiles(
+        &self,
+        binding: Binding,
+        working: &ColorProfile,
+        blend: &ColorProfile,
+        composite: &ColorProfile,
+    ) -> Result<String, Box<dyn Error>> {
+        let conversions = [
+            (working, composite, "working_to_composite"),
+            (composite, working, "composite_to_working"),
+            (working, blend, "working_to_blend"),
+            (blend, composite, "blend_to_composite"),
+        ];
+        let mut wgsl = String::new();
+        for (id, (from, to, name)) in conversions.into_iter().enumerate() {
+            if from.space().channels() != 3 || to.space().channels() != 3 {
+                return Err(std::io::Error::other(
+                    "Canvas composition requires three-channel color profiles",
+                )
+                .into());
+            }
+            if from == to {
+                wgsl.push_str(&format!(
+                    "\nfn {name}(value: vec3<f32>) -> vec3<f32> {{ return value; }}\n"
+                ));
+                continue;
+            }
+            let transform = connect_profiles(
+                from,
+                to,
+                IccRenderingIntent::RelativeColorimetric,
+                IccRenderingIntent::RelativeColorimetric,
+            )?;
+            wgsl.push_str(&transform.transfer().wgsl(id as u32)?);
+            wgsl.push_str(&format!(
+                "\nfn {name}(value: vec3<f32>) -> vec3<f32> {{\n    let result = theoria_transfer_{id}(array<f32, 3>(value.x, value.y, value.z));\n    return vec3<f32>(result[0], result[1], result[2]);\n}}\n"
+            ));
+        }
+        Ok(composition_shader::assemble_with_conversions(
+            binding,
+            &self.0.helpers,
+            &self.0.body,
+            &wgsl,
+        ))
     }
 }
 
@@ -221,17 +263,17 @@ impl<P: TypedColorSpace<Model = Rgb>> BlendOperation<P> for BlendShader {
     }
 }
 
-/// A blend operation and the RGB space in which it is evaluated.
+/// A blend operation and the profile in which its three components are evaluated.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Blend {
     shader: BlendShader,
-    space: RgbColorSpace,
+    space: ColorProfile,
 }
 
 impl Blend {
     pub fn new<P, O>(operation: O, space: P) -> Self
     where
-        P: TypedColorSpace<Model = Rgb> + Into<RgbColorSpace>,
+        P: TypedColorSpace<Model = Rgb> + Into<ColorProfile>,
         O: BlendOperation<P>,
     {
         Self {
@@ -244,8 +286,16 @@ impl Blend {
         &self.shader
     }
 
-    pub const fn space(&self) -> RgbColorSpace {
-        self.space
+    /// Evaluates a custom blend shader in a profile-backed three-channel space.
+    pub fn from_shader(shader: BlendShader, space: impl Into<ColorProfile>) -> Self {
+        Self {
+            shader,
+            space: space.into(),
+        }
+    }
+
+    pub fn space(&self) -> &ColorProfile {
+        &self.space
     }
 }
 
@@ -254,7 +304,7 @@ mod tests {
     use super::*;
     use crate::{
         canvas::{Composite, Composition},
-        color::{DisplayP3, Srgb},
+        color::{DisplayP3, IccProfile, LinearSrgb, Srgb},
     };
 
     #[test]
@@ -301,7 +351,7 @@ mod tests {
         }
 
         let blend = Blend::new(SrgbOnly, Srgb);
-        assert_eq!(blend.space(), RgbColorSpace::Srgb);
+        assert_eq!(blend.space(), &ColorProfile::from(Srgb));
         assert_eq!(blend.shader(), &BlendMode::Screen.shader_definition());
     }
 
@@ -332,5 +382,38 @@ mod tests {
         let p3 = Blend::new(BlendMode::Multiply, DisplayP3);
         assert_ne!(srgb.space(), p3.space());
         assert_eq!(srgb.shader(), p3.shader());
+    }
+
+    #[test]
+    fn composition_shader_lowers_profile_transfers_without_space_numbers() {
+        let icc = IccProfile::from_bytes(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/crates/theoria-color/src/color/fixtures/sRGB-v4.icc"
+        )))
+        .unwrap();
+        let shader = BlendShader::wgsl("return backdrop * source;").unwrap();
+        let composition = Composition::new(Composite::SourceOver, icc.profile())
+            .with_blend_shader(shader.clone(), ColorProfile::new(Srgb));
+        assert_eq!(composition.composite_space(), &icc.profile());
+        assert!(composition.blend().is_some());
+        let source = shader
+            .wgsl_module_for_profiles(
+                Binding::WebGpu,
+                &ColorProfile::from(LinearSrgb),
+                composition.blend().unwrap().space(),
+                composition.composite_space(),
+            )
+            .unwrap();
+        assert!(source.contains("theoria_transfer_0"));
+        assert!(!source.contains("operation.composite_space"));
+        let module = naga::front::wgsl::parse_str(&source)
+            .map_err(|error| error.emit_to_string(&source))
+            .unwrap();
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::all(),
+        )
+        .validate(&module)
+        .unwrap();
     }
 }

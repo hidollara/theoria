@@ -1,4 +1,4 @@
-use crate::color::{Rgb, RgbColorSpace, TypedColorSpace};
+use crate::color::{ColorProfile, Rgb, RgbColorSpace, TypedColorSpace};
 
 use super::{Blend, BlendOperation, BlendShader};
 
@@ -64,12 +64,12 @@ impl Composite {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Composition {
     composite: Composite,
-    composite_space: RgbColorSpace,
+    composite_space: ColorProfile,
     blend: Option<Blend>,
 }
 
 impl Composition {
-    pub fn new(composite: Composite, space: impl Into<RgbColorSpace>) -> Self {
+    pub fn new(composite: Composite, space: impl Into<ColorProfile>) -> Self {
         Self {
             composite,
             composite_space: space.into(),
@@ -79,10 +79,19 @@ impl Composition {
 
     pub fn with_blend<P, O>(mut self, operation: O, space: P) -> Self
     where
-        P: TypedColorSpace<Model = Rgb> + Into<RgbColorSpace>,
+        P: TypedColorSpace<Model = Rgb> + Into<ColorProfile>,
         O: BlendOperation<P>,
     {
         self.blend = (!operation.is_identity()).then(|| Blend::new(operation, space));
+        self
+    }
+
+    pub fn with_blend_shader(
+        mut self,
+        shader: BlendShader,
+        space: impl Into<ColorProfile>,
+    ) -> Self {
+        self.blend = Some(Blend::from_shader(shader, space));
         self
     }
 
@@ -90,8 +99,8 @@ impl Composition {
         self.composite
     }
 
-    pub const fn composite_space(&self) -> RgbColorSpace {
-        self.composite_space
+    pub fn composite_space(&self) -> &ColorProfile {
+        &self.composite_space
     }
 
     pub const fn blend(&self) -> Option<&Blend> {
@@ -106,6 +115,6 @@ impl Composition {
     }
 
     pub(crate) fn requires_destination_read_in(&self, working_space: RgbColorSpace) -> bool {
-        self.blend.is_some() || self.composite_space != working_space
+        self.blend.is_some() || self.composite_space != ColorProfile::from(working_space)
     }
 }

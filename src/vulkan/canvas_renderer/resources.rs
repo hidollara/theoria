@@ -4,7 +4,7 @@ use std::error::Error;
 
 use ash::vk;
 
-use crate::canvas::BlendShader;
+use crate::canvas::Composition;
 use crate::color::RgbColorSpace;
 use crate::vulkan::{image::ImageCache, presenter::RenderDevice, scratch_image::ScratchImage};
 
@@ -94,17 +94,17 @@ impl CanvasGpuResources {
         Ok(())
     }
 
-    pub(super) fn ensure_blend_shaders(
+    pub(super) fn ensure_compositions(
         &mut self,
         device: &RenderDevice,
-        shaders: &[BlendShader],
+        compositions: &[Composition],
     ) -> Result<()> {
         let descriptor_layout = self.image_cache.as_ref().unwrap().descriptor_set_layout();
         unsafe {
-            self.pipelines.as_mut().unwrap().ensure_blend_shaders(
+            self.pipelines.as_mut().unwrap().ensure_compositions(
                 device.raw(),
                 descriptor_layout,
-                shaders,
+                compositions,
             )
         }
     }
@@ -126,7 +126,7 @@ impl CanvasGpuResources {
                 ]
                 .into_iter()
                 .chain(pipelines.composites.into_values())
-                .chain(pipelines.blend_shaders.into_values())
+                .chain(pipelines.compositions.into_values())
                 .chain(pipelines.icc_presents.into_values())
                 .chain(pipelines.icc_images.into_values())
                 {

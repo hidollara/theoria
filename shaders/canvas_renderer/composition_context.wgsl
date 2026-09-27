@@ -11,8 +11,6 @@ struct VertexOutput {
 struct CompositionOperation {
     has_blend: u32,
     composite: u32,
-    blend_space: u32,
-    composite_space: u32,
 }
 
 @group(0) @binding(0) var destination_sampler: sampler;

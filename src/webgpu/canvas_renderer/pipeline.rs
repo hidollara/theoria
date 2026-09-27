@@ -5,12 +5,12 @@ use std::{
 
 use wgpu::util::DeviceExt;
 
-use crate::canvas::{BlendShader, Composite, composition_shader::Binding};
+use crate::canvas::{Composite, Composition, composition_shader::Binding};
 use crate::canvas_renderer::icc_image_shader;
 use crate::canvas_renderer::output_color::OutputColorTransform;
 use crate::color::{ColorProfile, IccProfile, IccRenderingIntent, RgbColorSpace};
 
-use super::encoding::{ImageVertex, TriangleVertex};
+use super::encoding::{CompositionUniform, ImageVertex, TriangleVertex};
 
 pub(super) const WORKING_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 
@@ -22,7 +22,7 @@ pub(super) struct Pipelines {
     pub(super) image: wgpu::RenderPipeline,
     pub(super) composites: HashMap<Composite, wgpu::RenderPipeline>,
     pub(super) mask: wgpu::RenderPipeline,
-    blend_shaders: HashMap<BlendShader, wgpu::RenderPipeline>,
+    compositions: HashMap<Composition, wgpu::RenderPipeline>,
     presents: HashMap<wgpu::TextureFormat, wgpu::RenderPipeline>,
     icc_presents:
         HashMap<(wgpu::TextureFormat, ColorProfile, IccRenderingIntent), wgpu::RenderPipeline>,
@@ -67,7 +67,9 @@ impl Pipelines {
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
-                        min_binding_size: wgpu::BufferSize::new(16),
+                        min_binding_size: wgpu::BufferSize::new(std::mem::size_of::<
+                            CompositionUniform,
+                        >() as u64),
                     },
                     count: None,
                 }],
@@ -143,7 +145,7 @@ impl Pipelines {
             image,
             composites,
             mask,
-            blend_shaders: HashMap::new(),
+            compositions: HashMap::new(),
             presents: HashMap::new(),
             icc_presents: HashMap::new(),
             icc_images: HashMap::new(),
@@ -240,37 +242,44 @@ impl Pipelines {
         self.icc_images.retain(|key, _| active.contains(key));
     }
 
-    pub(super) fn ensure_blend_shaders(&mut self, device: &wgpu::Device, shaders: &[BlendShader]) {
-        for definition in shaders {
-            self.blend_shaders
-                .entry(definition.clone())
-                .or_insert_with(|| {
-                    let source = definition.wgsl_module_for(
-                        Binding::WebGpu,
-                        crate::canvas_renderer::composition_encoding::encode_space(
-                            self.working_space,
-                        ),
-                    );
-                    let module = shader(device, "theoria WebGPU blend shader", Cow::Owned(source));
-                    create_pipeline(
-                        device,
-                        "theoria WebGPU blend pipeline",
-                        WORKING_FORMAT,
-                        &module,
-                        &[],
-                        &[
-                            Some(&self.texture_layout),
-                            Some(&self.texture_layout),
-                            Some(&self.blend_uniform_layout),
-                        ],
-                        composite_blend_state(Composite::Copy),
-                    )
-                });
+    pub(super) fn ensure_compositions(
+        &mut self,
+        device: &wgpu::Device,
+        compositions: &[Composition],
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let working = ColorProfile::from(self.working_space);
+        for composition in compositions {
+            if self.compositions.contains_key(composition) {
+                continue;
+            }
+            let blend = composition.blend().map_or(&working, |blend| blend.space());
+            let source = composition.blend_shader().wgsl_module_for_profiles(
+                Binding::WebGpu,
+                &working,
+                blend,
+                composition.composite_space(),
+            )?;
+            let module = shader(device, "theoria WebGPU blend shader", Cow::Owned(source));
+            let pipeline = create_pipeline(
+                device,
+                "theoria WebGPU blend pipeline",
+                WORKING_FORMAT,
+                &module,
+                &[],
+                &[
+                    Some(&self.texture_layout),
+                    Some(&self.texture_layout),
+                    Some(&self.blend_uniform_layout),
+                ],
+                composite_blend_state(Composite::Copy),
+            );
+            self.compositions.insert(composition.clone(), pipeline);
         }
+        Ok(())
     }
 
-    pub(super) fn blend(&self, shader: &BlendShader) -> &wgpu::RenderPipeline {
-        &self.blend_shaders[shader]
+    pub(super) fn blend(&self, composition: &Composition) -> &wgpu::RenderPipeline {
+        &self.compositions[composition]
     }
 
     pub(super) fn present(

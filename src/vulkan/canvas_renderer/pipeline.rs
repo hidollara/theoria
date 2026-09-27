@@ -9,7 +9,7 @@ use std::{
 
 use ash::vk;
 
-use crate::canvas::{BlendShader, Composite, composition_shader::Binding};
+use crate::canvas::{Composite, Composition, composition_shader::Binding};
 use crate::canvas_renderer::{
     composition_encoding::encode_space, output_color::OutputColorTransform,
 };
@@ -95,7 +95,7 @@ pub(super) struct Pipelines {
     pub(super) present: Pipeline,
     pub(super) icc_presents: HashMap<(ColorProfile, IccRenderingIntent), Pipeline>,
     pub(super) icc_images: HashMap<(ColorProfile, IccRenderingIntent, bool), Pipeline>,
-    pub(super) blend_shaders: HashMap<BlendShader, Pipeline>,
+    pub(super) compositions: HashMap<Composition, Pipeline>,
 }
 
 impl Pipelines {
@@ -193,22 +193,28 @@ impl Pipelines {
         &self.composites[&composite]
     }
 
-    pub(super) fn blend(&self, shader: &BlendShader) -> &Pipeline {
-        &self.blend_shaders[shader]
+    pub(super) fn blend(&self, composition: &Composition) -> &Pipeline {
+        &self.compositions[composition]
     }
 
-    pub(super) unsafe fn ensure_blend_shaders(
+    pub(super) unsafe fn ensure_compositions(
         &mut self,
         device: &ash::Device,
         image_descriptor_set_layout: vk::DescriptorSetLayout,
-        shaders: &[BlendShader],
+        compositions: &[Composition],
     ) -> Result<()> {
-        for definition in shaders {
-            if self.blend_shaders.contains_key(definition) {
+        let working = ColorProfile::from(self.working_space);
+        for composition in compositions {
+            if self.compositions.contains_key(composition) {
                 continue;
             }
-            let source =
-                definition.wgsl_module_for(Binding::Vulkan, encode_space(self.working_space));
+            let blend = composition.blend().map_or(&working, |blend| blend.space());
+            let source = composition.blend_shader().wgsl_module_for_profiles(
+                Binding::Vulkan,
+                &working,
+                blend,
+                composition.composite_space(),
+            )?;
             let words = compile_fragment(&source)?;
             let bytes: Vec<u8> = words.into_iter().flat_map(u32::to_le_bytes).collect();
             let pipeline = unsafe {
@@ -224,8 +230,8 @@ impl Pipelines {
                     Composite::Copy,
                 )?
             };
-            self.blend_shaders
-                .insert(definition.clone(), pipeline.into_pipeline());
+            self.compositions
+                .insert(composition.clone(), pipeline.into_pipeline());
         }
         Ok(())
     }
@@ -389,7 +395,7 @@ pub(super) unsafe fn create_pipelines(
         present: present.into_pipeline(),
         icc_presents: HashMap::new(),
         icc_images: HashMap::new(),
-        blend_shaders: HashMap::new(),
+        compositions: HashMap::new(),
     })
 }
 
@@ -539,7 +545,7 @@ unsafe fn create_pipeline<'a>(
 mod tests {
     use super::*;
     use crate::{
-        canvas::{Blend, BlendMode},
+        canvas::{Blend, BlendMode, BlendShader},
         color::Srgb,
     };
 
@@ -553,6 +559,16 @@ mod tests {
 
         let shader = BlendShader::wgsl("return backdrop * source;").unwrap();
         let source = shader.wgsl_module(Binding::Vulkan);
+        assert!(!compile_fragment(&source).unwrap().is_empty());
+
+        let source = shader
+            .wgsl_module_for_profiles(
+                Binding::Vulkan,
+                &ColorProfile::from(crate::color::LinearSrgb),
+                &ColorProfile::from(Srgb),
+                &ColorProfile::from(Srgb),
+            )
+            .unwrap();
         assert!(!compile_fragment(&source).unwrap().is_empty());
     }
 

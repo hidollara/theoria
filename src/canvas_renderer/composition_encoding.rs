@@ -3,18 +3,11 @@ use crate::{
     color::RgbColorSpace,
 };
 
-/// Encodes a Canvas composition for the shared Vulkan/WebGPU shader.
-pub(crate) fn encode(composition: &Composition) -> [u32; 4] {
-    let (has_blend, blend_space) = composition
-        .blend()
-        .map(|blend| (1, encode_space(blend.space())))
-        .unwrap_or((0, 0));
-    [
-        has_blend,
-        encode_composite(composition.composite()),
-        blend_space,
-        encode_space(composition.composite_space()),
-    ]
+/// Encodes only the operation flags. Profile conversions are baked into the
+/// selected pipeline rather than assigned fixed numeric space identifiers.
+pub(crate) fn encode(composition: &Composition) -> [u32; 2] {
+    let has_blend = u32::from(composition.blend().is_some());
+    [has_blend, encode_composite(composition.composite())]
 }
 
 fn encode_composite(composite: Composite) -> u32 {
@@ -63,9 +56,9 @@ mod tests {
     }
 
     #[test]
-    fn blend_and_composite_spaces_are_encoded_independently() {
+    fn profiles_are_selected_by_the_pipeline_not_encoded_as_numbers() {
         let composition = Composition::new(Composite::SourceIn, LinearDisplayP3)
             .with_blend(BlendMode::Screen, DisplayP3);
-        assert_eq!(encode(&composition), [1, 5, 2, 3]);
+        assert_eq!(encode(&composition), [1, 5]);
     }
 }

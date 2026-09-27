@@ -26,7 +26,7 @@ mod recording;
 mod resources;
 
 use crate::canvas_renderer::canvas_plan::{
-    collect_blend_shaders_in, collect_images, prepare_colors_in, required_scratch_images_in,
+    collect_compositions_in, collect_images, prepare_colors_in, required_scratch_images_in,
 };
 use crate::canvas_renderer::color_space::PreparedColors;
 use crate::vulkan::one_shot::OneShotCommands;
@@ -284,10 +284,9 @@ impl CanvasRenderer {
                 )?;
             }
         }
-        let mut blend_shaders = Vec::new();
-        collect_blend_shaders_in(canvas, &mut blend_shaders, self.working_space);
-        self.gpu
-            .ensure_blend_shaders(&self.device, &blend_shaders)?;
+        let mut compositions = Vec::new();
+        collect_compositions_in(canvas, &mut compositions, self.working_space);
+        self.gpu.ensure_compositions(&self.device, &compositions)?;
         self.gpu.ensure_scratch_images(
             &self.device,
             working_format,

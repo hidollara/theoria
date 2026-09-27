@@ -117,7 +117,7 @@ impl ImageVertex {
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub(super) struct CompositionUniform {
-    values: [u32; 4],
+    values: [u32; 2],
 }
 
 impl CompositionUniform {

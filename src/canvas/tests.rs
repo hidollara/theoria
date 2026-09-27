@@ -125,7 +125,7 @@ fn composes_color_fields_in_paint_order_without_a_size() {
     } if Arc::ptr_eq(&source.node, &second.node)
         && composition.blend().is_none()
         && composition.composite() == Composite::SourceOver
-        && composition.composite_space() == LinearSrgb.into()
+        && composition.composite_space() == &LinearSrgb.into()
         && Arc::ptr_eq(&backdrop.node, &first.node)));
 }
 

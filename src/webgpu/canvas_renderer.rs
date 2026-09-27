@@ -9,7 +9,7 @@ use crate::{
     },
     canvas_renderer::{
         canvas_plan::{
-            can_record_directly_in, collect_blend_shaders_in, collect_images, prepare_colors_in,
+            can_record_directly_in, collect_compositions_in, collect_images, prepare_colors_in,
             required_scratch_images_in,
         },
         color_space::PreparedColors,
@@ -18,7 +18,7 @@ use crate::{
         path_sampling::PathSampler,
         view_space::screen_space_tolerance,
     },
-    color::{Color, IccProfile, IccRenderingIntent, Opacity, RgbColorSpace, Srgb},
+    color::{Color, ColorProfile, IccProfile, IccRenderingIntent, Opacity, RgbColorSpace, Srgb},
     geometry::Point,
     path::Path,
     surface::{SurfaceSize, Viewport},
@@ -251,10 +251,10 @@ impl CanvasRenderer {
             )
             .into());
         }
-        let mut blend_shaders = Vec::new();
-        collect_blend_shaders_in(canvas, &mut blend_shaders, self.working_space);
+        let mut compositions = Vec::new();
+        collect_compositions_in(canvas, &mut compositions, self.working_space);
         self.pipelines
-            .ensure_blend_shaders(&self.device, &blend_shaders);
+            .ensure_compositions(&self.device, &compositions)?;
         self.ensure_scratch_images(
             target.size,
             required_scratch_images_in(canvas, self.working_space),
@@ -401,7 +401,8 @@ impl CanvasRecorder<'_> {
                 self.render_node(accumulator, backdrop, canvas_to_root);
                 if composition.blend().is_none()
                     && composition.composite() == Composite::SourceOver
-                    && composition.composite_space() == self.prepared.working_space()
+                    && composition.composite_space()
+                        == &ColorProfile::from(self.prepared.working_space())
                     && can_record_directly_in(source, self.prepared.working_space())
                 {
                     self.render_node(accumulator, source, canvas_to_root);
@@ -544,7 +545,7 @@ impl CanvasRecorder<'_> {
             ..Default::default()
         });
         set_full_region(&mut pass, self.size);
-        pass.set_pipeline(self.pipelines.blend(composition.blend_shader()));
+        pass.set_pipeline(self.pipelines.blend(composition));
         pass.set_bind_group(0, &destination_binding, &[]);
         pass.set_bind_group(1, &source_binding, &[]);
         pass.set_bind_group(2, &operation_binding, &[]);

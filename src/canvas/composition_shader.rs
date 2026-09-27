@@ -15,7 +15,7 @@ pub(crate) enum Binding {
 }
 
 impl Binding {
-    fn declaration(self) -> &'static str {
+    pub(crate) fn declaration(self) -> &'static str {
         match self {
             Self::WebGpu => "@group(2) @binding(0) var<uniform> operation: CompositionOperation;",
             Self::Vulkan => "var<immediate> operation: CompositionOperation;",
@@ -40,17 +40,24 @@ pub(crate) fn operation(helpers: &str, body: &str) -> String {
 }
 
 pub(crate) fn assemble(binding: Binding, helpers: &str, body: &str) -> String {
-    assemble_for(binding, helpers, body, 1)
+    let conversions = r#"
+fn working_to_composite(value: vec3<f32>) -> vec3<f32> { return value; }
+fn composite_to_working(value: vec3<f32>) -> vec3<f32> { return value; }
+fn working_to_blend(value: vec3<f32>) -> vec3<f32> { return value; }
+fn blend_to_composite(value: vec3<f32>) -> vec3<f32> { return value; }
+"#;
+    assemble_with_conversions(binding, helpers, body, conversions)
 }
 
-pub(crate) fn assemble_for(
+/// Assembles a module whose color conversions have been lowered from profiles.
+pub(crate) fn assemble_with_conversions(
     binding: Binding,
     helpers: &str,
     body: &str,
-    working_space: u32,
+    conversions: &str,
 ) -> String {
+    let context = CONTEXT.replace("// @theoria-rgb-conversions", conversions);
     let operation = operation(helpers, body);
-    let context = crate::rgb_shader::assemble_for(CONTEXT, working_space);
     let fragments = [&*context, binding.declaration(), &operation, FRAGMENT];
     let capacity = fragments.iter().map(|fragment| fragment.len() + 1).sum();
     let mut source = String::with_capacity(capacity);

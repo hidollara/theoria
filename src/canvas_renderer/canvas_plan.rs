@@ -1,9 +1,9 @@
 use super::color_space::PreparedColors;
 use crate::canvas::{
-    BlendShader, Canvas, CanvasIccColorError, CanvasNode, ColorField, Composite, CoverageNode,
+    Canvas, CanvasIccColorError, CanvasNode, ColorField, Composite, Composition, CoverageNode,
     Draw, image::Image,
 };
-use crate::color::RgbColorSpace;
+use crate::color::{ColorProfile, RgbColorSpace};
 
 /// Resolves fallible authored colors before either backend starts recording.
 /// The converted values belong to this render, not to the Canvas definition.
@@ -96,24 +96,24 @@ fn prepare_color_field(
 /// Collects the blend programs needed to record this Canvas. Canvas images are
 /// materialized separately and therefore run their own collection pass.
 #[cfg(test)]
-pub(crate) fn collect_blend_shaders(canvas: &Canvas, shaders: &mut Vec<BlendShader>) {
-    collect_blend_shaders_in(canvas, shaders, RgbColorSpace::LinearSrgb);
+pub(crate) fn collect_compositions(canvas: &Canvas, compositions: &mut Vec<Composition>) {
+    collect_compositions_in(canvas, compositions, RgbColorSpace::LinearSrgb);
 }
 
-pub(crate) fn collect_blend_shaders_in(
+pub(crate) fn collect_compositions_in(
     canvas: &Canvas,
-    shaders: &mut Vec<BlendShader>,
+    compositions: &mut Vec<Composition>,
     working_space: RgbColorSpace,
 ) {
     match canvas.node() {
         CanvasNode::Draw(draw) => {
-            collect_color_field_blend_shaders(&draw.source, shaders, working_space);
+            collect_color_field_compositions(&draw.source, compositions, working_space);
             if let CoverageNode::AlphaOf(source) = draw.coverage.node() {
-                collect_color_field_blend_shaders(source, shaders, working_space);
+                collect_color_field_compositions(source, compositions, working_space);
             }
         }
         CanvasNode::Transform { content, .. } => {
-            collect_blend_shaders_in(content, shaders, working_space)
+            collect_compositions_in(content, compositions, working_space)
         }
         CanvasNode::Composite {
             backdrop,
@@ -121,24 +121,23 @@ pub(crate) fn collect_blend_shaders_in(
             composition,
         } => {
             if composition.requires_destination_read_in(working_space) {
-                let shader = composition.blend_shader();
-                if !shaders.contains(shader) {
-                    shaders.push(shader.clone());
+                if !compositions.contains(composition) {
+                    compositions.push(composition.clone());
                 }
             }
-            collect_blend_shaders_in(backdrop, shaders, working_space);
-            collect_blend_shaders_in(source, shaders, working_space);
+            collect_compositions_in(backdrop, compositions, working_space);
+            collect_compositions_in(source, compositions, working_space);
         }
     }
 }
 
-fn collect_color_field_blend_shaders(
+fn collect_color_field_compositions(
     source: &ColorField,
-    shaders: &mut Vec<BlendShader>,
+    compositions: &mut Vec<Composition>,
     working_space: RgbColorSpace,
 ) {
     if let ColorField::Canvas(canvas) = source {
-        collect_blend_shaders_in(canvas, shaders, working_space);
+        collect_compositions_in(canvas, compositions, working_space);
     }
 }
 
@@ -214,7 +213,7 @@ fn additional_scratch_images(canvas: &Canvas, working_space: RgbColorSpace) -> u
             additional_scratch_images(backdrop, working_space)
                 + if composition.blend().is_none()
                     && composition.composite() == Composite::SourceOver
-                    && composition.composite_space() == working_space
+                    && composition.composite_space() == &ColorProfile::from(working_space)
                     && can_record_directly_in(source, working_space)
                 {
                     additional_scratch_images(source, working_space)
@@ -241,7 +240,7 @@ pub(crate) fn can_record_directly_in(canvas: &Canvas, working_space: RgbColorSpa
             composition,
         } if composition.blend().is_none()
             && composition.composite() == Composite::SourceOver
-            && composition.composite_space() == working_space =>
+            && composition.composite_space() == &ColorProfile::from(working_space) =>
         {
             can_record_directly_in(backdrop, working_space)
                 && can_record_directly_in(source, working_space)
@@ -261,7 +260,7 @@ fn required_color_field_scratch_images(source: &ColorField, working_space: RgbCo
 mod tests {
     use super::*;
     use crate::{
-        canvas::{Blend, BlendMode, Composition, Coverage},
+        canvas::{BlendMode, Composition, Coverage},
         color::{Color, LinearSrgb, Opacity, Srgb},
     };
 
@@ -282,11 +281,34 @@ mod tests {
         let canvas =
             nonlinear.composite(blended, Composition::new(Composite::SourceOver, LinearSrgb));
 
-        let mut shaders = Vec::new();
-        collect_blend_shaders(&canvas, &mut shaders);
-        assert_eq!(shaders.len(), 2);
-        assert!(shaders.contains(BlendShader::identity()));
-        assert!(shaders.contains(Blend::new(BlendMode::Multiply, Srgb).shader()));
+        let mut compositions = Vec::new();
+        collect_compositions(&canvas, &mut compositions);
+        assert_eq!(compositions.len(), 2);
+        assert!(compositions.contains(&Composition::new(Composite::SourceOver, Srgb)));
+        assert!(
+            compositions.contains(
+                &Composition::new(Composite::SourceOver, LinearSrgb)
+                    .with_blend(BlendMode::Multiply, Srgb)
+            )
+        );
+    }
+
+    #[test]
+    fn distinct_profile_handles_keep_distinct_composition_pipelines() {
+        let leaf = || {
+            Canvas::draw(
+                Color::new(Srgb, [64_u8, 128, 255], Opacity::<u8>::ONE),
+                Coverage::all(),
+            )
+        };
+        let first = ColorProfile::new(Srgb);
+        let second = ColorProfile::new(Srgb);
+        let canvas = leaf()
+            .composite(leaf(), Composition::new(Composite::SourceOver, &first))
+            .composite(leaf(), Composition::new(Composite::SourceOver, &second));
+        let mut compositions = Vec::new();
+        collect_compositions(&canvas, &mut compositions);
+        assert_eq!(compositions.len(), 2);
     }
 
     #[test]

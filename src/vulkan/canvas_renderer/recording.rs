@@ -92,7 +92,8 @@ impl<'a> CanvasRecorder<'a> {
                 self.render_node(accumulator, backdrop, canvas_to_root);
                 if composition.blend().is_none()
                     && composition.composite() == Composite::SourceOver
-                    && composition.composite_space() == self.working_space
+                    && composition.composite_space()
+                        == &crate::color::ColorProfile::from(self.working_space)
                     && can_record_directly_in(source, self.working_space)
                 {
                     self.render_node(accumulator, source, canvas_to_root);

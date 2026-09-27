@@ -5,17 +5,14 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let destination_working = straight_rgb(d);
     let source_working = straight_rgb(s);
 
-    let source_composite = from_working(source_working, operation.composite_space);
-    let destination_composite = from_working(destination_working, operation.composite_space);
+    let source_composite = working_to_composite(source_working);
+    let destination_composite = working_to_composite(destination_working);
     var blended_composite = source_composite;
     if operation.has_blend != 0u {
-        let destination_blend = from_working(destination_working, operation.blend_space);
-        let source_blend = from_working(source_working, operation.blend_space);
+        let destination_blend = working_to_blend(destination_working);
+        let source_blend = working_to_blend(source_working);
         let blended = theoria_blend(destination_blend, source_blend);
-        blended_composite = from_working(
-            to_working(blended, operation.blend_space),
-            operation.composite_space,
-        );
+        blended_composite = blend_to_composite(blended);
     }
 
     // Blend operates on straight RGB. Alpha weighting belongs to composition,
@@ -43,6 +40,6 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     if output_alpha <= 0.0 {
         return vec4<f32>(0.0);
     }
-    let output_working = to_working(output_composite / output_alpha, operation.composite_space);
+    let output_working = composite_to_working(output_composite / output_alpha);
     return vec4<f32>(output_working * output_alpha, output_alpha);
 }
