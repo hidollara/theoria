@@ -79,6 +79,50 @@ fn working_to_linear_srgb(value: vec3<f32>) -> vec3<f32> {
     Ok(source.replacen(MARKER, &definitions, 1))
 }
 
+pub(crate) fn assemble_output_for(
+    source: &str,
+    working_profile: &ColorProfile,
+    output_profile: &ColorProfile,
+    output_intent: IccRenderingIntent,
+) -> Result<String, Box<dyn std::error::Error>> {
+    if working_profile.space().channels() != 3 || output_profile.space().channels() != 3 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Canvas output requires three-channel profiles",
+        )
+        .into());
+    }
+    assert_eq!(source.matches(MARKER).count(), 1);
+    let composition_profile = ColorProfile::from(LinearSrgb);
+    let relative = IccRenderingIntent::RelativeColorimetric;
+    let to_composition =
+        connect_profiles(working_profile, &composition_profile, relative, relative)?;
+    let to_output = connect_profiles(
+        &composition_profile,
+        output_profile,
+        relative,
+        output_intent,
+    )?;
+    let definitions = format!(
+        "{}{}\n\
+         fn rgb_to_array(value: vec3<f32>) -> array<f32, 3> {{\n\
+             return array<f32, 3>(value.r, value.g, value.b);\n\
+         }}\n\
+         fn array_to_rgb(value: array<f32, 3>) -> vec3<f32> {{\n\
+             return vec3<f32>(value[0], value[1], value[2]);\n\
+         }}\n\
+         fn working_to_composition(value: vec3<f32>) -> vec3<f32> {{\n\
+             return array_to_rgb(theoria_transfer_0(rgb_to_array(value)));\n\
+         }}\n\
+         fn composition_to_output(value: vec3<f32>) -> vec3<f32> {{\n\
+             return array_to_rgb(theoria_transfer_1(rgb_to_array(value)));\n\
+         }}\n",
+        to_composition.transfer().wgsl(0)?,
+        to_output.transfer().wgsl(1)?,
+    );
+    Ok(source.replacen(MARKER, &definitions, 1))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -100,19 +144,15 @@ mod tests {
             LinearDisplayP3.into(),
         ];
         for profile in profiles {
-            for template in [
-                include_str!("../shaders/webgpu/image.wgsl"),
-                include_str!("../shaders/canvas_renderer/present.wgsl"),
-            ] {
-                let source = assemble_for(template, &profile).unwrap();
-                let module = naga::front::wgsl::parse_str(&source).unwrap();
-                naga::valid::Validator::new(
-                    naga::valid::ValidationFlags::all(),
-                    naga::valid::Capabilities::all(),
-                )
-                .validate(&module)
-                .unwrap();
-            }
+            let source =
+                assemble_for(include_str!("../shaders/webgpu/image.wgsl"), &profile).unwrap();
+            let module = naga::front::wgsl::parse_str(&source).unwrap();
+            naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::all(),
+            )
+            .validate(&module)
+            .unwrap();
         }
     }
 
@@ -120,6 +160,24 @@ mod tests {
     fn distinct_profile_handle_can_be_used_as_working_profile() {
         let profile = crate::test_support::distinct_color_profile(Srgb);
         let source = assemble_for(include_str!("../shaders/webgpu/image.wgsl"), &profile).unwrap();
+        let module = naga::front::wgsl::parse_str(&source).unwrap();
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::all(),
+        )
+        .validate(&module)
+        .unwrap();
+    }
+
+    #[test]
+    fn output_shader_accepts_distinct_working_and_destination_profiles() {
+        let source = assemble_output_for(
+            include_str!("../shaders/canvas_renderer/output_image.wgsl"),
+            &DisplayP3.into(),
+            &Srgb.into(),
+            IccRenderingIntent::RelativeColorimetric,
+        )
+        .unwrap();
         let module = naga::front::wgsl::parse_str(&source).unwrap();
         naga::valid::Validator::new(
             naga::valid::ValidationFlags::all(),

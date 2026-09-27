@@ -14,14 +14,13 @@ use crate::{
         },
         color_space::PreparedColors,
         mesh_paint::paint_triangle_prepared,
-        output_color::OutputColorTransform,
         path_sampling::PathSampler,
         view_space::screen_space_tolerance,
     },
     color::{Color, ColorProfile, IccProfile, IccRenderingIntent, LinearSrgb, Opacity, Srgb},
     geometry::Point,
     path::Path,
-    surface::{SurfaceSize, Viewport},
+    surface::{OutputAlpha, OutputImage, SurfaceSize, Viewport},
     tessellation::{
         DEFAULT_TESSELLATION_TOLERANCE, Mesh, tessellate_fill_with_tolerance,
         tessellate_stroke_with_tolerance,
@@ -35,7 +34,9 @@ mod encoding;
 mod image;
 mod pipeline;
 
-use encoding::{CompositionUniform, ImageVertex, TriangleVertex, bytes_of, bytes_of_slice};
+use encoding::{
+    CompositionUniform, ImageVertex, OutputUniform, TriangleVertex, bytes_of, bytes_of_slice,
+};
 use image::{GpuImage, GpuImageColor, ImageCache, create_working_image};
 use pipeline::{Pipelines, WORKING_FORMAT};
 
@@ -47,7 +48,7 @@ pub struct RenderTarget<'a> {
     format: wgpu::TextureFormat,
     size: SurfaceSize,
     clear_color: CanvasColor,
-    output_profile: Option<(&'a IccProfile, IccRenderingIntent)>,
+    output: OutputImage,
     preserve_working: bool,
 }
 
@@ -63,16 +64,37 @@ impl<'a> RenderTarget<'a> {
             format,
             size,
             clear_color: clear_color.into(),
-            output_profile: None,
+            output: if matches!(
+                format,
+                wgpu::TextureFormat::Rgba8UnormSrgb | wgpu::TextureFormat::Bgra8UnormSrgb
+            ) {
+                OutputImage::new(
+                    Srgb,
+                    IccRenderingIntent::RelativeColorimetric,
+                    OutputAlpha::Straight,
+                )
+            } else {
+                OutputImage::new(
+                    LinearSrgb,
+                    IccRenderingIntent::RelativeColorimetric,
+                    OutputAlpha::Premultiplied,
+                )
+            },
             preserve_working: false,
         }
     }
 
     /// Encodes the final working image into ICC device RGB coordinates.
-    /// Use an unsigned-normalized, non-sRGB target format so the GPU does not
-    /// apply a second sRGB transfer curve to the profile's encoded values.
-    pub fn with_icc_output(mut self, profile: &'a IccProfile, intent: IccRenderingIntent) -> Self {
-        self.output_profile = Some((profile, intent));
+    /// The target format must not perform an additional sRGB encoding.
+    pub fn with_icc_output(mut self, profile: &IccProfile, intent: IccRenderingIntent) -> Self {
+        self.output = OutputImage::new(profile.profile(), intent, OutputAlpha::Premultiplied);
+        self
+    }
+
+    /// Selects the color and alpha meaning of the destination pixels.
+    /// The WebGPU texture format must be compatible with this description.
+    pub fn with_output(mut self, output: OutputImage) -> Self {
+        self.output = output;
         self
     }
 
@@ -246,24 +268,33 @@ impl CanvasRenderer {
         view: CanvasView,
         prepared: &PreparedColors,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let output = target
-            .output_profile
-            .map(|(profile, intent)| {
-                OutputColorTransform::new(profile, intent, &self.working_profile)
-            })
-            .transpose()?;
-        if output.is_some()
-            && matches!(
-                target.format,
-                wgpu::TextureFormat::Rgba8UnormSrgb | wgpu::TextureFormat::Bgra8UnormSrgb
-            )
-        {
+        let output = (!target.preserve_working).then_some(&target.output);
+        let hardware_srgb = matches!(
+            target.format,
+            wgpu::TextureFormat::Rgba8UnormSrgb | wgpu::TextureFormat::Bgra8UnormSrgb
+        );
+        if hardware_srgb && output.is_some_and(|output| output.profile != Srgb.into()) {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
-                "ICC output requires a non-sRGB render target format",
+                "an sRGB attachment requires an sRGB output profile",
             )
             .into());
         }
+        if hardware_srgb && output.is_some_and(|output| output.alpha == OutputAlpha::Premultiplied)
+        {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "an sRGB attachment cannot encode premultiplied sRGB components",
+            )
+            .into());
+        }
+        let shader_profile = output.map(|output| {
+            if hardware_srgb {
+                ColorProfile::from(LinearSrgb)
+            } else {
+                output.profile.clone()
+            }
+        });
         let mut compositions = Vec::new();
         collect_compositions_in(canvas, &mut compositions, &self.working_profile);
         self.pipelines
@@ -302,40 +333,71 @@ impl CanvasRenderer {
             &self.scratch_images[source].view,
             "theoria WebGPU present source",
         );
-        let present = match (target.output_profile, &output) {
-            (Some((profile, intent)), Some(transform)) => self.pipelines.icc_present(
-                &self.device,
-                target.format,
-                profile,
-                intent,
-                transform,
-            )?,
-            _ if target.preserve_working => &self.pipelines.composites[&Composite::SourceOver],
-            _ => self.pipelines.present(&self.device, target.format)?,
+        let output_uniform_layout = self.pipelines.output_uniform_layout.clone();
+        let present = match (output, &shader_profile) {
+            (Some(output), Some(profile)) => {
+                self.pipelines
+                    .output(&self.device, target.format, profile, output.intent)?
+            }
+            (None, _) => &self.pipelines.composites[&Composite::SourceOver],
+            _ => unreachable!("an external target specifies an output image"),
         };
         let clear = crate::canvas_renderer::color_space::lower_straight_color_in(
             &target.clear_color,
             &self.working_profile,
         );
-        let clear = match &output {
-            Some(transform) => transform.convert_premultiplied(clear)?,
-            None if target.preserve_working => clear,
-            None => crate::canvas_renderer::color_space::convert_premultiplied_space(
+        let clear = match output {
+            Some(_) => crate::canvas_renderer::color_space::convert_premultiplied_space(
                 clear,
                 &self.working_profile,
                 &ColorProfile::from(LinearSrgb),
             )?,
+            None => clear,
         };
+        let output_binding = output.map(|output| {
+            let uniform = OutputUniform::new(clear, output.alpha);
+            let buffer = self
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("theoria WebGPU output parameters"),
+                    contents: bytes_of(&uniform),
+                    usage: wgpu::BufferUsages::UNIFORM,
+                });
+            self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("theoria WebGPU output parameters"),
+                layout: &output_uniform_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: buffer.as_entire_binding(),
+                }],
+            })
+        });
         let attachment = Some(wgpu::RenderPassColorAttachment {
             view: target.view,
             depth_slice: None,
             resolve_target: None,
             ops: wgpu::Operations {
                 load: wgpu::LoadOp::Clear(wgpu::Color {
-                    r: f64::from(clear[0]),
-                    g: f64::from(clear[1]),
-                    b: f64::from(clear[2]),
-                    a: f64::from(clear[3]),
+                    r: if output.is_some() {
+                        0.0
+                    } else {
+                        f64::from(clear[0])
+                    },
+                    g: if output.is_some() {
+                        0.0
+                    } else {
+                        f64::from(clear[1])
+                    },
+                    b: if output.is_some() {
+                        0.0
+                    } else {
+                        f64::from(clear[2])
+                    },
+                    a: if output.is_some() {
+                        0.0
+                    } else {
+                        f64::from(clear[3])
+                    },
                 }),
                 store: wgpu::StoreOp::Store,
             },
@@ -347,6 +409,9 @@ impl CanvasRenderer {
         });
         pass.set_pipeline(present);
         pass.set_bind_group(0, &source_binding, &[]);
+        if let Some(binding) = &output_binding {
+            pass.set_bind_group(1, binding, &[]);
+        }
         pass.draw(0..3, 0..1);
         drop(pass);
 
@@ -1005,6 +1070,18 @@ mod tests {
         );
         if let Some(pixel) = render_pixel(&canvas) {
             assert_eq!(pixel, [0, 0, 0, 255]);
+        }
+    }
+
+    #[test]
+    fn srgb_target_unassociates_low_alpha_before_quantization() {
+        let canvas = Canvas::draw(
+            Color::new(Srgb, [255_u8, 0, 0], Opacity::<u8>::from(1)),
+            Coverage::all(),
+        );
+        if let Some(pixel) = render_pixel(&canvas) {
+            assert!(pixel[0] >= 250, "rgba={pixel:?}");
+            assert_eq!(pixel[3], 1, "rgba={pixel:?}");
         }
     }
 

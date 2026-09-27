@@ -8,6 +8,34 @@ use crate::{
 };
 
 use super::super::color::PremultipliedWorkingRgba;
+use crate::surface::OutputAlpha;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub(super) struct OutputPushConstants {
+    clear_color: [f32; 4],
+    alpha_mode: u32,
+    _padding: [u32; 3],
+}
+
+impl OutputPushConstants {
+    pub(super) fn new(clear_color: PremultipliedWorkingRgba, alpha: OutputAlpha) -> Self {
+        let alpha_mode = match alpha {
+            OutputAlpha::Premultiplied => 0,
+            OutputAlpha::Straight => 1,
+            OutputAlpha::Opaque => 2,
+        };
+        Self {
+            clear_color: clear_color.components(),
+            alpha_mode,
+            _padding: [0; 3],
+        }
+    }
+
+    pub(super) fn as_bytes(&self) -> &[u8] {
+        unsafe { slice::from_raw_parts((self as *const Self).cast(), size_of::<Self>()) }
+    }
+}
 
 #[repr(C)]
 #[derive(Clone, Copy)]

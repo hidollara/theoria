@@ -1,9 +1,9 @@
 //! Conversion boundaries for the Vulkan Canvas color pipeline.
 //!
 //! Public colors and CPU images use straight alpha. Vulkan Canvas evaluation
-//! lowers them into premultiplied renderer-selected RGB exactly once, keeps that working
-//! representation through interpolation and compositing, and converts it back
-//! only when a CPU-readable image is requested.
+//! lowers them into premultiplied renderer-selected RGB exactly once and keeps
+//! that working representation through interpolation and compositing. The
+//! destination image's color and alpha contract is applied at output.
 
 use crate::canvas::CanvasColor;
 use crate::canvas_renderer::{WorkingColor, color_space};
@@ -65,22 +65,6 @@ impl WorkingColor for PremultipliedWorkingRgba {
     }
 }
 
-/// Converts quantized linear premultiplied RGBA readback into the public
-/// straight-alpha sRGBA8 image representation.
-pub(super) fn encode_linear_premultiplied_rgba8_as_straight_srgba8(pixels: &mut [u8]) {
-    for pixel in pixels.chunks_exact_mut(4) {
-        let alpha = f32::from(pixel[3]) / 255.0;
-        if alpha == 0.0 {
-            pixel[..3].fill(0);
-            continue;
-        }
-        for component in &mut pixel[..3] {
-            let linear = (f32::from(*component) / 255.0 / alpha).clamp(0.0, 1.0);
-            *component = (color_space::encode_linear_srgb_component(linear) * 255.0).round() as u8;
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -138,23 +122,5 @@ mod tests {
                 .components(),
             [0.5, 0.0, 0.0, 0.5]
         );
-    }
-
-    #[test]
-    fn readback_is_unassociated_and_encoded_as_srgb() {
-        let mut pixels = [128, 0, 0, 128];
-
-        encode_linear_premultiplied_rgba8_as_straight_srgba8(&mut pixels);
-
-        assert_eq!(pixels, [255, 0, 0, 128]);
-    }
-
-    #[test]
-    fn transparent_readback_discards_unobservable_rgb() {
-        let mut pixels = [255, 128, 64, 0];
-
-        encode_linear_premultiplied_rgba8_as_straight_srgba8(&mut pixels);
-
-        assert_eq!(pixels, [0; 4]);
     }
 }

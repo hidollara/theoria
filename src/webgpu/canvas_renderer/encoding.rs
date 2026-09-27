@@ -4,6 +4,7 @@ use crate::{
     canvas::{CanvasView, ImageExtend, ImagePattern},
     canvas_renderer::view_space::transformed_point_to_clip,
     geometry::Point,
+    surface::OutputAlpha,
     transform::Projective2,
     webgpu::color::PremultipliedWorkingRgba,
 };
@@ -124,6 +125,29 @@ impl CompositionUniform {
     pub(super) fn new(composition: &crate::canvas::Composition) -> Self {
         Self {
             values: crate::canvas_renderer::composition_encoding::encode(composition),
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub(super) struct OutputUniform {
+    clear_color: [f32; 4],
+    alpha_mode: u32,
+    _padding: [u32; 3],
+}
+
+impl OutputUniform {
+    pub(super) fn new(clear_color: [f32; 4], alpha: OutputAlpha) -> Self {
+        let alpha_mode = match alpha {
+            OutputAlpha::Premultiplied => 0,
+            OutputAlpha::Straight => 1,
+            OutputAlpha::Opaque => 2,
+        };
+        Self {
+            clear_color,
+            alpha_mode,
+            _padding: [0; 3],
         }
     }
 }

@@ -10,6 +10,21 @@ use super::device::PresentationDevice;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
+fn select_surface_format(formats: &[vk::SurfaceFormatKHR]) -> Option<vk::SurfaceFormatKHR> {
+    [
+        vk::Format::B8G8R8A8_SRGB,
+        vk::Format::R8G8B8A8_SRGB,
+        vk::Format::B8G8R8A8_UNORM,
+        vk::Format::R8G8B8A8_UNORM,
+    ]
+    .into_iter()
+    .find_map(|preferred| {
+        formats.iter().copied().find(|format| {
+            format.format == preferred && format.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR
+        })
+    })
+}
+
 struct SwapchainConstruction<'a> {
     device: &'a PresentationDevice,
     command_pool: vk::CommandPool,
@@ -96,14 +111,12 @@ impl SwapchainResources {
                 .surface_loader
                 .get_physical_device_surface_formats(device.physical_device, device.surface)?
         };
-        let surface_format = formats
-            .iter()
-            .copied()
-            .find(|format| {
-                format.format == vk::Format::B8G8R8A8_SRGB
-                    && format.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR
-            })
-            .unwrap_or(formats[0]);
+        let surface_format = select_surface_format(&formats).ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "no supported sRGB swapchain surface format",
+            )
+        })?;
         let extent = if capabilities.current_extent.width != u32::MAX {
             capabilities.current_extent
         } else {
@@ -273,4 +286,23 @@ pub(super) struct SurfaceRenderTarget {
     pub(super) image_view: vk::ImageView,
     pub(super) format: vk::Format,
     pub(super) extent: vk::Extent2D,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn swapchain_requires_a_matching_srgb_surface_color_space() {
+        let p3 = vk::SurfaceFormatKHR {
+            format: vk::Format::B8G8R8A8_SRGB,
+            color_space: vk::ColorSpaceKHR::DISPLAY_P3_NONLINEAR_EXT,
+        };
+        let srgb = vk::SurfaceFormatKHR {
+            format: vk::Format::B8G8R8A8_UNORM,
+            color_space: vk::ColorSpaceKHR::SRGB_NONLINEAR,
+        };
+        assert!(select_surface_format(&[p3]).is_none());
+        assert_eq!(select_surface_format(&[p3, srgb]), Some(srgb));
+    }
 }

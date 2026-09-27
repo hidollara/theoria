@@ -8,9 +8,8 @@ use crate::{
         canvas_image::CanvasImage,
         image::{Image, ImageKind},
     },
-    canvas_renderer::output_color::OutputColorTransform,
-    color::{ColorProfile, IccProfile, IccRenderingIntent, LinearSrgb},
-    surface::Viewport,
+    color::{ColorProfile, LinearSrgb, Srgb},
+    surface::{OutputAlpha, OutputImage, Viewport},
 };
 
 use super::{
@@ -74,7 +73,7 @@ impl CanvasRenderer {
         let prepared = prepare_colors_in(canvas, &self.working_profile)?;
         let clear_color = target.clear_color();
         clear_color.try_straight_rgba_in(&self.working_profile)?;
-        let output_profile = target.output_profile();
+        let output = target.output().clone();
         self.materialize_canvas_resources(canvas)?;
         let (image_view, format, extent) = target.surface();
         self.record_to_image_view(
@@ -91,7 +90,7 @@ impl CanvasRenderer {
                     &self.working_profile,
                 ),
             ),
-            output_profile,
+            Some(&output),
             false,
             &prepared,
         )
@@ -224,27 +223,36 @@ impl CanvasRenderer {
         canvas: &Canvas,
         view: CanvasView,
         clear_color: PremultipliedWorkingRgba,
-        output_profile: Option<(&IccProfile, IccRenderingIntent)>,
+        output: Option<&OutputImage>,
         preserve_working: bool,
         prepared: &PreparedColors,
     ) -> Result<()> {
-        let output = output_profile
-            .map(|(profile, intent)| {
-                OutputColorTransform::new(profile, intent, &self.working_profile)
-            })
-            .transpose()?;
-        if output.is_some()
-            && !matches!(
-                format,
-                vk::Format::R8G8B8A8_UNORM | vk::Format::B8G8R8A8_UNORM
-            )
-        {
+        let hardware_srgb = matches!(
+            format,
+            vk::Format::R8G8B8A8_SRGB | vk::Format::B8G8R8A8_SRGB
+        );
+        if hardware_srgb && output.is_some_and(|output| output.profile != Srgb.into()) {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
-                "ICC output requires an RGBA8 or BGRA8 non-sRGB target",
+                "an sRGB attachment requires an sRGB output profile",
             )
             .into());
         }
+        if hardware_srgb && output.is_some_and(|output| output.alpha == OutputAlpha::Premultiplied)
+        {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "an sRGB attachment cannot encode premultiplied sRGB components",
+            )
+            .into());
+        }
+        let shader_profile = output.map(|output| {
+            if hardware_srgb {
+                ColorProfile::from(LinearSrgb)
+            } else {
+                output.profile.clone()
+            }
+        });
         let working_format = self.working_format();
         let sample_count = preferred_sample_count(&self.device, working_format);
         let target_region = target_region(viewport, extent);
@@ -272,7 +280,7 @@ impl CanvasRenderer {
             }
             pipelines.retain_icc_images(self.device.raw(), &active_icc);
         }
-        if let (Some((profile, intent)), Some(transform)) = (output_profile, &output) {
+        if let (Some(output), Some(profile)) = (output, &shader_profile) {
             let descriptor_layout = self
                 .gpu
                 .image_cache
@@ -280,12 +288,11 @@ impl CanvasRenderer {
                 .unwrap()
                 .descriptor_set_layout();
             unsafe {
-                self.gpu.pipelines.as_mut().unwrap().ensure_icc_present(
+                self.gpu.pipelines.as_mut().unwrap().ensure_output(
                     self.device.raw(),
                     descriptor_layout,
                     profile,
-                    intent,
-                    transform,
+                    output.intent,
                 )?;
             }
         }
@@ -300,23 +307,22 @@ impl CanvasRenderer {
             required_scratch_images_in(canvas, &self.working_profile),
         )?;
         let pipelines = self.gpu.pipelines.as_ref().unwrap();
-        let present_pipeline = match output_profile {
-            Some((profile, intent)) => pipelines.icc_present(profile, intent),
-            None if preserve_working => pipelines.composite(crate::canvas::Composite::SourceOver),
-            None => &pipelines.present,
+        let present_pipeline = match (output, &shader_profile) {
+            (Some(output), Some(profile)) => pipelines.output(profile, output.intent),
+            (None, _) if preserve_working => {
+                pipelines.composite(crate::canvas::Composite::SourceOver)
+            }
+            _ => unreachable!("an external target specifies an output image"),
         };
-        let clear_color = match &output {
-            Some(transform) => PremultipliedWorkingRgba::from_components(
-                transform.convert_premultiplied(clear_color.components())?,
-            ),
-            None if preserve_working => clear_color,
-            None => PremultipliedWorkingRgba::from_components(
+        let clear_color = match output {
+            Some(_) => PremultipliedWorkingRgba::from_components(
                 crate::canvas_renderer::color_space::convert_premultiplied_space(
                     clear_color.components(),
                     &self.working_profile,
                     &ColorProfile::from(LinearSrgb),
                 )?,
             ),
+            None => clear_color,
         };
         let image_cache = self.gpu.image_cache.as_ref().unwrap();
         let device = self.device.raw();
@@ -336,7 +342,13 @@ impl CanvasRenderer {
             view,
             prepared,
         );
-        recorder.record(canvas, image_view, clear_color, present_pipeline);
+        recorder.record(
+            canvas,
+            image_view,
+            clear_color,
+            present_pipeline,
+            output.map(|output| output.alpha),
+        );
         Ok(())
     }
 

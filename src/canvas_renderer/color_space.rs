@@ -184,8 +184,6 @@ pub(crate) fn lower_straight_color_in(
     [red * alpha, green * alpha, blue * alpha, alpha]
 }
 
-pub(crate) use crate::color::encode_srgb as encode_linear_srgb_component;
-
 pub(super) fn interpolate_premultiplied_rgba(
     first: [f32; 4],
     second: [f32; 4],

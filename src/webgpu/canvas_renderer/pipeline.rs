@@ -7,10 +7,9 @@ use wgpu::util::DeviceExt;
 
 use crate::canvas::{Composite, Composition, composition_shader::Binding};
 use crate::canvas_renderer::icc_image_shader;
-use crate::canvas_renderer::output_color::OutputColorTransform;
 use crate::color::{ColorProfile, IccProfile, IccRenderingIntent};
 
-use super::encoding::{CompositionUniform, ImageVertex, TriangleVertex};
+use super::encoding::{CompositionUniform, ImageVertex, OutputUniform, TriangleVertex};
 
 pub(super) const WORKING_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 
@@ -18,14 +17,13 @@ pub(super) struct Pipelines {
     working_profile: ColorProfile,
     pub(super) texture_layout: wgpu::BindGroupLayout,
     pub(super) blend_uniform_layout: wgpu::BindGroupLayout,
+    pub(super) output_uniform_layout: wgpu::BindGroupLayout,
     pub(super) triangle: wgpu::RenderPipeline,
     pub(super) image: wgpu::RenderPipeline,
     pub(super) composites: HashMap<Composite, wgpu::RenderPipeline>,
     pub(super) mask: wgpu::RenderPipeline,
     compositions: HashMap<Composition, wgpu::RenderPipeline>,
-    presents: HashMap<wgpu::TextureFormat, wgpu::RenderPipeline>,
-    icc_presents:
-        HashMap<(wgpu::TextureFormat, ColorProfile, IccRenderingIntent), wgpu::RenderPipeline>,
+    outputs: HashMap<(wgpu::TextureFormat, ColorProfile, IccRenderingIntent), wgpu::RenderPipeline>,
     icc_images: HashMap<(ColorProfile, IccRenderingIntent, bool), IccImagePipeline>,
 }
 
@@ -73,6 +71,22 @@ impl Pipelines {
                         min_binding_size: wgpu::BufferSize::new(std::mem::size_of::<
                             CompositionUniform,
                         >() as u64),
+                    },
+                    count: None,
+                }],
+            });
+        let output_uniform_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("theoria WebGPU output image"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(
+                            std::mem::size_of::<OutputUniform>() as u64,
+                        ),
                     },
                     count: None,
                 }],
@@ -144,13 +158,13 @@ impl Pipelines {
             working_profile: working_profile.clone(),
             texture_layout,
             blend_uniform_layout,
+            output_uniform_layout,
             triangle,
             image,
             composites,
             mask,
             compositions: HashMap::new(),
-            presents: HashMap::new(),
-            icc_presents: HashMap::new(),
+            outputs: HashMap::new(),
             icc_images: HashMap::new(),
         })
     }
@@ -285,55 +299,42 @@ impl Pipelines {
         &self.compositions[composition]
     }
 
-    pub(super) fn present(
+    pub(super) fn output(
         &mut self,
         device: &wgpu::Device,
         format: wgpu::TextureFormat,
-    ) -> Result<&wgpu::RenderPipeline, Box<dyn std::error::Error>> {
-        if !self.presents.contains_key(&format) {
-            let source = crate::rgb_shader::assemble_for(
-                include_str!("../../../shaders/canvas_renderer/present.wgsl"),
-                &self.working_profile,
-            )?;
-            let shader = shader(device, "theoria WebGPU present shader", source);
-            let pipeline = create_pipeline(
-                device,
-                "theoria WebGPU present pipeline",
-                format,
-                &shader,
-                &[],
-                &[Some(&self.texture_layout)],
-                composite_blend_state(Composite::SourceOver),
-            );
-            self.presents.insert(format, pipeline);
-        }
-        Ok(&self.presents[&format])
-    }
-
-    pub(super) fn icc_present(
-        &mut self,
-        device: &wgpu::Device,
-        format: wgpu::TextureFormat,
-        profile: &IccProfile,
+        profile: &ColorProfile,
         intent: IccRenderingIntent,
-        transform: &OutputColorTransform,
     ) -> Result<&wgpu::RenderPipeline, Box<dyn std::error::Error>> {
-        let key = (format, profile.profile(), intent);
-        if !self.icc_presents.contains_key(&key) {
-            let source = transform.wgsl()?;
-            let module = shader(device, "theoria WebGPU ICC present shader", source);
+        let key = (format, profile.clone(), intent);
+        if !self.outputs.contains_key(&key) {
+            let source = crate::rgb_shader::assemble_output_for(
+                include_str!("../../../shaders/canvas_renderer/output_image.wgsl"),
+                &self.working_profile,
+                profile,
+                intent,
+            )?;
+            // Vulkan uses an immediate; WebGPU binds the same parameters as a uniform.
+            let source = source.replace(
+                "var<immediate> output: OutputParameters;",
+                "@group(1) @binding(0) var<uniform> output: OutputParameters;",
+            );
+            let module = shader(device, "theoria WebGPU output shader", source);
             let pipeline = create_pipeline(
                 device,
-                "theoria WebGPU ICC present pipeline",
+                "theoria WebGPU output pipeline",
                 format,
                 &module,
                 &[],
-                &[Some(&self.texture_layout)],
-                composite_blend_state(Composite::SourceOver),
+                &[
+                    Some(&self.texture_layout),
+                    Some(&self.output_uniform_layout),
+                ],
+                composite_blend_state(Composite::Copy),
             );
-            self.icc_presents.insert(key.clone(), pipeline);
+            self.outputs.insert(key.clone(), pipeline);
         }
-        Ok(&self.icc_presents[&key])
+        Ok(&self.outputs[&key])
     }
 }
 

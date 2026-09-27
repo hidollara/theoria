@@ -7,10 +7,9 @@ use ash::vk;
 use crate::{
     color::{ColorProfile, IccProfile, IccRenderingIntent, LinearSrgb},
     image::{IccRasterImage, Srgba8Image},
-    surface::{SurfaceContent, SurfaceSize, Viewport},
+    surface::{OutputAlpha, OutputImage, SurfaceContent, SurfaceSize, Viewport},
     vulkan::{
         CanvasRenderer,
-        color::encode_linear_premultiplied_rgba8_as_straight_srgba8,
         host_buffer::HostBuffer,
         image::VulkanImage,
         image_layout::transition_image,
@@ -83,8 +82,7 @@ impl ImageSurface {
     /// Evaluates the latest content into one CPU-readable sRGBA8 image.
     pub fn render(&mut self, content: &SurfaceContent) -> Result<Srgba8Image> {
         let size = self.size;
-        let mut pixels = self.render_raw(content, None)?;
-        encode_linear_premultiplied_rgba8_as_straight_srgba8(&mut pixels);
+        let pixels = self.render_raw(content, None)?;
         Ok(Srgba8Image::new(size.width, size.height, pixels)?)
     }
 
@@ -97,8 +95,7 @@ impl ImageSurface {
         intent: IccRenderingIntent,
     ) -> Result<IccRasterImage> {
         let size = self.size;
-        let mut pixels = self.render_raw(content, Some((&profile, intent)))?;
-        unpremultiply_rgba8(&mut pixels);
+        let pixels = self.render_raw(content, Some((&profile, intent)))?;
         Ok(IccRasterImage::new(
             size.width,
             size.height,
@@ -152,10 +149,17 @@ impl ImageSurface {
             self.target.extent,
             content.clear_color(),
         );
-        let target = match output_profile {
-            Some((profile, intent)) => target.with_icc_output(profile, intent),
-            None => target,
+        let output = match output_profile {
+            Some((profile, intent)) => {
+                OutputImage::new(profile.profile(), intent, OutputAlpha::Straight)
+            }
+            None => OutputImage::new(
+                crate::color::Srgb,
+                IccRenderingIntent::RelativeColorimetric,
+                OutputAlpha::Straight,
+            ),
         };
+        let target = target.with_output(output);
         self.renderer.render(
             target,
             Viewport::new(0.0, 0.0, size.width as f32, size.height as f32),
@@ -200,21 +204,6 @@ impl ImageSurface {
     }
 }
 
-fn unpremultiply_rgba8(pixels: &mut [u8]) {
-    for pixel in pixels.chunks_exact_mut(4) {
-        let alpha = pixel[3];
-        if alpha == 0 {
-            pixel[..3].fill(0);
-            continue;
-        }
-        for component in &mut pixel[..3] {
-            *component = (f32::from(*component) * 255.0 / f32::from(alpha))
-                .round()
-                .clamp(0.0, 255.0) as u8;
-        }
-    }
-}
-
 fn pixel_byte_len(size: SurfaceSize) -> Result<usize> {
     if size.width == 0 || size.height == 0 {
         return Err(format!(
@@ -251,6 +240,7 @@ mod tests {
         geometry::Point,
         surface::{SurfaceContent, SurfaceSize},
     };
+    use ash::vk;
 
     #[test]
     fn image_surface_extent_must_be_non_zero_and_fit_memory() {
@@ -329,6 +319,108 @@ mod tests {
         let actual = linear_p3.render(&content).unwrap();
         for (&actual, &expected) in actual.pixels().iter().zip(expected.pixels()) {
             assert!(actual.abs_diff(expected) <= 3, "{actual} != {expected}");
+        }
+    }
+
+    #[test]
+    fn output_composites_before_encoding_and_keeps_straight_alpha() {
+        let size = SurfaceSize {
+            width: 1,
+            height: 1,
+        };
+        let Ok(mut surface) = ImageSurface::new(size) else {
+            return; // Vulkan may be unavailable on the test host.
+        };
+        let view = CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(1.0, 1.0)).unwrap();
+        let content = SurfaceContent::new(
+            Canvas::draw(
+                Color::new(Srgb, [255_u8, 0, 0], Opacity::<u8>::from(128)),
+                Coverage::all(),
+            ),
+            view,
+            Color::new(Srgb, [0_u8, 0, 255], Opacity::<u8>::from(128)),
+        );
+        let result = surface.render(&content).unwrap();
+        let pixel = &result.pixels()[..4];
+        for (&actual, expected) in pixel.iter().zip([213_u8, 0, 156, 192]) {
+            assert!(actual.abs_diff(expected) <= 3, "rgba={pixel:?}");
+        }
+    }
+
+    #[test]
+    fn low_alpha_color_is_unassociated_before_rgba8_quantization() {
+        let size = SurfaceSize {
+            width: 1,
+            height: 1,
+        };
+        let Ok(mut surface) = ImageSurface::new(size) else {
+            return; // Vulkan may be unavailable on the test host.
+        };
+        if !surface
+            .renderer
+            .device()
+            .supports_canvas_working_format(vk::Format::R16G16B16A16_SFLOAT)
+        {
+            return;
+        }
+        let view = CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(1.0, 1.0)).unwrap();
+        let content = SurfaceContent::new(
+            Canvas::draw(
+                Color::new(Srgb, [255_u8, 0, 0], Opacity::<u8>::from(1)),
+                Coverage::all(),
+            ),
+            view,
+            Color::new(Srgb, [0_u8, 0, 0], Opacity::<u8>::from(0)),
+        );
+        let image = surface.render(&content).unwrap();
+        let pixel = &image.pixels()[..4];
+        assert!(pixel[0] >= 250, "rgba={pixel:?}");
+        assert_eq!(pixel[3], 1, "rgba={pixel:?}");
+    }
+
+    #[test]
+    fn icc_output_does_not_quantize_premultiplied_rgb_before_unassociation() {
+        let size = SurfaceSize {
+            width: 1,
+            height: 1,
+        };
+        let Ok(mut surface) = ImageSurface::new(size) else {
+            return; // Vulkan may be unavailable on the test host.
+        };
+        let profile = IccProfile::from_bytes(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/crates/theoria-color/src/color/fixtures/DisplayP3-v4.icc"
+        )))
+        .unwrap();
+        let view = CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(1.0, 1.0)).unwrap();
+        let content = SurfaceContent::new(
+            Canvas::draw(
+                Color::new(Srgb, [255_u8, 0, 0], Opacity::<u8>::from(128)),
+                Coverage::all(),
+            ),
+            view,
+            Color::new(Srgb, [0_u8, 0, 0], Opacity::<u8>::from(0)),
+        );
+        let image = surface
+            .render_icc(
+                &content,
+                profile.clone(),
+                IccRenderingIntent::RelativeColorimetric,
+            )
+            .unwrap();
+        let reference = crate::image::IccRasterImage::from_srgba8(
+            &crate::image::Srgba8Image::new(1, 1, vec![255, 0, 0, 128]).unwrap(),
+            profile,
+            IccRenderingIntent::RelativeColorimetric,
+        )
+        .unwrap();
+        for (&actual, &expected) in image.pixels().iter().zip(reference.pixels()) {
+            assert!(
+                actual.abs_diff(expected) <= 3,
+                "actual={:?} expected={:?}",
+                image.pixels(),
+                reference.pixels()
+            );
         }
     }
 

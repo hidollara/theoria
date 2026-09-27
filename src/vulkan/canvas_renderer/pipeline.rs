@@ -10,10 +10,11 @@ use std::{
 use ash::vk;
 
 use crate::canvas::{Composite, Composition, composition_shader::Binding};
-use crate::canvas_renderer::output_color::OutputColorTransform;
-use crate::color::{ColorProfile, IccProfile, IccRenderingIntent, LinearSrgb};
+use crate::color::{ColorProfile, IccRenderingIntent, LinearSrgb};
 
-use super::encoding::{CompositionPushConstants, ImagePushConstants, TrianglePushConstants};
+use super::encoding::{
+    CompositionPushConstants, ImagePushConstants, OutputPushConstants, TrianglePushConstants,
+};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -90,8 +91,7 @@ pub(super) struct Pipelines {
     pub(super) image: Pipeline,
     pub(super) composites: HashMap<Composite, Pipeline>,
     pub(super) mask: Pipeline,
-    pub(super) present: Pipeline,
-    pub(super) icc_presents: HashMap<(ColorProfile, IccRenderingIntent), Pipeline>,
+    pub(super) outputs: HashMap<(ColorProfile, IccRenderingIntent), Pipeline>,
     pub(super) icc_images: HashMap<(ColorProfile, IccRenderingIntent, bool), Pipeline>,
     pub(super) compositions: HashMap<Composition, Pipeline>,
 }
@@ -147,27 +147,27 @@ impl Pipelines {
         });
     }
 
-    pub(super) fn icc_present(
-        &self,
-        profile: &IccProfile,
-        intent: IccRenderingIntent,
-    ) -> &Pipeline {
-        &self.icc_presents[&(profile.profile(), intent)]
+    pub(super) fn output(&self, profile: &ColorProfile, intent: IccRenderingIntent) -> &Pipeline {
+        &self.outputs[&(profile.clone(), intent)]
     }
 
-    pub(super) unsafe fn ensure_icc_present(
+    pub(super) unsafe fn ensure_output(
         &mut self,
         device: &ash::Device,
         image_descriptor_set_layout: vk::DescriptorSetLayout,
-        profile: &IccProfile,
+        profile: &ColorProfile,
         intent: IccRenderingIntent,
-        transform: &OutputColorTransform,
     ) -> Result<()> {
-        let key = (profile.profile(), intent);
-        if self.icc_presents.contains_key(&key) {
+        let key = (profile.clone(), intent);
+        if self.outputs.contains_key(&key) {
             return Ok(());
         }
-        let source = transform.wgsl()?;
+        let source = crate::rgb_shader::assemble_output_for(
+            include_str!("../../../shaders/canvas_renderer/output_image.wgsl"),
+            &self.working_profile,
+            profile,
+            intent,
+        )?;
         let words = compile_fragment(&source)?;
         let bytes: Vec<u8> = words.into_iter().flat_map(u32::to_le_bytes).collect();
         let pipeline = unsafe {
@@ -176,14 +176,14 @@ impl Pipelines {
                 self.output_format,
                 COMPOSITION_VERTEX_SHADER,
                 &bytes,
-                0,
-                vk::ShaderStageFlags::VERTEX,
+                size_of::<OutputPushConstants>() as u32,
+                vk::ShaderStageFlags::FRAGMENT,
                 &[image_descriptor_set_layout],
                 vk::SampleCountFlags::TYPE_1,
-                Composite::SourceOver,
+                Composite::Copy,
             )?
         };
-        self.icc_presents.insert(key, pipeline.into_pipeline());
+        self.outputs.insert(key, pipeline.into_pipeline());
         Ok(())
     }
 
@@ -279,20 +279,6 @@ pub(super) unsafe fn create_pipelines(
                 .collect(),
         )
     };
-    let present_fragment: Cow<'_, [u8]> = if working_profile == &LinearSrgb.into() {
-        Cow::Borrowed(COMPOSITE_FRAGMENT_SHADER)
-    } else {
-        let source = crate::rgb_shader::assemble_for(
-            include_str!("../../../shaders/canvas_renderer/present.wgsl"),
-            working_profile,
-        )?;
-        Cow::Owned(
-            compile_fragment(&source)?
-                .into_iter()
-                .flat_map(u32::to_le_bytes)
-                .collect(),
-        )
-    };
     let triangle = unsafe {
         create_pipeline(
             device,
@@ -365,19 +351,6 @@ pub(super) unsafe fn create_pipelines(
             Composite::DestinationIn,
         )?
     };
-    let present = unsafe {
-        create_pipeline(
-            device,
-            output_format,
-            COMPOSITE_VERTEX_SHADER,
-            &present_fragment,
-            0,
-            vk::ShaderStageFlags::VERTEX,
-            &[image_descriptor_set_layout],
-            vk::SampleCountFlags::TYPE_1,
-            Composite::SourceOver,
-        )?
-    };
     Ok(Pipelines {
         working_profile: working_profile.clone(),
         working_format,
@@ -390,8 +363,7 @@ pub(super) unsafe fn create_pipelines(
             .map(|(composite, pipeline)| (composite, pipeline.into_pipeline()))
             .collect(),
         mask: mask.into_pipeline(),
-        present: present.into_pipeline(),
-        icc_presents: HashMap::new(),
+        outputs: HashMap::new(),
         icc_images: HashMap::new(),
         compositions: HashMap::new(),
     })
@@ -544,7 +516,7 @@ mod tests {
     use super::*;
     use crate::{
         canvas::{Blend, BlendMode, BlendShader},
-        color::Srgb,
+        color::{IccProfile, Srgb},
     };
 
     #[test]

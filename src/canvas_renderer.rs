@@ -7,7 +7,6 @@ pub(crate) mod color_space;
 pub(crate) mod composition_encoding;
 pub(crate) mod icc_image_shader;
 pub(crate) mod mesh_paint;
-pub(crate) mod output_color;
 pub(crate) mod path_sampling;
 pub(crate) mod raster;
 pub(crate) mod view_space;

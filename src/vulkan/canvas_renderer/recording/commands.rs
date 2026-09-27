@@ -10,11 +10,15 @@ use crate::{
     },
     geometry::Point,
     path::Path,
+    surface::OutputAlpha,
     tessellation::{DEFAULT_TESSELLATION_TOLERANCE, Mesh},
     transform::Projective2,
     vulkan::{
         canvas_renderer::{
-            encoding::{CompositionPushConstants, ImagePushConstants, TrianglePushConstants},
+            encoding::{
+                CompositionPushConstants, ImagePushConstants, OutputPushConstants,
+                TrianglePushConstants,
+            },
             pipeline::{Pipeline, Pipelines},
         },
         color::PremultipliedWorkingRgba,
@@ -75,6 +79,7 @@ impl<'a> CanvasCommandEncoder<'a> {
         image_view: vk::ImageView,
         clear_color: PremultipliedWorkingRgba,
         pipeline: &Pipeline,
+        output_alpha: Option<OutputAlpha>,
     ) {
         let color_attachment = vk::RenderingAttachmentInfo::default()
             .image_view(image_view)
@@ -83,7 +88,11 @@ impl<'a> CanvasCommandEncoder<'a> {
             .store_op(vk::AttachmentStoreOp::STORE)
             .clear_value(vk::ClearValue {
                 color: vk::ClearColorValue {
-                    float32: clear_color.components(),
+                    float32: if output_alpha.is_some() {
+                        [0.0; 4]
+                    } else {
+                        clear_color.components()
+                    },
                 },
             });
         let rendering_info = vk::RenderingInfo::default()
@@ -94,7 +103,16 @@ impl<'a> CanvasCommandEncoder<'a> {
             self.device
                 .cmd_begin_rendering(self.command_buffer, &rendering_info);
         }
-        self.draw_fullscreen(pipeline, self.scratch_images[source].descriptor_set());
+        if let Some(alpha) = output_alpha {
+            let constants = OutputPushConstants::new(clear_color, alpha);
+            self.draw_fullscreen_with_constants(
+                pipeline,
+                self.scratch_images[source].descriptor_set(),
+                constants.as_bytes(),
+            );
+        } else {
+            self.draw_fullscreen(pipeline, self.scratch_images[source].descriptor_set());
+        }
         self.end_rendering();
     }
 
@@ -425,6 +443,15 @@ impl<'a> CanvasCommandEncoder<'a> {
     }
 
     fn draw_fullscreen(&self, pipeline: &Pipeline, descriptor_set: vk::DescriptorSet) {
+        self.draw_fullscreen_with_constants(pipeline, descriptor_set, &[]);
+    }
+
+    fn draw_fullscreen_with_constants(
+        &self,
+        pipeline: &Pipeline,
+        descriptor_set: vk::DescriptorSet,
+        constants: &[u8],
+    ) {
         let extent = self.attachment_area.extent;
         unsafe {
             self.device
@@ -444,6 +471,15 @@ impl<'a> CanvasCommandEncoder<'a> {
                 &[descriptor_set],
                 &[],
             );
+            if !constants.is_empty() {
+                self.device.cmd_push_constants(
+                    self.command_buffer,
+                    pipeline.layout,
+                    vk::ShaderStageFlags::FRAGMENT,
+                    0,
+                    constants,
+                );
+            }
             self.device.cmd_draw(self.command_buffer, 3, 1, 0, 0);
         }
     }

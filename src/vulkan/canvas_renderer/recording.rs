@@ -9,6 +9,7 @@ use crate::{
     },
     canvas_renderer::{canvas_plan::can_record_directly_in, color_space::PreparedColors},
     color::{Color, ColorProfile, Opacity, Srgb},
+    surface::OutputAlpha,
     tessellation::{Mesh, tessellate_fill_with_tolerance, tessellate_stroke_with_tolerance},
     transform::Projective2,
     vulkan::{color::PremultipliedWorkingRgba, image::ImageCache, scratch_image::ScratchImage},
@@ -59,10 +60,16 @@ impl<'a> CanvasRecorder<'a> {
         image_view: vk::ImageView,
         clear_color: PremultipliedWorkingRgba,
         present_pipeline: &Pipeline,
+        output_alpha: Option<OutputAlpha>,
     ) {
         let canvas_image = self.evaluate(canvas, Projective2::IDENTITY);
-        self.commands
-            .present(canvas_image, image_view, clear_color, present_pipeline);
+        self.commands.present(
+            canvas_image,
+            image_view,
+            clear_color,
+            present_pipeline,
+            output_alpha,
+        );
     }
 
     fn evaluate(&mut self, canvas: &Canvas, canvas_to_root: Projective2) -> usize {

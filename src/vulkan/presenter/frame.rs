@@ -5,7 +5,8 @@ use std::{error::Error, marker::PhantomData};
 use ash::vk;
 
 use crate::canvas::CanvasColor;
-use crate::color::{IccProfile, IccRenderingIntent};
+use crate::color::{IccProfile, IccRenderingIntent, LinearSrgb, Srgb};
+use crate::surface::{OutputAlpha, OutputImage};
 use crate::vulkan::image_layout::transition_image;
 
 use super::{device::PresentationDevice, swapchain::SwapchainResources};
@@ -50,12 +51,12 @@ pub struct RenderTarget<'a> {
     format: vk::Format,
     extent: vk::Extent2D,
     clear_color: CanvasColor,
-    output_profile: Option<(&'a IccProfile, IccRenderingIntent)>,
+    output: OutputImage,
     _frame: PhantomData<&'a ()>,
 }
 
 impl<'a> RenderTarget<'a> {
-    pub(in crate::vulkan) const fn new(
+    pub(in crate::vulkan) fn new(
         command_buffer: vk::CommandBuffer,
         image_view: vk::ImageView,
         format: vk::Format,
@@ -68,7 +69,11 @@ impl<'a> RenderTarget<'a> {
             format,
             extent,
             clear_color,
-            output_profile: None,
+            output: OutputImage::new(
+                LinearSrgb,
+                IccRenderingIntent::RelativeColorimetric,
+                OutputAlpha::Premultiplied,
+            ),
             _frame: PhantomData,
         }
     }
@@ -81,14 +86,21 @@ impl<'a> RenderTarget<'a> {
         self.clear_color.clone()
     }
 
-    pub(crate) fn output_profile(&self) -> Option<(&'a IccProfile, IccRenderingIntent)> {
-        self.output_profile
+    pub(crate) fn output(&self) -> &OutputImage {
+        &self.output
+    }
+
+    /// Selects the color and alpha meaning of the destination pixels.
+    /// The Vulkan attachment format must be compatible with this description.
+    pub fn with_output(mut self, output: OutputImage) -> Self {
+        self.output = output;
+        self
     }
 
     /// Encodes the final working image into ICC device RGB coordinates.
-    /// The target format must be unsigned-normalized and non-sRGB.
-    pub fn with_icc_output(mut self, profile: &'a IccProfile, intent: IccRenderingIntent) -> Self {
-        self.output_profile = Some((profile, intent));
+    /// The target format must not perform an additional sRGB encoding.
+    pub fn with_icc_output(mut self, profile: &IccProfile, intent: IccRenderingIntent) -> Self {
+        self.output = OutputImage::new(profile.profile(), intent, OutputAlpha::Premultiplied);
         self
     }
 }
@@ -144,6 +156,11 @@ impl<'a> PresentFrame<'a> {
             surface.extent,
             clear_color.into(),
         )
+        .with_output(OutputImage::new(
+            Srgb,
+            IccRenderingIntent::RelativeColorimetric,
+            OutputAlpha::Opaque,
+        ))
     }
 
     /// Submits the recorded frame and presents it.
