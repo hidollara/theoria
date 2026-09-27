@@ -200,7 +200,7 @@ impl Error for ColorTransformError {
 mod tests {
     use super::*;
     use crate::space::{LabD50, LinearSrgb, Srgb, XyzD50};
-    use crate::{ColorSpace, IccProfile, IccRenderingIntent, TransferCurve, connect_profiles};
+    use crate::{ColorSpace, IccProfile, IccRenderingIntent, TransferCurve, connect_spaces};
 
     #[test]
     fn matching_channel_counts_do_not_imply_matching_spaces() {
@@ -212,7 +212,7 @@ mod tests {
 
     #[test]
     fn srgb_encoding_change_is_one_recognizable_stage() {
-        let transform = connect_profiles(
+        let transform = connect_spaces(
             Srgb,
             LinearSrgb,
             IccRenderingIntent::RelativeColorimetric,

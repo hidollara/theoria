@@ -4,7 +4,7 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
-use crate::color::{ColorSpace, IccRenderingIntent, Rgb, TypedColorSpace, connect_profiles};
+use crate::color::{ColorSpace, IccRenderingIntent, Rgb, TypedColorSpace, connect_spaces};
 
 use super::composition_shader::{self, Binding};
 
@@ -139,7 +139,7 @@ impl BlendShader {
                 ));
                 continue;
             }
-            let transform = connect_profiles(
+            let transform = connect_spaces(
                 from,
                 to,
                 IccRenderingIntent::RelativeColorimetric,

@@ -3,8 +3,7 @@ use std::collections::HashMap;
 use crate::{
     canvas::{CanvasColor, CanvasIccColorError, ColorValue},
     color::{
-        ColorSpace, ColorTransform, IccRenderingIntent, LinearDisplayP3, LinearSrgb,
-        connect_profiles,
+        ColorSpace, ColorTransform, IccRenderingIntent, LinearDisplayP3, LinearSrgb, connect_spaces,
     },
 };
 
@@ -82,8 +81,8 @@ impl PreparedColors {
         let working = &self.working_profile;
         let intent = IccRenderingIntent::RelativeColorimetric;
         let plan = PreparedInterpolation {
-            to_interpolation: connect_profiles(working, profile, intent, intent)?,
-            to_working: connect_profiles(profile, working, intent, intent)?,
+            to_interpolation: connect_spaces(working, profile, intent, intent)?,
+            to_working: connect_spaces(profile, working, intent, intent)?,
             identity: profile == working,
             linear_builtin: *profile == ColorSpace::from(LinearSrgb)
                 || *profile == ColorSpace::from(LinearDisplayP3),
@@ -138,7 +137,7 @@ impl CanvasColor {
         let converted = if self.profile == destination {
             coordinates
         } else {
-            let transform = connect_profiles(
+            let transform = connect_spaces(
                 &self.profile,
                 &destination,
                 self.intent,
@@ -222,7 +221,7 @@ pub(crate) fn convert_premultiplied_space(
     if value[3] == 0.0 {
         return Ok([0.0; 4]);
     }
-    let transform = connect_profiles(
+    let transform = connect_spaces(
         from,
         to,
         IccRenderingIntent::RelativeColorimetric,
@@ -377,7 +376,7 @@ mod tests {
         prepared.prepare_interpolation(&Srgb.into()).unwrap();
         let actual =
             interpolate_premultiplied_rgba(black, white, 0.5, prepared.interpolation(&Srgb.into()));
-        let expected = connect_profiles(
+        let expected = connect_spaces(
             Srgb,
             LinearDisplayP3,
             IccRenderingIntent::RelativeColorimetric,

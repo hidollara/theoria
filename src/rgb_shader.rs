@@ -2,7 +2,7 @@
 //! Also compiled by build.rs for the default Vulkan shader validation.
 
 use theoria_color::{
-    ColorSpace, DisplayP3, IccRenderingIntent, LinearDisplayP3, LinearSrgb, Srgb, connect_profiles,
+    ColorSpace, DisplayP3, IccRenderingIntent, LinearDisplayP3, LinearSrgb, Srgb, connect_spaces,
 };
 
 const MARKER: &str = "// @theoria-rgb-conversions";
@@ -36,7 +36,7 @@ pub(crate) fn assemble_for(
     ];
     let mut definitions = String::new();
     for (index, profile) in profiles.into_iter().enumerate() {
-        let transfer = connect_profiles(
+        let transfer = connect_spaces(
             profile,
             working_profile,
             IccRenderingIntent::RelativeColorimetric,
@@ -44,7 +44,7 @@ pub(crate) fn assemble_for(
         )?;
         definitions.push_str(&transfer.transfer().wgsl(index as u32)?);
     }
-    let present = connect_profiles(
+    let present = connect_spaces(
         working_profile,
         LinearSrgb,
         IccRenderingIntent::RelativeColorimetric,
@@ -94,9 +94,8 @@ pub(crate) fn assemble_output_for(
     assert_eq!(source.matches(MARKER).count(), 1);
     let composition_profile = ColorSpace::from(LinearSrgb);
     let relative = IccRenderingIntent::RelativeColorimetric;
-    let to_composition =
-        connect_profiles(working_profile, &composition_profile, relative, relative)?;
-    let to_output = connect_profiles(
+    let to_composition = connect_spaces(working_profile, &composition_profile, relative, relative)?;
+    let to_output = connect_spaces(
         &composition_profile,
         output_profile,
         relative,

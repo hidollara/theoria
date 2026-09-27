@@ -24,14 +24,14 @@ pub(crate) fn distinct_color_profile(profile: impl Into<ColorSpace>) -> ColorSpa
             self.0.pcs()
         }
 
-        fn to_pcs_transfer(
+        fn space_to_pcs_transfer(
             &self,
             intent: IccRenderingIntent,
         ) -> Result<Transfer, ProfileConnectionError> {
             Ok(self.0.space_to_pcs(intent)?.into_transfer())
         }
 
-        fn from_pcs_transfer(
+        fn pcs_to_space_transfer(
             &self,
             intent: IccRenderingIntent,
         ) -> Result<Transfer, ProfileConnectionError> {

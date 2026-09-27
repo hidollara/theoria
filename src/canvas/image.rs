@@ -286,7 +286,7 @@ mod tests {
         assert_eq!(pixels, source.as_ref());
         let converted =
             convert_icc8_to_linear_rgba16(1, pixels, profile, intent, has_alpha).unwrap();
-        let expected = crate::color::connect_profiles(
+        let expected = crate::color::connect_spaces(
             Srgb,
             LinearSrgb,
             IccRenderingIntent::RelativeColorimetric,

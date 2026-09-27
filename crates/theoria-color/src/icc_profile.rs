@@ -9,9 +9,7 @@ use super::color_transform::{ColorTransform, ColorTransformError, pcs_key_for_in
 use super::icc_mpe::MpeTags;
 use super::model::ColorModel;
 use super::pcs::ICC_D50;
-use super::profile::{
-    ColorSpace, Pcs, ProfileConnectionError, ProfileDefinition, connect_profiles,
-};
+use super::profile::{ColorSpace, Pcs, ProfileConnectionError, ProfileDefinition, connect_spaces};
 use super::transfer::{
     Transfer, TransferClut, TransferCurve, TransferError, TransferMatrix, TransferStage,
 };
@@ -169,7 +167,7 @@ impl IccProfile {
         source_intent: IccRenderingIntent,
         destination_intent: IccRenderingIntent,
     ) -> Result<ColorTransform, ProfileConnectionError> {
-        connect_profiles(
+        connect_spaces(
             self.color_space(),
             destination.color_space(),
             source_intent,
@@ -726,14 +724,14 @@ impl ProfileDefinition for IccProfileData {
         self.pcs
     }
 
-    fn to_pcs_transfer(
+    fn space_to_pcs_transfer(
         &self,
         intent: IccRenderingIntent,
     ) -> Result<Transfer, ProfileConnectionError> {
         Ok(self.selected_transfer(IccTransferDirection::DeviceToPcs, intent)?)
     }
 
-    fn from_pcs_transfer(
+    fn pcs_to_space_transfer(
         &self,
         intent: IccRenderingIntent,
     ) -> Result<Transfer, ProfileConnectionError> {
@@ -757,7 +755,7 @@ impl From<&IccProfile> for ColorSpace {
 mod tests {
     use super::*;
     use crate::space::ColorSpaceId;
-    use crate::{XyzD50, connect_profiles};
+    use crate::{XyzD50, connect_spaces};
 
     #[test]
     fn icc_data_model_is_not_inferred_from_channel_count() {
@@ -775,7 +773,7 @@ mod tests {
             IccRenderingIntent::Perceptual,
             IccRenderingIntent::AbsoluteColorimetric,
         ] {
-            let generic = connect_profiles(&profile, &profile, intent, intent).unwrap();
+            let generic = connect_spaces(&profile, &profile, intent, intent).unwrap();
             let icc = profile.connect_to(&profile, intent, intent).unwrap();
             assert_eq!(generic, icc);
         }

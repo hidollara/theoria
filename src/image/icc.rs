@@ -1,6 +1,6 @@
 use std::{error::Error, fmt, sync::Arc};
 
-use crate::color::{IccProfile, IccRenderingIntent, Srgb, connect_profiles};
+use crate::color::{IccProfile, IccRenderingIntent, Srgb, connect_spaces};
 
 use super::{RasterImageInstanceKey, Srgba8Image};
 
@@ -31,7 +31,7 @@ impl IccRasterImage {
         if intent == IccRenderingIntent::AbsoluteColorimetric {
             return Err(Box::new(IccImageError::AbsoluteIntent));
         }
-        let transform = connect_profiles(
+        let transform = connect_spaces(
             Srgb,
             &profile,
             IccRenderingIntent::RelativeColorimetric,
@@ -192,7 +192,7 @@ mod tests {
         {
             let source_rgb: [f32; 3] =
                 std::array::from_fn(|index| f32::from(expected[index]) / 255.0);
-            let linear = crate::color::connect_profiles(
+            let linear = crate::color::connect_spaces(
                 Srgb,
                 crate::color::LinearSrgb,
                 IccRenderingIntent::RelativeColorimetric,

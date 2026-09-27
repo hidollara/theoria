@@ -52,7 +52,7 @@ impl ProfileDefinition for XyzD65Profile {
         Pcs::XyzD50
     }
 
-    fn to_pcs_transfer(
+    fn space_to_pcs_transfer(
         &self,
         intent: IccRenderingIntent,
     ) -> Result<Transfer, ProfileConnectionError> {
@@ -60,7 +60,7 @@ impl ProfileDefinition for XyzD65Profile {
         Ok(adaptation(XyzD65::TO_XYZ_D50)?)
     }
 
-    fn from_pcs_transfer(
+    fn pcs_to_space_transfer(
         &self,
         intent: IccRenderingIntent,
     ) -> Result<Transfer, ProfileConnectionError> {

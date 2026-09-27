@@ -70,7 +70,7 @@ impl ColorSpace {
         Ok(ColorTransform::from_ids(
             self.id(),
             pcs_key_for_intent(self.pcs(), intent),
-            self.0.to_pcs_transfer(intent)?,
+            self.0.space_to_pcs_transfer(intent)?,
         )?)
     }
 
@@ -81,7 +81,7 @@ impl ColorSpace {
         Ok(ColorTransform::from_ids(
             pcs_key_for_intent(self.pcs(), intent),
             self.id(),
-            self.0.from_pcs_transfer(intent)?,
+            self.0.pcs_to_space_transfer(intent)?,
         )?)
     }
 
@@ -134,11 +134,11 @@ impl fmt::Debug for ColorSpace {
 pub trait ProfileDefinition: Send + Sync {
     fn model(&self) -> ColorModel;
     fn pcs(&self) -> Pcs;
-    fn to_pcs_transfer(
+    fn space_to_pcs_transfer(
         &self,
         intent: IccRenderingIntent,
     ) -> Result<Transfer, ProfileConnectionError>;
-    fn from_pcs_transfer(
+    fn pcs_to_space_transfer(
         &self,
         intent: IccRenderingIntent,
     ) -> Result<Transfer, ProfileConnectionError>;
@@ -158,7 +158,7 @@ pub trait ProfileDefinition: Send + Sync {
 
 /// Selects a direct link when the endpoints and intent match, otherwise joins
 /// the source and destination profiles through their PCS representations.
-pub fn connect_profiles(
+pub fn connect_spaces(
     source: impl Into<ColorSpace>,
     destination: impl Into<ColorSpace>,
     source_intent: IccRenderingIntent,
@@ -272,7 +272,7 @@ mod tests {
 
     #[test]
     fn known_encoding_link_is_selected_without_a_pcs_round_trip() {
-        let transform = connect_profiles(
+        let transform = connect_spaces(
             Srgb,
             LinearSrgb,
             IccRenderingIntent::RelativeColorimetric,
@@ -302,7 +302,7 @@ mod tests {
 
     #[test]
     fn differing_primaries_fall_back_to_profile_pcs_directions() {
-        let actual = connect_profiles(
+        let actual = connect_spaces(
             Srgb,
             DisplayP3,
             IccRenderingIntent::RelativeColorimetric,
@@ -325,7 +325,7 @@ mod tests {
     fn icc_and_predefined_profiles_share_the_connection_path() {
         let bytes = moxcms::ColorProfile::new_srgb().encode().unwrap();
         let icc = IccProfile::from_bytes(&bytes).unwrap();
-        let transform = connect_profiles(
+        let transform = connect_spaces(
             &icc,
             LinearSrgb,
             IccRenderingIntent::RelativeColorimetric,
@@ -342,7 +342,7 @@ mod tests {
     fn profiles_can_be_connected_after_type_erasure() {
         let source: ColorSpace = Srgb.into();
         let destination: ColorSpace = LabD50.into();
-        let transform = connect_profiles(
+        let transform = connect_spaces(
             &source,
             &destination,
             IccRenderingIntent::RelativeColorimetric,
@@ -367,7 +367,7 @@ mod tests {
                 Pcs::XyzD50
             }
 
-            fn to_pcs_transfer(
+            fn space_to_pcs_transfer(
                 &self,
                 _: IccRenderingIntent,
             ) -> Result<Transfer, ProfileConnectionError> {
@@ -376,7 +376,7 @@ mod tests {
                     .into_transfer())
             }
 
-            fn from_pcs_transfer(
+            fn pcs_to_space_transfer(
                 &self,
                 _: IccRenderingIntent,
             ) -> Result<Transfer, ProfileConnectionError> {
@@ -397,7 +397,7 @@ mod tests {
             }
         }
 
-        let direct = connect_profiles(
+        let direct = connect_spaces(
             ColorSpace::new(LinkedSpace),
             LinearSrgb,
             IccRenderingIntent::Saturation,
@@ -406,7 +406,7 @@ mod tests {
         .unwrap();
         assert!(direct.transfer().stages().is_empty());
 
-        let fallback = connect_profiles(
+        let fallback = connect_spaces(
             ColorSpace::new(LinkedSpace),
             LinearSrgb,
             IccRenderingIntent::Saturation,
@@ -419,7 +419,7 @@ mod tests {
     #[test]
     fn unsupported_builtin_intent_is_not_misrepresented_as_relative() {
         assert!(matches!(
-            connect_profiles(
+            connect_spaces(
                 Srgb,
                 LinearSrgb,
                 IccRenderingIntent::Perceptual,
@@ -444,14 +444,14 @@ mod tests {
                 Pcs::XyzD50
             }
 
-            fn to_pcs_transfer(
+            fn space_to_pcs_transfer(
                 &self,
                 _: IccRenderingIntent,
             ) -> Result<Transfer, ProfileConnectionError> {
                 unreachable!()
             }
 
-            fn from_pcs_transfer(
+            fn pcs_to_space_transfer(
                 &self,
                 _: IccRenderingIntent,
             ) -> Result<Transfer, ProfileConnectionError> {
@@ -468,7 +468,7 @@ mod tests {
         }
 
         assert!(matches!(
-            connect_profiles(
+            connect_spaces(
                 ColorSpace::new(InvalidLink),
                 LinearSrgb,
                 IccRenderingIntent::RelativeColorimetric,
@@ -493,14 +493,14 @@ mod tests {
                 Pcs::XyzD50
             }
 
-            fn to_pcs_transfer(
+            fn space_to_pcs_transfer(
                 &self,
                 _: IccRenderingIntent,
             ) -> Result<Transfer, ProfileConnectionError> {
                 Ok(Transfer::new(4, Vec::<TransferStage>::new())?)
             }
 
-            fn from_pcs_transfer(
+            fn pcs_to_space_transfer(
                 &self,
                 _: IccRenderingIntent,
             ) -> Result<Transfer, ProfileConnectionError> {
@@ -509,7 +509,7 @@ mod tests {
         }
 
         assert!(matches!(
-            connect_profiles(
+            connect_spaces(
                 ColorSpace::new(InvalidPcs),
                 LinearSrgb,
                 IccRenderingIntent::RelativeColorimetric,

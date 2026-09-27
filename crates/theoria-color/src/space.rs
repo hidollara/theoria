@@ -16,10 +16,10 @@ use super::transfer::{Transfer, TransferCurve, TransferError, TransferMatrix, Tr
 
 /// Associates a statically typed color space with its coordinate model.
 ///
-/// This is a compile-time constraint on color values. The runtime space
-/// identifies their meaning; conversion is supplied by a profile separately.
-/// Named spaces convert to one shared standard profile rather than defining
-/// a new profile themselves.
+/// This constrains authored color values at compile time. Its runtime space
+/// carries the corresponding model and profile conversion definition.
+/// Implementations must return a stable space whose model matches `Model`.
+/// Named spaces share one canonical runtime handle per space.
 pub trait TypedColorSpace: 'static {
     type Model: TypedColorModel;
 
@@ -187,6 +187,11 @@ macro_rules! predefined_space {
                             space.model(),
                             <<$space as $crate::space::TypedColorSpace>::Model as $crate::model::TypedColorModel>::ERASED,
                             "typed and runtime color models differ"
+                        );
+                        assert_eq!(
+                            space.channels(),
+                            <<$space as $crate::space::TypedColorSpace>::Model as $crate::model::TypedColorModel>::COMPONENTS,
+                            "typed and runtime channel counts differ"
                         );
                         space
                     });

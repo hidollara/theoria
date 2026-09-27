@@ -23,7 +23,7 @@ impl ProfileDefinition for LinearDisplayP3Profile {
         Pcs::XyzD50
     }
 
-    fn to_pcs_transfer(
+    fn space_to_pcs_transfer(
         &self,
         intent: IccRenderingIntent,
     ) -> Result<Transfer, ProfileConnectionError> {
@@ -34,7 +34,7 @@ impl ProfileDefinition for LinearDisplayP3Profile {
         )?)
     }
 
-    fn from_pcs_transfer(
+    fn pcs_to_space_transfer(
         &self,
         intent: IccRenderingIntent,
     ) -> Result<Transfer, ProfileConnectionError> {
