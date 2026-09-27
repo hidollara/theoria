@@ -2,8 +2,8 @@ use std::{error::Error, fmt, sync::Arc};
 
 use crate::color::{
     Color, ColorCoordinates, ColorSpace, ColorTransformError, IccProfile, IccProfileError,
-    IccRenderingIntent, LabD50, Opacity, OpacitySample, RgbColorSpace, Srgb, TransferError, XyzD50,
-    XyzD65,
+    IccRenderingIntent, LabD50, Opacity, OpacitySample, ProfileConnectionError, RgbColorSpace,
+    Srgb, TransferError, XyzD50, XyzD65,
 };
 
 /// A logical color whose concrete representation has been erased at the
@@ -277,6 +277,7 @@ pub enum CanvasIccColorError {
     AbsoluteIntent,
     InvalidCoordinates,
     Profile(IccProfileError),
+    Connection(ProfileConnectionError),
     Transform(ColorTransformError),
     Transfer(TransferError),
 }
@@ -299,6 +300,12 @@ impl From<TransferError> for CanvasIccColorError {
     }
 }
 
+impl From<ProfileConnectionError> for CanvasIccColorError {
+    fn from(error: ProfileConnectionError) -> Self {
+        Self::Connection(error)
+    }
+}
+
 impl fmt::Display for CanvasIccColorError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -307,6 +314,7 @@ impl fmt::Display for CanvasIccColorError {
             }
             Self::InvalidCoordinates => formatter.write_str("ICC device coordinates are invalid"),
             Self::Profile(error) => error.fmt(formatter),
+            Self::Connection(error) => error.fmt(formatter),
             Self::Transform(error) => error.fmt(formatter),
             Self::Transfer(error) => error.fmt(formatter),
         }
@@ -317,6 +325,7 @@ impl Error for CanvasIccColorError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Profile(error) => Some(error),
+            Self::Connection(error) => Some(error),
             Self::Transform(error) => Some(error),
             Self::Transfer(error) => Some(error),
             _ => None,

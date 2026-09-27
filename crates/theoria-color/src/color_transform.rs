@@ -82,9 +82,8 @@ impl ColorTransform {
                 ])?],
             )?
         } else {
-            from.transform()
-                .to_xyz_d65_transfer()?
-                .then(&to.transform().xyz_d65_to_rgb_transfer()?)?
+            from.to_xyz_d65_transfer()?
+                .then(&to.from_xyz_d65_transfer()?)?
         };
         Self::new(from.into(), to.into(), transfer)
     }
@@ -94,7 +93,7 @@ impl ColorTransform {
     /// The RGB primary matrix is followed by D65-to-D50 adaptation. The PCS
     /// endpoint uses the same canonical identity as a loaded ICC profile.
     pub fn rgb_to_pcs(from: RgbColorSpace, to: IccPcs) -> Result<Self, ColorTransformError> {
-        let mut transfer = from.transform().to_xyz_d65_transfer()?;
+        let mut transfer = from.to_xyz_d65_transfer()?;
         transfer = transfer.then(&adaptation(XYZ_D65_TO_XYZ_D50)?)?;
         if to == IccPcs::LabD50 {
             transfer = transfer.then(&Transfer::new(3, [TransferStage::XyzD50ToLabD50])?)?;
@@ -109,7 +108,7 @@ impl ColorTransform {
             transfer = transfer.then(&Transfer::new(3, [TransferStage::LabD50ToXyzD50])?)?;
         }
         transfer = transfer.then(&adaptation(XYZ_D50_TO_XYZ_D65)?)?;
-        transfer = transfer.then(&to.transform().xyz_d65_to_rgb_transfer()?)?;
+        transfer = transfer.then(&to.from_xyz_d65_transfer()?)?;
         Self::new(pcs_key(from), to.into(), transfer)
     }
 
@@ -260,7 +259,7 @@ mod tests {
             transform.transfer().stages(),
             &[TransferStage::curves([TransferCurve::SRGB_DECODE; 3]).unwrap()]
         );
-        let expected = RgbColorSpace::Srgb.transform().transfer().decode_f64(0.5);
+        let expected = crate::RgbTransfer::Srgb.decode_f64(0.5);
         let actual = transform.transfer().evaluate(&[0.5; 3]).unwrap();
         for value in actual {
             assert!((value - expected).abs() < 1e-12);

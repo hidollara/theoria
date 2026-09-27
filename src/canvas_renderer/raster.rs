@@ -4,7 +4,7 @@ use std::io;
 use half::f16;
 
 #[cfg(test)]
-use crate::color::{ColorTransform, IccProfile, IccRenderingIntent, RgbColorSpace};
+use crate::color::{IccProfile, IccRenderingIntent, RgbColorSpace, connect_profiles};
 use crate::image::RasterPlane;
 
 pub(crate) struct PackedIccSamples {
@@ -55,9 +55,12 @@ pub(crate) fn convert_icc8_to_linear_rgba16(
     intent: IccRenderingIntent,
     has_alpha: bool,
 ) -> Result<RasterPlane<u16>, Box<dyn std::error::Error>> {
-    let to_pcs = profile.to_pcs(intent)?;
-    let to_working = ColorTransform::pcs_to_rgb(profile.pcs(), RgbColorSpace::LinearSrgb)?;
-    let transfer = to_pcs.then(&to_working)?;
+    let transfer = connect_profiles(
+        profile,
+        &RgbColorSpace::LinearSrgb,
+        intent,
+        IccRenderingIntent::RelativeColorimetric,
+    )?;
     let channels = profile.device_channels();
     let mut output = Vec::with_capacity(pixels.len() / (channels + usize::from(has_alpha)) * 4);
     for pixel in pixels.chunks_exact(channels + usize::from(has_alpha)) {

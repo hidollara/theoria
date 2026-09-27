@@ -5,7 +5,9 @@ use std::{
     sync::Arc,
 };
 
-use super::{ColorModel, Rgb, RgbTransfer, RgbTransform};
+use super::transfer::{Transfer, TransferCurve, TransferError, TransferMatrix, TransferStage};
+use super::transform::multiply_f64;
+use super::{ColorModel, Rgb, RgbTransfer};
 
 /// Associates a named color space with its coordinate model.
 ///
@@ -13,15 +15,6 @@ use super::{ColorModel, Rgb, RgbTransfer, RgbTransform};
 /// conversion: that is supplied independently by [`crate::ColorProfile`].
 pub trait ColorSpace: 'static {
     type Model: ColorModel;
-}
-
-/// An RGB profile represented by a transfer curve and a pair of XYZ D65 matrices.
-///
-/// Profiles needing a different transform representation are not covered by
-/// this capability. XYZ D65 is the shared space of the current RGB profiles,
-/// not a claim that it is the ICC profile connection space.
-pub trait MatrixRgbProfile: ColorSpace<Model = Rgb> {
-    const TRANSFORM: RgbTransform;
 }
 
 macro_rules! profile {
@@ -56,18 +49,72 @@ impl ColorSpace for RgbColorSpace {
 impl RgbColorSpace {
     /// Whether straight RGB coordinates in this space are linear-light.
     pub const fn is_linear(self) -> bool {
-        matches!(self.transform().transfer(), RgbTransfer::Linear)
+        matches!(self.transfer_curve(), RgbTransfer::Linear)
     }
 
-    /// The conversion data of this predefined space.
-    pub const fn transform(self) -> RgbTransform {
+    pub(crate) const fn transfer_curve(self) -> RgbTransfer {
         match self {
-            Self::Srgb => Srgb::TRANSFORM,
-            Self::LinearSrgb => LinearSrgb::TRANSFORM,
-            Self::DisplayP3 => DisplayP3::TRANSFORM,
-            Self::LinearDisplayP3 => LinearDisplayP3::TRANSFORM,
+            Self::Srgb | Self::DisplayP3 => RgbTransfer::Srgb,
+            Self::LinearSrgb | Self::LinearDisplayP3 => RgbTransfer::Linear,
         }
     }
+
+    pub(crate) const fn matrices(self) -> ([[f64; 3]; 3], [[f64; 3]; 3]) {
+        match self {
+            Self::Srgb => (Srgb::TO_XYZ_D65, Srgb::FROM_XYZ_D65),
+            Self::LinearSrgb => (LinearSrgb::TO_XYZ_D65, LinearSrgb::FROM_XYZ_D65),
+            Self::DisplayP3 => (DisplayP3::TO_XYZ_D65, DisplayP3::FROM_XYZ_D65),
+            Self::LinearDisplayP3 => (LinearDisplayP3::TO_XYZ_D65, LinearDisplayP3::FROM_XYZ_D65),
+        }
+    }
+
+    pub(crate) fn to_xyz_d65_transfer(self) -> Result<Transfer, TransferError> {
+        let curve = match self.transfer_curve() {
+            RgbTransfer::Linear => TransferCurve::IDENTITY,
+            RgbTransfer::Srgb => TransferCurve::SRGB_DECODE,
+        };
+        Transfer::new(
+            3,
+            [
+                TransferStage::curves([curve.clone(), curve.clone(), curve])?,
+                rgb_matrix(self.matrices().0)?,
+            ],
+        )
+    }
+
+    pub(crate) fn from_xyz_d65_transfer(self) -> Result<Transfer, TransferError> {
+        let curve = match self.transfer_curve() {
+            RgbTransfer::Linear => TransferCurve::IDENTITY,
+            RgbTransfer::Srgb => TransferCurve::SRGB_ENCODE,
+        };
+        Transfer::new(
+            3,
+            [
+                rgb_matrix(self.matrices().1)?,
+                TransferStage::curves([curve.clone(), curve.clone(), curve])?,
+            ],
+        )
+    }
+
+    pub(crate) fn to_xyz_d65_f64(self, rgb: [f64; 3]) -> [f64; 3] {
+        multiply_f64(
+            self.matrices().0,
+            rgb.map(|value| self.transfer_curve().decode_f64(value)),
+        )
+    }
+
+    pub(crate) fn from_xyz_d65_f64(self, xyz: [f64; 3]) -> [f64; 3] {
+        multiply_f64(self.matrices().1, xyz).map(|value| self.transfer_curve().encode_f64(value))
+    }
+}
+
+fn rgb_matrix(matrix: [[f64; 3]; 3]) -> Result<TransferStage, TransferError> {
+    Ok(TransferStage::Matrix(TransferMatrix::new(
+        3,
+        3,
+        matrix.into_iter().flatten().collect::<Vec<_>>(),
+        [0.0; 3],
+    )?))
 }
 
 macro_rules! rgb_color_space {
@@ -218,30 +265,19 @@ mod tests {
     }
 
     #[test]
-    fn erased_spaces_use_their_profile_transform() {
-        assert_eq!(RgbColorSpace::Srgb.transform(), Srgb::TRANSFORM);
-        assert_eq!(RgbColorSpace::LinearSrgb.transform(), LinearSrgb::TRANSFORM);
-        assert_eq!(RgbColorSpace::DisplayP3.transform(), DisplayP3::TRANSFORM);
-        assert_eq!(
-            RgbColorSpace::LinearDisplayP3.transform(),
-            LinearDisplayP3::TRANSFORM
-        );
-    }
-
-    #[test]
     fn rgb_profiles_round_trip_through_xyz_d65() {
-        fn check<P: MatrixRgbProfile>() {
+        fn check(space: RgbColorSpace) {
             let rgb = [0.23, 0.51, 0.79];
-            let xyz = P::TRANSFORM.rgb_to_xyz_d65(rgb);
-            let actual = P::TRANSFORM.xyz_d65_to_rgb(xyz);
+            let xyz = space.to_xyz_d65_f64(rgb);
+            let actual = space.from_xyz_d65_f64(xyz);
             for (actual, expected) in actual.into_iter().zip(rgb) {
                 assert!((actual - expected).abs() < 0.000_01);
             }
         }
 
-        check::<Srgb>();
-        check::<LinearSrgb>();
-        check::<DisplayP3>();
-        check::<LinearDisplayP3>();
+        check(RgbColorSpace::Srgb);
+        check(RgbColorSpace::LinearSrgb);
+        check(RgbColorSpace::DisplayP3);
+        check(RgbColorSpace::LinearDisplayP3);
     }
 }

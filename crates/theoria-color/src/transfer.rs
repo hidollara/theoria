@@ -1,6 +1,6 @@
 use std::{error::Error, fmt, sync::Arc};
 
-use super::{RgbTransfer, RgbTransform, pcs, profile_data};
+use super::{RgbTransfer, pcs, profile_data};
 
 /// A directed sequence of color-coordinate operations.
 ///
@@ -960,50 +960,6 @@ impl fmt::Display for TransferError {
 
 impl Error for TransferError {}
 
-impl RgbTransform {
-    /// Materializes the RGB-to-XYZ D65 direction as a general transfer.
-    pub fn to_xyz_d65_transfer(self) -> Result<Transfer, TransferError> {
-        let curve = match self.transfer() {
-            RgbTransfer::Linear => TransferCurve::IDENTITY,
-            RgbTransfer::Srgb => TransferCurve::SRGB_DECODE,
-        };
-        let stages = [
-            TransferStage::curves([curve.clone(), curve.clone(), curve])?,
-            TransferStage::Matrix(TransferMatrix::new(
-                3,
-                3,
-                self.to_xyz_d65_matrix()
-                    .into_iter()
-                    .flatten()
-                    .collect::<Vec<_>>(),
-                [0.0; 3],
-            )?),
-        ];
-        Transfer::new(3, stages)
-    }
-
-    /// Materializes the XYZ D65-to-RGB direction as a general transfer.
-    pub fn xyz_d65_to_rgb_transfer(self) -> Result<Transfer, TransferError> {
-        let curve = match self.transfer() {
-            RgbTransfer::Linear => TransferCurve::IDENTITY,
-            RgbTransfer::Srgb => TransferCurve::SRGB_ENCODE,
-        };
-        let stages = [
-            TransferStage::Matrix(TransferMatrix::new(
-                3,
-                3,
-                self.xyz_d65_to_rgb_matrix()
-                    .into_iter()
-                    .flatten()
-                    .collect::<Vec<_>>(),
-                [0.0; 3],
-            )?),
-            TransferStage::curves([curve.clone(), curve.clone(), curve])?,
-        ];
-        Transfer::new(3, stages)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1214,22 +1170,18 @@ mod tests {
     }
 
     #[test]
-    fn rgb_transform_and_general_transfer_agree_on_both_directions() {
-        use crate::{DisplayP3, LinearDisplayP3, LinearSrgb, MatrixRgbProfile, Srgb};
+    fn predefined_rgb_transfers_agree_on_both_directions() {
+        use crate::RgbColorSpace;
 
-        fn check<P: MatrixRgbProfile>() {
+        fn check(space: RgbColorSpace) {
             let rgb = [0.23, 0.51, 0.79];
-            let xyz = P::TRANSFORM.rgb_to_xyz_d65_f64(rgb);
-            let general_xyz = P::TRANSFORM
-                .to_xyz_d65_transfer()
-                .unwrap()
-                .evaluate(&rgb)
-                .unwrap();
+            let xyz = space.to_xyz_d65_f64(rgb);
+            let general_xyz = space.to_xyz_d65_transfer().unwrap().evaluate(&rgb).unwrap();
             for (actual, expected) in general_xyz.into_iter().zip(xyz) {
                 assert!((actual - expected).abs() < 0.000_000_1);
             }
-            let general_rgb = P::TRANSFORM
-                .xyz_d65_to_rgb_transfer()
+            let general_rgb = space
+                .from_xyz_d65_transfer()
                 .unwrap()
                 .evaluate(&xyz)
                 .unwrap();
@@ -1238,10 +1190,10 @@ mod tests {
             }
         }
 
-        check::<Srgb>();
-        check::<LinearSrgb>();
-        check::<DisplayP3>();
-        check::<LinearDisplayP3>();
+        check(RgbColorSpace::Srgb);
+        check(RgbColorSpace::LinearSrgb);
+        check(RgbColorSpace::DisplayP3);
+        check(RgbColorSpace::LinearDisplayP3);
     }
 
     #[test]

@@ -1,6 +1,6 @@
 //! Lowers an ICC image transfer for the shared raster-sampling shader contract.
 
-use crate::color::{ColorTransform, IccProfile, IccRenderingIntent, RgbColorSpace};
+use crate::color::{IccProfile, IccRenderingIntent, RgbColorSpace, connect_profiles};
 
 pub(crate) struct IccImageShader {
     pub(crate) source: String,
@@ -16,9 +16,12 @@ pub(crate) fn build(
     working_space: RgbColorSpace,
     template: &str,
 ) -> Result<IccImageShader, Box<dyn std::error::Error>> {
-    let to_pcs = profile.to_pcs(intent)?;
-    let to_working = ColorTransform::pcs_to_rgb(profile.pcs(), working_space)?;
-    let transform = to_pcs.then(&to_working)?;
+    let transform = connect_profiles(
+        profile,
+        &working_space,
+        intent,
+        IccRenderingIntent::RelativeColorimetric,
+    )?;
     let transfer = transform.transfer().wgsl_with_storage(0, 0, 2)?;
     let channels = profile.device_channels();
     let total = channels + usize::from(has_alpha);

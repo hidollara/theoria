@@ -2,7 +2,10 @@ use std::collections::HashMap;
 
 use crate::{
     canvas::{CanvasColor, CanvasIccColorError, CanvasProfile, ColorValue},
-    color::{ColorTransform, LabD50, RgbColorSpace, XyzD50Profile, XyzD65, convert_rgb},
+    color::{
+        IccRenderingIntent, LabD50, RgbColorSpace, XyzD50Profile, XyzD65, connect_profiles,
+        convert_rgb,
+    },
 };
 
 /// Renderer-owned conversions prepared before commands are recorded.
@@ -123,9 +126,12 @@ fn convert_icc_color(
     coordinates: &[f64],
     space: RgbColorSpace,
 ) -> Result<[f32; 3], CanvasIccColorError> {
-    let source = profile.to_pcs(intent)?;
-    let target = ColorTransform::pcs_to_rgb(profile.pcs(), space)?;
-    let transfer = source.then(&target)?;
+    let transfer = connect_profiles(
+        profile,
+        &space,
+        intent,
+        IccRenderingIntent::RelativeColorimetric,
+    )?;
     let converted = transfer.transfer().evaluate(coordinates)?;
     Ok([
         converted[0] as f32,

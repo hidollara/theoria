@@ -8,14 +8,22 @@ pub fn convert_rgb(rgb: [f32; 3], from: RgbColorSpace, to: RgbColorSpace) -> [f3
     if from == to {
         rgb
     } else {
-        let source = from.transform();
-        let destination = to.transform();
-        if source.to_xyz_d65_matrix() == destination.to_xyz_d65_matrix() {
-            destination.encode(source.decode(rgb))
+        let source = from.transfer_curve();
+        let destination = to.transfer_curve();
+        if from.matrices().0 == to.matrices().0 {
+            rgb.map(|value| destination.encode(source.decode(value)))
         } else {
-            destination.xyz_d65_to_rgb(source.rgb_to_xyz_d65(rgb))
+            let linear = rgb.map(|value| source.decode(value));
+            let xyz = multiply(from.matrices().0, linear);
+            multiply(to.matrices().1, xyz).map(|value| destination.encode(value))
         }
     }
+}
+
+fn multiply(matrix: [[f64; 3]; 3], vector: [f32; 3]) -> [f32; 3] {
+    matrix.map(|row| {
+        row[0] as f32 * vector[0] + row[1] as f32 * vector[1] + row[2] as f32 * vector[2]
+    })
 }
 
 pub fn encode_srgb(value: f32) -> f32 {

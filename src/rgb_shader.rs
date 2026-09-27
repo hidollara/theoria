@@ -1,7 +1,7 @@
 //! Supplies the same RGB conversion definitions to every Canvas WGSL shader.
 //! Also compiled by build.rs when validating and compiling Vulkan shaders.
 
-use theoria_color::{RgbTransfer, RgbTransform, Transfer, profile_data as data};
+use theoria_color::{ColorTransform, RgbColorSpace, Transfer, profile_data as data};
 
 const MARKER: &str = "// @theoria-rgb-conversions";
 
@@ -138,29 +138,20 @@ fn to_working(value: vec3<f32>, space: u32) -> vec3<f32> {
 }
 
 fn p3_transfer(encoded: bool, to_working: bool) -> Transfer {
-    let p3 = RgbTransform::new(
-        if encoded {
-            RgbTransfer::Srgb
-        } else {
-            RgbTransfer::Linear
-        },
-        data::LINEAR_P3_TO_XYZ_D65,
-        data::XYZ_D65_TO_LINEAR_P3,
-    );
-    let working = RgbTransform::new(
-        RgbTransfer::Linear,
-        data::LINEAR_SRGB_TO_XYZ_D65,
-        data::XYZ_D65_TO_LINEAR_SRGB,
-    );
-    if to_working {
-        p3.to_xyz_d65_transfer()
-            .and_then(|transfer| transfer.then(&working.xyz_d65_to_rgb_transfer()?))
+    let p3 = if encoded {
+        RgbColorSpace::DisplayP3
     } else {
-        working
-            .to_xyz_d65_transfer()
-            .and_then(|transfer| transfer.then(&p3.xyz_d65_to_rgb_transfer()?))
-    }
-    .expect("built-in RGB profile transfer is valid")
+        RgbColorSpace::LinearDisplayP3
+    };
+    let working = RgbColorSpace::LinearSrgb;
+    let (from, to) = if to_working {
+        (p3, working)
+    } else {
+        (working, p3)
+    };
+    ColorTransform::between_rgb(from, to)
+        .expect("built-in RGB profile transfer is valid")
+        .into_transfer()
 }
 
 fn literal(value: f32) -> String {

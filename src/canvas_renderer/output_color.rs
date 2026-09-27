@@ -1,6 +1,8 @@
 use std::{error::Error, fmt};
 
-use crate::color::{ColorTransform, IccProfile, IccRenderingIntent, RgbColorSpace, TransferError};
+use crate::color::{
+    ColorTransform, IccProfile, IccRenderingIntent, RgbColorSpace, TransferError, connect_profiles,
+};
 
 /// Conversion from the renderer's premultiplied RGB working image to
 /// straight destination-profile device coordinates at the output boundary.
@@ -52,14 +54,13 @@ impl OutputColorTransform {
         if intent == IccRenderingIntent::AbsoluteColorimetric {
             return Err(OutputColorError::AbsoluteIntent);
         }
-        let source = ColorTransform::rgb_to_pcs(working_space, profile.pcs())
-            .map_err(|error| OutputColorError::Transform(Box::new(error)))?;
-        let destination = profile
-            .from_pcs(intent)
-            .map_err(|error| OutputColorError::Transform(Box::new(error)))?;
-        let transfer = source
-            .then(&destination)
-            .map_err(|error| OutputColorError::Transform(Box::new(error)))?;
+        let transfer = connect_profiles(
+            &working_space,
+            profile,
+            IccRenderingIntent::RelativeColorimetric,
+            intent,
+        )
+        .map_err(|error| OutputColorError::Transform(Box::new(error)))?;
         Ok(Self { transfer })
     }
 

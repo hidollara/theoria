@@ -345,8 +345,8 @@ mod tests {
     #[test]
     fn known_encoding_link_is_selected_without_a_pcs_round_trip() {
         let transform = connect_profiles(
-            &RgbColorSpace::Srgb,
-            &RgbColorSpace::LinearSrgb,
+            &Srgb,
+            &LinearSrgb,
             IccRenderingIntent::RelativeColorimetric,
             IccRenderingIntent::RelativeColorimetric,
         )
@@ -401,6 +401,89 @@ mod tests {
         );
         let converted = transform.transfer().evaluate(&[0.5; 3]).unwrap();
         assert!(converted.iter().all(|value| *value > 0.2 && *value < 0.23));
+    }
+
+    #[test]
+    fn profiles_can_be_connected_after_type_erasure() {
+        let source: &dyn ColorProfile = &Srgb;
+        let destination: &dyn ColorProfile = &LabD50;
+        let transform = connect_profiles(
+            source,
+            destination,
+            IccRenderingIntent::RelativeColorimetric,
+            IccRenderingIntent::RelativeColorimetric,
+        )
+        .unwrap();
+        assert_eq!(transform.from(), &ColorSpaceKey::from(Srgb));
+        assert_eq!(transform.to(), &ColorSpaceKey::from(LabD50));
+        assert_eq!(transform.transfer().evaluate(&[1.0; 3]).unwrap()[0], 100.0);
+    }
+
+    #[test]
+    fn direct_link_is_used_only_for_its_declared_intent() {
+        struct LinkedSpace;
+
+        impl ColorProfile for LinkedSpace {
+            fn space(&self) -> ColorSpaceKey {
+                Srgb.into()
+            }
+
+            fn pcs(&self) -> IccPcs {
+                IccPcs::XyzD50
+            }
+
+            fn to_pcs(
+                &self,
+                _: IccRenderingIntent,
+            ) -> Result<ColorTransform, ProfileConnectionError> {
+                Ok(ColorTransform::rgb_to_pcs(
+                    RgbColorSpace::Srgb,
+                    IccPcs::XyzD50,
+                )?)
+            }
+
+            fn from_pcs(
+                &self,
+                _: IccRenderingIntent,
+            ) -> Result<ColorTransform, ProfileConnectionError> {
+                unreachable!()
+            }
+
+            fn direct_to(
+                &self,
+                destination: &ColorSpaceKey,
+                intent: IccRenderingIntent,
+            ) -> Result<Option<ColorTransform>, ProfileConnectionError> {
+                if *destination == ColorSpaceKey::from(LinearSrgb)
+                    && intent == IccRenderingIntent::Saturation
+                {
+                    return Ok(Some(ColorTransform::new(
+                        self.space(),
+                        destination.clone(),
+                        Transfer::new(3, Vec::<TransferStage>::new())?,
+                    )?));
+                }
+                Ok(None)
+            }
+        }
+
+        let direct = connect_profiles(
+            &LinkedSpace,
+            &LinearSrgb,
+            IccRenderingIntent::Saturation,
+            IccRenderingIntent::Saturation,
+        )
+        .unwrap();
+        assert!(direct.transfer().stages().is_empty());
+
+        let fallback = connect_profiles(
+            &LinkedSpace,
+            &LinearSrgb,
+            IccRenderingIntent::Saturation,
+            IccRenderingIntent::RelativeColorimetric,
+        )
+        .unwrap();
+        assert!(!fallback.transfer().stages().is_empty());
     }
 
     #[test]

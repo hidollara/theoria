@@ -22,8 +22,8 @@ pub use icc::{IccPcs, IccTransfer, IccTransferDirection, IccTransferError};
 pub use icc_profile::{IccProfile, IccProfileError, IccRenderingIntent};
 pub use model::{Cmyk, ColorCoordinates, ColorModel, Lab, Rgb, Xyz, Ycbcr};
 pub use profile::{
-    ColorSpace, ColorSpaceKey, DisplayP3, LabD50, LinearDisplayP3, LinearSrgb, MatrixRgbProfile,
-    RgbColorSpace, Srgb, XyzD50, XyzD65,
+    ColorSpace, ColorSpaceKey, DisplayP3, LabD50, LinearDisplayP3, LinearSrgb, RgbColorSpace, Srgb,
+    XyzD50, XyzD65,
 };
 pub use profile_connection::{ColorProfile, ProfileConnectionError, connect_profiles};
 pub use sample::{Opacity, OpacityError, OpacitySample};
@@ -31,7 +31,7 @@ pub use transfer::{
     Transfer, TransferClut, TransferCurve, TransferError, TransferMatrix, TransferShader,
     TransferStage,
 };
-pub use transform::{RgbTransfer, RgbTransform};
+pub use transform::RgbTransfer;
 pub use value::Color;
 pub use white_point::{WhitePoint, WhitePointError};
 
