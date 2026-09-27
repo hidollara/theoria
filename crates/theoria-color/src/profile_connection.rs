@@ -3,7 +3,12 @@ use std::{error::Error, fmt};
 use super::color_transform::{ColorTransform, ColorTransformError};
 use super::icc::IccPcs;
 use super::icc_profile::{IccProfile, IccProfileError, IccRenderingIntent};
-use super::profile::{ColorSpaceKey, RgbColorSpace};
+use super::profile::{
+    ColorSpaceKey, DisplayP3, LabD50, LinearDisplayP3, LinearSrgb, RgbColorSpace, Srgb, XyzD50,
+    XyzD65,
+};
+use super::profile_data::{XYZ_D50_TO_XYZ_D65, XYZ_D65_TO_XYZ_D50};
+use super::transfer::{Transfer, TransferError, TransferMatrix, TransferStage};
 
 /// Directed conversions supplied by a profile for one coordinate space.
 ///
@@ -11,7 +16,7 @@ use super::profile::{ColorSpaceKey, RgbColorSpace};
 /// interpret the same number of channels differently. The two PCS directions
 /// are independent, and a direct link is optional rather than an inverse of
 /// either direction.
-pub trait ProfileConnection {
+pub trait ColorProfile {
     fn space(&self) -> ColorSpaceKey;
     fn pcs(&self) -> IccPcs;
     fn to_pcs(&self, intent: IccRenderingIntent) -> Result<ColorTransform, ProfileConnectionError>;
@@ -36,8 +41,8 @@ pub trait ProfileConnection {
 /// Selects a direct link when the endpoints and intent match, otherwise joins
 /// the source and destination profiles through their PCS representations.
 pub fn connect_profiles(
-    source: &impl ProfileConnection,
-    destination: &impl ProfileConnection,
+    source: &dyn ColorProfile,
+    destination: &dyn ColorProfile,
     source_intent: IccRenderingIntent,
     destination_intent: IccRenderingIntent,
 ) -> Result<ColorTransform, ProfileConnectionError> {
@@ -66,7 +71,7 @@ pub fn connect_profiles(
     Ok(transform.then(&destination.from_pcs(destination_intent)?)?)
 }
 
-impl ProfileConnection for RgbColorSpace {
+impl ColorProfile for RgbColorSpace {
     fn space(&self) -> ColorSpaceKey {
         (*self).into()
     }
@@ -120,7 +125,134 @@ impl ProfileConnection for RgbColorSpace {
     }
 }
 
-impl ProfileConnection for IccProfile {
+macro_rules! predefined_rgb_profile {
+    ($($profile:ty),+ $(,)?) => {
+        $(
+            impl ColorProfile for $profile {
+                fn space(&self) -> ColorSpaceKey {
+                    (*self).into()
+                }
+
+                fn pcs(&self) -> IccPcs {
+                    IccPcs::XyzD50
+                }
+
+                fn to_pcs(
+                    &self,
+                    intent: IccRenderingIntent,
+                ) -> Result<ColorTransform, ProfileConnectionError> {
+                    RgbColorSpace::from(*self).to_pcs(intent)
+                }
+
+                fn from_pcs(
+                    &self,
+                    intent: IccRenderingIntent,
+                ) -> Result<ColorTransform, ProfileConnectionError> {
+                    RgbColorSpace::from(*self).from_pcs(intent)
+                }
+
+                fn direct_to(
+                    &self,
+                    destination: &ColorSpaceKey,
+                    intent: IccRenderingIntent,
+                ) -> Result<Option<ColorTransform>, ProfileConnectionError> {
+                    RgbColorSpace::from(*self).direct_to(destination, intent)
+                }
+            }
+        )+
+    };
+}
+
+predefined_rgb_profile!(Srgb, LinearSrgb, DisplayP3, LinearDisplayP3);
+
+impl ColorProfile for XyzD50 {
+    fn space(&self) -> ColorSpaceKey {
+        (*self).into()
+    }
+
+    fn pcs(&self) -> IccPcs {
+        IccPcs::XyzD50
+    }
+
+    fn to_pcs(&self, intent: IccRenderingIntent) -> Result<ColorTransform, ProfileConnectionError> {
+        require_relative(intent)?;
+        Ok(ColorTransform::between_pcs(self.pcs(), self.pcs())?)
+    }
+
+    fn from_pcs(
+        &self,
+        intent: IccRenderingIntent,
+    ) -> Result<ColorTransform, ProfileConnectionError> {
+        self.to_pcs(intent)
+    }
+}
+
+impl ColorProfile for LabD50 {
+    fn space(&self) -> ColorSpaceKey {
+        (*self).into()
+    }
+
+    fn pcs(&self) -> IccPcs {
+        IccPcs::LabD50
+    }
+
+    fn to_pcs(&self, intent: IccRenderingIntent) -> Result<ColorTransform, ProfileConnectionError> {
+        require_relative(intent)?;
+        Ok(ColorTransform::between_pcs(self.pcs(), self.pcs())?)
+    }
+
+    fn from_pcs(
+        &self,
+        intent: IccRenderingIntent,
+    ) -> Result<ColorTransform, ProfileConnectionError> {
+        self.to_pcs(intent)
+    }
+}
+
+impl ColorProfile for XyzD65 {
+    fn space(&self) -> ColorSpaceKey {
+        (*self).into()
+    }
+
+    fn pcs(&self) -> IccPcs {
+        IccPcs::XyzD50
+    }
+
+    fn to_pcs(&self, intent: IccRenderingIntent) -> Result<ColorTransform, ProfileConnectionError> {
+        require_relative(intent)?;
+        Ok(ColorTransform::new(
+            self.space(),
+            XyzD50.into(),
+            adaptation(XYZ_D65_TO_XYZ_D50)?,
+        )?)
+    }
+
+    fn from_pcs(
+        &self,
+        intent: IccRenderingIntent,
+    ) -> Result<ColorTransform, ProfileConnectionError> {
+        require_relative(intent)?;
+        Ok(ColorTransform::new(
+            XyzD50.into(),
+            self.space(),
+            adaptation(XYZ_D50_TO_XYZ_D65)?,
+        )?)
+    }
+}
+
+fn adaptation(matrix: [[f64; 3]; 3]) -> Result<Transfer, ProfileConnectionError> {
+    Ok(Transfer::new(
+        3,
+        [TransferStage::Matrix(TransferMatrix::new(
+            3,
+            3,
+            matrix.into_iter().flatten().collect::<Vec<_>>(),
+            [0.0; 3],
+        )?)],
+    )?)
+}
+
+impl ColorProfile for IccProfile {
     fn space(&self) -> ColorSpaceKey {
         self.device_space()
     }
@@ -161,6 +293,12 @@ pub enum ProfileConnectionError {
 impl From<ColorTransformError> for ProfileConnectionError {
     fn from(error: ColorTransformError) -> Self {
         Self::Transform(error)
+    }
+}
+
+impl From<TransferError> for ProfileConnectionError {
+    fn from(error: TransferError) -> Self {
+        Self::Transform(ColorTransformError::Transfer(error))
     }
 }
 
@@ -284,7 +422,7 @@ mod tests {
     fn malformed_direct_link_cannot_escape_with_a_matching_channel_count() {
         struct InvalidLink;
 
-        impl ProfileConnection for InvalidLink {
+        impl ColorProfile for InvalidLink {
             fn space(&self) -> ColorSpaceKey {
                 RgbColorSpace::Srgb.into()
             }

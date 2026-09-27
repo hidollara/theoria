@@ -1,6 +1,6 @@
 use std::fmt;
 
-use super::{ColorCoordinates, ColorProfile, Opacity, OpacitySample, Srgb};
+use super::{ColorCoordinates, ColorSpace, Opacity, OpacitySample, Srgb};
 
 /// A logical color retaining its authored profile, coordinate representation,
 /// and intrinsic opacity.
@@ -10,7 +10,7 @@ use super::{ColorCoordinates, ColorProfile, Opacity, OpacitySample, Srgb};
 /// that evaluates a Canvas.
 pub struct Color<P = Srgb, C = [f32; 3], A = f32>
 where
-    P: ColorProfile,
+    P: ColorSpace,
     C: ColorCoordinates<P::Model>,
     A: OpacitySample,
 {
@@ -21,7 +21,7 @@ where
 
 impl<P, C, A> Color<P, C, A>
 where
-    P: ColorProfile,
+    P: ColorSpace,
     C: ColorCoordinates<P::Model>,
     A: OpacitySample,
 {
@@ -52,7 +52,7 @@ where
 
 impl<P, C, A> Clone for Color<P, C, A>
 where
-    P: ColorProfile + Clone,
+    P: ColorSpace + Clone,
     C: ColorCoordinates<P::Model> + Clone,
     A: OpacitySample,
 {
@@ -63,7 +63,7 @@ where
 
 impl<P, C, A> Copy for Color<P, C, A>
 where
-    P: ColorProfile + Copy,
+    P: ColorSpace + Copy,
     C: ColorCoordinates<P::Model> + Copy,
     A: OpacitySample,
 {
@@ -71,7 +71,7 @@ where
 
 impl<P, C, A> fmt::Debug for Color<P, C, A>
 where
-    P: ColorProfile + fmt::Debug,
+    P: ColorSpace + fmt::Debug,
     C: ColorCoordinates<P::Model> + fmt::Debug,
     A: OpacitySample,
 {
@@ -87,7 +87,7 @@ where
 
 impl<P, C, A> PartialEq for Color<P, C, A>
 where
-    P: ColorProfile + PartialEq,
+    P: ColorSpace + PartialEq,
     C: ColorCoordinates<P::Model> + PartialEq,
     A: OpacitySample,
 {
@@ -101,7 +101,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ColorModel, ColorProfile, Rgb};
+    use crate::{ColorModel, ColorSpace, Rgb};
 
     struct AuthoredRgb([u8; 3]);
 
@@ -123,7 +123,7 @@ mod tests {
 
     struct LogicalProfile;
 
-    impl ColorProfile for LogicalProfile {
+    impl ColorSpace for LogicalProfile {
         type Model = LogicalModel;
     }
 

@@ -1,4 +1,4 @@
-use super::{ColorProfile, ColorSpaceKey, MatrixRgbProfile, RgbColorSpace};
+use super::{ColorSpace, ColorSpaceKey, MatrixRgbProfile, RgbColorSpace};
 use crate::{
     model::Rgb,
     profile_data::{LINEAR_P3_TO_XYZ_D65, XYZ_D65_TO_LINEAR_P3},

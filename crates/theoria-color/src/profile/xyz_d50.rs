@@ -1,4 +1,4 @@
-use super::{ColorProfile, ColorSpaceKey};
+use super::{ColorSpace, ColorSpaceKey};
 use crate::model::Xyz;
 
 profile!(XyzD50, Xyz);

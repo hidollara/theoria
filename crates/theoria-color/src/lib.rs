@@ -22,10 +22,10 @@ pub use icc::{IccPcs, IccTransfer, IccTransferDirection, IccTransferError};
 pub use icc_profile::{IccProfile, IccProfileError, IccRenderingIntent};
 pub use model::{Cmyk, ColorCoordinates, ColorModel, Lab, Rgb, Xyz, Ycbcr};
 pub use profile::{
-    ColorProfile, ColorSpaceKey, DisplayP3, LabD50, LinearDisplayP3, LinearSrgb, MatrixRgbProfile,
+    ColorSpace, ColorSpaceKey, DisplayP3, LabD50, LinearDisplayP3, LinearSrgb, MatrixRgbProfile,
     RgbColorSpace, Srgb, XyzD50, XyzD65,
 };
-pub use profile_connection::{ProfileConnection, ProfileConnectionError, connect_profiles};
+pub use profile_connection::{ColorProfile, ProfileConnectionError, connect_profiles};
 pub use sample::{Opacity, OpacityError, OpacitySample};
 pub use transfer::{
     Transfer, TransferClut, TransferCurve, TransferError, TransferMatrix, TransferShader,

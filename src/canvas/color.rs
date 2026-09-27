@@ -1,7 +1,7 @@
 use std::{error::Error, fmt, sync::Arc};
 
 use crate::color::{
-    Color, ColorCoordinates, ColorProfile, ColorTransformError, IccProfile, IccProfileError,
+    Color, ColorCoordinates, ColorSpace, ColorTransformError, IccProfile, IccProfileError,
     IccRenderingIntent, LabD50, Opacity, OpacitySample, RgbColorSpace, Srgb, TransferError, XyzD50,
     XyzD65,
 };
@@ -224,7 +224,7 @@ macro_rules! canvas_rgb_color {
     ($profile:ty) => {
         impl<C, A> From<Color<$profile, C, A>> for CanvasColor
         where
-            C: CanvasCoordinates + ColorCoordinates<<$profile as ColorProfile>::Model>,
+            C: CanvasCoordinates + ColorCoordinates<<$profile as ColorSpace>::Model>,
             A: CanvasOpacity,
         {
             fn from(color: Color<$profile, C, A>) -> Self {
@@ -248,7 +248,7 @@ macro_rules! canvas_reference_color {
     ($profile:ty, $variant:ident) => {
         impl<C, A> From<Color<$profile, C, A>> for CanvasColor
         where
-            C: CanvasCoordinates + ColorCoordinates<<$profile as ColorProfile>::Model>,
+            C: CanvasCoordinates + ColorCoordinates<<$profile as ColorSpace>::Model>,
             A: CanvasOpacity,
         {
             fn from(color: Color<$profile, C, A>) -> Self {

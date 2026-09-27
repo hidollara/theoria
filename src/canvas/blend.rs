@@ -4,7 +4,7 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
-use crate::color::{ColorProfile, Rgb, RgbColorSpace};
+use crate::color::{ColorSpace, Rgb, RgbColorSpace};
 
 use super::composition_shader::{self, Binding};
 
@@ -14,7 +14,7 @@ use super::composition_shader::{self, Binding};
 /// Implement this for a specific profile to restrict where an operation may
 /// be used. The resulting shader is recorded in the Canvas and compiled by
 /// each renderer when first needed.
-pub trait BlendOperation<P: ColorProfile<Model = Rgb>> {
+pub trait BlendOperation<P: ColorSpace<Model = Rgb>> {
     fn shader(self) -> BlendShader;
 
     /// Whether this operation returns the source unchanged for every input.
@@ -205,7 +205,7 @@ impl BlendMode {
     }
 }
 
-impl<P: ColorProfile<Model = Rgb>> BlendOperation<P> for BlendMode {
+impl<P: ColorSpace<Model = Rgb>> BlendOperation<P> for BlendMode {
     fn shader(self) -> BlendShader {
         self.shader_definition()
     }
@@ -215,7 +215,7 @@ impl<P: ColorProfile<Model = Rgb>> BlendOperation<P> for BlendMode {
     }
 }
 
-impl<P: ColorProfile<Model = Rgb>> BlendOperation<P> for BlendShader {
+impl<P: ColorSpace<Model = Rgb>> BlendOperation<P> for BlendShader {
     fn shader(self) -> BlendShader {
         self
     }
@@ -231,7 +231,7 @@ pub struct Blend {
 impl Blend {
     pub fn new<P, O>(operation: O, space: P) -> Self
     where
-        P: ColorProfile<Model = Rgb> + Into<RgbColorSpace>,
+        P: ColorSpace<Model = Rgb> + Into<RgbColorSpace>,
         O: BlendOperation<P>,
     {
         Self {

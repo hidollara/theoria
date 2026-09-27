@@ -7,11 +7,11 @@ use std::{
 
 use super::{ColorModel, Rgb, RgbTransfer, RgbTransform};
 
-/// Associates a profile with the coordinate model it accepts.
+/// Associates a named color space with its coordinate model.
 ///
-/// Conversion capabilities are specified separately; merely naming a model
-/// does not imply that a renderer can convert an arbitrary profile.
-pub trait ColorProfile: 'static {
+/// This is a compile-time constraint on color values. It does not promise a
+/// conversion: that is supplied independently by [`crate::ColorProfile`].
+pub trait ColorSpace: 'static {
     type Model: ColorModel;
 }
 
@@ -20,7 +20,7 @@ pub trait ColorProfile: 'static {
 /// Profiles needing a different transform representation are not covered by
 /// this capability. XYZ D65 is the shared space of the current RGB profiles,
 /// not a claim that it is the ICC profile connection space.
-pub trait MatrixRgbProfile: ColorProfile<Model = Rgb> {
+pub trait MatrixRgbProfile: ColorSpace<Model = Rgb> {
     const TRANSFORM: RgbTransform;
 }
 
@@ -29,7 +29,7 @@ macro_rules! profile {
         #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
         pub struct $name;
 
-        impl ColorProfile for $name {
+        impl ColorSpace for $name {
             type Model = $model;
         }
     };
@@ -49,7 +49,7 @@ pub enum RgbColorSpace {
     LinearDisplayP3,
 }
 
-impl ColorProfile for RgbColorSpace {
+impl ColorSpace for RgbColorSpace {
     type Model = Rgb;
 }
 
@@ -174,7 +174,7 @@ mod tests {
     use super::*;
     use std::collections::HashSet;
 
-    fn assert_rgb_profile<P: ColorProfile<Model = Rgb>>() {}
+    fn assert_rgb_profile<P: ColorSpace<Model = Rgb>>() {}
 
     #[test]
     fn predefined_spaces_have_canonical_keys() {

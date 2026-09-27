@@ -1,4 +1,4 @@
-use crate::color::{ColorProfile, Rgb, RgbColorSpace};
+use crate::color::{ColorSpace, Rgb, RgbColorSpace};
 
 use super::{Blend, BlendOperation, BlendShader};
 
@@ -79,7 +79,7 @@ impl Composition {
 
     pub fn with_blend<P, O>(mut self, operation: O, space: P) -> Self
     where
-        P: ColorProfile<Model = Rgb> + Into<RgbColorSpace>,
+        P: ColorSpace<Model = Rgb> + Into<RgbColorSpace>,
         O: BlendOperation<P>,
     {
         self.blend = (!operation.is_identity()).then(|| Blend::new(operation, space));

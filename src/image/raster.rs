@@ -5,7 +5,7 @@ use std::{
     sync::{Arc, Weak},
 };
 
-use crate::color::{ColorProfile, Srgb};
+use crate::color::{ColorSpace, Srgb};
 
 use super::{AlphaAssociation, AlphaLayout, PixelFormat, Rgba8};
 
@@ -36,7 +36,7 @@ impl<S> RasterPlane<S> {
 struct RasterImageInner<F, P>
 where
     F: PixelFormat,
-    P: ColorProfile<Model = F::Model>,
+    P: ColorSpace<Model = F::Model>,
 {
     identity: Arc<()>,
     width: u32,
@@ -54,7 +54,7 @@ where
 pub struct RasterImage<F, P>
 where
     F: PixelFormat,
-    P: ColorProfile<Model = F::Model>,
+    P: ColorSpace<Model = F::Model>,
 {
     inner: Arc<RasterImageInner<F, P>>,
 }
@@ -62,7 +62,7 @@ where
 impl<F, P> RasterImage<F, P>
 where
     F: PixelFormat,
-    P: ColorProfile<Model = F::Model>,
+    P: ColorSpace<Model = F::Model>,
 {
     pub fn from_planes(
         width: u32,
@@ -143,7 +143,7 @@ impl RasterImage<Rgba8, Srgb> {
 impl<F, P> Clone for RasterImage<F, P>
 where
     F: PixelFormat,
-    P: ColorProfile<Model = F::Model>,
+    P: ColorSpace<Model = F::Model>,
 {
     fn clone(&self) -> Self {
         Self {
@@ -155,7 +155,7 @@ where
 impl<F, P> fmt::Debug for RasterImage<F, P>
 where
     F: PixelFormat,
-    P: ColorProfile<Model = F::Model>,
+    P: ColorSpace<Model = F::Model>,
 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
