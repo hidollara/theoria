@@ -44,7 +44,7 @@ pub enum AlphaAssociation {
 
 /// Defines the typed memory layout from which a renderer can decode pixels.
 ///
-/// A format defines storage only. [`crate::color::ColorSpace`] gives the
+/// A format defines storage only. [`crate::color::TypedColorSpace`] gives the
 /// decoded coordinates colorimetric meaning.
 pub trait PixelFormat: Copy + fmt::Debug + 'static {
     type Model: ColorModel;

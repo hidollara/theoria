@@ -4,17 +4,17 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
-use crate::color::{ColorSpace, Rgb, RgbColorSpace};
+use crate::color::{Rgb, RgbColorSpace, TypedColorSpace};
 
 use super::composition_shader::{self, Binding};
 
 /// The straight-RGB operation evaluated where source and backdrop overlap.
 /// Alpha and Porter-Duff composition are separate from this operation.
 ///
-/// Implement this for a specific profile to restrict where an operation may
+/// Implement this for a specific typed space to restrict where an operation may
 /// be used. The resulting shader is recorded in the Canvas and compiled by
 /// each renderer when first needed.
-pub trait BlendOperation<P: ColorSpace<Model = Rgb>> {
+pub trait BlendOperation<P: TypedColorSpace<Model = Rgb>> {
     fn shader(self) -> BlendShader;
 
     /// Whether this operation returns the source unchanged for every input.
@@ -205,7 +205,7 @@ impl BlendMode {
     }
 }
 
-impl<P: ColorSpace<Model = Rgb>> BlendOperation<P> for BlendMode {
+impl<P: TypedColorSpace<Model = Rgb>> BlendOperation<P> for BlendMode {
     fn shader(self) -> BlendShader {
         self.shader_definition()
     }
@@ -215,7 +215,7 @@ impl<P: ColorSpace<Model = Rgb>> BlendOperation<P> for BlendMode {
     }
 }
 
-impl<P: ColorSpace<Model = Rgb>> BlendOperation<P> for BlendShader {
+impl<P: TypedColorSpace<Model = Rgb>> BlendOperation<P> for BlendShader {
     fn shader(self) -> BlendShader {
         self
     }
@@ -231,7 +231,7 @@ pub struct Blend {
 impl Blend {
     pub fn new<P, O>(operation: O, space: P) -> Self
     where
-        P: ColorSpace<Model = Rgb> + Into<RgbColorSpace>,
+        P: TypedColorSpace<Model = Rgb> + Into<RgbColorSpace>,
         O: BlendOperation<P>,
     {
         Self {

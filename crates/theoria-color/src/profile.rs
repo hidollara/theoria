@@ -3,7 +3,7 @@ use std::{error::Error, fmt};
 use super::color_transform::{ColorTransform, ColorTransformError, pcs_key_for_intent};
 use super::icc::IccPcs;
 use super::icc_profile::{IccProfileError, IccRenderingIntent};
-use super::space::ColorSpaceKey;
+use super::space::ColorSpace;
 use super::transfer::TransferError;
 
 /// Directed conversions supplied by a profile for one coordinate space.
@@ -11,10 +11,10 @@ use super::transfer::TransferError;
 /// The space identity is separate from its conversion data: two profiles can
 /// interpret the same number of channels differently. The two PCS directions
 /// are independent, and a direct link is optional rather than an inverse of
-/// either direction. [`Self::space`] must return the same key on every call;
-/// clone a key stored by the profile rather than constructing a new one.
+/// either direction. [`Self::space`] must identify the same space on every call;
+/// clone a space stored by the profile rather than constructing a new one.
 pub trait ColorProfile {
-    fn space(&self) -> ColorSpaceKey;
+    fn space(&self) -> ColorSpace;
     fn pcs(&self) -> IccPcs;
     fn space_to_pcs(
         &self,
@@ -31,7 +31,7 @@ pub trait ColorProfile {
     /// silently stand in for another, even if its endpoints happen to match.
     fn direct_to(
         &self,
-        _destination: &ColorSpaceKey,
+        _destination: &ColorSpace,
         _intent: IccRenderingIntent,
     ) -> Result<Option<ColorTransform>, ProfileConnectionError> {
         Ok(None)
@@ -170,11 +170,8 @@ mod tests {
             transform.transfer().stages(),
             &[TransferStage::curves([TransferCurve::SRGB_DECODE; 3]).unwrap()]
         );
-        assert_eq!(transform.from(), &ColorSpaceKey::from(RgbColorSpace::Srgb));
-        assert_eq!(
-            transform.to(),
-            &ColorSpaceKey::from(RgbColorSpace::LinearSrgb)
-        );
+        assert_eq!(transform.from(), &ColorSpace::from(RgbColorSpace::Srgb));
+        assert_eq!(transform.to(), &ColorSpace::from(RgbColorSpace::LinearSrgb));
     }
 
     #[test]
@@ -210,10 +207,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(transform.from(), &icc.device_space());
-        assert_eq!(
-            transform.to(),
-            &ColorSpaceKey::from(RgbColorSpace::LinearSrgb)
-        );
+        assert_eq!(transform.to(), &ColorSpace::from(RgbColorSpace::LinearSrgb));
         let converted = transform.transfer().evaluate(&[0.5; 3]).unwrap();
         assert!(converted.iter().all(|value| *value > 0.2 && *value < 0.23));
     }
@@ -229,8 +223,8 @@ mod tests {
             IccRenderingIntent::RelativeColorimetric,
         )
         .unwrap();
-        assert_eq!(transform.from(), &ColorSpaceKey::from(Srgb));
-        assert_eq!(transform.to(), &ColorSpaceKey::from(LabD50));
+        assert_eq!(transform.from(), &ColorSpace::from(Srgb));
+        assert_eq!(transform.to(), &ColorSpace::from(LabD50));
         assert_eq!(transform.transfer().evaluate(&[1.0; 3]).unwrap()[0], 100.0);
     }
 
@@ -239,7 +233,7 @@ mod tests {
         struct LinkedSpace;
 
         impl ColorProfile for LinkedSpace {
-            fn space(&self) -> ColorSpaceKey {
+            fn space(&self) -> ColorSpace {
                 Srgb.into()
             }
 
@@ -266,10 +260,10 @@ mod tests {
 
             fn direct_to(
                 &self,
-                destination: &ColorSpaceKey,
+                destination: &ColorSpace,
                 intent: IccRenderingIntent,
             ) -> Result<Option<ColorTransform>, ProfileConnectionError> {
-                if *destination == ColorSpaceKey::from(LinearSrgb)
+                if *destination == ColorSpace::from(LinearSrgb)
                     && intent == IccRenderingIntent::Saturation
                 {
                     return Ok(Some(ColorTransform::new(
@@ -321,7 +315,7 @@ mod tests {
         struct InvalidLink;
 
         impl ColorProfile for InvalidLink {
-            fn space(&self) -> ColorSpaceKey {
+            fn space(&self) -> ColorSpace {
                 RgbColorSpace::Srgb.into()
             }
 
@@ -345,7 +339,7 @@ mod tests {
 
             fn direct_to(
                 &self,
-                _: &ColorSpaceKey,
+                _: &ColorSpace,
                 _: IccRenderingIntent,
             ) -> Result<Option<ColorTransform>, ProfileConnectionError> {
                 Ok(Some(ColorTransform::new(
@@ -372,7 +366,7 @@ mod tests {
         struct InvalidPcs;
 
         impl ColorProfile for InvalidPcs {
-            fn space(&self) -> ColorSpaceKey {
+            fn space(&self) -> ColorSpace {
                 Srgb.into()
             }
 

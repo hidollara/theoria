@@ -1,8 +1,8 @@
 use std::fmt;
 
-use super::{ColorCoordinates, ColorSpace, Opacity, OpacitySample, Srgb};
+use super::{ColorCoordinates, Opacity, OpacitySample, Srgb, TypedColorSpace};
 
-/// A logical color retaining its authored profile, coordinate representation,
+/// A logical color retaining its authored space, coordinate representation,
 /// and intrinsic opacity.
 ///
 /// The value is not converted into a renderer working space and its color
@@ -10,31 +10,31 @@ use super::{ColorCoordinates, ColorSpace, Opacity, OpacitySample, Srgb};
 /// that evaluates a Canvas.
 pub struct Color<P = Srgb, C = [f32; 3], A = f32>
 where
-    P: ColorSpace,
+    P: TypedColorSpace,
     C: ColorCoordinates<P::Model>,
     A: OpacitySample,
 {
-    profile: P,
+    space: P,
     coordinates: C,
     opacity: Opacity<A>,
 }
 
 impl<P, C, A> Color<P, C, A>
 where
-    P: ColorSpace,
+    P: TypedColorSpace,
     C: ColorCoordinates<P::Model>,
     A: OpacitySample,
 {
-    pub fn new(profile: P, coordinates: C, opacity: Opacity<A>) -> Self {
+    pub fn new(space: P, coordinates: C, opacity: Opacity<A>) -> Self {
         Self {
-            profile,
+            space,
             coordinates,
             opacity,
         }
     }
 
-    pub const fn profile(&self) -> &P {
-        &self.profile
+    pub const fn space(&self) -> &P {
+        &self.space
     }
 
     pub const fn coordinates(&self) -> &C {
@@ -46,24 +46,24 @@ where
     }
 
     pub fn into_parts(self) -> (P, C, Opacity<A>) {
-        (self.profile, self.coordinates, self.opacity)
+        (self.space, self.coordinates, self.opacity)
     }
 }
 
 impl<P, C, A> Clone for Color<P, C, A>
 where
-    P: ColorSpace + Clone,
+    P: TypedColorSpace + Clone,
     C: ColorCoordinates<P::Model> + Clone,
     A: OpacitySample,
 {
     fn clone(&self) -> Self {
-        Self::new(self.profile.clone(), self.coordinates.clone(), self.opacity)
+        Self::new(self.space.clone(), self.coordinates.clone(), self.opacity)
     }
 }
 
 impl<P, C, A> Copy for Color<P, C, A>
 where
-    P: ColorSpace + Copy,
+    P: TypedColorSpace + Copy,
     C: ColorCoordinates<P::Model> + Copy,
     A: OpacitySample,
 {
@@ -71,14 +71,14 @@ where
 
 impl<P, C, A> fmt::Debug for Color<P, C, A>
 where
-    P: ColorSpace + fmt::Debug,
+    P: TypedColorSpace + fmt::Debug,
     C: ColorCoordinates<P::Model> + fmt::Debug,
     A: OpacitySample,
 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("Color")
-            .field("profile", &self.profile)
+            .field("space", &self.space)
             .field("coordinates", &self.coordinates)
             .field("opacity", &self.opacity)
             .finish()
@@ -87,12 +87,12 @@ where
 
 impl<P, C, A> PartialEq for Color<P, C, A>
 where
-    P: ColorSpace + PartialEq,
+    P: TypedColorSpace + PartialEq,
     C: ColorCoordinates<P::Model> + PartialEq,
     A: OpacitySample,
 {
     fn eq(&self, other: &Self) -> bool {
-        self.profile == other.profile
+        self.space == other.space
             && self.coordinates == other.coordinates
             && self.opacity == other.opacity
     }
@@ -101,7 +101,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ColorModel, ColorSpace, Rgb};
+    use crate::{ColorModel, ColorSpace, Rgb, TypedColorSpace};
+    use std::{num::NonZeroUsize, sync::LazyLock};
 
     struct AuthoredRgb([u8; 3]);
 
@@ -121,10 +122,17 @@ mod tests {
         const COMPONENTS: usize = 2;
     }
 
-    struct LogicalProfile;
+    struct LogicalSpace;
 
-    impl ColorSpace for LogicalProfile {
+    impl TypedColorSpace for LogicalSpace {
         type Model = LogicalModel;
+
+        fn color_space(&self) -> ColorSpace {
+            static SPACE: LazyLock<ColorSpace> = LazyLock::new(|| {
+                ColorSpace::new(NonZeroUsize::new(LogicalModel::COMPONENTS).unwrap())
+            });
+            SPACE.clone()
+        }
     }
 
     struct LogicalCoordinates([f32; 2]);
@@ -134,7 +142,7 @@ mod tests {
     #[test]
     fn a_model_needs_no_cpu_reference_conversion_to_hold_a_color() {
         let color = Color::new(
-            LogicalProfile,
+            LogicalSpace,
             LogicalCoordinates([0.25, 0.75]),
             Opacity::<f32>::ONE,
         );

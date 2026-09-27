@@ -75,7 +75,7 @@ impl RasterImageSource for IccRasterImage {
 #[derive(Debug)]
 struct Rgb8Source<P>
 where
-    P: crate::color::ColorSpace<Model = crate::color::Rgb>,
+    P: crate::color::TypedColorSpace<Model = crate::color::Rgb>,
 {
     image: RasterImage<Rgb8, P>,
     color_space: RgbColorSpace,
@@ -83,7 +83,7 @@ where
 
 impl<P> RasterImageSource for Rgb8Source<P>
 where
-    P: crate::color::ColorSpace<Model = crate::color::Rgb> + fmt::Debug + Send + Sync,
+    P: crate::color::TypedColorSpace<Model = crate::color::Rgb> + fmt::Debug + Send + Sync,
 {
     fn width(&self) -> u32 {
         self.image.width()
@@ -115,7 +115,7 @@ pub(crate) trait RasterImageSource: fmt::Debug + Send + Sync {
 #[derive(Debug)]
 struct Rgba8Source<P>
 where
-    P: crate::color::ColorSpace<Model = crate::color::Rgb>,
+    P: crate::color::TypedColorSpace<Model = crate::color::Rgb>,
 {
     image: RasterImage<Rgba8, P>,
     color_space: RgbColorSpace,
@@ -123,7 +123,7 @@ where
 
 impl<P> RasterImageSource for Rgba8Source<P>
 where
-    P: crate::color::ColorSpace<Model = crate::color::Rgb> + fmt::Debug + Send + Sync,
+    P: crate::color::TypedColorSpace<Model = crate::color::Rgb> + fmt::Debug + Send + Sync,
 {
     fn width(&self) -> u32 {
         self.image.width()

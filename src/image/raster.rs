@@ -5,7 +5,7 @@ use std::{
     sync::{Arc, Weak},
 };
 
-use crate::color::{ColorSpace, Srgb};
+use crate::color::{Srgb, TypedColorSpace};
 
 use super::{AlphaAssociation, AlphaLayout, PixelFormat, Rgba8};
 
@@ -36,13 +36,13 @@ impl<S> RasterPlane<S> {
 struct RasterImageInner<F, P>
 where
     F: PixelFormat,
-    P: ColorSpace<Model = F::Model>,
+    P: TypedColorSpace<Model = F::Model>,
 {
     identity: Arc<()>,
     width: u32,
     height: u32,
     planes: Vec<RasterPlane<F::Storage>>,
-    profile: P,
+    space: P,
     alpha: <F::Alpha as AlphaLayout>::Association,
 }
 
@@ -54,7 +54,7 @@ where
 pub struct RasterImage<F, P>
 where
     F: PixelFormat,
-    P: ColorSpace<Model = F::Model>,
+    P: TypedColorSpace<Model = F::Model>,
 {
     inner: Arc<RasterImageInner<F, P>>,
 }
@@ -62,13 +62,13 @@ where
 impl<F, P> RasterImage<F, P>
 where
     F: PixelFormat,
-    P: ColorSpace<Model = F::Model>,
+    P: TypedColorSpace<Model = F::Model>,
 {
     pub fn from_planes(
         width: u32,
         height: u32,
         planes: Vec<RasterPlane<F::Storage>>,
-        profile: P,
+        space: P,
         alpha: <F::Alpha as AlphaLayout>::Association,
     ) -> Result<Self, RasterImageError> {
         if width == 0 || height == 0 {
@@ -87,7 +87,7 @@ where
                 width,
                 height,
                 planes,
-                profile,
+                space,
                 alpha,
             }),
         })
@@ -105,8 +105,8 @@ where
         &self.inner.planes
     }
 
-    pub fn profile(&self) -> &P {
-        &self.inner.profile
+    pub fn space(&self) -> &P {
+        &self.inner.space
     }
 
     pub fn alpha_association(&self) -> <F::Alpha as AlphaLayout>::Association {
@@ -143,7 +143,7 @@ impl RasterImage<Rgba8, Srgb> {
 impl<F, P> Clone for RasterImage<F, P>
 where
     F: PixelFormat,
-    P: ColorSpace<Model = F::Model>,
+    P: TypedColorSpace<Model = F::Model>,
 {
     fn clone(&self) -> Self {
         Self {
@@ -155,7 +155,7 @@ where
 impl<F, P> fmt::Debug for RasterImage<F, P>
 where
     F: PixelFormat,
-    P: ColorSpace<Model = F::Model>,
+    P: TypedColorSpace<Model = F::Model>,
 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -319,7 +319,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(image.profile(), &DisplayP3);
+        assert_eq!(image.space(), &DisplayP3);
     }
 
     #[test]

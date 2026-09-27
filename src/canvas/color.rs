@@ -1,9 +1,9 @@
 use std::{error::Error, fmt, sync::Arc};
 
 use crate::color::{
-    Color, ColorCoordinates, ColorSpace, ColorTransformError, IccProfile, IccProfileError,
-    IccRenderingIntent, LabD50, Opacity, OpacitySample, ProfileConnectionError, RgbColorSpace,
-    Srgb, TransferError, XyzD50, XyzD65,
+    Color, ColorCoordinates, ColorTransformError, IccProfile, IccProfileError, IccRenderingIntent,
+    LabD50, Opacity, OpacitySample, ProfileConnectionError, RgbColorSpace, Srgb, TransferError,
+    TypedColorSpace, XyzD50, XyzD65,
 };
 
 /// A logical color whose concrete representation has been erased at the
@@ -224,7 +224,7 @@ macro_rules! canvas_rgb_color {
     ($profile:ty) => {
         impl<C, A> From<Color<$profile, C, A>> for CanvasColor
         where
-            C: CanvasCoordinates + ColorCoordinates<<$profile as ColorSpace>::Model>,
+            C: CanvasCoordinates + ColorCoordinates<<$profile as TypedColorSpace>::Model>,
             A: CanvasOpacity,
         {
             fn from(color: Color<$profile, C, A>) -> Self {
@@ -248,7 +248,7 @@ macro_rules! canvas_reference_color {
     ($profile:ty, $variant:ident) => {
         impl<C, A> From<Color<$profile, C, A>> for CanvasColor
         where
-            C: CanvasCoordinates + ColorCoordinates<<$profile as ColorSpace>::Model>,
+            C: CanvasCoordinates + ColorCoordinates<<$profile as TypedColorSpace>::Model>,
             A: CanvasOpacity,
         {
             fn from(color: Color<$profile, C, A>) -> Self {

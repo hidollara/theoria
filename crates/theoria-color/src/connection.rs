@@ -2,8 +2,8 @@ use super::pcs;
 use super::profile_data::{XYZ_D50_TO_XYZ_D65, XYZ_D65_TO_XYZ_D50};
 use super::transform::multiply_f64;
 use super::{
-    ColorSpace, DisplayP3, LabD50, LinearDisplayP3, LinearSrgb, RgbColorSpace, Srgb, WhitePoint,
-    XyzD50, XyzD65,
+    DisplayP3, LabD50, LinearDisplayP3, LinearSrgb, RgbColorSpace, Srgb, TypedColorSpace,
+    WhitePoint, XyzD50, XyzD65,
 };
 
 /// A profile with a reference conversion to and from D50-adapted CIE XYZ.
@@ -11,7 +11,7 @@ use super::{
 /// This provides colorimetric meaning for typed coordinates, including the
 /// predefined Lab and RGB profiles. It does not prescribe renderer precision,
 /// shader code, gamut mapping, or an ICC rendering intent.
-pub trait XyzD50Profile: ColorSpace {
+pub trait XyzD50Profile: TypedColorSpace {
     type ReferenceCoordinates: AsRef<[f64]>;
 
     fn coordinates_to_xyz_d50(&self, coordinates: &Self::ReferenceCoordinates) -> [f64; 3];

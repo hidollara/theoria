@@ -1,6 +1,6 @@
 use super::{
-    ColorProfile, ColorSpace, ColorSpaceKey, ColorTransform, IccPcs, IccRenderingIntent,
-    ProfileConnectionError, RgbColorSpace,
+    ColorProfile, ColorSpace, ColorTransform, IccPcs, IccRenderingIntent, ProfileConnectionError,
+    RgbColorSpace, TypedColorSpace,
 };
 use crate::{
     model::Rgb,

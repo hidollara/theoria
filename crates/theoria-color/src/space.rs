@@ -13,12 +13,14 @@ use super::transfer::{Transfer, TransferCurve, TransferError, TransferMatrix, Tr
 use super::transform::multiply_f64;
 use super::{ColorModel, Rgb, RgbTransfer};
 
-/// Associates a named color space with its coordinate model.
+/// Associates a statically typed color space with its coordinate model.
 ///
-/// This is a compile-time constraint on color values. It does not promise a
-/// conversion: that is supplied independently by [`crate::ColorProfile`].
-pub trait ColorSpace: 'static {
+/// This is a compile-time constraint on color values. The runtime space
+/// identifies their meaning; conversion is supplied by a profile separately.
+pub trait TypedColorSpace: 'static {
     type Model: ColorModel;
+
+    fn color_space(&self) -> ColorSpace;
 }
 
 macro_rules! named_space {
@@ -26,8 +28,12 @@ macro_rules! named_space {
         #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
         pub struct $name;
 
-        impl ColorSpace for $name {
+        impl TypedColorSpace for $name {
             type Model = $model;
+
+            fn color_space(&self) -> ColorSpace {
+                (*self).into()
+            }
         }
     };
 }
@@ -46,12 +52,16 @@ pub enum RgbColorSpace {
     LinearDisplayP3,
 }
 
-impl ColorSpace for RgbColorSpace {
+impl TypedColorSpace for RgbColorSpace {
     type Model = Rgb;
+
+    fn color_space(&self) -> ColorSpace {
+        (*self).into()
+    }
 }
 
 impl ColorProfile for RgbColorSpace {
-    fn space(&self) -> ColorSpaceKey {
+    fn space(&self) -> ColorSpace {
         (*self).into()
     }
 
@@ -77,7 +87,7 @@ impl ColorProfile for RgbColorSpace {
 
     fn direct_to(
         &self,
-        destination: &ColorSpaceKey,
+        destination: &ColorSpace,
         intent: IccRenderingIntent,
     ) -> Result<Option<ColorTransform>, ProfileConnectionError> {
         if intent != IccRenderingIntent::RelativeColorimetric {
@@ -99,7 +109,7 @@ impl ColorProfile for RgbColorSpace {
                     RgbColorSpace::DisplayP3 | RgbColorSpace::LinearDisplayP3
                 )
             );
-            if same_primaries && ColorSpaceKey::from(other) == *destination {
+            if same_primaries && ColorSpace::from(other) == *destination {
                 return Ok(Some(ColorTransform::between_rgb(*self, other)?));
             }
         }
@@ -110,7 +120,7 @@ impl ColorProfile for RgbColorSpace {
 macro_rules! predefined_rgb_profile {
     ($profile:ty) => {
         impl ColorProfile for $profile {
-            fn space(&self) -> ColorSpaceKey {
+            fn space(&self) -> ColorSpace {
                 (*self).into()
             }
 
@@ -134,7 +144,7 @@ macro_rules! predefined_rgb_profile {
 
             fn direct_to(
                 &self,
-                destination: &ColorSpaceKey,
+                destination: &ColorSpace,
                 intent: IccRenderingIntent,
             ) -> Result<Option<ColorTransform>, ProfileConnectionError> {
                 RgbColorSpace::from(*self).direct_to(destination, intent)
@@ -229,15 +239,15 @@ struct ColorSpaceIdentity {
     channels: NonZeroUsize,
 }
 
-/// An opaque identity for one coordinate space, independent of its profile data.
+/// One runtime color space, identified independently of any profile data.
 ///
-/// Clone a key to label another transform with the same coordinates. Creating
-/// another key, even with the same channel count, denotes a different space.
-/// A key keeps only this small identity alive, not an ICC profile or its LUTs.
+/// Clones denote the same coordinate space. Constructing another instance,
+/// even with the same channel count, denotes a different space. It keeps only
+/// its identity alive, not an ICC profile or its LUTs.
 #[derive(Clone)]
-pub struct ColorSpaceKey(Arc<ColorSpaceIdentity>);
+pub struct ColorSpace(Arc<ColorSpaceIdentity>);
 
-impl ColorSpaceKey {
+impl ColorSpace {
     /// Creates a distinct space with the specified number of channels.
     pub fn new(channels: NonZeroUsize) -> Self {
         Self(Arc::new(ColorSpaceIdentity { channels }))
@@ -248,24 +258,24 @@ impl ColorSpaceKey {
     }
 }
 
-impl PartialEq for ColorSpaceKey {
+impl PartialEq for ColorSpace {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.0, &other.0)
     }
 }
 
-impl Eq for ColorSpaceKey {}
+impl Eq for ColorSpace {}
 
-impl Hash for ColorSpaceKey {
+impl Hash for ColorSpace {
     fn hash<H: Hasher>(&self, state: &mut H) {
         Arc::as_ptr(&self.0).hash(state);
     }
 }
 
-impl fmt::Debug for ColorSpaceKey {
+impl fmt::Debug for ColorSpace {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
-            .debug_struct("ColorSpaceKey")
+            .debug_struct("ColorSpace")
             .field("identity", &Arc::as_ptr(&self.0))
             .field("channels", &self.channels())
             .finish()
@@ -274,11 +284,10 @@ impl fmt::Debug for ColorSpaceKey {
 
 macro_rules! predefined_space {
     ($profile:ty, $key:ident) => {
-        static $key: std::sync::LazyLock<ColorSpaceKey> = std::sync::LazyLock::new(|| {
-            ColorSpaceKey::new(std::num::NonZeroUsize::new(3).unwrap())
-        });
+        static $key: std::sync::LazyLock<ColorSpace> =
+            std::sync::LazyLock::new(|| ColorSpace::new(std::num::NonZeroUsize::new(3).unwrap()));
 
-        impl From<$profile> for ColorSpaceKey {
+        impl From<$profile> for ColorSpace {
             fn from(_: $profile) -> Self {
                 (*$key).clone()
             }
@@ -302,7 +311,7 @@ pub use srgb::Srgb;
 pub use xyz_d50::XyzD50;
 pub use xyz_d65::XyzD65;
 
-impl From<RgbColorSpace> for ColorSpaceKey {
+impl From<RgbColorSpace> for ColorSpace {
     fn from(space: RgbColorSpace) -> Self {
         match space {
             RgbColorSpace::Srgb => Srgb.into(),
@@ -318,24 +327,24 @@ mod tests {
     use super::*;
     use std::collections::HashSet;
 
-    fn assert_rgb_space<P: ColorSpace<Model = Rgb>>() {}
+    fn assert_rgb_space<P: TypedColorSpace<Model = Rgb>>() {}
 
     #[test]
-    fn predefined_spaces_have_canonical_keys() {
-        assert_eq!(ColorSpaceKey::from(Srgb), ColorSpaceKey::from(Srgb));
+    fn predefined_spaces_have_canonical_identity() {
+        assert_eq!(ColorSpace::from(Srgb), ColorSpace::from(Srgb));
         assert_eq!(
-            ColorSpaceKey::from(Srgb),
-            ColorSpaceKey::from(RgbColorSpace::Srgb)
+            ColorSpace::from(Srgb),
+            ColorSpace::from(RgbColorSpace::Srgb)
         );
-        assert_ne!(ColorSpaceKey::from(Srgb), ColorSpaceKey::from(LinearSrgb));
-        assert_ne!(ColorSpaceKey::from(XyzD50), ColorSpaceKey::from(XyzD65));
+        assert_ne!(ColorSpace::from(Srgb), ColorSpace::from(LinearSrgb));
+        assert_ne!(ColorSpace::from(XyzD50), ColorSpace::from(XyzD65));
     }
 
     #[test]
-    fn cloned_custom_key_preserves_identity_without_equating_channel_counts() {
-        let first = ColorSpaceKey::new(NonZeroUsize::new(4).unwrap());
+    fn cloned_custom_space_preserves_identity_without_equating_channel_counts() {
+        let first = ColorSpace::new(NonZeroUsize::new(4).unwrap());
         let same = first.clone();
-        let separate = ColorSpaceKey::new(NonZeroUsize::new(4).unwrap());
+        let separate = ColorSpace::new(NonZeroUsize::new(4).unwrap());
         assert_eq!(first, same);
         assert_ne!(first, separate);
         assert_eq!(first.channels(), 4);

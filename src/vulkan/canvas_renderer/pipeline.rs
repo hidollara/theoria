@@ -13,7 +13,7 @@ use crate::canvas::{BlendShader, Composite, composition_shader::Binding};
 use crate::canvas_renderer::{
     composition_encoding::encode_space, output_color::OutputColorTransform,
 };
-use crate::color::{ColorSpaceKey, IccProfile, IccRenderingIntent, RgbColorSpace};
+use crate::color::{ColorSpace, IccProfile, IccRenderingIntent, RgbColorSpace};
 
 use super::encoding::{CompositionPushConstants, ImagePushConstants, TrianglePushConstants};
 
@@ -93,13 +93,13 @@ pub(super) struct Pipelines {
     pub(super) composites: HashMap<Composite, Pipeline>,
     pub(super) mask: Pipeline,
     pub(super) present: Pipeline,
-    pub(super) icc_presents: HashMap<(ColorSpaceKey, IccRenderingIntent), Pipeline>,
-    pub(super) icc_images: HashMap<(ColorSpaceKey, IccRenderingIntent, bool), Pipeline>,
+    pub(super) icc_presents: HashMap<(ColorSpace, IccRenderingIntent), Pipeline>,
+    pub(super) icc_images: HashMap<(ColorSpace, IccRenderingIntent, bool), Pipeline>,
     pub(super) blend_shaders: HashMap<BlendShader, Pipeline>,
 }
 
 impl Pipelines {
-    pub(super) fn icc_image(&self, key: &(ColorSpaceKey, IccRenderingIntent, bool)) -> &Pipeline {
+    pub(super) fn icc_image(&self, key: &(ColorSpace, IccRenderingIntent, bool)) -> &Pipeline {
         &self.icc_images[key]
     }
 
@@ -107,7 +107,7 @@ impl Pipelines {
         &mut self,
         device: &ash::Device,
         descriptor_layout: vk::DescriptorSetLayout,
-        key: (ColorSpaceKey, IccRenderingIntent, bool),
+        key: (ColorSpace, IccRenderingIntent, bool),
         source: &str,
     ) -> Result<()> {
         if self.icc_images.contains_key(&key) {
@@ -135,7 +135,7 @@ impl Pipelines {
     pub(super) unsafe fn retain_icc_images(
         &mut self,
         device: &ash::Device,
-        active: &HashSet<(ColorSpaceKey, IccRenderingIntent, bool)>,
+        active: &HashSet<(ColorSpace, IccRenderingIntent, bool)>,
     ) {
         self.icc_images.retain(|key, pipeline| {
             if active.contains(key) {

@@ -96,7 +96,7 @@ impl ImageCache {
         &mut self,
     ) -> Vec<(
         (
-            crate::color::ColorSpaceKey,
+            crate::color::ColorSpace,
             crate::color::IccRenderingIntent,
             bool,
         ),

@@ -1,6 +1,6 @@
 use super::{
-    ColorProfile, ColorSpace, ColorSpaceKey, ColorTransform, IccPcs, IccRenderingIntent,
-    ProfileConnectionError, XyzD50, require_relative,
+    ColorProfile, ColorSpace, ColorTransform, IccPcs, IccRenderingIntent, ProfileConnectionError,
+    TypedColorSpace, XyzD50, require_relative,
 };
 use crate::color_transform::adaptation;
 use crate::model::Xyz;
@@ -10,7 +10,7 @@ named_space!(XyzD65, Xyz);
 predefined_space!(XyzD65, XYZ_D65_KEY);
 
 impl ColorProfile for XyzD65 {
-    fn space(&self) -> ColorSpaceKey {
+    fn space(&self) -> ColorSpace {
         (*self).into()
     }
 

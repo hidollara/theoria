@@ -10,7 +10,7 @@ use super::icc::{IccPcs, IccTransfer, IccTransferDirection, IccTransferError};
 use super::icc_mpe::MpeTags;
 use super::pcs::ICC_D50;
 use super::profile::{ColorProfile, ProfileConnectionError};
-use super::space::ColorSpaceKey;
+use super::space::ColorSpace;
 use super::transfer::{
     Transfer, TransferClut, TransferCurve, TransferError, TransferMatrix, TransferStage,
 };
@@ -38,7 +38,7 @@ pub struct IccProfile {
     parsed: Arc<ParsedProfile>,
     original_bytes: Option<Arc<[u8]>>,
     pcs: IccPcs,
-    device_space: ColorSpaceKey,
+    device_space: ColorSpace,
     mpe: MpeTags,
 }
 
@@ -87,7 +87,7 @@ impl IccProfile {
             parsed: Arc::new(parsed),
             original_bytes: None,
             pcs,
-            device_space: ColorSpaceKey::new(channels),
+            device_space: ColorSpace::new(channels),
             mpe: MpeTags::default(),
         }
     }
@@ -107,7 +107,7 @@ impl IccProfile {
     }
 
     /// The device coordinates of this particular loaded profile.
-    pub fn device_space(&self) -> ColorSpaceKey {
+    pub fn device_space(&self) -> ColorSpace {
         self.device_space.clone()
     }
 
@@ -714,7 +714,7 @@ impl Error for IccProfileError {
 }
 
 impl ColorProfile for IccProfile {
-    fn space(&self) -> ColorSpaceKey {
+    fn space(&self) -> ColorSpace {
         self.device_space()
     }
 
@@ -968,7 +968,7 @@ mod tests {
         }
         let gray = backward.transfer().evaluate(&xyz).unwrap();
         assert!((gray[0] - 0.5).abs() < 0.002, "gray={gray:?}, xyz={xyz:?}");
-        assert_eq!(forward.to(), &ColorSpaceKey::from(XyzD50));
+        assert_eq!(forward.to(), &ColorSpace::from(XyzD50));
         assert_eq!(backward.to(), &profile.device_space());
         assert!(forward.then(&backward).is_ok());
         let shader = forward.transfer().wgsl_with_storage(22, 1, 4).unwrap();
@@ -1017,7 +1017,7 @@ mod tests {
             assert!((actual - expected).abs() < 0.003);
         }
         let absolute_pcs = absolute.to().clone();
-        assert_ne!(absolute_pcs, ColorSpaceKey::from(XyzD50));
+        assert_ne!(absolute_pcs, ColorSpace::from(XyzD50));
         assert_eq!(
             absolute_pcs,
             profile
@@ -1161,8 +1161,8 @@ mod tests {
             .pcs_to_space(IccRenderingIntent::RelativeColorimetric)
             .unwrap();
         assert_eq!(to_pcs.from(), &source.device_space());
-        assert_eq!(to_pcs.to(), &ColorSpaceKey::from(XyzD50));
-        assert_eq!(from_pcs.from(), &ColorSpaceKey::from(XyzD50));
+        assert_eq!(to_pcs.to(), &ColorSpace::from(XyzD50));
+        assert_eq!(from_pcs.from(), &ColorSpace::from(XyzD50));
         assert_eq!(from_pcs.to(), &separate_load.device_space());
         let connected = to_pcs.then(&from_pcs).unwrap();
         assert_eq!(connected.to(), &separate_load.device_space());

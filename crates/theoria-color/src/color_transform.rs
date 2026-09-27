@@ -3,7 +3,7 @@ use std::{error::Error, fmt, num::NonZeroUsize, sync::LazyLock};
 use super::icc::IccPcs;
 use super::icc_profile::IccRenderingIntent;
 use super::profile_data::{XYZ_D50_TO_XYZ_D65, XYZ_D65_TO_XYZ_D50};
-use super::space::{ColorSpaceKey, LabD50, RgbColorSpace, XyzD50};
+use super::space::{ColorSpace, LabD50, RgbColorSpace, XyzD50};
 use super::transfer::{Transfer, TransferCurve, TransferError, TransferMatrix, TransferStage};
 
 /// A transfer together with the meanings of its input and output coordinates.
@@ -15,8 +15,8 @@ use super::transfer::{Transfer, TransferCurve, TransferError, TransferMatrix, Tr
 /// shader curve) without changing its logical meaning.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ColorTransform {
-    from: ColorSpaceKey,
-    to: ColorSpaceKey,
+    from: ColorSpace,
+    to: ColorSpace,
     transfer: Transfer,
 }
 
@@ -27,8 +27,8 @@ impl ColorTransform {
     /// only channel arity can be checked here. Prefer constructors that derive
     /// the stages and endpoints together when one is available.
     pub fn new(
-        from: ColorSpaceKey,
-        to: ColorSpaceKey,
+        from: ColorSpace,
+        to: ColorSpace,
         transfer: Transfer,
     ) -> Result<Self, ColorTransformError> {
         if from.channels() != transfer.input_channels() {
@@ -137,11 +137,11 @@ impl ColorTransform {
         )
     }
 
-    pub const fn from(&self) -> &ColorSpaceKey {
+    pub const fn from(&self) -> &ColorSpace {
         &self.from
     }
 
-    pub const fn to(&self) -> &ColorSpaceKey {
+    pub const fn to(&self) -> &ColorSpace {
         &self.to
     }
 
@@ -165,19 +165,19 @@ impl ColorTransform {
     }
 }
 
-pub(crate) fn pcs_key(pcs: IccPcs) -> ColorSpaceKey {
+pub(crate) fn pcs_key(pcs: IccPcs) -> ColorSpace {
     match pcs {
         IccPcs::XyzD50 => XyzD50.into(),
         IccPcs::LabD50 => LabD50.into(),
     }
 }
 
-static ABSOLUTE_XYZ_D50_KEY: LazyLock<ColorSpaceKey> =
-    LazyLock::new(|| ColorSpaceKey::new(NonZeroUsize::new(3).unwrap()));
-static ABSOLUTE_LAB_D50_KEY: LazyLock<ColorSpaceKey> =
-    LazyLock::new(|| ColorSpaceKey::new(NonZeroUsize::new(3).unwrap()));
+static ABSOLUTE_XYZ_D50_KEY: LazyLock<ColorSpace> =
+    LazyLock::new(|| ColorSpace::new(NonZeroUsize::new(3).unwrap()));
+static ABSOLUTE_LAB_D50_KEY: LazyLock<ColorSpace> =
+    LazyLock::new(|| ColorSpace::new(NonZeroUsize::new(3).unwrap()));
 
-pub(crate) fn pcs_key_for_intent(pcs: IccPcs, intent: IccRenderingIntent) -> ColorSpaceKey {
+pub(crate) fn pcs_key_for_intent(pcs: IccPcs, intent: IccRenderingIntent) -> ColorSpace {
     if intent == IccRenderingIntent::AbsoluteColorimetric {
         match pcs {
             IccPcs::XyzD50 => (*ABSOLUTE_XYZ_D50_KEY).clone(),
@@ -280,7 +280,7 @@ mod tests {
         for (actual, expected) in result.into_iter().zip(sample) {
             assert!((actual - expected).abs() < 0.004);
         }
-        assert_eq!(connected.from(), &ColorSpaceKey::from(Srgb));
+        assert_eq!(connected.from(), &ColorSpace::from(Srgb));
         assert_eq!(connected.to(), &profile.device_space());
 
         let reverse = profile
@@ -288,7 +288,7 @@ mod tests {
             .unwrap()
             .then(&ColorTransform::pcs_to_rgb(IccPcs::XyzD50, RgbColorSpace::Srgb).unwrap())
             .unwrap();
-        assert_eq!(reverse.to(), &ColorSpaceKey::from(Srgb));
+        assert_eq!(reverse.to(), &ColorSpace::from(Srgb));
     }
 
     #[test]
@@ -296,7 +296,7 @@ mod tests {
         let xyz = ColorTransform::rgb_to_pcs(RgbColorSpace::LinearSrgb, IccPcs::XyzD50).unwrap();
         let bridge = ColorTransform::between_pcs(IccPcs::XyzD50, IccPcs::LabD50).unwrap();
         let lab = xyz.then(&bridge).unwrap();
-        assert_eq!(lab.to(), &ColorSpaceKey::from(LabD50));
+        assert_eq!(lab.to(), &ColorSpace::from(LabD50));
         let reverse =
             ColorTransform::pcs_to_rgb(IccPcs::LabD50, RgbColorSpace::LinearSrgb).unwrap();
         let identity = lab.then(&reverse).unwrap();

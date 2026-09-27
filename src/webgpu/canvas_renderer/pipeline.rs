@@ -8,7 +8,7 @@ use wgpu::util::DeviceExt;
 use crate::canvas::{BlendShader, Composite, composition_shader::Binding};
 use crate::canvas_renderer::icc_image_shader;
 use crate::canvas_renderer::output_color::OutputColorTransform;
-use crate::color::{ColorSpaceKey, IccProfile, IccRenderingIntent, RgbColorSpace};
+use crate::color::{ColorSpace, IccProfile, IccRenderingIntent, RgbColorSpace};
 
 use super::encoding::{ImageVertex, TriangleVertex};
 
@@ -25,8 +25,8 @@ pub(super) struct Pipelines {
     blend_shaders: HashMap<BlendShader, wgpu::RenderPipeline>,
     presents: HashMap<wgpu::TextureFormat, wgpu::RenderPipeline>,
     icc_presents:
-        HashMap<(wgpu::TextureFormat, ColorSpaceKey, IccRenderingIntent), wgpu::RenderPipeline>,
-    icc_images: HashMap<(ColorSpaceKey, IccRenderingIntent, bool), IccImagePipeline>,
+        HashMap<(wgpu::TextureFormat, ColorSpace, IccRenderingIntent), wgpu::RenderPipeline>,
+    icc_images: HashMap<(ColorSpace, IccRenderingIntent, bool), IccImagePipeline>,
 }
 
 pub(super) struct IccImagePipeline {
@@ -228,14 +228,14 @@ impl Pipelines {
 
     pub(super) fn icc_image(
         &self,
-        key: &(ColorSpaceKey, IccRenderingIntent, bool),
+        key: &(ColorSpace, IccRenderingIntent, bool),
     ) -> &IccImagePipeline {
         &self.icc_images[key]
     }
 
     pub(super) fn retain_icc_images(
         &mut self,
-        active: &HashSet<(ColorSpaceKey, IccRenderingIntent, bool)>,
+        active: &HashSet<(ColorSpace, IccRenderingIntent, bool)>,
     ) {
         self.icc_images.retain(|key, _| active.contains(key));
     }
