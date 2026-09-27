@@ -11,7 +11,7 @@ use super::Rgb;
 use super::color_transform::ColorTransform;
 use super::icc_profile::IccRenderingIntent;
 use super::profile::{
-    ColorProfile, Pcs, ProfileConnectionError, ProfileDefinition, require_relative,
+    ColorSpace, Pcs, ProfileConnectionError, ProfileDefinition, require_relative,
 };
 use super::transfer::{Transfer, TransferCurve, TransferError, TransferMatrix, TransferStage};
 
@@ -24,7 +24,7 @@ use super::transfer::{Transfer, TransferCurve, TransferError, TransferMatrix, Tr
 pub trait TypedColorSpace: 'static {
     type Model: ColorModel;
 
-    fn color_space(&self) -> ColorSpace;
+    fn color_space(&self) -> ColorSpaceId;
 }
 
 macro_rules! named_space {
@@ -35,7 +35,7 @@ macro_rules! named_space {
         impl TypedColorSpace for $name {
             type Model = $model;
 
-            fn color_space(&self) -> ColorSpace {
+            fn color_space(&self) -> ColorSpaceId {
                 (*self).into()
             }
         }
@@ -43,10 +43,10 @@ macro_rules! named_space {
 }
 
 fn rgb_direct_to(
-    source: ColorProfile,
-    counterpart: ColorProfile,
+    source: ColorSpace,
+    counterpart: ColorSpace,
     counterpart_curve: TransferCurve,
-    destination: &ColorProfile,
+    destination: &ColorSpace,
     intent: IccRenderingIntent,
 ) -> Result<Option<ColorTransform>, ProfileConnectionError> {
     if intent != IccRenderingIntent::RelativeColorimetric {
@@ -122,9 +122,9 @@ struct ColorSpaceIdentity {
 /// even with the same channel count, denotes a different space. It keeps only
 /// its identity alive, not an ICC profile or its LUTs.
 #[derive(Clone)]
-pub struct ColorSpace(Arc<ColorSpaceIdentity>);
+pub struct ColorSpaceId(Arc<ColorSpaceIdentity>);
 
-impl ColorSpace {
+impl ColorSpaceId {
     /// Creates a distinct space with the specified number of channels.
     pub fn new(channels: NonZeroUsize) -> Self {
         Self(Arc::new(ColorSpaceIdentity { channels }))
@@ -135,24 +135,24 @@ impl ColorSpace {
     }
 }
 
-impl PartialEq for ColorSpace {
+impl PartialEq for ColorSpaceId {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.0, &other.0)
     }
 }
 
-impl Eq for ColorSpace {}
+impl Eq for ColorSpaceId {}
 
-impl Hash for ColorSpace {
+impl Hash for ColorSpaceId {
     fn hash<H: Hasher>(&self, state: &mut H) {
         Arc::as_ptr(&self.0).hash(state);
     }
 }
 
-impl fmt::Debug for ColorSpace {
+impl fmt::Debug for ColorSpaceId {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
-            .debug_struct("ColorSpace")
+            .debug_struct("ColorSpaceId")
             .field("identity", &Arc::as_ptr(&self.0))
             .field("channels", &self.channels())
             .finish()
@@ -163,24 +163,24 @@ macro_rules! predefined_space {
     ($space:ty, $definition:ident, $key:ident) => {
         struct $definition;
 
-        static $key: std::sync::LazyLock<ColorSpace> =
-            std::sync::LazyLock::new(|| ColorSpace::new(std::num::NonZeroUsize::new(3).unwrap()));
+        static $key: std::sync::LazyLock<ColorSpaceId> =
+            std::sync::LazyLock::new(|| ColorSpaceId::new(std::num::NonZeroUsize::new(3).unwrap()));
 
-        impl From<$space> for ColorSpace {
+        impl From<$space> for ColorSpaceId {
             fn from(_: $space) -> Self {
                 (*$key).clone()
             }
         }
 
-        impl From<$space> for ColorProfile {
+        impl From<$space> for ColorSpace {
             fn from(_: $space) -> Self {
-                static PROFILE: std::sync::LazyLock<ColorProfile> =
-                    std::sync::LazyLock::new(|| ColorProfile::new($definition));
+                static PROFILE: std::sync::LazyLock<ColorSpace> =
+                    std::sync::LazyLock::new(|| ColorSpace::new($definition));
                 PROFILE.clone()
             }
         }
 
-        impl From<&$space> for ColorProfile {
+        impl From<&$space> for ColorSpace {
             fn from(profile: &$space) -> Self {
                 (*profile).into()
             }
@@ -213,29 +213,29 @@ mod tests {
 
     #[test]
     fn predefined_spaces_have_canonical_identity() {
+        assert_eq!(ColorSpaceId::from(Srgb), ColorSpaceId::from(Srgb));
+        assert_ne!(ColorSpaceId::from(Srgb), ColorSpaceId::from(LinearSrgb));
+        assert_ne!(ColorSpaceId::from(XyzD50), ColorSpaceId::from(XyzD65));
         assert_eq!(ColorSpace::from(Srgb), ColorSpace::from(Srgb));
-        assert_ne!(ColorSpace::from(Srgb), ColorSpace::from(LinearSrgb));
-        assert_ne!(ColorSpace::from(XyzD50), ColorSpace::from(XyzD65));
-        assert_eq!(ColorProfile::from(Srgb), ColorProfile::from(Srgb));
         assert_eq!(
-            ColorProfile::from(LinearSrgb),
-            ColorProfile::from(LinearSrgb)
+            ColorSpace::from(LinearSrgb),
+            ColorSpace::from(LinearSrgb)
         );
-        assert_eq!(ColorProfile::from(DisplayP3), ColorProfile::from(DisplayP3));
+        assert_eq!(ColorSpace::from(DisplayP3), ColorSpace::from(DisplayP3));
         assert_eq!(
-            ColorProfile::from(LinearDisplayP3),
-            ColorProfile::from(LinearDisplayP3)
+            ColorSpace::from(LinearDisplayP3),
+            ColorSpace::from(LinearDisplayP3)
         );
-        assert_eq!(ColorProfile::from(LabD50), ColorProfile::from(LabD50));
-        assert_eq!(ColorProfile::from(XyzD50), ColorProfile::from(XyzD50));
-        assert_eq!(ColorProfile::from(XyzD65), ColorProfile::from(XyzD65));
+        assert_eq!(ColorSpace::from(LabD50), ColorSpace::from(LabD50));
+        assert_eq!(ColorSpace::from(XyzD50), ColorSpace::from(XyzD50));
+        assert_eq!(ColorSpace::from(XyzD65), ColorSpace::from(XyzD65));
     }
 
     #[test]
     fn cloned_custom_space_preserves_identity_without_equating_channel_counts() {
-        let first = ColorSpace::new(NonZeroUsize::new(4).unwrap());
+        let first = ColorSpaceId::new(NonZeroUsize::new(4).unwrap());
         let same = first.clone();
-        let separate = ColorSpace::new(NonZeroUsize::new(4).unwrap());
+        let separate = ColorSpaceId::new(NonZeroUsize::new(4).unwrap());
         assert_eq!(first, same);
         assert_ne!(first, separate);
         assert_eq!(first.channels(), 4);

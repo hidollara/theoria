@@ -1,5 +1,5 @@
 use super::{
-    ColorProfile, ColorSpace, ColorTransform, IccRenderingIntent, Pcs, ProfileConnectionError,
+    ColorSpace, ColorSpaceId, ColorTransform, IccRenderingIntent, Pcs, ProfileConnectionError,
     ProfileDefinition, TypedColorSpace, XyzD50, require_relative,
 };
 use crate::color_transform::adaptation;
@@ -44,7 +44,7 @@ impl XyzD65 {
 }
 
 impl ProfileDefinition for XyzD65Profile {
-    fn space(&self) -> ColorSpace {
+    fn space(&self) -> ColorSpaceId {
         XyzD65.into()
     }
 

@@ -1,5 +1,5 @@
 use super::{
-    ColorProfile, ColorSpace, ColorTransform, IccRenderingIntent, Pcs, ProfileConnectionError,
+    ColorSpace, ColorSpaceId, ColorTransform, IccRenderingIntent, Pcs, ProfileConnectionError,
     ProfileDefinition, TransferCurve, TypedColorSpace, require_relative, rgb_direct_to,
     rgb_to_xyz_d65_transfer, xyz_d65_to_rgb_transfer,
 };
@@ -38,7 +38,7 @@ impl Srgb {
 predefined_space!(Srgb, SrgbProfile, SRGB_KEY);
 
 impl ProfileDefinition for SrgbProfile {
-    fn space(&self) -> ColorSpace {
+    fn space(&self) -> ColorSpaceId {
         Srgb.into()
     }
 
@@ -72,7 +72,7 @@ impl ProfileDefinition for SrgbProfile {
 
     fn direct_to(
         &self,
-        destination: &ColorProfile,
+        destination: &ColorSpace,
         intent: IccRenderingIntent,
     ) -> Result<Option<ColorTransform>, ProfileConnectionError> {
         rgb_direct_to(

@@ -2,7 +2,7 @@
 //!
 //! The GPU attachment format is backend-specific and deliberately separate.
 
-use crate::color::{ColorProfile, IccRenderingIntent};
+use crate::color::{ColorSpace, IccRenderingIntent};
 
 /// How the destination image represents alpha.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -21,14 +21,14 @@ pub enum OutputAlpha {
 /// that format and the renderer converts and quantizes into it when writing.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct OutputImage {
-    pub(crate) profile: ColorProfile,
+    pub(crate) profile: ColorSpace,
     pub(crate) intent: IccRenderingIntent,
     pub(crate) alpha: OutputAlpha,
 }
 
 impl OutputImage {
     pub fn new(
-        profile: impl Into<ColorProfile>,
+        profile: impl Into<ColorSpace>,
         intent: IccRenderingIntent,
         alpha: OutputAlpha,
     ) -> Self {
@@ -39,7 +39,7 @@ impl OutputImage {
         }
     }
 
-    pub fn profile(&self) -> &ColorProfile {
+    pub fn profile(&self) -> &ColorSpace {
         &self.profile
     }
 

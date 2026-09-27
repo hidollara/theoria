@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use crate::{
     color::{
-        ColorProfile, ColorSpace, ColorTransform, IccRenderingIntent, Pcs, ProfileConnectionError,
+        ColorSpace, ColorSpaceId, ColorTransform, IccRenderingIntent, Pcs, ProfileConnectionError,
         ProfileDefinition,
     },
     component::{ComponentInstance, MountContext},
@@ -12,11 +12,11 @@ use crate::{
 
 /// A separate profile definition with the same conversions and coordinate space.
 /// This exercises profile identity without manufacturing another standard profile.
-pub(crate) fn distinct_color_profile(profile: impl Into<ColorProfile>) -> ColorProfile {
-    struct Distinct(ColorProfile);
+pub(crate) fn distinct_color_profile(profile: impl Into<ColorSpace>) -> ColorSpace {
+    struct Distinct(ColorSpace);
 
     impl ProfileDefinition for Distinct {
-        fn space(&self) -> ColorSpace {
+        fn space(&self) -> ColorSpaceId {
             self.0.space()
         }
 
@@ -40,14 +40,14 @@ pub(crate) fn distinct_color_profile(profile: impl Into<ColorProfile>) -> ColorP
 
         fn direct_to(
             &self,
-            destination: &ColorProfile,
+            destination: &ColorSpace,
             intent: IccRenderingIntent,
         ) -> Result<Option<ColorTransform>, ProfileConnectionError> {
             self.0.direct_to(destination, intent)
         }
     }
 
-    ColorProfile::new(Distinct(profile.into()))
+    ColorSpace::new(Distinct(profile.into()))
 }
 
 pub(crate) struct TestDriver {

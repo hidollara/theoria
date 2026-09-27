@@ -2,7 +2,7 @@ use std::{error::Error, fmt, num::NonZeroUsize, sync::LazyLock};
 
 use super::icc_profile::IccRenderingIntent;
 use super::profile::Pcs;
-use super::space::{ColorSpace, LabD50, XyzD50, XyzD65};
+use super::space::{ColorSpaceId, LabD50, XyzD50, XyzD65};
 use super::transfer::{Transfer, TransferError, TransferMatrix, TransferStage};
 
 /// A transfer together with the meanings of its input and output coordinates.
@@ -14,8 +14,8 @@ use super::transfer::{Transfer, TransferError, TransferMatrix, TransferStage};
 /// shader curve) without changing its logical meaning.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ColorTransform {
-    from: ColorSpace,
-    to: ColorSpace,
+    from: ColorSpaceId,
+    to: ColorSpaceId,
     transfer: Transfer,
 }
 
@@ -26,8 +26,8 @@ impl ColorTransform {
     /// only channel arity can be checked here. Prefer constructors that derive
     /// the stages and endpoints together when one is available.
     pub fn new(
-        from: ColorSpace,
-        to: ColorSpace,
+        from: ColorSpaceId,
+        to: ColorSpaceId,
         transfer: Transfer,
     ) -> Result<Self, ColorTransformError> {
         if from.channels() != transfer.input_channels() {
@@ -46,7 +46,7 @@ impl ColorTransform {
     }
 
     pub(crate) fn rgb_to_pcs_from(
-        from: ColorSpace,
+        from: ColorSpaceId,
         mut transfer: Transfer,
         to: Pcs,
     ) -> Result<Self, ColorTransformError> {
@@ -59,7 +59,7 @@ impl ColorTransform {
 
     pub(crate) fn pcs_to_rgb_from(
         from: Pcs,
-        to: ColorSpace,
+        to: ColorSpaceId,
         xyz_d65_to_rgb: Transfer,
     ) -> Result<Self, ColorTransformError> {
         let mut transfer = Transfer::new(3, Vec::<TransferStage>::new())?;
@@ -96,11 +96,11 @@ impl ColorTransform {
         )
     }
 
-    pub const fn from(&self) -> &ColorSpace {
+    pub const fn from(&self) -> &ColorSpaceId {
         &self.from
     }
 
-    pub const fn to(&self) -> &ColorSpace {
+    pub const fn to(&self) -> &ColorSpaceId {
         &self.to
     }
 
@@ -124,19 +124,19 @@ impl ColorTransform {
     }
 }
 
-pub(crate) fn pcs_key(pcs: Pcs) -> ColorSpace {
+pub(crate) fn pcs_key(pcs: Pcs) -> ColorSpaceId {
     match pcs {
         Pcs::XyzD50 => XyzD50.into(),
         Pcs::LabD50 => LabD50.into(),
     }
 }
 
-static ABSOLUTE_XYZ_D50_KEY: LazyLock<ColorSpace> =
-    LazyLock::new(|| ColorSpace::new(NonZeroUsize::new(3).unwrap()));
-static ABSOLUTE_LAB_D50_KEY: LazyLock<ColorSpace> =
-    LazyLock::new(|| ColorSpace::new(NonZeroUsize::new(3).unwrap()));
+static ABSOLUTE_XYZ_D50_KEY: LazyLock<ColorSpaceId> =
+    LazyLock::new(|| ColorSpaceId::new(NonZeroUsize::new(3).unwrap()));
+static ABSOLUTE_LAB_D50_KEY: LazyLock<ColorSpaceId> =
+    LazyLock::new(|| ColorSpaceId::new(NonZeroUsize::new(3).unwrap()));
 
-pub(crate) fn pcs_key_for_intent(pcs: Pcs, intent: IccRenderingIntent) -> ColorSpace {
+pub(crate) fn pcs_key_for_intent(pcs: Pcs, intent: IccRenderingIntent) -> ColorSpaceId {
     if intent == IccRenderingIntent::AbsoluteColorimetric {
         match pcs {
             Pcs::XyzD50 => (*ABSOLUTE_XYZ_D50_KEY).clone(),
@@ -200,7 +200,7 @@ impl Error for ColorTransformError {
 mod tests {
     use super::*;
     use crate::space::{LabD50, LinearSrgb, Srgb, XyzD50};
-    use crate::{ColorProfile, IccProfile, IccRenderingIntent, TransferCurve, connect_profiles};
+    use crate::{ColorSpace, IccProfile, IccRenderingIntent, TransferCurve, connect_profiles};
 
     #[test]
     fn matching_channel_counts_do_not_imply_matching_spaces() {
@@ -234,7 +234,7 @@ mod tests {
     fn builtin_rgb_connects_to_icc_profile_through_pcs() {
         let bytes = moxcms::ColorProfile::new_srgb().encode().unwrap();
         let profile = IccProfile::from_bytes(&bytes).unwrap();
-        let source = ColorProfile::from(Srgb)
+        let source = ColorSpace::from(Srgb)
             .space_to_pcs(IccRenderingIntent::RelativeColorimetric)
             .unwrap();
         let destination = profile
@@ -246,33 +246,33 @@ mod tests {
         for (actual, expected) in result.into_iter().zip(sample) {
             assert!((actual - expected).abs() < 0.004);
         }
-        assert_eq!(connected.from(), &ColorSpace::from(Srgb));
+        assert_eq!(connected.from(), &ColorSpaceId::from(Srgb));
         assert_eq!(connected.to(), &profile.device_space());
 
         let reverse = profile
             .space_to_pcs(IccRenderingIntent::RelativeColorimetric)
             .unwrap()
             .then(
-                &ColorProfile::from(Srgb)
+                &ColorSpace::from(Srgb)
                     .pcs_to_space(IccRenderingIntent::RelativeColorimetric)
                     .unwrap(),
             )
             .unwrap();
-        assert_eq!(reverse.to(), &ColorSpace::from(Srgb));
+        assert_eq!(reverse.to(), &ColorSpaceId::from(Srgb));
     }
 
     #[test]
     fn pcs_bridge_joins_transforms_with_different_pcs() {
-        let xyz = ColorProfile::from(LinearSrgb)
+        let xyz = ColorSpace::from(LinearSrgb)
             .space_to_pcs(IccRenderingIntent::RelativeColorimetric)
             .unwrap();
         let bridge = ColorTransform::between_pcs(Pcs::XyzD50, Pcs::LabD50).unwrap();
         let lab = xyz.then(&bridge).unwrap();
-        assert_eq!(lab.to(), &ColorSpace::from(LabD50));
+        assert_eq!(lab.to(), &ColorSpaceId::from(LabD50));
         let reverse = ColorTransform::between_pcs(Pcs::LabD50, Pcs::XyzD50)
             .unwrap()
             .then(
-                &ColorProfile::from(LinearSrgb)
+                &ColorSpace::from(LinearSrgb)
                     .pcs_to_space(IccRenderingIntent::RelativeColorimetric)
                     .unwrap(),
             )

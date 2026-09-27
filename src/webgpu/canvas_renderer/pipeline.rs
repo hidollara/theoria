@@ -7,14 +7,14 @@ use wgpu::util::DeviceExt;
 
 use crate::canvas::{Composite, Composition, composition_shader::Binding};
 use crate::canvas_renderer::icc_image_shader;
-use crate::color::{ColorProfile, IccProfile, IccRenderingIntent};
+use crate::color::{ColorSpace, IccProfile, IccRenderingIntent};
 
 use super::encoding::{CompositionUniform, ImageVertex, OutputUniform, TriangleVertex};
 
 pub(super) const WORKING_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 
 pub(super) struct Pipelines {
-    working_profile: ColorProfile,
+    working_profile: ColorSpace,
     pub(super) texture_layout: wgpu::BindGroupLayout,
     pub(super) blend_uniform_layout: wgpu::BindGroupLayout,
     pub(super) output_uniform_layout: wgpu::BindGroupLayout,
@@ -23,8 +23,8 @@ pub(super) struct Pipelines {
     pub(super) composites: HashMap<Composite, wgpu::RenderPipeline>,
     pub(super) mask: wgpu::RenderPipeline,
     compositions: HashMap<Composition, wgpu::RenderPipeline>,
-    outputs: HashMap<(wgpu::TextureFormat, ColorProfile, IccRenderingIntent), wgpu::RenderPipeline>,
-    icc_images: HashMap<(ColorProfile, IccRenderingIntent, bool), IccImagePipeline>,
+    outputs: HashMap<(wgpu::TextureFormat, ColorSpace, IccRenderingIntent), wgpu::RenderPipeline>,
+    icc_images: HashMap<(ColorSpace, IccRenderingIntent, bool), IccImagePipeline>,
 }
 
 pub(super) struct IccImagePipeline {
@@ -36,7 +36,7 @@ pub(super) struct IccImagePipeline {
 impl Pipelines {
     pub(super) fn new(
         device: &wgpu::Device,
-        working_profile: &ColorProfile,
+        working_profile: &ColorSpace,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let texture_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("theoria WebGPU sampled image"),
@@ -175,7 +175,7 @@ impl Pipelines {
         profile: &IccProfile,
         intent: IccRenderingIntent,
         has_alpha: bool,
-        working_profile: &ColorProfile,
+        working_profile: &ColorSpace,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let key = (profile.profile(), intent, has_alpha);
         if self.icc_images.contains_key(&key) {
@@ -247,14 +247,14 @@ impl Pipelines {
 
     pub(super) fn icc_image(
         &self,
-        key: &(ColorProfile, IccRenderingIntent, bool),
+        key: &(ColorSpace, IccRenderingIntent, bool),
     ) -> &IccImagePipeline {
         &self.icc_images[key]
     }
 
     pub(super) fn retain_icc_images(
         &mut self,
-        active: &HashSet<(ColorProfile, IccRenderingIntent, bool)>,
+        active: &HashSet<(ColorSpace, IccRenderingIntent, bool)>,
     ) {
         self.icc_images.retain(|key, _| active.contains(key));
     }
@@ -303,7 +303,7 @@ impl Pipelines {
         &mut self,
         device: &wgpu::Device,
         format: wgpu::TextureFormat,
-        profile: &ColorProfile,
+        profile: &ColorSpace,
         intent: IccRenderingIntent,
     ) -> Result<&wgpu::RenderPipeline, Box<dyn std::error::Error>> {
         let key = (format, profile.clone(), intent);

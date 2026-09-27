@@ -1,5 +1,5 @@
 use super::{
-    ColorProfile, ColorSpace, ColorTransform, IccRenderingIntent, Pcs, ProfileConnectionError,
+    ColorSpace, ColorSpaceId, ColorTransform, IccRenderingIntent, Pcs, ProfileConnectionError,
     ProfileDefinition, TypedColorSpace, require_relative,
 };
 use crate::model::Lab;
@@ -8,7 +8,7 @@ named_space!(LabD50, Lab);
 predefined_space!(LabD50, LabD50Profile, LAB_D50_KEY);
 
 impl ProfileDefinition for LabD50Profile {
-    fn space(&self) -> ColorSpace {
+    fn space(&self) -> ColorSpaceId {
         LabD50.into()
     }
 

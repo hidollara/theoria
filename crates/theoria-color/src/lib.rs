@@ -17,10 +17,10 @@ pub use color_transform::{ColorTransform, ColorTransformError};
 pub use connection::XyzD50Profile;
 pub use icc_profile::{IccProfile, IccProfileError, IccRenderingIntent};
 pub use model::{Cmyk, ColorCoordinates, ColorModel, Lab, Rgb, Xyz, Ycbcr};
-pub use profile::{ColorProfile, Pcs, ProfileConnectionError, ProfileDefinition, connect_profiles};
+pub use profile::{ColorSpace, Pcs, ProfileConnectionError, ProfileDefinition, connect_profiles};
 pub use sample::{Opacity, OpacityError, OpacitySample};
 pub use space::{
-    ColorSpace, DisplayP3, LabD50, LinearDisplayP3, LinearSrgb, Srgb, TypedColorSpace, XyzD50,
+    ColorSpaceId, DisplayP3, LabD50, LinearDisplayP3, LinearSrgb, Srgb, TypedColorSpace, XyzD50,
     XyzD65,
 };
 pub use transfer::{

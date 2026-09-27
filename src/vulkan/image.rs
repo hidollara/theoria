@@ -8,7 +8,7 @@ use crate::{
         image::{Image, ImageKind, RasterImageSource, RasterImageView},
     },
     canvas_renderer::{icc_image_shader, raster::pack_icc_samples},
-    color::ColorProfile,
+    color::ColorSpace,
     image::RasterImageInstanceKey,
 };
 
@@ -32,11 +32,11 @@ pub(super) struct ImageCache {
     canvas: HashMap<CanvasImageInstanceKey, GpuImage>,
     descriptors: ImageDescriptors,
     device: RenderDevice,
-    working_profile: ColorProfile,
+    working_profile: ColorSpace,
 }
 
 impl ImageCache {
-    pub(super) fn new(device: RenderDevice, working_profile: ColorProfile) -> Result<Self> {
+    pub(super) fn new(device: RenderDevice, working_profile: ColorSpace) -> Result<Self> {
         let descriptors = ImageDescriptors::new(device.clone())?;
         Ok(Self {
             raster: HashMap::new(),
@@ -96,7 +96,7 @@ impl ImageCache {
         &mut self,
     ) -> Vec<(
         (
-            crate::color::ColorProfile,
+            crate::color::ColorSpace,
             crate::color::IccRenderingIntent,
             bool,
         ),

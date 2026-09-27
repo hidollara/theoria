@@ -5,7 +5,7 @@ use std::error::Error;
 use ash::vk;
 
 use crate::{
-    color::{ColorProfile, IccProfile, IccRenderingIntent, LinearSrgb},
+    color::{ColorSpace, IccProfile, IccRenderingIntent, LinearSrgb},
     image::{IccRasterImage, Srgba8Image},
     surface::{OutputAlpha, OutputImage, SurfaceContent, SurfaceSize, Viewport},
     vulkan::{
@@ -45,7 +45,7 @@ impl ImageSurface {
     /// Readback is still returned as sRGBA8 unless an ICC output is requested.
     pub fn new_with_working_space(
         size: SurfaceSize,
-        working_profile: impl Into<ColorProfile>,
+        working_profile: impl Into<ColorSpace>,
     ) -> Result<Self> {
         let byte_len = pixel_byte_len(size)?;
         let device = RenderDevice::independent()?;

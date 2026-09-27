@@ -2,7 +2,7 @@ use std::{fmt, sync::Arc};
 
 use crate::{
     color::{
-        ColorProfile, DisplayP3, IccProfile, IccRenderingIntent, LinearDisplayP3, LinearSrgb, Srgb,
+        ColorSpace, DisplayP3, IccProfile, IccRenderingIntent, LinearDisplayP3, LinearSrgb, Srgb,
     },
     image::{
         AlphaAssociation, IccRasterImage, RasterImage, RasterImageInstanceKey, RasterPlane, Rgb8,
@@ -34,11 +34,11 @@ pub(crate) enum ImageKind {
 pub(crate) enum RasterImageView<'a> {
     Rgb8 {
         plane: &'a RasterPlane<u8>,
-        color_space: ColorProfile,
+        color_space: ColorSpace,
     },
     Rgba8 {
         plane: &'a RasterPlane<u8>,
-        color_space: ColorProfile,
+        color_space: ColorSpace,
         alpha: AlphaAssociation,
     },
     Icc8 {
@@ -78,7 +78,7 @@ where
     P: crate::color::TypedColorSpace<Model = crate::color::Rgb>,
 {
     image: RasterImage<Rgb8, P>,
-    color_space: ColorProfile,
+    color_space: ColorSpace,
 }
 
 impl<P> RasterImageSource for Rgb8Source<P>
@@ -118,7 +118,7 @@ where
     P: crate::color::TypedColorSpace<Model = crate::color::Rgb>,
 {
     image: RasterImage<Rgba8, P>,
-    color_space: ColorProfile,
+    color_space: ColorSpace,
 }
 
 impl<P> RasterImageSource for Rgba8Source<P>

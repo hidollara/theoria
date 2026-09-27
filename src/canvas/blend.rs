@@ -4,7 +4,7 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
-use crate::color::{ColorProfile, IccRenderingIntent, Rgb, TypedColorSpace, connect_profiles};
+use crate::color::{ColorSpace, IccRenderingIntent, Rgb, TypedColorSpace, connect_profiles};
 
 use super::composition_shader::{self, Binding};
 
@@ -115,9 +115,9 @@ impl BlendShader {
     pub(crate) fn wgsl_module_for_profiles(
         &self,
         binding: Binding,
-        working: &ColorProfile,
-        blend: &ColorProfile,
-        composite: &ColorProfile,
+        working: &ColorSpace,
+        blend: &ColorSpace,
+        composite: &ColorSpace,
     ) -> Result<String, Box<dyn Error>> {
         let conversions = [
             (working, composite, "working_to_composite"),
@@ -267,13 +267,13 @@ impl<P: TypedColorSpace<Model = Rgb>> BlendOperation<P> for BlendShader {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Blend {
     shader: BlendShader,
-    space: ColorProfile,
+    space: ColorSpace,
 }
 
 impl Blend {
     pub fn new<P, O>(operation: O, space: P) -> Self
     where
-        P: TypedColorSpace<Model = Rgb> + Into<ColorProfile>,
+        P: TypedColorSpace<Model = Rgb> + Into<ColorSpace>,
         O: BlendOperation<P>,
     {
         Self {
@@ -287,14 +287,14 @@ impl Blend {
     }
 
     /// Evaluates a custom blend shader in a profile-backed three-channel space.
-    pub fn from_shader(shader: BlendShader, space: impl Into<ColorProfile>) -> Self {
+    pub fn from_shader(shader: BlendShader, space: impl Into<ColorSpace>) -> Self {
         Self {
             shader,
             space: space.into(),
         }
     }
 
-    pub fn space(&self) -> &ColorProfile {
+    pub fn space(&self) -> &ColorSpace {
         &self.space
     }
 }
@@ -351,7 +351,7 @@ mod tests {
         }
 
         let blend = Blend::new(SrgbOnly, Srgb);
-        assert_eq!(blend.space(), &ColorProfile::from(Srgb));
+        assert_eq!(blend.space(), &ColorSpace::from(Srgb));
         assert_eq!(blend.shader(), &BlendMode::Screen.shader_definition());
     }
 
@@ -401,7 +401,7 @@ mod tests {
         let source = shader
             .wgsl_module_for_profiles(
                 Binding::WebGpu,
-                &ColorProfile::from(LinearSrgb),
+                &ColorSpace::from(LinearSrgb),
                 composition.blend().unwrap().space(),
                 composition.composite_space(),
             )

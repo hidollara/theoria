@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    color::{Color, ColorProfile, DisplayP3, LinearSrgb, Opacity, Srgb},
+    color::{Color, ColorSpace, DisplayP3, LinearSrgb, Opacity, Srgb},
     geometry::Point,
     image::{AlphaAssociation, RasterImage, RasterPlane, Rgba8, Srgba8Image},
     math::Vector2,
@@ -213,7 +213,7 @@ fn canvas_retains_typed_rgba8_raster_metadata_until_renderer_lowering() {
 
     assert_eq!(source.instance_key(), image.instance_key());
     assert_eq!(plane.samples(), &[255, 128, 64, 128]);
-    assert_eq!(color_space, ColorProfile::from(DisplayP3));
+    assert_eq!(color_space, ColorSpace::from(DisplayP3));
     assert_eq!(alpha, AlphaAssociation::Premultiplied);
 }
 
@@ -239,7 +239,7 @@ fn canvas_retains_an_opaque_rgb8_raster_without_inventing_alpha_metadata() {
     };
 
     assert_eq!(plane.samples(), &[255, 128, 64]);
-    assert_eq!(color_space, ColorProfile::from(DisplayP3));
+    assert_eq!(color_space, ColorSpace::from(DisplayP3));
 }
 
 #[test]
@@ -630,7 +630,7 @@ fn linear_gradient_keeps_ordered_stops_in_canvas_coordinates() {
     assert_eq!(gradient.stops(), stops);
     assert_eq!(
         gradient.interpolation_space(),
-        &crate::color::ColorProfile::from(LinearSrgb)
+        &crate::color::ColorSpace::from(LinearSrgb)
     );
 }
 
@@ -760,7 +760,7 @@ fn mesh_gradient_records_a_colored_triangle_patch() {
     assert_eq!(gradient.triangles(), &[points]);
     assert_eq!(
         gradient.interpolation_space(),
-        &crate::color::ColorProfile::from(LinearSrgb)
+        &crate::color::ColorSpace::from(LinearSrgb)
     );
 }
 

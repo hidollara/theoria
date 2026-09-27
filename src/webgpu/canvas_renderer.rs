@@ -17,7 +17,7 @@ use crate::{
         path_sampling::PathSampler,
         view_space::screen_space_tolerance,
     },
-    color::{Color, ColorProfile, IccProfile, IccRenderingIntent, LinearSrgb, Opacity, Srgb},
+    color::{Color, ColorSpace, IccProfile, IccRenderingIntent, LinearSrgb, Opacity, Srgb},
     geometry::Point,
     path::Path,
     surface::{OutputAlpha, OutputImage, SurfaceSize, Viewport},
@@ -110,7 +110,7 @@ impl<'a> RenderTarget<'a> {
 /// uploaded Canvas images, and submits one or more command buffers from
 /// [`render`](Self::render). It does not create or present a WebGPU surface.
 pub struct CanvasRenderer {
-    working_profile: ColorProfile,
+    working_profile: ColorSpace,
     device: wgpu::Device,
     queue: wgpu::Queue,
     pipelines: Pipelines,
@@ -130,7 +130,7 @@ impl CanvasRenderer {
     pub fn new_with_working_space(
         device: wgpu::Device,
         queue: wgpu::Queue,
-        working_profile: impl Into<ColorProfile>,
+        working_profile: impl Into<ColorSpace>,
     ) -> Self {
         Self::try_new_with_working_profile(device, queue, working_profile)
             .expect("working profile transfers must be representable in WGSL")
@@ -140,7 +140,7 @@ impl CanvasRenderer {
     pub fn try_new_with_working_profile(
         device: wgpu::Device,
         queue: wgpu::Queue,
-        working_profile: impl Into<ColorProfile>,
+        working_profile: impl Into<ColorSpace>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let working_profile = working_profile.into();
         let pipelines = Pipelines::new(&device, &working_profile)?;
@@ -290,7 +290,7 @@ impl CanvasRenderer {
         }
         let shader_profile = output.map(|output| {
             if hardware_srgb {
-                ColorProfile::from(LinearSrgb)
+                ColorSpace::from(LinearSrgb)
             } else {
                 output.profile.clone()
             }
@@ -350,7 +350,7 @@ impl CanvasRenderer {
             Some(_) => crate::canvas_renderer::color_space::convert_premultiplied_space(
                 clear,
                 &self.working_profile,
-                &ColorProfile::from(LinearSrgb),
+                &ColorSpace::from(LinearSrgb),
             )?,
             None => clear,
         };
@@ -1340,7 +1340,7 @@ mod tests {
         canvas: &Canvas,
         format: wgpu::TextureFormat,
         profile: Option<&IccProfile>,
-        working_space: ColorProfile,
+        working_space: ColorSpace,
     ) -> Option<[u8; 8]> {
         block_on(async {
             let instance = wgpu::Instance::default();

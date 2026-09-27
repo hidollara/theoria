@@ -3,7 +3,7 @@ use crate::canvas::{
     Canvas, CanvasIccColorError, CanvasNode, ColorField, Composite, Composition, CoverageNode,
     Draw, image::Image,
 };
-use crate::color::ColorProfile;
+use crate::color::ColorSpace;
 #[cfg(test)]
 use crate::color::LinearSrgb;
 
@@ -16,7 +16,7 @@ pub(crate) fn prepare_colors(canvas: &Canvas) -> Result<PreparedColors, CanvasIc
 
 pub(crate) fn prepare_colors_in(
     canvas: &Canvas,
-    working_profile: impl Into<ColorProfile>,
+    working_profile: impl Into<ColorSpace>,
 ) -> Result<PreparedColors, CanvasIccColorError> {
     let mut prepared = PreparedColors::new(working_profile);
     prepare_canvas_colors(canvas, &mut prepared)?;
@@ -99,13 +99,13 @@ fn prepare_color_field(
 /// materialized separately and therefore run their own collection pass.
 #[cfg(test)]
 pub(crate) fn collect_compositions(canvas: &Canvas, compositions: &mut Vec<Composition>) {
-    collect_compositions_in(canvas, compositions, &ColorProfile::from(LinearSrgb));
+    collect_compositions_in(canvas, compositions, &ColorSpace::from(LinearSrgb));
 }
 
 pub(crate) fn collect_compositions_in(
     canvas: &Canvas,
     compositions: &mut Vec<Composition>,
-    working_profile: &ColorProfile,
+    working_profile: &ColorSpace,
 ) {
     match canvas.node() {
         CanvasNode::Draw(draw) => {
@@ -136,7 +136,7 @@ pub(crate) fn collect_compositions_in(
 fn collect_color_field_compositions(
     source: &ColorField,
     compositions: &mut Vec<Composition>,
-    working_profile: &ColorProfile,
+    working_profile: &ColorSpace,
 ) {
     if let ColorField::Canvas(canvas) = source {
         collect_compositions_in(canvas, compositions, working_profile);
@@ -179,14 +179,14 @@ fn collect_color_field_images(source: &ColorField, images: &mut Vec<Image>) {
 
 #[cfg(test)]
 pub(crate) fn required_scratch_images(canvas: &Canvas) -> usize {
-    required_scratch_images_in(canvas, &ColorProfile::from(LinearSrgb))
+    required_scratch_images_in(canvas, &ColorSpace::from(LinearSrgb))
 }
 
-pub(crate) fn required_scratch_images_in(canvas: &Canvas, working_profile: &ColorProfile) -> usize {
+pub(crate) fn required_scratch_images_in(canvas: &Canvas, working_profile: &ColorSpace) -> usize {
     1 + additional_scratch_images(canvas, working_profile)
 }
 
-fn additional_scratch_images(canvas: &Canvas, working_profile: &ColorProfile) -> usize {
+fn additional_scratch_images(canvas: &Canvas, working_profile: &ColorSpace) -> usize {
     match canvas.node() {
         CanvasNode::Draw(draw) => match &draw.source {
             ColorField::Canvas(content) => {
@@ -231,10 +231,10 @@ fn additional_scratch_images(canvas: &Canvas, working_profile: &ColorProfile) ->
 
 #[cfg(test)]
 pub(crate) fn can_record_directly(canvas: &Canvas) -> bool {
-    can_record_directly_in(canvas, &ColorProfile::from(LinearSrgb))
+    can_record_directly_in(canvas, &ColorSpace::from(LinearSrgb))
 }
 
-pub(crate) fn can_record_directly_in(canvas: &Canvas, working_profile: &ColorProfile) -> bool {
+pub(crate) fn can_record_directly_in(canvas: &Canvas, working_profile: &ColorSpace) -> bool {
     match canvas.node() {
         CanvasNode::Draw(_) => true,
         CanvasNode::Transform { content, .. } => can_record_directly_in(content, working_profile),
@@ -255,7 +255,7 @@ pub(crate) fn can_record_directly_in(canvas: &Canvas, working_profile: &ColorPro
 
 fn required_color_field_scratch_images(
     source: &ColorField,
-    working_profile: &ColorProfile,
+    working_profile: &ColorSpace,
 ) -> usize {
     match source {
         ColorField::Canvas(canvas) => required_scratch_images_in(canvas, working_profile),
@@ -369,8 +369,8 @@ mod tests {
             leaf(),
             Composition::new(Composite::SourceOver, crate::color::LinearDisplayP3),
         );
-        let linear_srgb = ColorProfile::from(crate::color::LinearSrgb);
-        let linear_p3 = ColorProfile::from(crate::color::LinearDisplayP3);
+        let linear_srgb = ColorSpace::from(crate::color::LinearSrgb);
+        let linear_p3 = ColorSpace::from(crate::color::LinearDisplayP3);
         assert!(!can_record_directly_in(&canvas, &linear_srgb));
         assert_eq!(required_scratch_images_in(&canvas, &linear_srgb), 3);
         assert!(can_record_directly_in(&canvas, &linear_p3));

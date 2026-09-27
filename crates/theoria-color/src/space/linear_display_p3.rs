@@ -1,5 +1,5 @@
 use super::{
-    ColorProfile, ColorSpace, ColorTransform, DisplayP3, IccRenderingIntent, Pcs,
+    ColorSpace, ColorSpaceId, ColorTransform, DisplayP3, IccRenderingIntent, Pcs,
     ProfileConnectionError, ProfileDefinition, TransferCurve, TypedColorSpace, require_relative,
     rgb_direct_to, rgb_to_xyz_d65_transfer, xyz_d65_to_rgb_transfer,
 };
@@ -19,7 +19,7 @@ predefined_space!(
 );
 
 impl ProfileDefinition for LinearDisplayP3Profile {
-    fn space(&self) -> ColorSpace {
+    fn space(&self) -> ColorSpaceId {
         LinearDisplayP3.into()
     }
 
@@ -53,7 +53,7 @@ impl ProfileDefinition for LinearDisplayP3Profile {
 
     fn direct_to(
         &self,
-        destination: &ColorProfile,
+        destination: &ColorSpace,
         intent: IccRenderingIntent,
     ) -> Result<Option<ColorTransform>, ProfileConnectionError> {
         rgb_direct_to(

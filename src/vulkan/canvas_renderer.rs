@@ -8,7 +8,7 @@ use crate::{
         canvas_image::CanvasImage,
         image::{Image, ImageKind},
     },
-    color::{ColorProfile, LinearSrgb, Srgb},
+    color::{ColorSpace, LinearSrgb, Srgb},
     surface::{OutputAlpha, OutputImage, Viewport},
 };
 
@@ -37,7 +37,7 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 /// Translates backend-independent Canvas commands into Vulkan commands.
 pub struct CanvasRenderer {
     device: RenderDevice,
-    working_profile: ColorProfile,
+    working_profile: ColorSpace,
     gpu: CanvasGpuResources,
 }
 
@@ -50,7 +50,7 @@ impl CanvasRenderer {
     /// The choice is fixed for this renderer so cached Canvas images keep one meaning.
     pub fn new_with_working_space(
         device: RenderDevice,
-        working_profile: impl Into<ColorProfile>,
+        working_profile: impl Into<ColorSpace>,
     ) -> Self {
         Self {
             device,
@@ -248,7 +248,7 @@ impl CanvasRenderer {
         }
         let shader_profile = output.map(|output| {
             if hardware_srgb {
-                ColorProfile::from(LinearSrgb)
+                ColorSpace::from(LinearSrgb)
             } else {
                 output.profile.clone()
             }
@@ -319,7 +319,7 @@ impl CanvasRenderer {
                 crate::canvas_renderer::color_space::convert_premultiplied_space(
                     clear_color.components(),
                     &self.working_profile,
-                    &ColorProfile::from(LinearSrgb),
+                    &ColorSpace::from(LinearSrgb),
                 )?,
             ),
             None => clear_color,

@@ -10,7 +10,7 @@ use std::{
 use ash::vk;
 
 use crate::canvas::{Composite, Composition, composition_shader::Binding};
-use crate::color::{ColorProfile, IccRenderingIntent, LinearSrgb};
+use crate::color::{ColorSpace, IccRenderingIntent, LinearSrgb};
 
 use super::encoding::{
     CompositionPushConstants, ImagePushConstants, OutputPushConstants, TrianglePushConstants,
@@ -83,7 +83,7 @@ impl Drop for PipelineGuard<'_> {
 }
 
 pub(super) struct Pipelines {
-    pub(super) working_profile: ColorProfile,
+    pub(super) working_profile: ColorSpace,
     pub(super) working_format: vk::Format,
     pub(super) output_format: vk::Format,
     pub(super) sample_count: vk::SampleCountFlags,
@@ -91,13 +91,13 @@ pub(super) struct Pipelines {
     pub(super) image: Pipeline,
     pub(super) composites: HashMap<Composite, Pipeline>,
     pub(super) mask: Pipeline,
-    pub(super) outputs: HashMap<(ColorProfile, IccRenderingIntent), Pipeline>,
-    pub(super) icc_images: HashMap<(ColorProfile, IccRenderingIntent, bool), Pipeline>,
+    pub(super) outputs: HashMap<(ColorSpace, IccRenderingIntent), Pipeline>,
+    pub(super) icc_images: HashMap<(ColorSpace, IccRenderingIntent, bool), Pipeline>,
     pub(super) compositions: HashMap<Composition, Pipeline>,
 }
 
 impl Pipelines {
-    pub(super) fn icc_image(&self, key: &(ColorProfile, IccRenderingIntent, bool)) -> &Pipeline {
+    pub(super) fn icc_image(&self, key: &(ColorSpace, IccRenderingIntent, bool)) -> &Pipeline {
         &self.icc_images[key]
     }
 
@@ -105,7 +105,7 @@ impl Pipelines {
         &mut self,
         device: &ash::Device,
         descriptor_layout: vk::DescriptorSetLayout,
-        key: (ColorProfile, IccRenderingIntent, bool),
+        key: (ColorSpace, IccRenderingIntent, bool),
         source: &str,
     ) -> Result<()> {
         if self.icc_images.contains_key(&key) {
@@ -133,7 +133,7 @@ impl Pipelines {
     pub(super) unsafe fn retain_icc_images(
         &mut self,
         device: &ash::Device,
-        active: &HashSet<(ColorProfile, IccRenderingIntent, bool)>,
+        active: &HashSet<(ColorSpace, IccRenderingIntent, bool)>,
     ) {
         self.icc_images.retain(|key, pipeline| {
             if active.contains(key) {
@@ -147,7 +147,7 @@ impl Pipelines {
         });
     }
 
-    pub(super) fn output(&self, profile: &ColorProfile, intent: IccRenderingIntent) -> &Pipeline {
+    pub(super) fn output(&self, profile: &ColorSpace, intent: IccRenderingIntent) -> &Pipeline {
         &self.outputs[&(profile.clone(), intent)]
     }
 
@@ -155,7 +155,7 @@ impl Pipelines {
         &mut self,
         device: &ash::Device,
         image_descriptor_set_layout: vk::DescriptorSetLayout,
-        profile: &ColorProfile,
+        profile: &ColorSpace,
         intent: IccRenderingIntent,
     ) -> Result<()> {
         let key = (profile.clone(), intent);
@@ -263,7 +263,7 @@ pub(super) unsafe fn create_pipelines(
     output_format: vk::Format,
     sample_count: vk::SampleCountFlags,
     image_descriptor_set_layout: vk::DescriptorSetLayout,
-    working_profile: &ColorProfile,
+    working_profile: &ColorSpace,
 ) -> Result<Pipelines> {
     let image_fragment: Cow<'_, [u8]> = if working_profile == &LinearSrgb.into() {
         Cow::Borrowed(IMAGE_FRAGMENT_SHADER)
@@ -534,9 +534,9 @@ mod tests {
         let source = shader
             .wgsl_module_for_profiles(
                 Binding::Vulkan,
-                &ColorProfile::from(crate::color::LinearSrgb),
-                &ColorProfile::from(Srgb),
-                &ColorProfile::from(Srgb),
+                &ColorSpace::from(crate::color::LinearSrgb),
+                &ColorSpace::from(Srgb),
+                &ColorSpace::from(Srgb),
             )
             .unwrap();
         assert!(!compile_fragment(&source).unwrap().is_empty());

@@ -101,7 +101,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ColorModel, ColorSpace, Rgb, TypedColorSpace};
+    use crate::{ColorModel, ColorSpaceId, Rgb, TypedColorSpace};
     use std::{num::NonZeroUsize, sync::LazyLock};
 
     struct AuthoredRgb([u8; 3]);
@@ -127,9 +127,9 @@ mod tests {
     impl TypedColorSpace for LogicalSpace {
         type Model = LogicalModel;
 
-        fn color_space(&self) -> ColorSpace {
-            static SPACE: LazyLock<ColorSpace> = LazyLock::new(|| {
-                ColorSpace::new(NonZeroUsize::new(LogicalModel::COMPONENTS).unwrap())
+        fn color_space(&self) -> ColorSpaceId {
+            static SPACE: LazyLock<ColorSpaceId> = LazyLock::new(|| {
+                ColorSpaceId::new(NonZeroUsize::new(LogicalModel::COMPONENTS).unwrap())
             });
             SPACE.clone()
         }

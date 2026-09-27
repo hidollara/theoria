@@ -2,7 +2,7 @@
 //! Also compiled by build.rs for the default Vulkan shader validation.
 
 use theoria_color::{
-    ColorProfile, DisplayP3, IccRenderingIntent, LinearDisplayP3, LinearSrgb, Srgb,
+    ColorSpace, DisplayP3, IccRenderingIntent, LinearDisplayP3, LinearSrgb, Srgb,
     connect_profiles,
 };
 
@@ -15,7 +15,7 @@ pub(crate) fn assemble(source: &str) -> String {
 
 pub(crate) fn assemble_for(
     source: &str,
-    working_profile: &ColorProfile,
+    working_profile: &ColorSpace,
 ) -> Result<String, Box<dyn std::error::Error>> {
     if working_profile.space().channels() != 3 {
         return Err(std::io::Error::new(
@@ -29,7 +29,7 @@ pub(crate) fn assemble_for(
         1,
         "WGSL source must have exactly one RGB conversion insertion point"
     );
-    let profiles: [ColorProfile; 4] = [
+    let profiles: [ColorSpace; 4] = [
         Srgb.into(),
         LinearSrgb.into(),
         DisplayP3.into(),
@@ -81,8 +81,8 @@ fn working_to_linear_srgb(value: vec3<f32>) -> vec3<f32> {
 
 pub(crate) fn assemble_output_for(
     source: &str,
-    working_profile: &ColorProfile,
-    output_profile: &ColorProfile,
+    working_profile: &ColorSpace,
+    output_profile: &ColorSpace,
     output_intent: IccRenderingIntent,
 ) -> Result<String, Box<dyn std::error::Error>> {
     if working_profile.space().channels() != 3 || output_profile.space().channels() != 3 {
@@ -93,7 +93,7 @@ pub(crate) fn assemble_output_for(
         .into());
     }
     assert_eq!(source.matches(MARKER).count(), 1);
-    let composition_profile = ColorProfile::from(LinearSrgb);
+    let composition_profile = ColorSpace::from(LinearSrgb);
     let relative = IccRenderingIntent::RelativeColorimetric;
     let to_composition =
         connect_profiles(working_profile, &composition_profile, relative, relative)?;
@@ -137,7 +137,7 @@ mod tests {
 
     #[test]
     fn every_predefined_working_profile_validates() {
-        let profiles: [ColorProfile; 4] = [
+        let profiles: [ColorSpace; 4] = [
             Srgb.into(),
             LinearSrgb.into(),
             DisplayP3.into(),

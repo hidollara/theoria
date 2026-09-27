@@ -1,7 +1,7 @@
 use std::{error::Error, fmt, sync::Arc};
 
 use crate::color::{
-    Color, ColorCoordinates, ColorProfile, ColorTransformError, IccProfile, IccProfileError,
+    Color, ColorCoordinates, ColorSpace, ColorTransformError, IccProfile, IccProfileError,
     IccRenderingIntent, LabD50, Opacity, OpacitySample, ProfileConnectionError, Srgb,
     TransferError, TypedColorSpace, XyzD50, XyzD65,
 };
@@ -10,7 +10,7 @@ use crate::color::{
 /// Canvas boundary without converting its coordinates.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CanvasColor {
-    pub(crate) profile: ColorProfile,
+    pub(crate) profile: ColorSpace,
     pub(crate) intent: IccRenderingIntent,
     pub(crate) value: ColorValue,
 }
@@ -378,7 +378,7 @@ mod tests {
             color.value,
             ColorValue::U8([255, 128, 64], Alpha::U8(128))
         ));
-        assert_eq!(color.profile, ColorProfile::from(Srgb));
+        assert_eq!(color.profile, ColorSpace::from(Srgb));
         assert_eq!(
             color.straight_rgba_in(Srgb),
             [1.0, 128.0 / 255.0, 64.0 / 255.0, 128.0 / 255.0]
@@ -394,7 +394,7 @@ mod tests {
         );
 
         let canvas = CanvasColor::from(color);
-        assert_eq!(canvas.profile, ColorProfile::from(DisplayP3));
+        assert_eq!(canvas.profile, ColorSpace::from(DisplayP3));
         assert_eq!(canvas.straight_rgba_in(DisplayP3), [1.0, 0.5, 0.25, 0.75]);
     }
 
@@ -409,7 +409,7 @@ mod tests {
         let adjusted = color.with_alpha_factor(0.5);
 
         assert!(matches!(adjusted.value, ColorValue::U8([255, 128, 64], _)));
-        assert_eq!(adjusted.profile, ColorProfile::from(LinearDisplayP3));
+        assert_eq!(adjusted.profile, ColorSpace::from(LinearDisplayP3));
         assert!((adjusted.value.alpha().as_f32() - 64.0 / 255.0).abs() < 0.000_001);
     }
 
@@ -429,7 +429,7 @@ mod tests {
         let canvas = CanvasColor::from(converted);
 
         assert!(matches!(canvas.value, ColorValue::F64(_, Alpha::F32(_))));
-        assert_eq!(canvas.profile, ColorProfile::from(LinearSrgb));
+        assert_eq!(canvas.profile, ColorSpace::from(LinearSrgb));
         let rgba = canvas.straight_rgba_in(Srgb);
         for (actual, expected) in rgba.into_iter().zip([0.25, 0.5, 0.75, 0.4]) {
             assert!((actual - expected).abs() < 0.000_01);
@@ -473,7 +473,7 @@ mod tests {
                     XyzD50.xyz_d50_to_coordinates(xyz),
                     source.opacity(),
                 )),
-                ColorProfile::from(XyzD50),
+                ColorSpace::from(XyzD50),
             ),
             (
                 CanvasColor::from(Color::new(
@@ -481,7 +481,7 @@ mod tests {
                     XyzD65.xyz_d50_to_coordinates(xyz),
                     source.opacity(),
                 )),
-                ColorProfile::from(XyzD65),
+                ColorSpace::from(XyzD65),
             ),
             (
                 CanvasColor::from(Color::new(
@@ -489,7 +489,7 @@ mod tests {
                     LabD50.xyz_d50_to_coordinates(xyz),
                     source.opacity(),
                 )),
-                ColorProfile::from(LabD50),
+                ColorSpace::from(LabD50),
             ),
         ] {
             assert_eq!(canvas.profile, profile);

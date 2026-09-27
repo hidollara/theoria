@@ -8,7 +8,7 @@ use crate::{
         Draw,
     },
     canvas_renderer::{canvas_plan::can_record_directly_in, color_space::PreparedColors},
-    color::{Color, ColorProfile, Opacity, Srgb},
+    color::{Color, ColorSpace, Opacity, Srgb},
     surface::OutputAlpha,
     tessellation::{Mesh, tessellate_fill_with_tolerance, tessellate_stroke_with_tolerance},
     transform::Projective2,
@@ -21,7 +21,7 @@ use super::pipeline::{Pipeline, Pipelines};
 pub(super) struct CanvasRecorder<'a> {
     commands: CanvasCommandEncoder<'a>,
     next_image: usize,
-    working_profile: ColorProfile,
+    working_profile: ColorSpace,
 }
 
 impl<'a> CanvasRecorder<'a> {

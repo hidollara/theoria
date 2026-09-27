@@ -9,9 +9,9 @@ use super::color_transform::{ColorTransform, ColorTransformError, pcs_key_for_in
 use super::icc_mpe::MpeTags;
 use super::pcs::ICC_D50;
 use super::profile::{
-    ColorProfile, Pcs, ProfileConnectionError, ProfileDefinition, connect_profiles,
+    ColorSpace, Pcs, ProfileConnectionError, ProfileDefinition, connect_profiles,
 };
-use super::space::ColorSpace;
+use super::space::ColorSpaceId;
 use super::transfer::{
     Transfer, TransferClut, TransferCurve, TransferError, TransferMatrix, TransferStage,
 };
@@ -51,7 +51,7 @@ struct IccProfileData {
     parsed: Arc<ParsedProfile>,
     original_bytes: Option<Arc<[u8]>>,
     pcs: Pcs,
-    device_space: ColorSpace,
+    device_space: ColorSpaceId,
     mpe: MpeTags,
 }
 
@@ -102,7 +102,7 @@ impl IccProfile {
                 parsed: Arc::new(parsed),
                 original_bytes: None,
                 pcs,
-                device_space: ColorSpace::new(channels),
+                device_space: ColorSpaceId::new(channels),
                 mpe: MpeTags::default(),
             }),
         }
@@ -123,18 +123,18 @@ impl IccProfile {
     }
 
     /// The device coordinates of this particular loaded profile.
-    pub fn device_space(&self) -> ColorSpace {
+    pub fn device_space(&self) -> ColorSpaceId {
         self.inner.device_space.clone()
     }
 
     /// A type-erased handle to the same profile definition.
-    pub fn profile(&self) -> ColorProfile {
-        ColorProfile::from_arc(self.inner.clone())
+    pub fn profile(&self) -> ColorSpace {
+        ColorSpace::from_arc(self.inner.clone())
     }
 
     /// Associates this profile with an already identified coordinate space.
     /// The caller must ensure that its device coordinates have that space's meaning.
-    pub fn with_device_space(mut self, space: ColorSpace) -> Result<Self, IccProfileError> {
+    pub fn with_device_space(mut self, space: ColorSpaceId) -> Result<Self, IccProfileError> {
         if space.channels() != self.device_channels() {
             return Err(IccProfileError::IncompatibleSpaceChannels);
         }
@@ -737,7 +737,7 @@ impl Error for IccProfileError {
 }
 
 impl ProfileDefinition for IccProfileData {
-    fn space(&self) -> ColorSpace {
+    fn space(&self) -> ColorSpaceId {
         self.device_space.clone()
     }
 
@@ -760,13 +760,13 @@ impl ProfileDefinition for IccProfileData {
     }
 }
 
-impl From<IccProfile> for ColorProfile {
+impl From<IccProfile> for ColorSpace {
     fn from(profile: IccProfile) -> Self {
         profile.profile()
     }
 }
 
-impl From<&IccProfile> for ColorProfile {
+impl From<&IccProfile> for ColorSpace {
     fn from(profile: &IccProfile) -> Self {
         profile.profile()
     }
@@ -1024,7 +1024,7 @@ mod tests {
         }
         let gray = backward.transfer().evaluate(&xyz).unwrap();
         assert!((gray[0] - 0.5).abs() < 0.002, "gray={gray:?}, xyz={xyz:?}");
-        assert_eq!(forward.to(), &ColorSpace::from(XyzD50));
+        assert_eq!(forward.to(), &ColorSpaceId::from(XyzD50));
         assert_eq!(backward.to(), &profile.device_space());
         assert!(forward.then(&backward).is_ok());
         let shader = forward.transfer().wgsl_with_storage(22, 1, 4).unwrap();
@@ -1073,7 +1073,7 @@ mod tests {
             assert!((actual - expected).abs() < 0.003);
         }
         let absolute_pcs = absolute.to().clone();
-        assert_ne!(absolute_pcs, ColorSpace::from(XyzD50));
+        assert_ne!(absolute_pcs, ColorSpaceId::from(XyzD50));
         assert_eq!(
             absolute_pcs,
             profile
@@ -1218,8 +1218,8 @@ mod tests {
             .pcs_to_space(IccRenderingIntent::RelativeColorimetric)
             .unwrap();
         assert_eq!(to_pcs.from(), &source.device_space());
-        assert_eq!(to_pcs.to(), &ColorSpace::from(XyzD50));
-        assert_eq!(from_pcs.from(), &ColorSpace::from(XyzD50));
+        assert_eq!(to_pcs.to(), &ColorSpaceId::from(XyzD50));
+        assert_eq!(from_pcs.from(), &ColorSpaceId::from(XyzD50));
         assert_eq!(from_pcs.to(), &separate_load.device_space());
         let connected = to_pcs.then(&from_pcs).unwrap();
         assert_eq!(connected.to(), &separate_load.device_space());
@@ -1240,7 +1240,7 @@ mod tests {
         assert_ne!(first.profile(), second.profile());
         let rebound_clone = first
             .clone()
-            .with_device_space(ColorSpace::new(NonZeroUsize::new(3).unwrap()))
+            .with_device_space(ColorSpaceId::new(NonZeroUsize::new(3).unwrap()))
             .unwrap();
         assert_ne!(first.profile(), rebound_clone.profile());
         assert_eq!(
