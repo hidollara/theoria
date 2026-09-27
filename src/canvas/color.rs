@@ -276,6 +276,7 @@ impl From<&CanvasColor> for CanvasColor {
 pub enum CanvasIccColorError {
     AbsoluteIntent,
     InvalidCoordinates,
+    UnsupportedColorChannels(usize),
     Profile(IccProfileError),
     Connection(ProfileConnectionError),
     Transform(ColorTransformError),
@@ -313,6 +314,10 @@ impl fmt::Display for CanvasIccColorError {
                 formatter.write_str("absolute ICC color needs an explicit display conversion")
             }
             Self::InvalidCoordinates => formatter.write_str("ICC device coordinates are invalid"),
+            Self::UnsupportedColorChannels(channels) => write!(
+                formatter,
+                "gradient interpolation requires three color channels, got {channels}"
+            ),
             Self::Profile(error) => error.fmt(formatter),
             Self::Connection(error) => error.fmt(formatter),
             Self::Transform(error) => error.fmt(formatter),

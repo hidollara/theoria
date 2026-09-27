@@ -123,14 +123,17 @@ mod tests {
             [255_u8, 0, 0],
             Opacity::<u8>::ONE,
         ));
+        let mut prepared = crate::canvas_renderer::color_space::PreparedColors::default();
+        prepared
+            .prepare_interpolation(&crate::color::LinearSrgb.into())
+            .unwrap();
 
         assert_eq!(
             transparent
                 .interpolate(
                     opaque,
                     0.5,
-                    crate::color::LinearSrgb.into(),
-                    crate::color::LinearSrgb.into()
+                    prepared.interpolation(&crate::color::LinearSrgb.into()),
                 )
                 .components(),
             [0.5, 0.0, 0.0, 0.5]

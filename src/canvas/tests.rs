@@ -628,7 +628,10 @@ fn linear_gradient_keeps_ordered_stops_in_canvas_coordinates() {
     assert_eq!(gradient.start(), Point::new(10.0, 20.0));
     assert_eq!(gradient.end(), Point::new(110.0, 20.0));
     assert_eq!(gradient.stops(), stops);
-    assert_eq!(gradient.interpolation_space(), LinearSrgb.into());
+    assert_eq!(
+        gradient.interpolation_space(),
+        &crate::color::ColorProfile::from(LinearSrgb)
+    );
 }
 
 #[test]
@@ -755,7 +758,10 @@ fn mesh_gradient_records_a_colored_triangle_patch() {
     let gradient = MeshGradient::from_triangle(points.clone(), LinearSrgb).unwrap();
 
     assert_eq!(gradient.triangles(), &[points]);
-    assert_eq!(gradient.interpolation_space(), LinearSrgb.into());
+    assert_eq!(
+        gradient.interpolation_space(),
+        &crate::color::ColorProfile::from(LinearSrgb)
+    );
 }
 
 #[test]

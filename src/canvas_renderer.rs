@@ -1,7 +1,6 @@
 //! Backend-internal Canvas evaluation helpers shared by physical renderers.
 
 use crate::canvas::CanvasColor;
-use crate::color::RgbColorSpace;
 
 pub(crate) mod canvas_plan;
 pub(crate) mod color_space;
@@ -26,29 +25,25 @@ pub(crate) trait WorkingColor: Copy {
         self,
         other: Self,
         amount: f32,
-        space: RgbColorSpace,
-        working_space: RgbColorSpace,
+        interpolation: &color_space::PreparedInterpolation,
     ) -> Self {
         Self::from_components(color_space::interpolate_premultiplied_rgba(
             self.components(),
             other.components(),
             amount,
-            space,
-            working_space,
+            interpolation,
         ))
     }
 
     fn mix(
         colors: [Self; 3],
         weights: [f32; 3],
-        space: RgbColorSpace,
-        working_space: RgbColorSpace,
+        interpolation: &color_space::PreparedInterpolation,
     ) -> Self {
         Self::from_components(color_space::mix_premultiplied_rgba(
             colors.map(Self::components),
             weights,
-            space,
-            working_space,
+            interpolation,
         ))
     }
 

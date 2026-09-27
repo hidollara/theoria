@@ -50,31 +50,37 @@ fn prepare_color_field(
     match source {
         ColorField::Solid(color) => prepared.prepare(color)?,
         ColorField::LinearGradient(gradient) => {
+            prepared.prepare_interpolation(gradient.interpolation_space())?;
             for stop in gradient.stops() {
                 prepared.prepare(stop.color())?;
             }
         }
         ColorField::RadialGradient(gradient) => {
+            prepared.prepare_interpolation(gradient.interpolation_space())?;
             for stop in gradient.stops() {
                 prepared.prepare(stop.color())?;
             }
         }
         ColorField::ConicGradient(gradient) => {
+            prepared.prepare_interpolation(gradient.interpolation_space())?;
             for stop in gradient.stops() {
                 prepared.prepare(stop.color())?;
             }
         }
         ColorField::AlongPathGradient(gradient) => {
+            prepared.prepare_interpolation(gradient.ramp().interpolation_space())?;
             for stop in gradient.ramp().stops() {
                 prepared.prepare(stop.color())?;
             }
         }
         ColorField::AcrossPathGradient(gradient) => {
+            prepared.prepare_interpolation(gradient.ramp().interpolation_space())?;
             for stop in gradient.ramp().stops() {
                 prepared.prepare(stop.color())?;
             }
         }
         ColorField::MeshGradient(gradient) => {
+            prepared.prepare_interpolation(gradient.interpolation_space())?;
             for triangle in gradient.triangles() {
                 for point in triangle {
                     prepared.prepare(point.color())?;
