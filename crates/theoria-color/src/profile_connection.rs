@@ -20,9 +20,11 @@ use super::transfer::TransferError;
 pub trait ColorProfile {
     fn space(&self) -> ColorSpaceKey;
     fn pcs(&self) -> IccPcs;
-    fn to_pcs(&self, intent: IccRenderingIntent) -> Result<ColorTransform, ProfileConnectionError>;
-    #[allow(clippy::wrong_self_convention)] // selects this profile's PCS-to-space direction
-    fn from_pcs(
+    fn space_to_pcs(
+        &self,
+        intent: IccRenderingIntent,
+    ) -> Result<ColorTransform, ProfileConnectionError>;
+    fn pcs_to_space(
         &self,
         intent: IccRenderingIntent,
     ) -> Result<ColorTransform, ProfileConnectionError>;
@@ -63,7 +65,7 @@ pub fn connect_profiles(
         }
         return Ok(direct);
     }
-    let mut transform = source.to_pcs(source_intent)?;
+    let mut transform = source.space_to_pcs(source_intent)?;
     if transform.from() != &source_space
         || transform.to() != &pcs_key_for_intent(source.pcs(), source_intent)
     {
@@ -76,7 +78,7 @@ pub fn connect_profiles(
             source_intent,
         )?)?;
     }
-    let destination_transform = destination.from_pcs(destination_intent)?;
+    let destination_transform = destination.pcs_to_space(destination_intent)?;
     if destination_transform.from() != &pcs_key_for_intent(destination.pcs(), destination_intent)
         || destination_transform.to() != &destination_space
     {
@@ -94,12 +96,15 @@ impl ColorProfile for RgbColorSpace {
         IccPcs::XyzD50
     }
 
-    fn to_pcs(&self, intent: IccRenderingIntent) -> Result<ColorTransform, ProfileConnectionError> {
+    fn space_to_pcs(
+        &self,
+        intent: IccRenderingIntent,
+    ) -> Result<ColorTransform, ProfileConnectionError> {
         require_relative(intent)?;
         Ok(ColorTransform::rgb_to_pcs(*self, self.pcs())?)
     }
 
-    fn from_pcs(
+    fn pcs_to_space(
         &self,
         intent: IccRenderingIntent,
     ) -> Result<ColorTransform, ProfileConnectionError> {
@@ -151,18 +156,18 @@ macro_rules! predefined_rgb_profile {
                     IccPcs::XyzD50
                 }
 
-                fn to_pcs(
+                fn space_to_pcs(
                     &self,
                     intent: IccRenderingIntent,
                 ) -> Result<ColorTransform, ProfileConnectionError> {
-                    RgbColorSpace::from(*self).to_pcs(intent)
+                    RgbColorSpace::from(*self).space_to_pcs(intent)
                 }
 
-                fn from_pcs(
+                fn pcs_to_space(
                     &self,
                     intent: IccRenderingIntent,
                 ) -> Result<ColorTransform, ProfileConnectionError> {
-                    RgbColorSpace::from(*self).from_pcs(intent)
+                    RgbColorSpace::from(*self).pcs_to_space(intent)
                 }
 
                 fn direct_to(
@@ -188,16 +193,19 @@ impl ColorProfile for XyzD50 {
         IccPcs::XyzD50
     }
 
-    fn to_pcs(&self, intent: IccRenderingIntent) -> Result<ColorTransform, ProfileConnectionError> {
+    fn space_to_pcs(
+        &self,
+        intent: IccRenderingIntent,
+    ) -> Result<ColorTransform, ProfileConnectionError> {
         require_relative(intent)?;
         Ok(ColorTransform::between_pcs(self.pcs(), self.pcs())?)
     }
 
-    fn from_pcs(
+    fn pcs_to_space(
         &self,
         intent: IccRenderingIntent,
     ) -> Result<ColorTransform, ProfileConnectionError> {
-        self.to_pcs(intent)
+        self.space_to_pcs(intent)
     }
 }
 
@@ -210,16 +218,19 @@ impl ColorProfile for LabD50 {
         IccPcs::LabD50
     }
 
-    fn to_pcs(&self, intent: IccRenderingIntent) -> Result<ColorTransform, ProfileConnectionError> {
+    fn space_to_pcs(
+        &self,
+        intent: IccRenderingIntent,
+    ) -> Result<ColorTransform, ProfileConnectionError> {
         require_relative(intent)?;
         Ok(ColorTransform::between_pcs(self.pcs(), self.pcs())?)
     }
 
-    fn from_pcs(
+    fn pcs_to_space(
         &self,
         intent: IccRenderingIntent,
     ) -> Result<ColorTransform, ProfileConnectionError> {
-        self.to_pcs(intent)
+        self.space_to_pcs(intent)
     }
 }
 
@@ -232,7 +243,10 @@ impl ColorProfile for XyzD65 {
         IccPcs::XyzD50
     }
 
-    fn to_pcs(&self, intent: IccRenderingIntent) -> Result<ColorTransform, ProfileConnectionError> {
+    fn space_to_pcs(
+        &self,
+        intent: IccRenderingIntent,
+    ) -> Result<ColorTransform, ProfileConnectionError> {
         require_relative(intent)?;
         Ok(ColorTransform::new(
             self.space(),
@@ -241,7 +255,7 @@ impl ColorProfile for XyzD65 {
         )?)
     }
 
-    fn from_pcs(
+    fn pcs_to_space(
         &self,
         intent: IccRenderingIntent,
     ) -> Result<ColorTransform, ProfileConnectionError> {
@@ -263,15 +277,18 @@ impl ColorProfile for IccProfile {
         self.pcs()
     }
 
-    fn to_pcs(&self, intent: IccRenderingIntent) -> Result<ColorTransform, ProfileConnectionError> {
-        Ok(IccProfile::to_pcs(self, intent)?)
-    }
-
-    fn from_pcs(
+    fn space_to_pcs(
         &self,
         intent: IccRenderingIntent,
     ) -> Result<ColorTransform, ProfileConnectionError> {
-        Ok(IccProfile::from_pcs(self, intent)?)
+        Ok(IccProfile::space_to_pcs(self, intent)?)
+    }
+
+    fn pcs_to_space(
+        &self,
+        intent: IccRenderingIntent,
+    ) -> Result<ColorTransform, ProfileConnectionError> {
+        Ok(IccProfile::pcs_to_space(self, intent)?)
     }
 }
 
@@ -377,11 +394,11 @@ mod tests {
         )
         .unwrap();
         let expected = RgbColorSpace::Srgb
-            .to_pcs(IccRenderingIntent::RelativeColorimetric)
+            .space_to_pcs(IccRenderingIntent::RelativeColorimetric)
             .unwrap()
             .then(
                 &RgbColorSpace::DisplayP3
-                    .from_pcs(IccRenderingIntent::RelativeColorimetric)
+                    .pcs_to_space(IccRenderingIntent::RelativeColorimetric)
                     .unwrap(),
             )
             .unwrap();
@@ -437,7 +454,7 @@ mod tests {
                 IccPcs::XyzD50
             }
 
-            fn to_pcs(
+            fn space_to_pcs(
                 &self,
                 _: IccRenderingIntent,
             ) -> Result<ColorTransform, ProfileConnectionError> {
@@ -447,7 +464,7 @@ mod tests {
                 )?)
             }
 
-            fn from_pcs(
+            fn pcs_to_space(
                 &self,
                 _: IccRenderingIntent,
             ) -> Result<ColorTransform, ProfileConnectionError> {
@@ -519,14 +536,14 @@ mod tests {
                 IccPcs::XyzD50
             }
 
-            fn to_pcs(
+            fn space_to_pcs(
                 &self,
                 _: IccRenderingIntent,
             ) -> Result<ColorTransform, ProfileConnectionError> {
                 unreachable!()
             }
 
-            fn from_pcs(
+            fn pcs_to_space(
                 &self,
                 _: IccRenderingIntent,
             ) -> Result<ColorTransform, ProfileConnectionError> {
@@ -570,7 +587,7 @@ mod tests {
                 IccPcs::XyzD50
             }
 
-            fn to_pcs(
+            fn space_to_pcs(
                 &self,
                 _: IccRenderingIntent,
             ) -> Result<ColorTransform, ProfileConnectionError> {
@@ -581,7 +598,7 @@ mod tests {
                 )?)
             }
 
-            fn from_pcs(
+            fn pcs_to_space(
                 &self,
                 _: IccRenderingIntent,
             ) -> Result<ColorTransform, ProfileConnectionError> {

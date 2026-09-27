@@ -272,7 +272,7 @@ mod tests {
         let profile = IccProfile::from_bytes(&bytes).unwrap();
         let source = ColorTransform::rgb_to_pcs(RgbColorSpace::Srgb, IccPcs::XyzD50).unwrap();
         let destination = profile
-            .from_pcs(IccRenderingIntent::RelativeColorimetric)
+            .pcs_to_space(IccRenderingIntent::RelativeColorimetric)
             .unwrap();
         let connected = source.then(&destination).unwrap();
         let sample = [0.3, 0.5, 0.7];
@@ -284,7 +284,7 @@ mod tests {
         assert_eq!(connected.to(), &profile.device_space());
 
         let reverse = profile
-            .to_pcs(IccRenderingIntent::RelativeColorimetric)
+            .space_to_pcs(IccRenderingIntent::RelativeColorimetric)
             .unwrap()
             .then(&ColorTransform::pcs_to_rgb(IccPcs::XyzD50, RgbColorSpace::Srgb).unwrap())
             .unwrap();
