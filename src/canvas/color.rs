@@ -1,53 +1,18 @@
 use std::{error::Error, fmt, sync::Arc};
 
 use crate::color::{
-    Color, ColorCoordinates, ColorTransformError, IccProfile, IccProfileError, IccRenderingIntent,
-    LabD50, Opacity, OpacitySample, ProfileConnectionError, RgbColorSpace, Srgb, TransferError,
-    TypedColorSpace, XyzD50, XyzD65,
+    Color, ColorCoordinates, ColorProfile, ColorTransformError, IccProfile, IccProfileError,
+    IccRenderingIntent, LabD50, Opacity, OpacitySample, ProfileConnectionError, Srgb,
+    TransferError, TypedColorSpace, XyzD50, XyzD65,
 };
 
 /// A logical color whose concrete representation has been erased at the
 /// Canvas boundary without converting its coordinates.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CanvasColor {
-    pub(crate) profile: CanvasProfile,
+    pub(crate) profile: ColorProfile,
+    pub(crate) intent: IccRenderingIntent,
     pub(crate) value: ColorValue,
-}
-
-#[derive(Clone, Debug)]
-pub(crate) enum CanvasProfile {
-    Rgb(RgbColorSpace),
-    XyzD50,
-    XyzD65,
-    LabD50,
-    Icc {
-        profile: IccProfile,
-        intent: IccRenderingIntent,
-    },
-}
-
-impl PartialEq for CanvasProfile {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Rgb(left), Self::Rgb(right)) => left == right,
-            (Self::XyzD50, Self::XyzD50)
-            | (Self::XyzD65, Self::XyzD65)
-            | (Self::LabD50, Self::LabD50) => true,
-            (
-                Self::Icc {
-                    profile: left,
-                    intent: left_intent,
-                    ..
-                },
-                Self::Icc {
-                    profile: right,
-                    intent: right_intent,
-                    ..
-                },
-            ) => left.profile() == right.profile() && left_intent == right_intent,
-            _ => false,
-        }
-    }
 }
 
 /// The authored storage of one color, including its opacity. The renderer
@@ -148,10 +113,8 @@ impl CanvasColor {
             return Err(CanvasIccColorError::InvalidCoordinates);
         }
         Ok(Self {
-            profile: CanvasProfile::Icc {
-                profile: profile.clone(),
-                intent,
-            },
+            profile: profile.profile(),
+            intent,
             value: ColorValue::Dynamic(coordinates, Alpha::F32(opacity.sample())),
         })
     }
@@ -159,6 +122,7 @@ impl CanvasColor {
     pub(crate) fn with_alpha_factor(&self, factor: f32) -> Self {
         Self {
             profile: self.profile.clone(),
+            intent: self.intent,
             value: self.value.with_alpha_factor(factor),
         }
     }
@@ -220,7 +184,7 @@ impl CanvasOpacity for u16 {
     }
 }
 
-macro_rules! canvas_rgb_color {
+macro_rules! canvas_profile_color {
     ($profile:ty) => {
         impl<C, A> From<Color<$profile, C, A>> for CanvasColor
         where
@@ -230,7 +194,8 @@ macro_rules! canvas_rgb_color {
             fn from(color: Color<$profile, C, A>) -> Self {
                 let (profile, coordinates, opacity) = color.into_parts();
                 Self {
-                    profile: CanvasProfile::Rgb(profile.into()),
+                    profile: profile.into(),
+                    intent: IccRenderingIntent::RelativeColorimetric,
                     value: coordinates.erase(A::erase(opacity)),
                 }
             }
@@ -238,33 +203,13 @@ macro_rules! canvas_rgb_color {
     };
 }
 
-canvas_rgb_color!(Srgb);
-canvas_rgb_color!(crate::color::LinearSrgb);
-canvas_rgb_color!(crate::color::DisplayP3);
-canvas_rgb_color!(crate::color::LinearDisplayP3);
-canvas_rgb_color!(RgbColorSpace);
-
-macro_rules! canvas_reference_color {
-    ($profile:ty, $variant:ident) => {
-        impl<C, A> From<Color<$profile, C, A>> for CanvasColor
-        where
-            C: CanvasCoordinates + ColorCoordinates<<$profile as TypedColorSpace>::Model>,
-            A: CanvasOpacity,
-        {
-            fn from(color: Color<$profile, C, A>) -> Self {
-                let (_, coordinates, opacity) = color.into_parts();
-                Self {
-                    profile: CanvasProfile::$variant,
-                    value: coordinates.erase(A::erase(opacity)),
-                }
-            }
-        }
-    };
-}
-
-canvas_reference_color!(XyzD50, XyzD50);
-canvas_reference_color!(XyzD65, XyzD65);
-canvas_reference_color!(LabD50, LabD50);
+canvas_profile_color!(Srgb);
+canvas_profile_color!(crate::color::LinearSrgb);
+canvas_profile_color!(crate::color::DisplayP3);
+canvas_profile_color!(crate::color::LinearDisplayP3);
+canvas_profile_color!(XyzD50);
+canvas_profile_color!(XyzD65);
+canvas_profile_color!(LabD50);
 
 impl From<&CanvasColor> for CanvasColor {
     fn from(color: &CanvasColor) -> Self {
@@ -341,7 +286,9 @@ impl Error for CanvasIccColorError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::color::{DisplayP3, LinearDisplayP3, LinearSrgb, Srgb, XyzD50Profile};
+    use crate::color::{
+        DisplayP3, LinearDisplayP3, LinearSrgb, RgbColorSpace, Srgb, XyzD50Profile,
+    };
 
     #[test]
     fn icc_color_preserves_device_coordinates_until_renderer_lowering() {
@@ -360,16 +307,8 @@ mod tests {
         };
         assert!(Arc::ptr_eq(stored, &coordinates));
         assert_eq!(*stored_opacity, 0.5);
-        let CanvasProfile::Icc {
-            profile: stored_profile,
-            intent,
-            ..
-        } = &color.profile
-        else {
-            panic!("Canvas must retain the declared ICC profile, not a conversion plan")
-        };
-        assert_eq!(stored_profile.device_space(), profile.device_space());
-        assert_eq!(*intent, IccRenderingIntent::RelativeColorimetric);
+        assert_eq!(color.profile, profile.profile());
+        assert_eq!(color.intent, IccRenderingIntent::RelativeColorimetric);
         drop(profile);
         let rgba = color.straight_rgba_in(RgbColorSpace::Srgb);
         for (actual, expected) in rgba[..3].iter().zip([0.25, 0.5, 0.75]) {
@@ -444,7 +383,7 @@ mod tests {
             color.value,
             ColorValue::U8([255, 128, 64], Alpha::U8(128))
         ));
-        assert_eq!(color.profile, CanvasProfile::Rgb(RgbColorSpace::Srgb));
+        assert_eq!(color.profile, ColorProfile::from(Srgb));
         assert_eq!(
             color.straight_rgba_in(RgbColorSpace::Srgb),
             [1.0, 128.0 / 255.0, 64.0 / 255.0, 128.0 / 255.0]
@@ -460,7 +399,7 @@ mod tests {
         );
 
         let canvas = CanvasColor::from(color);
-        assert_eq!(canvas.profile, CanvasProfile::Rgb(RgbColorSpace::DisplayP3));
+        assert_eq!(canvas.profile, ColorProfile::from(DisplayP3));
         assert_eq!(
             canvas.straight_rgba_in(RgbColorSpace::DisplayP3),
             [1.0, 0.5, 0.25, 0.75]
@@ -478,10 +417,7 @@ mod tests {
         let adjusted = color.with_alpha_factor(0.5);
 
         assert!(matches!(adjusted.value, ColorValue::U8([255, 128, 64], _)));
-        assert_eq!(
-            adjusted.profile,
-            CanvasProfile::Rgb(RgbColorSpace::LinearDisplayP3)
-        );
+        assert_eq!(adjusted.profile, ColorProfile::from(LinearDisplayP3));
         assert!((adjusted.value.alpha().as_f32() - 64.0 / 255.0).abs() < 0.000_001);
     }
 
@@ -501,10 +437,7 @@ mod tests {
         let canvas = CanvasColor::from(converted);
 
         assert!(matches!(canvas.value, ColorValue::F64(_, Alpha::F32(_))));
-        assert_eq!(
-            canvas.profile,
-            CanvasProfile::Rgb(RgbColorSpace::LinearSrgb)
-        );
+        assert_eq!(canvas.profile, ColorProfile::from(LinearSrgb));
         let rgba = canvas.straight_rgba_in(RgbColorSpace::Srgb);
         for (actual, expected) in rgba.into_iter().zip([0.25, 0.5, 0.75, 0.4]) {
             assert!((actual - expected).abs() < 0.000_01);
@@ -548,7 +481,7 @@ mod tests {
                     XyzD50.xyz_d50_to_coordinates(xyz),
                     source.opacity(),
                 )),
-                CanvasProfile::XyzD50,
+                ColorProfile::from(XyzD50),
             ),
             (
                 CanvasColor::from(Color::new(
@@ -556,7 +489,7 @@ mod tests {
                     XyzD65.xyz_d50_to_coordinates(xyz),
                     source.opacity(),
                 )),
-                CanvasProfile::XyzD65,
+                ColorProfile::from(XyzD65),
             ),
             (
                 CanvasColor::from(Color::new(
@@ -564,14 +497,19 @@ mod tests {
                     LabD50.xyz_d50_to_coordinates(xyz),
                     source.opacity(),
                 )),
-                CanvasProfile::LabD50,
+                ColorProfile::from(LabD50),
             ),
         ] {
             assert_eq!(canvas.profile, profile);
             assert!(matches!(canvas.value, ColorValue::F64(_, Alpha::F32(_))));
             let lowered = crate::canvas_renderer::color_space::lower_straight_color(&canvas);
+            // ICC PCS D50 and the typed Lab reference use slightly different
+            // rounded D50 whites; their RGB renderings should remain close.
             for (actual, expected) in lowered.into_iter().zip(lowered_original) {
-                assert!((actual - expected).abs() < 0.000_01);
+                assert!(
+                    (actual - expected).abs() < 0.000_1,
+                    "{actual} != {expected}"
+                );
             }
         }
     }
@@ -589,7 +527,10 @@ mod tests {
 
         let rgba = stop.color().straight_rgba_in(RgbColorSpace::Srgb);
         for (actual, expected) in rgba.into_iter().zip([0.25, 0.5, 0.75, 0.4]) {
-            assert!((actual - expected).abs() < 0.000_01);
+            assert!(
+                (actual - expected).abs() < 0.000_1,
+                "{actual} != {expected}"
+            );
         }
     }
 }

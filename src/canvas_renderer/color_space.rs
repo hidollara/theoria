@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
 use crate::{
-    canvas::{CanvasColor, CanvasIccColorError, CanvasProfile, ColorValue},
+    canvas::{CanvasColor, CanvasIccColorError, ColorValue},
     color::{
-        ColorProfile, ColorTransform, IccRenderingIntent, LabD50, LinearDisplayP3, LinearSrgb,
-        RgbColorSpace, XyzD50Profile, XyzD65, connect_profiles, convert_rgb,
+        ColorProfile, ColorTransform, IccRenderingIntent, LinearDisplayP3, LinearSrgb,
+        RgbColorSpace, connect_profiles, convert_rgb,
     },
 };
 
@@ -125,47 +125,32 @@ impl CanvasColor {
         &self,
         space: RgbColorSpace,
     ) -> Result<[f32; 4], CanvasIccColorError> {
-        let rgb = match &self.profile {
-            CanvasProfile::Rgb(authored_space) => {
-                crate::color::convert_rgb(self.value.coordinates_as_f32(), *authored_space, space)
-            }
-            CanvasProfile::XyzD50 => space
-                .xyz_d50_to_coordinates(self.value.coordinates_as_f64())
-                .map(|value| value as f32),
-            CanvasProfile::XyzD65 => {
-                let xyz = XyzD65.coordinates_to_xyz_d50(&self.value.coordinates_as_f64());
-                space.xyz_d50_to_coordinates(xyz).map(|value| value as f32)
-            }
-            CanvasProfile::LabD50 => {
-                let xyz = LabD50.coordinates_to_xyz_d50(&self.value.coordinates_as_f64());
-                space.xyz_d50_to_coordinates(xyz).map(|value| value as f32)
-            }
-            CanvasProfile::Icc { profile, intent } => {
-                let ColorValue::Dynamic(coordinates, _) = &self.value else {
-                    unreachable!("ICC profile always stores dynamic device coordinates")
-                };
-                convert_icc_color(profile, *intent, coordinates, space)?
-            }
+        let coordinates: Vec<f64> = match &self.value {
+            ColorValue::Dynamic(coordinates, _) => coordinates.to_vec(),
+            _ => self.value.coordinates_as_f64().to_vec(),
         };
-        Ok([rgb[0], rgb[1], rgb[2], self.value.alpha().as_f32()])
+        let destination = ColorProfile::from(space);
+        let converted = if self.profile == destination {
+            coordinates
+        } else {
+            let transform = connect_profiles(
+                &self.profile,
+                &destination,
+                self.intent,
+                IccRenderingIntent::RelativeColorimetric,
+            )?;
+            transform.transfer().evaluate(&coordinates)?
+        };
+        Ok([
+            converted[0] as f32,
+            converted[1] as f32,
+            converted[2] as f32,
+            self.value.alpha().as_f32(),
+        ])
     }
 }
 
 impl ColorValue {
-    fn coordinates_as_f32(&self) -> [f32; 3] {
-        match self {
-            Self::F32(coordinates, _) => *coordinates,
-            Self::F64(coordinates, _) => coordinates.map(|value| value as f32),
-            Self::U8(coordinates, _) => {
-                coordinates.map(|value| f32::from(value) / f32::from(u8::MAX))
-            }
-            Self::U16(coordinates, _) => {
-                coordinates.map(|value| f32::from(value) / f32::from(u16::MAX))
-            }
-            Self::Dynamic(..) => unreachable!("ICC coordinates are evaluated by their profile"),
-        }
-    }
-
     fn coordinates_as_f64(&self) -> [f64; 3] {
         match self {
             Self::F32(coordinates, _) => coordinates.map(f64::from),
@@ -179,26 +164,6 @@ impl ColorValue {
             Self::Dynamic(..) => unreachable!("ICC coordinates are evaluated by their profile"),
         }
     }
-}
-
-fn convert_icc_color(
-    profile: &crate::color::IccProfile,
-    intent: crate::color::IccRenderingIntent,
-    coordinates: &[f64],
-    space: RgbColorSpace,
-) -> Result<[f32; 3], CanvasIccColorError> {
-    let transfer = connect_profiles(
-        profile,
-        space,
-        intent,
-        IccRenderingIntent::RelativeColorimetric,
-    )?;
-    let converted = transfer.transfer().evaluate(coordinates)?;
-    Ok([
-        converted[0] as f32,
-        converted[1] as f32,
-        converted[2] as f32,
-    ])
 }
 
 #[cfg(test)]
