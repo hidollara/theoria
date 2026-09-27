@@ -1,5 +1,4 @@
 use super::pcs;
-use super::profile_data::{XYZ_D50_TO_XYZ_D65, XYZ_D65_TO_XYZ_D50};
 use super::transform::multiply_f64;
 use super::{
     DisplayP3, LabD50, LinearDisplayP3, LinearSrgb, RgbColorSpace, Srgb, TypedColorSpace,
@@ -88,11 +87,11 @@ impl XyzD50Profile for LabD50 {
 }
 
 fn adapt_d65_to_d50(xyz: [f64; 3]) -> [f64; 3] {
-    multiply_f64(XYZ_D65_TO_XYZ_D50, xyz)
+    multiply_f64(XyzD65::TO_XYZ_D50, xyz)
 }
 
 fn adapt_d50_to_d65(xyz: [f64; 3]) -> [f64; 3] {
-    multiply_f64(XYZ_D50_TO_XYZ_D65, xyz)
+    multiply_f64(XyzD65::FROM_XYZ_D50, xyz)
 }
 
 #[cfg(test)]

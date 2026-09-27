@@ -1,7 +1,7 @@
 //! Supplies the same RGB conversion definitions to every Canvas WGSL shader.
 //! Also compiled by build.rs when validating and compiling Vulkan shaders.
 
-use theoria_color::{ColorTransform, RgbColorSpace, Transfer, profile_data as data};
+use theoria_color::{ColorTransform, RgbColorSpace, Srgb, Transfer};
 
 const MARKER: &str = "// @theoria-rgb-conversions";
 
@@ -58,12 +58,12 @@ fn encode_srgb(value: vec3<f32>) -> vec3<f32> {{
     );
 }}
 "#,
-        decode_threshold = literal(data::SRGB_DECODE_THRESHOLD as f32),
-        encode_threshold = literal(data::SRGB_ENCODE_THRESHOLD as f32),
-        linear_scale = literal(data::SRGB_LINEAR_SCALE as f32),
-        power_offset = literal(data::SRGB_POWER_OFFSET as f32),
-        power_scale = literal(data::SRGB_POWER_SCALE as f32),
-        gamma = literal(data::SRGB_GAMMA as f32),
+        decode_threshold = literal(Srgb::DECODE_THRESHOLD as f32),
+        encode_threshold = literal(Srgb::ENCODE_THRESHOLD as f32),
+        linear_scale = literal(Srgb::LINEAR_SCALE as f32),
+        power_offset = literal(Srgb::POWER_OFFSET as f32),
+        power_scale = literal(Srgb::POWER_SCALE as f32),
+        gamma = literal(Srgb::GAMMA as f32),
     );
     for (id, (encoded, to_working)) in [(true, true), (false, true), (true, false), (false, false)]
         .into_iter()

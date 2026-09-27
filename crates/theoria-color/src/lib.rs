@@ -6,8 +6,6 @@ mod icc_profile;
 mod model;
 mod pcs;
 mod profile;
-#[doc(hidden)]
-pub mod profile_data;
 mod rgb;
 mod sample;
 mod space;

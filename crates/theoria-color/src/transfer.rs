@@ -1,6 +1,6 @@
 use std::{error::Error, fmt, sync::Arc};
 
-use super::{RgbTransfer, pcs, profile_data};
+use super::{RgbTransfer, pcs, transform};
 
 /// A directed sequence of color-coordinate operations.
 ///
@@ -877,28 +877,28 @@ impl TransferCurve {
             CurveKind::SrgbDecode | CurveKind::SrgbEncode => {
                 let decode = matches!(self.0, CurveKind::SrgbDecode);
                 let threshold = if decode {
-                    profile_data::SRGB_DECODE_THRESHOLD
+                    transform::SRGB_DECODE_THRESHOLD
                 } else {
-                    profile_data::SRGB_ENCODE_THRESHOLD
+                    transform::SRGB_ENCODE_THRESHOLD
                 };
                 let linear = if decode {
-                    format!("value / {}", wgsl_literal(profile_data::SRGB_LINEAR_SCALE)?)
+                    format!("value / {}", wgsl_literal(transform::SRGB_LINEAR_SCALE)?)
                 } else {
-                    format!("value * {}", wgsl_literal(profile_data::SRGB_LINEAR_SCALE)?)
+                    format!("value * {}", wgsl_literal(transform::SRGB_LINEAR_SCALE)?)
                 };
                 let nonlinear = if decode {
                     format!(
                         "sign(value) * pow((magnitude + {}) / {}, {})",
-                        wgsl_literal(profile_data::SRGB_POWER_OFFSET)?,
-                        wgsl_literal(profile_data::SRGB_POWER_SCALE)?,
-                        wgsl_literal(profile_data::SRGB_GAMMA)?,
+                        wgsl_literal(transform::SRGB_POWER_OFFSET)?,
+                        wgsl_literal(transform::SRGB_POWER_SCALE)?,
+                        wgsl_literal(transform::SRGB_GAMMA)?,
                     )
                 } else {
                     format!(
                         "sign(value) * ({} * pow(magnitude, 1.0 / {}) - {})",
-                        wgsl_literal(profile_data::SRGB_POWER_SCALE)?,
-                        wgsl_literal(profile_data::SRGB_GAMMA)?,
-                        wgsl_literal(profile_data::SRGB_POWER_OFFSET)?,
+                        wgsl_literal(transform::SRGB_POWER_SCALE)?,
+                        wgsl_literal(transform::SRGB_GAMMA)?,
+                        wgsl_literal(transform::SRGB_POWER_OFFSET)?,
                     )
                 };
                 helpers.push_str(&format!(

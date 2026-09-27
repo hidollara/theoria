@@ -1,7 +1,10 @@
-use super::profile_data::{
-    SRGB_DECODE_THRESHOLD, SRGB_ENCODE_THRESHOLD, SRGB_GAMMA, SRGB_LINEAR_SCALE, SRGB_POWER_OFFSET,
-    SRGB_POWER_SCALE,
-};
+// Shared by CPU evaluation and shader generation of the sRGB transfer curve.
+pub(crate) const SRGB_DECODE_THRESHOLD: f64 = 0.04045;
+pub(crate) const SRGB_ENCODE_THRESHOLD: f64 = 0.003_130_8;
+pub(crate) const SRGB_LINEAR_SCALE: f64 = 12.92;
+pub(crate) const SRGB_POWER_SCALE: f64 = 1.055;
+pub(crate) const SRGB_POWER_OFFSET: f64 = 0.055;
+pub(crate) const SRGB_GAMMA: f64 = 2.4;
 
 /// The standard sRGB curve or a linear-light identity curve.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

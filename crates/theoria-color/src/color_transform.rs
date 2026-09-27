@@ -2,8 +2,7 @@ use std::{error::Error, fmt, num::NonZeroUsize, sync::LazyLock};
 
 use super::icc::IccPcs;
 use super::icc_profile::IccRenderingIntent;
-use super::profile_data::{XYZ_D50_TO_XYZ_D65, XYZ_D65_TO_XYZ_D50};
-use super::space::{ColorSpace, LabD50, RgbColorSpace, XyzD50};
+use super::space::{ColorSpace, LabD50, RgbColorSpace, XyzD50, XyzD65};
 use super::transfer::{Transfer, TransferCurve, TransferError, TransferMatrix, TransferStage};
 
 /// A transfer together with the meanings of its input and output coordinates.
@@ -94,7 +93,7 @@ impl ColorTransform {
     /// endpoint uses the same canonical identity as a loaded ICC profile.
     pub fn rgb_to_pcs(from: RgbColorSpace, to: IccPcs) -> Result<Self, ColorTransformError> {
         let mut transfer = from.to_xyz_d65_transfer()?;
-        transfer = transfer.then(&adaptation(XYZ_D65_TO_XYZ_D50)?)?;
+        transfer = transfer.then(&adaptation(XyzD65::TO_XYZ_D50)?)?;
         if to == IccPcs::LabD50 {
             transfer = transfer.then(&Transfer::new(3, [TransferStage::XyzD50ToLabD50])?)?;
         }
@@ -107,7 +106,7 @@ impl ColorTransform {
         if from == IccPcs::LabD50 {
             transfer = transfer.then(&Transfer::new(3, [TransferStage::LabD50ToXyzD50])?)?;
         }
-        transfer = transfer.then(&adaptation(XYZ_D50_TO_XYZ_D65)?)?;
+        transfer = transfer.then(&adaptation(XyzD65::FROM_XYZ_D50)?)?;
         transfer = transfer.then(&to.xyz_d65_to_rgb_transfer()?)?;
         Self::new(pcs_key(from), to.into(), transfer)
     }
