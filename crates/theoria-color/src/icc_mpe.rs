@@ -324,13 +324,14 @@ mod tests {
             IccRenderingIntent::RelativeColorimetric,
             IccRenderingIntent::AbsoluteColorimetric,
         ] {
-            let transfer = profile.space_to_pcs(intent).unwrap();
+            let transfer = profile.color_space().space_to_pcs(intent).unwrap();
             assert_eq!(
                 transfer.evaluate(&[0.25, 0.5, 0.75]).unwrap(),
                 vec![0.5, 1.0, 1.5]
             );
         }
         let shader = profile
+            .color_space()
             .space_to_pcs(IccRenderingIntent::RelativeColorimetric)
             .unwrap()
             .wgsl(7)
@@ -350,6 +351,7 @@ mod tests {
         let bytes = append_tag(ParsedProfile::new_srgb().encode().unwrap(), b"B2D1", &tag);
         let profile = IccProfile::from_bytes(&bytes).unwrap();
         let output = profile
+            .color_space()
             .pcs_to_space(IccRenderingIntent::RelativeColorimetric)
             .unwrap()
             .evaluate(&[0.25, 0.5, 1.5])
@@ -365,6 +367,7 @@ mod tests {
         let bytes = append_tag(ParsedProfile::new_srgb().encode().unwrap(), b"D2B1", &tag);
         let profile = IccProfile::from_bytes(&bytes).unwrap();
         let output = profile
+            .color_space()
             .space_to_pcs(IccRenderingIntent::RelativeColorimetric)
             .unwrap()
             .evaluate(&[1.0, 1.0, 1.0])
