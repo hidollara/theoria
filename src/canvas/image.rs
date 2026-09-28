@@ -303,15 +303,10 @@ mod tests {
         assert_eq!(pixels, source.as_ref());
         let converted =
             convert_icc8_to_linear_rgba16(1, pixels, profile, intent, has_alpha).unwrap();
-        let expected = crate::color::connect_spaces(
-            Srgb,
-            LinearSrgb,
-            IccRenderingIntent::RelativeColorimetric,
-            IccRenderingIntent::RelativeColorimetric,
-        )
-        .unwrap()
-        .evaluate(&[64.0 / 255.0, 128.0 / 255.0, 192.0 / 255.0])
-        .unwrap();
+        let expected = crate::color::connect_spaces(Srgb, LinearSrgb)
+            .unwrap()
+            .evaluate(&[64.0 / 255.0, 128.0 / 255.0, 192.0 / 255.0])
+            .unwrap();
         for (actual, expected) in converted.samples()[..3].iter().zip(expected) {
             assert!((half::f16::from_bits(*actual).to_f32() - expected as f32).abs() < 0.02);
         }

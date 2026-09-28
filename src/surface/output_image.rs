@@ -2,7 +2,7 @@
 //!
 //! The GPU attachment format is backend-specific and deliberately separate.
 
-use crate::color::{ColorSpace, IccRenderingIntent};
+use crate::color::ColorSpace;
 
 /// How the destination image represents alpha.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -22,29 +22,19 @@ pub enum OutputAlpha {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct OutputImage {
     pub(crate) space: ColorSpace,
-    pub(crate) intent: IccRenderingIntent,
     pub(crate) alpha: OutputAlpha,
 }
 
 impl OutputImage {
-    pub fn new(
-        space: impl Into<ColorSpace>,
-        intent: IccRenderingIntent,
-        alpha: OutputAlpha,
-    ) -> Self {
+    pub fn new(space: impl Into<ColorSpace>, alpha: OutputAlpha) -> Self {
         Self {
             space: space.into(),
-            intent,
             alpha,
         }
     }
 
     pub fn space(&self) -> &ColorSpace {
         &self.space
-    }
-
-    pub const fn intent(&self) -> IccRenderingIntent {
-        self.intent
     }
 
     pub const fn alpha(&self) -> OutputAlpha {

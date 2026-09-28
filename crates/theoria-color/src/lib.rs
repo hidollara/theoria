@@ -1,3 +1,11 @@
+//! Color models, spaces, profiles, and directed transfers.
+//!
+//! In Theoria, a [`ColorProfile`] fixes a coordinate model and its directed
+//! PCS conversions. A [`ColorSpace`] is the shared handle and coordinate
+//! system formed from that profile. An ICC [`IccProfile`] can contain several
+//! rendering-intent transforms; selecting one intent forms a `ColorProfile`
+//! and a corresponding `ColorSpace`. The ICC data alone is not a single space.
+
 mod icc_mpe;
 mod icc_profile;
 mod model;

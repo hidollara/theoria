@@ -1,10 +1,8 @@
 use std::collections::HashMap;
 
 use crate::{
-    canvas::{Color, ColorValue, IccColorError},
-    color::{
-        ColorSpace, IccRenderingIntent, LinearDisplayP3, LinearSrgb, Transfer, connect_spaces,
-    },
+    canvas::{Color, ColorError, ColorValue},
+    color::{ColorSpace, LinearDisplayP3, LinearSrgb, Transfer, connect_spaces},
 };
 
 /// Renderer-owned conversions prepared before commands are recorded.
@@ -65,21 +63,17 @@ impl PreparedColors {
         &self.working_space
     }
 
-    pub(crate) fn prepare_interpolation(
-        &mut self,
-        space: &ColorSpace,
-    ) -> Result<(), IccColorError> {
+    pub(crate) fn prepare_interpolation(&mut self, space: &ColorSpace) -> Result<(), ColorError> {
         if self.interpolations.contains_key(space) {
             return Ok(());
         }
         if space.channels() != 3 {
-            return Err(IccColorError::UnsupportedColorChannels(space.channels()));
+            return Err(ColorError::UnsupportedColorChannels(space.channels()));
         }
         let working = &self.working_space;
-        let intent = IccRenderingIntent::RelativeColorimetric;
         let plan = PreparedInterpolation {
-            to_interpolation: connect_spaces(working, space, intent, intent)?,
-            to_working: connect_spaces(space, working, intent, intent)?,
+            to_interpolation: connect_spaces(working, space)?,
+            to_working: connect_spaces(space, working)?,
             identity: space == working,
             linear_builtin: *space == ColorSpace::from(LinearSrgb)
                 || *space == ColorSpace::from(LinearDisplayP3),
@@ -92,13 +86,10 @@ impl PreparedColors {
         &self.interpolations[space]
     }
 
-    pub(crate) fn prepare(&mut self, color: &Color) -> Result<(), IccColorError> {
+    pub(crate) fn prepare(&mut self, color: &Color) -> Result<(), ColorError> {
         let key = color as *const Color as usize;
         if let std::collections::hash_map::Entry::Vacant(entry) = self.premultiplied.entry(key) {
-            let [red, green, blue, alpha] = color.try_straight_rgba_in(
-                &self.working_space,
-                IccRenderingIntent::RelativeColorimetric,
-            )?;
+            let [red, green, blue, alpha] = color.try_straight_rgba_in(&self.working_space)?;
             entry.insert([red * alpha, green * alpha, blue * alpha, alpha]);
         }
         Ok(())
@@ -115,39 +106,27 @@ impl PreparedColors {
 
 impl Color {
     /// Resolves the declared source color into a renderer-selected RGB space.
-    pub(crate) fn straight_rgba_in(
-        &self,
-        space: impl Into<ColorSpace>,
-        intent: IccRenderingIntent,
-    ) -> [f32; 4] {
-        self.try_straight_rgba_in(space, intent)
+    pub(crate) fn straight_rgba_in(&self, space: impl Into<ColorSpace>) -> [f32; 4] {
+        self.try_straight_rgba_in(space)
             .expect("this caller requires an ICC conversion known to succeed")
     }
 
     pub(crate) fn try_straight_rgba_in(
         &self,
         space: impl Into<ColorSpace>,
-        intent: IccRenderingIntent,
-    ) -> Result<[f32; 4], IccColorError> {
+    ) -> Result<[f32; 4], ColorError> {
         let coordinates: Vec<f64> = match &self.value {
             ColorValue::Dynamic(coordinates, _) => coordinates.to_vec(),
             _ => self.value.coordinates_as_f64().to_vec(),
         };
         let destination = space.into();
         if destination.channels() != 3 {
-            return Err(IccColorError::UnsupportedColorChannels(
-                destination.channels(),
-            ));
+            return Err(ColorError::UnsupportedColorChannels(destination.channels()));
         }
         let converted = if self.space == destination {
             coordinates
         } else {
-            let transfer = connect_spaces(
-                &self.space,
-                &destination,
-                intent,
-                IccRenderingIntent::RelativeColorimetric,
-            )?;
+            let transfer = connect_spaces(&self.space, &destination)?;
             transfer.evaluate(&coordinates)?
         };
         Ok([
@@ -181,8 +160,7 @@ pub(crate) fn lower_straight_color(color: &Color) -> [f32; 4] {
 }
 
 pub(crate) fn lower_straight_color_in(color: &Color, space: impl Into<ColorSpace>) -> [f32; 4] {
-    let [red, green, blue, alpha] =
-        color.straight_rgba_in(space, IccRenderingIntent::RelativeColorimetric);
+    let [red, green, blue, alpha] = color.straight_rgba_in(space);
     [red * alpha, green * alpha, blue * alpha, alpha]
 }
 
@@ -224,12 +202,7 @@ pub(crate) fn convert_premultiplied_space(
     if value[3] == 0.0 {
         return Ok([0.0; 4]);
     }
-    let transfer = connect_spaces(
-        from,
-        to,
-        IccRenderingIntent::RelativeColorimetric,
-        IccRenderingIntent::RelativeColorimetric,
-    )?;
+    let transfer = connect_spaces(from, to)?;
     let alpha = value[3];
     let straight = [value[0] / alpha, value[1] / alpha, value[2] / alpha];
     let converted = transfer.evaluate(&straight.map(f64::from))?;
@@ -260,7 +233,7 @@ fn convert_premultiplied(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::color::{Opacity, Srgb};
+    use crate::color::{IccRenderingIntent, Opacity, Srgb};
 
     #[test]
     fn a_solid_color_is_lowered_once_per_render() {
@@ -274,28 +247,18 @@ mod tests {
     }
 
     #[test]
-    fn conversion_intent_is_chosen_when_the_color_is_used() {
-        let color = Color::new(Srgb, [128_u8, 64, 32], Opacity::<u8>::ONE);
-        assert!(
-            color
-                .try_straight_rgba_in(LinearSrgb, IccRenderingIntent::RelativeColorimetric)
-                .is_ok()
-        );
-        assert!(
-            color
-                .try_straight_rgba_in(LinearSrgb, IccRenderingIntent::Perceptual)
-                .is_err()
-        );
-    }
-
-    #[test]
     fn icc_transfer_failure_is_reported_during_renderer_preparation() {
         let mut raw = moxcms::ColorProfile::new_srgb();
         raw.red_trc = None;
         raw.green_trc = None;
         raw.blue_trc = None;
         let profile = crate::color::IccProfile::from_bytes(&raw.encode().unwrap()).unwrap();
-        let color = Color::from_icc(&profile, vec![0.25, 0.5, 0.75], Opacity::<f32>::ONE).unwrap();
+        let color = Color::new_in_space(
+            profile.color_space(IccRenderingIntent::RelativeColorimetric),
+            vec![0.25, 0.5, 0.75],
+            Opacity::<f32>::ONE,
+        )
+        .unwrap();
 
         let mut prepared = PreparedColors::default();
         assert!(prepared.prepare(&color).is_err());
@@ -308,7 +271,12 @@ mod tests {
             "/crates/theoria-color/src/color/fixtures/sRGB-v4.icc"
         )))
         .unwrap();
-        let color = Color::from_icc(&profile, vec![0.25, 0.5, 0.75], Opacity::<f32>::ONE).unwrap();
+        let color = Color::new_in_space(
+            profile.color_space(IccRenderingIntent::RelativeColorimetric),
+            vec![0.25, 0.5, 0.75],
+            Opacity::<f32>::ONE,
+        )
+        .unwrap();
         let original = color.clone();
         let mut prepared = PreparedColors::default();
         prepared.prepare(&color).unwrap();
@@ -374,15 +342,10 @@ mod tests {
         prepared.prepare_interpolation(&Srgb.into()).unwrap();
         let actual =
             interpolate_premultiplied_rgba(black, white, 0.5, prepared.interpolation(&Srgb.into()));
-        let expected = connect_spaces(
-            Srgb,
-            LinearDisplayP3,
-            IccRenderingIntent::RelativeColorimetric,
-            IccRenderingIntent::RelativeColorimetric,
-        )
-        .unwrap()
-        .evaluate(&[0.5; 3])
-        .unwrap();
+        let expected = connect_spaces(Srgb, LinearDisplayP3)
+            .unwrap()
+            .evaluate(&[0.5; 3])
+            .unwrap();
         for (actual, expected) in actual[..3].iter().zip(expected) {
             assert!((actual - expected as f32).abs() < 0.000_01);
         }

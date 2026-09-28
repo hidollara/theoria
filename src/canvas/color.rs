@@ -1,8 +1,8 @@
 use std::{error::Error, fmt, sync::Arc};
 
 use crate::color::{
-    ColorCoordinates, ColorSpace, IccProfile, IccProfileError, Opacity, OpacitySample,
-    SpaceConnectionError, TransferError, TypedColorSpace,
+    ColorCoordinates, ColorSpace, IccProfileError, Opacity, OpacitySample, SpaceConnectionError,
+    TransferError, TypedColorSpace,
 };
 
 /// A Canvas color retaining its authored space and coordinate representation.
@@ -113,21 +113,22 @@ impl Color {
         &self.space
     }
 
-    /// Keeps authored ICC device coordinates and profile.
-    /// The renderer selects how to convert them into its working space.
-    pub fn from_icc(
-        profile: &IccProfile,
+    /// Keeps authored device coordinates and their selected color space.
+    /// The renderer converts them into its working space when needed.
+    pub fn new_in_space(
+        space: impl Into<ColorSpace>,
         coordinates: impl Into<Arc<[f64]>>,
         opacity: Opacity<f32>,
-    ) -> Result<Self, IccColorError> {
+    ) -> Result<Self, ColorError> {
+        let space = space.into();
         let coordinates = coordinates.into();
-        if coordinates.len() != profile.device_channels()
+        if coordinates.len() != space.channels()
             || coordinates.iter().any(|value| !value.is_finite())
         {
-            return Err(IccColorError::InvalidCoordinates);
+            return Err(ColorError::InvalidCoordinates);
         }
         Ok(Self {
-            space: profile.color_space(),
+            space,
             value: ColorValue::Dynamic(coordinates, Alpha::F32(opacity.sample())),
         })
     }
@@ -203,7 +204,7 @@ impl From<&Color> for Color {
 }
 
 #[derive(Debug)]
-pub enum IccColorError {
+pub enum ColorError {
     InvalidCoordinates,
     UnsupportedColorChannels(usize),
     Profile(IccProfileError),
@@ -211,28 +212,28 @@ pub enum IccColorError {
     Transfer(TransferError),
 }
 
-impl From<IccProfileError> for IccColorError {
+impl From<IccProfileError> for ColorError {
     fn from(error: IccProfileError) -> Self {
         Self::Profile(error)
     }
 }
 
-impl From<TransferError> for IccColorError {
+impl From<TransferError> for ColorError {
     fn from(error: TransferError) -> Self {
         Self::Transfer(error)
     }
 }
 
-impl From<SpaceConnectionError> for IccColorError {
+impl From<SpaceConnectionError> for ColorError {
     fn from(error: SpaceConnectionError) -> Self {
         Self::Connection(error)
     }
 }
 
-impl fmt::Display for IccColorError {
+impl fmt::Display for ColorError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InvalidCoordinates => formatter.write_str("ICC device coordinates are invalid"),
+            Self::InvalidCoordinates => formatter.write_str("color coordinates are invalid"),
             Self::UnsupportedColorChannels(channels) => write!(
                 formatter,
                 "gradient interpolation requires three color channels, got {channels}"
@@ -244,7 +245,7 @@ impl fmt::Display for IccColorError {
     }
 }
 
-impl Error for IccColorError {
+impl Error for ColorError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Profile(error) => Some(error),
@@ -258,6 +259,7 @@ impl Error for IccColorError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::color::IccProfile;
     use crate::color::{
         DisplayP3, IccRenderingIntent, LabD50, LinearDisplayP3, LinearSrgb, Srgb, XyzD50, XyzD65,
     };
@@ -274,8 +276,8 @@ mod tests {
         let bytes = moxcms::ColorProfile::new_srgb().encode().unwrap();
         let profile = IccProfile::from_bytes(&bytes).unwrap();
         let coordinates: Arc<[f64]> = vec![0.25, 0.5, 0.75].into();
-        let color = Color::from_icc(
-            &profile,
+        let color = Color::new_in_space(
+            profile.color_space(IccRenderingIntent::RelativeColorimetric),
             coordinates.clone(),
             Opacity::<f32>::new(0.5).unwrap(),
         )
@@ -285,19 +287,19 @@ mod tests {
         };
         assert!(Arc::ptr_eq(stored, &coordinates));
         assert_eq!(*stored_opacity, 0.5);
-        assert_eq!(color.space, profile.color_space());
+        assert_eq!(
+            color.space,
+            profile.color_space(IccRenderingIntent::RelativeColorimetric)
+        );
         drop(profile);
-        let rgba = color.straight_rgba_in(Srgb, IccRenderingIntent::RelativeColorimetric);
+        let rgba = color.straight_rgba_in(Srgb);
         for (actual, expected) in rgba[..3].iter().zip([0.25, 0.5, 0.75]) {
             assert!((actual - expected).abs() < 0.01);
         }
         assert_eq!(rgba[3], 0.5);
         let lowered = crate::canvas_renderer::color_space::lower_straight_color(&color);
         assert_eq!(lowered[3], 0.5);
-        for (actual, straight) in lowered[..3]
-            .iter()
-            .zip(color.straight_rgba_in(LinearSrgb, IccRenderingIntent::RelativeColorimetric))
-        {
+        for (actual, straight) in lowered[..3].iter().zip(color.straight_rgba_in(LinearSrgb)) {
             assert!((actual - straight * 0.5).abs() < 1e-5);
         }
     }
@@ -308,7 +310,12 @@ mod tests {
         let first = IccProfile::from_bytes(&bytes).unwrap();
         let second = IccProfile::from_bytes(&bytes).unwrap();
         let color = |profile: &IccProfile| {
-            Color::from_icc(profile, vec![0.25, 0.5, 0.75], Opacity::<f32>::ONE).unwrap()
+            Color::new_in_space(
+                profile.color_space(IccRenderingIntent::RelativeColorimetric),
+                vec![0.25, 0.5, 0.75],
+                Opacity::<f32>::ONE,
+            )
+            .unwrap()
         };
         assert_eq!(color(&first), color(&first));
         assert_ne!(color(&first), color(&second));
@@ -320,8 +327,12 @@ mod tests {
         let profile = IccProfile::from_bytes(&bytes).unwrap();
         let opacity = Opacity::<f32>::ONE;
         assert!(matches!(
-            Color::from_icc(&profile, vec![0.5, 0.5], opacity),
-            Err(IccColorError::InvalidCoordinates)
+            Color::new_in_space(
+                profile.color_space(IccRenderingIntent::RelativeColorimetric),
+                vec![0.5, 0.5],
+                opacity,
+            ),
+            Err(ColorError::InvalidCoordinates)
         ));
     }
 
@@ -335,7 +346,7 @@ mod tests {
         ));
         assert_eq!(color.space, ColorSpace::from(Srgb));
         assert_eq!(
-            color.straight_rgba_in(Srgb, IccRenderingIntent::RelativeColorimetric),
+            color.straight_rgba_in(Srgb),
             [1.0, 128.0 / 255.0, 64.0 / 255.0, 128.0 / 255.0]
         );
     }
@@ -349,10 +360,7 @@ mod tests {
         );
 
         assert_eq!(color.space, ColorSpace::from(DisplayP3));
-        assert_eq!(
-            color.straight_rgba_in(DisplayP3, IccRenderingIntent::RelativeColorimetric),
-            [1.0, 0.5, 0.25, 0.75]
-        );
+        assert_eq!(color.straight_rgba_in(DisplayP3), [1.0, 0.5, 0.25, 0.75]);
     }
 
     #[test]
@@ -376,7 +384,7 @@ mod tests {
 
         assert!(matches!(color.value, ColorValue::F64(_, Alpha::F32(_))));
         assert_eq!(color.space, ColorSpace::from(LinearSrgb));
-        let rgba = color.straight_rgba_in(LinearSrgb, IccRenderingIntent::RelativeColorimetric);
+        let rgba = color.straight_rgba_in(LinearSrgb);
         for (actual, expected) in rgba.into_iter().zip([0.05, 0.2, 0.5, 0.4]) {
             assert!((actual - expected).abs() < 0.000_001);
         }
@@ -421,7 +429,7 @@ mod tests {
         ] {
             assert_eq!(canvas.space, space);
             assert!(matches!(canvas.value, ColorValue::F64(_, Alpha::F32(_))));
-            let rgba = canvas.straight_rgba_in(Srgb, IccRenderingIntent::RelativeColorimetric);
+            let rgba = canvas.straight_rgba_in(Srgb);
             for (actual, expected) in
                 rgba.into_iter()
                     .zip([CSS_SRGB[0], CSS_SRGB[1], CSS_SRGB[2], 0.4])
@@ -440,9 +448,7 @@ mod tests {
         let lab = Color::new(LabD50, CSS_LAB_D50, Opacity::<f32>::new(0.4).unwrap());
         let stop = crate::canvas::GradientStop::new(0.5, lab).unwrap();
 
-        let rgba = stop
-            .color()
-            .straight_rgba_in(Srgb, IccRenderingIntent::RelativeColorimetric);
+        let rgba = stop.color().straight_rgba_in(Srgb);
         for (actual, expected) in rgba
             .into_iter()
             .zip([CSS_SRGB[0], CSS_SRGB[1], CSS_SRGB[2], 0.4])

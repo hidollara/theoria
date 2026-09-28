@@ -10,7 +10,7 @@ use std::{
 use ash::vk;
 
 use crate::canvas::{Composite, Composition, composition_shader::Binding};
-use crate::color::{ColorSpace, IccRenderingIntent, LinearSrgb};
+use crate::color::{ColorSpace, LinearSrgb};
 
 use super::encoding::{
     CompositionPushConstants, ImagePushConstants, OutputPushConstants, TrianglePushConstants,
@@ -91,13 +91,13 @@ pub(super) struct Pipelines {
     pub(super) image: Pipeline,
     pub(super) composites: HashMap<Composite, Pipeline>,
     pub(super) mask: Pipeline,
-    pub(super) outputs: HashMap<(ColorSpace, IccRenderingIntent), Pipeline>,
-    pub(super) icc_images: HashMap<(ColorSpace, IccRenderingIntent, bool), Pipeline>,
+    pub(super) outputs: HashMap<ColorSpace, Pipeline>,
+    pub(super) icc_images: HashMap<(ColorSpace, bool), Pipeline>,
     pub(super) compositions: HashMap<Composition, Pipeline>,
 }
 
 impl Pipelines {
-    pub(super) fn icc_image(&self, key: &(ColorSpace, IccRenderingIntent, bool)) -> &Pipeline {
+    pub(super) fn icc_image(&self, key: &(ColorSpace, bool)) -> &Pipeline {
         &self.icc_images[key]
     }
 
@@ -105,7 +105,7 @@ impl Pipelines {
         &mut self,
         device: &ash::Device,
         descriptor_layout: vk::DescriptorSetLayout,
-        key: (ColorSpace, IccRenderingIntent, bool),
+        key: (ColorSpace, bool),
         source: &str,
     ) -> Result<()> {
         if self.icc_images.contains_key(&key) {
@@ -133,7 +133,7 @@ impl Pipelines {
     pub(super) unsafe fn retain_icc_images(
         &mut self,
         device: &ash::Device,
-        active: &HashSet<(ColorSpace, IccRenderingIntent, bool)>,
+        active: &HashSet<(ColorSpace, bool)>,
     ) {
         self.icc_images.retain(|key, pipeline| {
             if active.contains(key) {
@@ -147,8 +147,8 @@ impl Pipelines {
         });
     }
 
-    pub(super) fn output(&self, space: &ColorSpace, intent: IccRenderingIntent) -> &Pipeline {
-        &self.outputs[&(space.clone(), intent)]
+    pub(super) fn output(&self, space: &ColorSpace) -> &Pipeline {
+        &self.outputs[space]
     }
 
     pub(super) unsafe fn ensure_output(
@@ -156,9 +156,8 @@ impl Pipelines {
         device: &ash::Device,
         image_descriptor_set_layout: vk::DescriptorSetLayout,
         space: &ColorSpace,
-        intent: IccRenderingIntent,
     ) -> Result<()> {
-        let key = (space.clone(), intent);
+        let key = space.clone();
         if self.outputs.contains_key(&key) {
             return Ok(());
         }
@@ -166,7 +165,6 @@ impl Pipelines {
             include_str!("../../../shaders/canvas_renderer/output_image.wgsl"),
             &self.working_space,
             space,
-            intent,
         )?;
         let words = compile_fragment(&source)?;
         let bytes: Vec<u8> = words.into_iter().flat_map(u32::to_le_bytes).collect();
@@ -514,6 +512,7 @@ unsafe fn create_pipeline<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::color::IccRenderingIntent;
     use crate::{
         canvas::{Blend, BlendMode, BlendShader},
         color::{IccProfile, Srgb},

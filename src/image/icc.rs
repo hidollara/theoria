@@ -31,12 +31,7 @@ impl IccRasterImage {
         if intent == IccRenderingIntent::AbsoluteColorimetric {
             return Err(Box::new(IccImageError::AbsoluteIntent));
         }
-        let transfer = connect_spaces(
-            Srgb,
-            &profile,
-            IccRenderingIntent::RelativeColorimetric,
-            intent,
-        )?;
+        let transfer = connect_spaces(Srgb, profile.color_space(intent))?;
         let channels = profile.device_channels();
         let mut pixels = Vec::with_capacity(
             image
@@ -192,15 +187,10 @@ mod tests {
         {
             let source_rgb: [f32; 3] =
                 std::array::from_fn(|index| f32::from(expected[index]) / 255.0);
-            let linear = crate::color::connect_spaces(
-                Srgb,
-                crate::color::LinearSrgb,
-                IccRenderingIntent::RelativeColorimetric,
-                IccRenderingIntent::RelativeColorimetric,
-            )
-            .unwrap()
-            .evaluate(&source_rgb.map(f64::from))
-            .unwrap();
+            let linear = crate::color::connect_spaces(Srgb, crate::color::LinearSrgb)
+                .unwrap()
+                .evaluate(&source_rgb.map(f64::from))
+                .unwrap();
             for (actual, expected) in actual[..3].iter().zip(linear) {
                 assert!((half::f16::from_bits(*actual).to_f32() - expected as f32).abs() < 0.03);
             }

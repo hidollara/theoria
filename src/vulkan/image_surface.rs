@@ -151,13 +151,9 @@ impl ImageSurface {
         );
         let output = match output_profile {
             Some((profile, intent)) => {
-                OutputImage::new(profile.color_space(), intent, OutputAlpha::Straight)
+                OutputImage::new(profile.color_space(intent), OutputAlpha::Straight)
             }
-            None => OutputImage::new(
-                crate::color::Srgb,
-                IccRenderingIntent::RelativeColorimetric,
-                OutputAlpha::Straight,
-            ),
+            None => OutputImage::new(crate::color::Srgb, OutputAlpha::Straight),
         };
         let target = target.with_output(output);
         self.renderer.render(

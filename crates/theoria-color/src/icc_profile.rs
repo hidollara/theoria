@@ -36,6 +36,11 @@ pub struct IccProfile {
     inner: Arc<IccProfileData>,
 }
 
+struct IccColorProfile {
+    data: Arc<IccProfileData>,
+    intent: IccRenderingIntent,
+}
+
 #[derive(Clone, Debug)]
 struct IccProfileData {
     parsed: Arc<ParsedProfile>,
@@ -105,9 +110,18 @@ impl IccProfile {
         self.inner.original_bytes.as_deref()
     }
 
-    /// The color space defined by this particular loaded profile.
-    pub fn color_space(&self) -> ColorSpace {
-        ColorSpace::from_arc(self.inner.clone())
+    /// Selects one rendering intent as a Theoria color profile and returns its
+    /// shared color-space handle. The ICC data remains reusable for other intents.
+    pub fn color_space(&self, intent: IccRenderingIntent) -> ColorSpace {
+        // Selected views are cheap to recreate, but spaces from the same ICC
+        // allocation and intent must retain one logical identity.
+        ColorSpace::from_arc_with_identity(
+            Arc::new(IccColorProfile {
+                data: self.inner.clone(),
+                intent,
+            }),
+            (Arc::as_ptr(&self.inner) as usize, intent.index()),
+        )
     }
 }
 
@@ -655,39 +669,21 @@ impl Error for IccProfileError {
     }
 }
 
-impl ColorProfile for IccProfileData {
+impl ColorProfile for IccColorProfile {
     fn model(&self) -> ColorModel {
-        self.device_model()
+        self.data.device_model()
     }
 
     fn pcs(&self) -> Pcs {
-        self.pcs
+        self.data.pcs
     }
 
-    fn space_to_pcs_transfer(
-        &self,
-        intent: IccRenderingIntent,
-    ) -> Result<Transfer, SpaceConnectionError> {
-        Ok(self.space_to_pcs(intent)?)
+    fn space_to_pcs_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
+        Ok(self.data.space_to_pcs(self.intent)?)
     }
 
-    fn pcs_to_space_transfer(
-        &self,
-        intent: IccRenderingIntent,
-    ) -> Result<Transfer, SpaceConnectionError> {
-        Ok(self.pcs_to_space(intent)?)
-    }
-}
-
-impl From<IccProfile> for ColorSpace {
-    fn from(profile: IccProfile) -> Self {
-        profile.color_space()
-    }
-}
-
-impl From<&IccProfile> for ColorSpace {
-    fn from(profile: &IccProfile) -> Self {
-        profile.color_space()
+    fn pcs_to_space_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
+        Ok(self.data.pcs_to_space(self.intent)?)
     }
 }
 
@@ -815,6 +811,22 @@ mod tests {
     }
 
     #[test]
+    fn selected_color_space_uses_its_own_profile_intent() {
+        let mut raw = ParsedProfile::new_srgb();
+        raw.lut_a_to_b_perceptual = Some(simple_lut(ToneReprCurve::Lut(Vec::new())));
+        raw.lut_a_to_b_colorimetric = Some(simple_lut(ToneReprCurve::Lut(vec![512])));
+        let profile = IccProfile::from_parsed(raw, Pcs::XyzD50);
+        let perceptual = profile.color_space(IccRenderingIntent::Perceptual);
+        let relative = profile.color_space(IccRenderingIntent::RelativeColorimetric);
+
+        assert_ne!(perceptual, relative);
+        assert_ne!(
+            perceptual.space_to_pcs().unwrap(),
+            relative.space_to_pcs().unwrap()
+        );
+    }
+
+    #[test]
     fn pcs_to_device_uses_its_own_zero_lut_before_matrix_trc() {
         let mut raw = ParsedProfile::new_srgb();
         raw.lut_b_to_a_perceptual = Some(simple_lut(ToneReprCurve::Lut(Vec::new())));
@@ -857,10 +869,8 @@ mod tests {
         }
         assert!(forward.then(&backward).is_ok());
         let semantic = connect_spaces(
-            &profile,
-            &profile,
-            IccRenderingIntent::RelativeColorimetric,
-            IccRenderingIntent::RelativeColorimetric,
+            profile.color_space(IccRenderingIntent::RelativeColorimetric),
+            profile.color_space(IccRenderingIntent::RelativeColorimetric),
         )
         .unwrap();
         let restored = semantic.evaluate(&[0.4, 0.5, 0.6]).unwrap();
@@ -881,10 +891,8 @@ mod tests {
         let destination =
             IccProfile::from_parsed(ParsedProfile::new_gray_with_gamma(1.0), Pcs::LabD50);
         let connected = connect_spaces(
-            &source,
-            &destination,
-            IccRenderingIntent::RelativeColorimetric,
-            IccRenderingIntent::RelativeColorimetric,
+            source.color_space(IccRenderingIntent::RelativeColorimetric),
+            destination.color_space(IccRenderingIntent::RelativeColorimetric),
         )
         .unwrap();
         let result = connected.evaluate(&[0.4]).unwrap();
@@ -983,15 +991,21 @@ mod tests {
         for (actual, expected) in restored.into_iter().zip(sample) {
             assert!((actual - expected).abs() < 0.003);
         }
-        assert!(matches!(
-            connect_spaces(
-                &profile,
-                &profile,
-                IccRenderingIntent::AbsoluteColorimetric,
-                IccRenderingIntent::RelativeColorimetric,
-            ),
-            Err(SpaceConnectionError::IncompatibleIntentSpaces)
-        ));
+        let connected = connect_spaces(
+            profile.color_space(IccRenderingIntent::AbsoluteColorimetric),
+            profile.color_space(IccRenderingIntent::RelativeColorimetric),
+        )
+        .unwrap();
+        let expected = profile
+            .inner
+            .pcs_to_space(IccRenderingIntent::RelativeColorimetric)
+            .unwrap()
+            .evaluate(&absolute_xyz)
+            .unwrap();
+        let actual = connected.evaluate(&sample).unwrap();
+        for (actual, expected) in actual.into_iter().zip(expected) {
+            assert!((actual - expected).abs() < 1e-12);
+        }
     }
 
     #[test]
@@ -1107,8 +1121,14 @@ mod tests {
         let source = IccProfile::from_bytes(&bytes).unwrap();
         let same_source = source.clone();
         let separate_load = IccProfile::from_bytes(&bytes).unwrap();
-        assert_eq!(source.color_space(), same_source.color_space());
-        assert_ne!(source.color_space(), separate_load.color_space());
+        assert_eq!(
+            source.color_space(IccRenderingIntent::RelativeColorimetric),
+            same_source.color_space(IccRenderingIntent::RelativeColorimetric)
+        );
+        assert_ne!(
+            source.color_space(IccRenderingIntent::RelativeColorimetric),
+            separate_load.color_space(IccRenderingIntent::RelativeColorimetric)
+        );
 
         let to_pcs = source
             .inner
@@ -1124,14 +1144,31 @@ mod tests {
     }
 
     #[test]
-    fn loaded_profile_identity_is_its_runtime_space_identity() {
+    fn loaded_profile_and_selected_intent_define_runtime_space_identity() {
         let bytes = ParsedProfile::new_srgb().encode().unwrap();
         let first = IccProfile::from_bytes(&bytes).unwrap();
         let second = IccProfile::from_bytes(&bytes).unwrap();
 
-        assert_eq!(first.color_space(), first.clone().color_space());
-        assert_ne!(first.color_space(), second.color_space());
-        assert_eq!(ColorSpace::from(&first), first.color_space());
+        assert_eq!(
+            first.color_space(IccRenderingIntent::RelativeColorimetric),
+            first
+                .clone()
+                .color_space(IccRenderingIntent::RelativeColorimetric)
+        );
+        assert_ne!(
+            first.color_space(IccRenderingIntent::RelativeColorimetric),
+            second.color_space(IccRenderingIntent::RelativeColorimetric)
+        );
+        assert_ne!(
+            first.color_space(IccRenderingIntent::RelativeColorimetric),
+            first.color_space(IccRenderingIntent::Perceptual)
+        );
+        let spaces = std::collections::HashSet::from([
+            first.color_space(IccRenderingIntent::RelativeColorimetric),
+            first.color_space(IccRenderingIntent::Perceptual),
+            first.clone().color_space(IccRenderingIntent::Perceptual),
+        ]);
+        assert_eq!(spaces.len(), 2);
     }
 
     #[test]
@@ -1153,8 +1190,11 @@ mod tests {
         let bytes = ParsedProfile::new_srgb().encode().unwrap();
         let profile = IccProfile::from_bytes(&bytes).unwrap();
         let parsed = Arc::downgrade(&profile.inner.parsed);
-        let erased = profile.color_space();
-        assert_eq!(erased, profile.color_space());
+        let erased = profile.color_space(IccRenderingIntent::RelativeColorimetric);
+        assert_eq!(
+            erased,
+            profile.color_space(IccRenderingIntent::RelativeColorimetric)
+        );
 
         drop(profile);
         assert!(parsed.upgrade().is_some());

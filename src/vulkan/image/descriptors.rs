@@ -6,7 +6,7 @@ use ash::vk;
 
 use crate::{
     canvas::{ImageExtend, ImagePattern, ImageSampling},
-    color::{ColorSpace, IccRenderingIntent},
+    color::ColorSpace,
     vulkan::{
         color::RgbAlphaAssociation, host_buffer::HostBuffer, image::storage::VulkanImage,
         presenter::RenderDevice,
@@ -30,7 +30,7 @@ pub(in crate::vulkan) enum GpuImageColor {
         space: ColorSpace,
     },
     Icc {
-        key: (ColorSpace, IccRenderingIntent, bool),
+        key: (ColorSpace, bool),
         shader_source: Arc<str>,
     },
 }
@@ -250,7 +250,7 @@ impl ImageDescriptors {
     pub(super) fn bind_icc_backing(
         &self,
         backing: Arc<VulkanImage>,
-        key: (ColorSpace, IccRenderingIntent, bool),
+        key: (ColorSpace, bool),
         shader_source: String,
         table_values: &[f32],
     ) -> Result<GpuImage> {

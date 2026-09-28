@@ -92,16 +92,7 @@ impl ImageCache {
         }
     }
 
-    pub(super) fn active_icc_shaders(
-        &mut self,
-    ) -> Vec<(
-        (
-            crate::color::ColorSpace,
-            crate::color::IccRenderingIntent,
-            bool,
-        ),
-        Arc<str>,
-    )> {
+    pub(super) fn active_icc_shaders(&mut self) -> Vec<((ColorSpace, bool), Arc<str>)> {
         self.prune_unused();
         self.raster
             .values()
@@ -178,7 +169,7 @@ impl ImageCache {
                 )?;
                 self.descriptors.bind_icc_backing(
                     backing,
-                    (profile.color_space(), intent, has_alpha),
+                    (profile.color_space(intent), has_alpha),
                     lowered.source,
                     &lowered.tables,
                 )

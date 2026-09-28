@@ -1,7 +1,7 @@
 use super::{
-    ColorProfile, ColorSpace, IccRenderingIntent, Pcs, SpaceConnectionError, Srgb, Transfer,
-    TransferCurve, TypedColorSpace, pcs_to_rgb_transfer, require_relative, rgb_direct_to,
-    rgb_to_pcs_transfer, rgb_to_xyz_d65_transfer, xyz_d65_to_rgb_transfer,
+    ColorProfile, ColorSpace, Pcs, SpaceConnectionError, Srgb, Transfer, TransferCurve,
+    TypedColorSpace, pcs_to_rgb_transfer, rgb_direct_to, rgb_to_pcs_transfer,
+    rgb_to_xyz_d65_transfer, xyz_d65_to_rgb_transfer,
 };
 use crate::model::Rgb;
 
@@ -23,22 +23,14 @@ impl ColorProfile for LinearSrgbProfile {
         Pcs::XyzD50
     }
 
-    fn space_to_pcs_transfer(
-        &self,
-        intent: IccRenderingIntent,
-    ) -> Result<Transfer, SpaceConnectionError> {
-        require_relative(intent)?;
+    fn space_to_pcs_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
         Ok(rgb_to_pcs_transfer(
             rgb_to_xyz_d65_transfer(LinearSrgb::TO_XYZ_D65, TransferCurve::IDENTITY)?,
             self.pcs(),
         )?)
     }
 
-    fn pcs_to_space_transfer(
-        &self,
-        intent: IccRenderingIntent,
-    ) -> Result<Transfer, SpaceConnectionError> {
-        require_relative(intent)?;
+    fn pcs_to_space_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
         Ok(pcs_to_rgb_transfer(
             self.pcs(),
             xyz_d65_to_rgb_transfer(LinearSrgb::FROM_XYZ_D65, TransferCurve::IDENTITY)?,
@@ -48,14 +40,12 @@ impl ColorProfile for LinearSrgbProfile {
     fn direct_transfer_to(
         &self,
         destination: &ColorSpace,
-        intent: IccRenderingIntent,
     ) -> Result<Option<Transfer>, SpaceConnectionError> {
         rgb_direct_to(
             LinearSrgb.into(),
             Srgb.into(),
             TransferCurve::SRGB_ENCODE,
             destination,
-            intent,
         )
     }
 }

@@ -1,7 +1,4 @@
-use super::{
-    ColorProfile, IccRenderingIntent, Pcs, SpaceConnectionError, Transfer, TypedColorSpace,
-    require_relative,
-};
+use super::{ColorProfile, Pcs, SpaceConnectionError, Transfer, TypedColorSpace};
 use crate::model::Xyz;
 
 named_space!(XyzD50, Xyz);
@@ -16,18 +13,11 @@ impl ColorProfile for XyzD50Profile {
         Pcs::XyzD50
     }
 
-    fn space_to_pcs_transfer(
-        &self,
-        intent: IccRenderingIntent,
-    ) -> Result<Transfer, SpaceConnectionError> {
-        require_relative(intent)?;
+    fn space_to_pcs_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
         Ok(Transfer::new(3, [])?)
     }
 
-    fn pcs_to_space_transfer(
-        &self,
-        intent: IccRenderingIntent,
-    ) -> Result<Transfer, SpaceConnectionError> {
-        self.space_to_pcs_transfer(intent)
+    fn pcs_to_space_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
+        self.space_to_pcs_transfer()
     }
 }

@@ -1,9 +1,7 @@
 //! Specializes raster sampling and presentation shaders for a renderer space.
 //! Also compiled by build.rs for the default Vulkan shader validation.
 
-use theoria_color::{
-    ColorSpace, DisplayP3, IccRenderingIntent, LinearDisplayP3, LinearSrgb, Srgb, connect_spaces,
-};
+use theoria_color::{ColorSpace, DisplayP3, LinearDisplayP3, LinearSrgb, Srgb, connect_spaces};
 
 const MARKER: &str = "// @theoria-rgb-conversions";
 
@@ -36,20 +34,10 @@ pub(crate) fn assemble_for(
     ];
     let mut definitions = String::new();
     for (index, space) in spaces.into_iter().enumerate() {
-        let transfer = connect_spaces(
-            space,
-            working_space,
-            IccRenderingIntent::RelativeColorimetric,
-            IccRenderingIntent::RelativeColorimetric,
-        )?;
+        let transfer = connect_spaces(space, working_space)?;
         definitions.push_str(&transfer.wgsl(index as u32)?);
     }
-    let present = connect_spaces(
-        working_space,
-        LinearSrgb,
-        IccRenderingIntent::RelativeColorimetric,
-        IccRenderingIntent::RelativeColorimetric,
-    )?;
+    let present = connect_spaces(working_space, LinearSrgb)?;
     definitions.push_str(&present.wgsl(4)?);
     definitions.push_str(
         r#"
@@ -82,7 +70,6 @@ pub(crate) fn assemble_output_for(
     source: &str,
     working_space: &ColorSpace,
     output_space: &ColorSpace,
-    output_intent: IccRenderingIntent,
 ) -> Result<String, Box<dyn std::error::Error>> {
     if working_space.channels() != 3 || output_space.channels() != 3 {
         return Err(std::io::Error::new(
@@ -93,9 +80,8 @@ pub(crate) fn assemble_output_for(
     }
     assert_eq!(source.matches(MARKER).count(), 1);
     let composition_space = ColorSpace::from(LinearSrgb);
-    let relative = IccRenderingIntent::RelativeColorimetric;
-    let to_composition = connect_spaces(working_space, &composition_space, relative, relative)?;
-    let to_output = connect_spaces(&composition_space, output_space, relative, output_intent)?;
+    let to_composition = connect_spaces(working_space, &composition_space)?;
+    let to_output = connect_spaces(&composition_space, output_space)?;
     let definitions = format!(
         "{}{}\n\
          fn rgb_to_array(value: vec3<f32>) -> array<f32, 3> {{\n\
@@ -168,7 +154,6 @@ mod tests {
             include_str!("../shaders/canvas_renderer/output_image.wgsl"),
             &DisplayP3.into(),
             &Srgb.into(),
-            IccRenderingIntent::RelativeColorimetric,
         )
         .unwrap();
         let module = naga::front::wgsl::parse_str(&source).unwrap();

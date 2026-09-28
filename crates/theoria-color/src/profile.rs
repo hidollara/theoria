@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use super::icc_profile::{IccProfileError, IccRenderingIntent};
+use super::icc_profile::IccProfileError;
 use super::model::ColorModel;
 use super::transfer::{Transfer, TransferError, TransferStage};
 
@@ -20,29 +20,47 @@ pub enum Pcs {
     LabD50,
 }
 
-/// A shared, runtime color space with its coordinate and conversion definition.
-/// Clones retain the same identity; loading another definition creates another space.
+/// A shared runtime color space with a fixed interpretation in PCS.
+///
+/// Its selected profile supplies the coordinate model and PCS conversions.
+/// Two spaces selected from the same ICC data with different intents are
+/// distinct, even though their input coordinates are the same. The colors
+/// reached in PCS are determined by those conversions, not merely by the
+/// coordinate model.
+///
+/// This handle does not itself validate the range of an individual coordinate
+/// value or guarantee that the profile supports both directions for the
+/// selected intent. Clones retain the same identity.
 #[derive(Clone)]
-pub struct ColorSpace(Arc<dyn ColorProfile>);
+pub struct ColorSpace {
+    profile: Arc<dyn ColorProfile>,
+    identity: (usize, usize),
+}
 
 impl ColorSpace {
-    /// Owns a definition as a new color space. Named spaces use their canonical
-    /// `Into<ColorSpace>` conversion instead.
-    pub fn new(definition: impl ColorProfile + 'static) -> Self {
-        assert!(
-            definition.model().channels() > 0,
-            "color model needs channels"
-        );
-        Self(Arc::new(definition))
+    /// Owns a selected profile as a new color space.
+    /// Named spaces use their canonical `Into<ColorSpace>` conversion instead.
+    pub fn new(profile: impl ColorProfile + 'static) -> Self {
+        assert!(profile.model().channels() > 0, "color model needs channels");
+        Self::from_arc(Arc::new(profile))
     }
 
-    /// Reuses an already shared definition without another allocation.
-    pub fn from_arc<D: ColorProfile + 'static>(definition: Arc<D>) -> Self {
-        assert!(
-            definition.model().channels() > 0,
-            "color model needs channels"
-        );
-        Self(definition)
+    /// Reuses an already shared selected profile without another allocation.
+    pub fn from_arc<D: ColorProfile + 'static>(profile: Arc<D>) -> Self {
+        assert!(profile.model().channels() > 0, "color model needs channels");
+        let identity = (Arc::as_ptr(&profile) as usize, 0);
+        Self { profile, identity }
+    }
+
+    /// Shares the identity of a reusable source definition across separately
+    /// allocated selected-profile views. The source allocation must be kept
+    /// alive by `profile` for as long as this space exists.
+    pub(crate) fn from_arc_with_identity<D: ColorProfile + 'static>(
+        profile: Arc<D>,
+        identity: (usize, usize),
+    ) -> Self {
+        assert!(profile.model().channels() > 0, "color model needs channels");
+        Self { profile, identity }
     }
 
     pub fn channels(&self) -> usize {
@@ -50,20 +68,16 @@ impl ColorSpace {
     }
 
     pub fn model(&self) -> ColorModel {
-        self.0.model()
+        self.profile.model()
     }
 
     pub fn pcs(&self) -> Pcs {
-        self.0.pcs()
+        self.profile.pcs()
     }
 
-    /// Returns a raw directed transfer. Use [`connect_spaces`] to join two
-    /// spaces with PCS and intent semantics checked for the whole route.
-    pub fn space_to_pcs(
-        &self,
-        intent: IccRenderingIntent,
-    ) -> Result<Transfer, SpaceConnectionError> {
-        let transfer = self.0.space_to_pcs_transfer(intent)?;
+    /// Returns a directed transfer from this space to its PCS representation.
+    pub fn space_to_pcs(&self) -> Result<Transfer, SpaceConnectionError> {
+        let transfer = self.profile.space_to_pcs_transfer()?;
         require_channels(self.channels(), transfer.input_channels())?;
         require_channels(3, transfer.output_channels())?;
         Ok(transfer)
@@ -71,11 +85,8 @@ impl ColorSpace {
 
     /// Returns a raw directed transfer. It is not inferred by inverting the
     /// space-to-PCS direction.
-    pub fn pcs_to_space(
-        &self,
-        intent: IccRenderingIntent,
-    ) -> Result<Transfer, SpaceConnectionError> {
-        let transfer = self.0.pcs_to_space_transfer(intent)?;
+    pub fn pcs_to_space(&self) -> Result<Transfer, SpaceConnectionError> {
+        let transfer = self.profile.pcs_to_space_transfer()?;
         require_channels(3, transfer.input_channels())?;
         require_channels(self.channels(), transfer.output_channels())?;
         Ok(transfer)
@@ -84,10 +95,9 @@ impl ColorSpace {
     pub fn direct_to(
         &self,
         destination: &ColorSpace,
-        intent: IccRenderingIntent,
     ) -> Result<Option<Transfer>, SpaceConnectionError> {
-        self.0
-            .direct_transfer_to(destination, intent)?
+        self.profile
+            .direct_transfer_to(destination)?
             .map(|transfer| {
                 require_channels(self.channels(), transfer.input_channels())?;
                 require_channels(destination.channels(), transfer.output_channels())?;
@@ -113,7 +123,7 @@ impl From<&ColorSpace> for ColorSpace {
 
 impl PartialEq for ColorSpace {
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0)
+        self.identity == other.identity
     }
 }
 
@@ -121,7 +131,7 @@ impl Eq for ColorSpace {}
 
 impl Hash for ColorSpace {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        (Arc::as_ptr(&self.0) as *const ()).hash(state);
+        self.identity.hash(state);
     }
 }
 
@@ -129,62 +139,49 @@ impl fmt::Debug for ColorSpace {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_tuple("ColorSpace")
-            .field(&(Arc::as_ptr(&self.0) as *const ()))
+            .field(&self.identity)
             .finish()
     }
 }
 
-/// Coordinate model and directed conversions defining one runtime color space.
+/// A coordinate model and the conversions for one selected interpretation.
+///
+/// An [`IccProfile`](super::icc_profile::IccProfile) can define multiple
+/// implementations of this trait by selecting different rendering intents.
 /// The two PCS directions are independent, and a direct link is optional.
 /// Definitions are `Send + Sync` so their handles can be shared by renderers.
-/// `model` and `pcs` must remain stable for the lifetime of the definition.
+/// `model` and `pcs` must remain stable for the lifetime of
+/// the profile so its [`ColorSpace`] handle has stable identity.
 pub trait ColorProfile: Send + Sync {
     fn model(&self) -> ColorModel;
     fn pcs(&self) -> Pcs;
-    fn space_to_pcs_transfer(
-        &self,
-        intent: IccRenderingIntent,
-    ) -> Result<Transfer, SpaceConnectionError>;
-    fn pcs_to_space_transfer(
-        &self,
-        intent: IccRenderingIntent,
-    ) -> Result<Transfer, SpaceConnectionError>;
+    fn space_to_pcs_transfer(&self) -> Result<Transfer, SpaceConnectionError>;
+    fn pcs_to_space_transfer(&self) -> Result<Transfer, SpaceConnectionError>;
 
     /// A one-way conversion to a particular destination space, if available.
     ///
-    /// The destination space and intent are part of a link's meaning. A link
-    /// must not stand in for another merely because its space endpoints match.
+    /// The destination's selected profile is part of a link's meaning. A link
+    /// must not stand in for another merely because its coordinate models match.
     fn direct_transfer_to(
         &self,
         _destination: &ColorSpace,
-        _intent: IccRenderingIntent,
     ) -> Result<Option<Transfer>, SpaceConnectionError> {
         Ok(None)
     }
 }
 
-/// Selects a direct link when the endpoints and intent match, otherwise joins
-/// the source and destination spaces through their PCS representations.
-/// Unlike [`Transfer::then`], this checks the semantic PCS and intent route.
+/// Selects a direct link supplied by the source profile, otherwise joins the
+/// spaces through their PCS representations.
 pub fn connect_spaces(
     source: impl Into<ColorSpace>,
     destination: impl Into<ColorSpace>,
-    source_intent: IccRenderingIntent,
-    destination_intent: IccRenderingIntent,
 ) -> Result<Transfer, SpaceConnectionError> {
     let source = source.into();
     let destination = destination.into();
-    if (source_intent == IccRenderingIntent::AbsoluteColorimetric)
-        != (destination_intent == IccRenderingIntent::AbsoluteColorimetric)
-    {
-        return Err(SpaceConnectionError::IncompatibleIntentSpaces);
-    }
-    if source_intent == destination_intent
-        && let Some(direct) = source.direct_to(&destination, source_intent)?
-    {
+    if let Some(direct) = source.direct_to(&destination)? {
         return Ok(direct);
     }
-    let mut transform = source.space_to_pcs(source_intent)?;
+    let mut transform = source.space_to_pcs()?;
     if source.pcs() != destination.pcs() {
         let bridge = match (source.pcs(), destination.pcs()) {
             (Pcs::XyzD50, Pcs::LabD50) => TransferStage::XyzD50ToLabD50,
@@ -193,23 +190,13 @@ pub fn connect_spaces(
         };
         transform = transform.then(&Transfer::new(3, [bridge])?)?;
     }
-    let destination_transform = destination.pcs_to_space(destination_intent)?;
+    let destination_transform = destination.pcs_to_space()?;
     Ok(transform.then(&destination_transform)?)
-}
-
-pub(crate) fn require_relative(intent: IccRenderingIntent) -> Result<(), SpaceConnectionError> {
-    if intent == IccRenderingIntent::RelativeColorimetric {
-        Ok(())
-    } else {
-        Err(SpaceConnectionError::UnsupportedIntent(intent))
-    }
 }
 
 /// A failure to construct a conversion between color spaces.
 #[derive(Debug)]
 pub enum SpaceConnectionError {
-    IncompatibleIntentSpaces,
-    UnsupportedIntent(IccRenderingIntent),
     Channels { expected: usize, actual: usize },
     Transfer(TransferError),
     Icc(IccProfileError),
@@ -230,12 +217,6 @@ impl From<IccProfileError> for SpaceConnectionError {
 impl fmt::Display for SpaceConnectionError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::IncompatibleIntentSpaces => {
-                formatter.write_str("absolute and media-relative PCS cannot be connected")
-            }
-            Self::UnsupportedIntent(intent) => {
-                write!(formatter, "color space does not provide {intent:?} intent")
-            }
             Self::Channels { expected, actual } => {
                 write!(
                     formatter,
@@ -261,7 +242,7 @@ impl Error for SpaceConnectionError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::icc_profile::IccProfile;
+    use crate::icc_profile::{IccProfile, IccRenderingIntent};
     use crate::space::{DisplayP3, LabD50, LinearSrgb, Srgb, XyzD50, XyzD65};
     use crate::transfer::{Transfer, TransferCurve, TransferStage};
     use std::collections::HashSet;
@@ -272,7 +253,7 @@ mod tests {
         let another_reference = ColorSpace::from(Srgb);
         let custom = IccProfile::from_bytes(&moxcms::ColorProfile::new_srgb().encode().unwrap())
             .unwrap()
-            .color_space();
+            .color_space(IccRenderingIntent::RelativeColorimetric);
         assert_eq!(canonical, another_reference);
         assert_eq!(canonical.model(), ColorModel::Rgb);
         assert_ne!(canonical, custom);
@@ -282,13 +263,7 @@ mod tests {
 
     #[test]
     fn known_encoding_link_is_selected_without_a_pcs_round_trip() {
-        let transform = connect_spaces(
-            Srgb,
-            LinearSrgb,
-            IccRenderingIntent::RelativeColorimetric,
-            IccRenderingIntent::RelativeColorimetric,
-        )
-        .unwrap();
+        let transform = connect_spaces(Srgb, LinearSrgb).unwrap();
         assert_eq!(
             transform.stages(),
             &[TransferStage::curves([TransferCurve::SRGB_DECODE; 3]).unwrap()]
@@ -303,10 +278,13 @@ mod tests {
     fn builtin_direct_link_does_not_target_a_loaded_icc_space() {
         let bytes = moxcms::ColorProfile::new_srgb().encode().unwrap();
         let icc = IccProfile::from_bytes(&bytes).unwrap();
-        assert_ne!(icc.color_space(), Srgb.into());
+        assert_ne!(
+            icc.color_space(IccRenderingIntent::RelativeColorimetric),
+            Srgb.into()
+        );
         assert!(
             ColorSpace::from(LinearSrgb)
-                .direct_to(&icc.color_space(), IccRenderingIntent::RelativeColorimetric)
+                .direct_to(&icc.color_space(IccRenderingIntent::RelativeColorimetric))
                 .unwrap()
                 .is_none()
         );
@@ -314,21 +292,11 @@ mod tests {
 
     #[test]
     fn differing_primaries_fall_back_to_space_pcs_directions() {
-        let actual = connect_spaces(
-            Srgb,
-            DisplayP3,
-            IccRenderingIntent::RelativeColorimetric,
-            IccRenderingIntent::RelativeColorimetric,
-        )
-        .unwrap();
+        let actual = connect_spaces(Srgb, DisplayP3).unwrap();
         let expected = ColorSpace::from(Srgb)
-            .space_to_pcs(IccRenderingIntent::RelativeColorimetric)
+            .space_to_pcs()
             .unwrap()
-            .then(
-                &ColorSpace::from(DisplayP3)
-                    .pcs_to_space(IccRenderingIntent::RelativeColorimetric)
-                    .unwrap(),
-            )
+            .then(&ColorSpace::from(DisplayP3).pcs_to_space().unwrap())
             .unwrap();
         assert_eq!(actual, expected);
     }
@@ -338,10 +306,8 @@ mod tests {
         let bytes = moxcms::ColorProfile::new_srgb().encode().unwrap();
         let icc = IccProfile::from_bytes(&bytes).unwrap();
         let transform = connect_spaces(
-            &icc,
+            icc.color_space(IccRenderingIntent::RelativeColorimetric),
             LinearSrgb,
-            IccRenderingIntent::RelativeColorimetric,
-            IccRenderingIntent::RelativeColorimetric,
         )
         .unwrap();
         let converted = transform.evaluate(&[0.5; 3]).unwrap();
@@ -352,9 +318,9 @@ mod tests {
     fn predefined_and_icc_spaces_round_trip_through_pcs() {
         let bytes = moxcms::ColorProfile::new_srgb().encode().unwrap();
         let icc = IccProfile::from_bytes(&bytes).unwrap();
-        let intent = IccRenderingIntent::RelativeColorimetric;
-        let forward = connect_spaces(Srgb, &icc, intent, intent).unwrap();
-        let backward = connect_spaces(&icc, Srgb, intent, intent).unwrap();
+        let icc = icc.color_space(IccRenderingIntent::RelativeColorimetric);
+        let forward = connect_spaces(Srgb, &icc).unwrap();
+        let backward = connect_spaces(&icc, Srgb).unwrap();
         let sample = [0.3, 0.5, 0.7];
         let converted = forward.evaluate(&sample).unwrap();
         let restored = backward.evaluate(&converted).unwrap();
@@ -367,21 +333,14 @@ mod tests {
     fn spaces_can_be_connected_after_type_erasure() {
         let source: ColorSpace = Srgb.into();
         let destination: ColorSpace = LabD50.into();
-        let transform = connect_spaces(
-            &source,
-            &destination,
-            IccRenderingIntent::RelativeColorimetric,
-            IccRenderingIntent::RelativeColorimetric,
-        )
-        .unwrap();
+        let transform = connect_spaces(&source, &destination).unwrap();
         assert_eq!(transform.evaluate(&[1.0; 3]).unwrap()[0], 100.0);
     }
 
     #[test]
     fn pcs_bridge_round_trips_between_rgb_and_lab() {
-        let intent = IccRenderingIntent::RelativeColorimetric;
-        let to_lab = connect_spaces(LinearSrgb, LabD50, intent, intent).unwrap();
-        let to_rgb = connect_spaces(LabD50, LinearSrgb, intent, intent).unwrap();
+        let to_lab = connect_spaces(LinearSrgb, LabD50).unwrap();
+        let to_rgb = connect_spaces(LabD50, LinearSrgb).unwrap();
         let sample = [0.2, 0.4, 0.6];
         let lab = to_lab.evaluate(&sample).unwrap();
         let restored = to_rgb.evaluate(&lab).unwrap();
@@ -395,7 +354,6 @@ mod tests {
         // CSS Color 4 §10.9 gives these equivalent coordinates for #7654CD.
         // https://www.w3.org/TR/css-color-4/#predefined
         let srgb = [118.0 / 255.0, 84.0 / 255.0, 205.0 / 255.0];
-        let intent = IccRenderingIntent::RelativeColorimetric;
         for (destination, expected, tolerance) in [
             (ColorSpace::from(XyzD50), [0.2005, 0.14089, 0.4472], 0.0005),
             (
@@ -405,7 +363,7 @@ mod tests {
             ),
             (ColorSpace::from(LabD50), [44.36, 36.05, -58.99], 0.05),
         ] {
-            let transfer = connect_spaces(Srgb, destination, intent, intent).unwrap();
+            let transfer = connect_spaces(Srgb, destination).unwrap();
             let actual = transfer.evaluate(&srgb).unwrap();
             for (actual, expected) in actual.into_iter().zip(expected) {
                 assert!(
@@ -417,8 +375,8 @@ mod tests {
     }
 
     #[test]
-    fn direct_link_is_used_only_for_its_declared_intent() {
-        struct LinkedSpace;
+    fn direct_link_is_used_only_for_its_declared_destination() {
+        struct LinkedSpace(Option<ColorSpace>);
 
         impl ColorProfile for LinkedSpace {
             fn model(&self) -> ColorModel {
@@ -429,66 +387,32 @@ mod tests {
                 Pcs::XyzD50
             }
 
-            fn space_to_pcs_transfer(
-                &self,
-                _: IccRenderingIntent,
-            ) -> Result<Transfer, SpaceConnectionError> {
-                ColorSpace::from(Srgb).space_to_pcs(IccRenderingIntent::RelativeColorimetric)
+            fn space_to_pcs_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
+                ColorSpace::from(Srgb).space_to_pcs()
             }
 
-            fn pcs_to_space_transfer(
-                &self,
-                _: IccRenderingIntent,
-            ) -> Result<Transfer, SpaceConnectionError> {
+            fn pcs_to_space_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
                 unreachable!()
             }
 
             fn direct_transfer_to(
                 &self,
                 destination: &ColorSpace,
-                intent: IccRenderingIntent,
             ) -> Result<Option<Transfer>, SpaceConnectionError> {
-                if *destination == ColorSpace::from(LinearSrgb)
-                    && intent == IccRenderingIntent::Saturation
-                {
+                if self.0.as_ref() == Some(destination) {
                     return Ok(Some(Transfer::new(3, Vec::<TransferStage>::new())?));
                 }
                 Ok(None)
             }
         }
 
-        let direct = connect_spaces(
-            ColorSpace::new(LinkedSpace),
-            LinearSrgb,
-            IccRenderingIntent::Saturation,
-            IccRenderingIntent::Saturation,
-        )
-        .unwrap();
+        let destination = ColorSpace::new(LinkedSpace(None));
+        let source = ColorSpace::new(LinkedSpace(Some(destination.clone())));
+        let direct = connect_spaces(&source, &destination).unwrap();
         assert!(direct.stages().is_empty());
 
-        let fallback = connect_spaces(
-            ColorSpace::new(LinkedSpace),
-            LinearSrgb,
-            IccRenderingIntent::Saturation,
-            IccRenderingIntent::RelativeColorimetric,
-        )
-        .unwrap();
+        let fallback = connect_spaces(source, LinearSrgb).unwrap();
         assert!(!fallback.stages().is_empty());
-    }
-
-    #[test]
-    fn unsupported_builtin_intent_is_not_misrepresented_as_relative() {
-        assert!(matches!(
-            connect_spaces(
-                Srgb,
-                LinearSrgb,
-                IccRenderingIntent::Perceptual,
-                IccRenderingIntent::Perceptual,
-            ),
-            Err(SpaceConnectionError::UnsupportedIntent(
-                IccRenderingIntent::Perceptual
-            ))
-        ));
     }
 
     #[test]
@@ -504,36 +428,24 @@ mod tests {
                 Pcs::XyzD50
             }
 
-            fn space_to_pcs_transfer(
-                &self,
-                _: IccRenderingIntent,
-            ) -> Result<Transfer, SpaceConnectionError> {
+            fn space_to_pcs_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
                 unreachable!()
             }
 
-            fn pcs_to_space_transfer(
-                &self,
-                _: IccRenderingIntent,
-            ) -> Result<Transfer, SpaceConnectionError> {
+            fn pcs_to_space_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
                 unreachable!()
             }
 
             fn direct_transfer_to(
                 &self,
                 _: &ColorSpace,
-                _: IccRenderingIntent,
             ) -> Result<Option<Transfer>, SpaceConnectionError> {
                 Ok(Some(Transfer::new(4, Vec::<TransferStage>::new())?))
             }
         }
 
         assert!(matches!(
-            connect_spaces(
-                ColorSpace::new(InvalidLink),
-                LinearSrgb,
-                IccRenderingIntent::RelativeColorimetric,
-                IccRenderingIntent::RelativeColorimetric,
-            ),
+            connect_spaces(ColorSpace::new(InvalidLink), LinearSrgb),
             Err(SpaceConnectionError::Channels { .. })
         ));
     }
@@ -551,28 +463,17 @@ mod tests {
                 Pcs::XyzD50
             }
 
-            fn space_to_pcs_transfer(
-                &self,
-                _: IccRenderingIntent,
-            ) -> Result<Transfer, SpaceConnectionError> {
+            fn space_to_pcs_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
                 Ok(Transfer::new(4, Vec::<TransferStage>::new())?)
             }
 
-            fn pcs_to_space_transfer(
-                &self,
-                _: IccRenderingIntent,
-            ) -> Result<Transfer, SpaceConnectionError> {
+            fn pcs_to_space_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
                 unreachable!()
             }
         }
 
         assert!(matches!(
-            connect_spaces(
-                ColorSpace::new(InvalidPcs),
-                LinearSrgb,
-                IccRenderingIntent::RelativeColorimetric,
-                IccRenderingIntent::RelativeColorimetric,
-            ),
+            connect_spaces(ColorSpace::new(InvalidPcs), LinearSrgb),
             Err(SpaceConnectionError::Channels { .. })
         ));
     }

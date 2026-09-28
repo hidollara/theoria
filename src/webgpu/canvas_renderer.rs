@@ -68,17 +68,9 @@ impl<'a> RenderTarget<'a> {
                 format,
                 wgpu::TextureFormat::Rgba8UnormSrgb | wgpu::TextureFormat::Bgra8UnormSrgb
             ) {
-                OutputImage::new(
-                    Srgb,
-                    IccRenderingIntent::RelativeColorimetric,
-                    OutputAlpha::Straight,
-                )
+                OutputImage::new(Srgb, OutputAlpha::Straight)
             } else {
-                OutputImage::new(
-                    LinearSrgb,
-                    IccRenderingIntent::RelativeColorimetric,
-                    OutputAlpha::Premultiplied,
-                )
+                OutputImage::new(LinearSrgb, OutputAlpha::Premultiplied)
             },
             preserve_working: false,
         }
@@ -87,7 +79,7 @@ impl<'a> RenderTarget<'a> {
     /// Encodes the final working image into ICC device RGB coordinates.
     /// The target format must not perform an additional sRGB encoding.
     pub fn with_icc_output(mut self, profile: &IccProfile, intent: IccRenderingIntent) -> Self {
-        self.output = OutputImage::new(profile.color_space(), intent, OutputAlpha::Premultiplied);
+        self.output = OutputImage::new(profile.color_space(intent), OutputAlpha::Premultiplied);
         self
     }
 
@@ -176,10 +168,9 @@ impl CanvasRenderer {
             return Ok(());
         }
         let prepared = prepare_colors_in(canvas, &self.working_space)?;
-        target.clear_color.try_straight_rgba_in(
-            &self.working_space,
-            IccRenderingIntent::RelativeColorimetric,
-        )?;
+        target
+            .clear_color
+            .try_straight_rgba_in(&self.working_space)?;
         self.materialize_canvas_resources(canvas)?;
         self.pipelines
             .retain_icc_images(&self.images.active_icc_keys());
@@ -336,9 +327,8 @@ impl CanvasRenderer {
         );
         let output_uniform_layout = self.pipelines.output_uniform_layout.clone();
         let present = match (output, &shader_space) {
-            (Some(output), Some(space)) => {
-                self.pipelines
-                    .output(&self.device, target.format, space, output.intent)?
+            (Some(_output), Some(space)) => {
+                self.pipelines.output(&self.device, target.format, space)?
             }
             (None, _) => &self.pipelines.composites[&Composite::SourceOver],
             _ => unreachable!("an external target specifies an output image"),

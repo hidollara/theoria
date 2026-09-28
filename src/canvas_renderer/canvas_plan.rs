@@ -1,6 +1,6 @@
 use super::color_space::PreparedColors;
 use crate::canvas::{
-    Canvas, CanvasNode, ColorField, Composite, Composition, CoverageNode, Draw, IccColorError,
+    Canvas, CanvasNode, ColorError, ColorField, Composite, Composition, CoverageNode, Draw,
     image::Image,
 };
 use crate::color::ColorSpace;
@@ -10,23 +10,20 @@ use crate::color::LinearSrgb;
 /// Resolves fallible authored colors before either backend starts recording.
 /// The converted values belong to this render, not to the Canvas definition.
 #[cfg(test)]
-pub(crate) fn prepare_colors(canvas: &Canvas) -> Result<PreparedColors, IccColorError> {
+pub(crate) fn prepare_colors(canvas: &Canvas) -> Result<PreparedColors, ColorError> {
     prepare_colors_in(canvas, LinearSrgb)
 }
 
 pub(crate) fn prepare_colors_in(
     canvas: &Canvas,
     working_space: impl Into<ColorSpace>,
-) -> Result<PreparedColors, IccColorError> {
+) -> Result<PreparedColors, ColorError> {
     let mut prepared = PreparedColors::new(working_space);
     prepare_canvas_colors(canvas, &mut prepared)?;
     Ok(prepared)
 }
 
-fn prepare_canvas_colors(
-    canvas: &Canvas,
-    prepared: &mut PreparedColors,
-) -> Result<(), IccColorError> {
+fn prepare_canvas_colors(canvas: &Canvas, prepared: &mut PreparedColors) -> Result<(), ColorError> {
     match canvas.node() {
         CanvasNode::Draw(draw) => {
             prepare_color_field(&draw.source, prepared)?;
@@ -48,7 +45,7 @@ fn prepare_canvas_colors(
 fn prepare_color_field(
     source: &ColorField,
     prepared: &mut PreparedColors,
-) -> Result<(), IccColorError> {
+) -> Result<(), ColorError> {
     match source {
         ColorField::Solid(color) => prepared.prepare(color)?,
         ColorField::LinearGradient(gradient) => {
@@ -321,9 +318,12 @@ mod tests {
             "/crates/theoria-color/src/color/fixtures/sRGB-v4.icc"
         )))
         .unwrap();
-        let color =
-            crate::canvas::Color::from_icc(&profile, vec![0.25, 0.5, 0.75], Opacity::<f32>::ONE)
-                .unwrap();
+        let color = crate::canvas::Color::new_in_space(
+            profile.color_space(crate::color::IccRenderingIntent::RelativeColorimetric),
+            vec![0.25, 0.5, 0.75],
+            Opacity::<f32>::ONE,
+        )
+        .unwrap();
         let canvas = Canvas::draw(color.clone(), Coverage::all());
         let prepared = prepare_colors(&canvas).unwrap();
         assert!(prepared.lower(&color)[0] > 0.0);

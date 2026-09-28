@@ -55,12 +55,7 @@ pub(crate) fn convert_icc8_to_linear_rgba16(
     intent: IccRenderingIntent,
     has_alpha: bool,
 ) -> Result<RasterPlane<u16>, Box<dyn std::error::Error>> {
-    let transfer = connect_spaces(
-        profile,
-        LinearSrgb,
-        intent,
-        IccRenderingIntent::RelativeColorimetric,
-    )?;
+    let transfer = connect_spaces(profile.color_space(intent), LinearSrgb)?;
     let channels = profile.device_channels();
     let mut output = Vec::with_capacity(pixels.len() / (channels + usize::from(has_alpha)) * 4);
     for pixel in pixels.chunks_exact(channels + usize::from(has_alpha)) {

@@ -8,7 +8,7 @@ use crate::{
         canvas_image::CanvasImage,
         image::{Image, ImageKind},
     },
-    color::{ColorSpace, IccRenderingIntent, LinearSrgb, Srgb},
+    color::{ColorSpace, LinearSrgb, Srgb},
     surface::{OutputAlpha, OutputImage, Viewport},
 };
 
@@ -72,10 +72,7 @@ impl CanvasRenderer {
     ) -> Result<()> {
         let prepared = prepare_colors_in(canvas, &self.working_space)?;
         let clear_color = target.clear_color();
-        clear_color.try_straight_rgba_in(
-            &self.working_space,
-            IccRenderingIntent::RelativeColorimetric,
-        )?;
+        clear_color.try_straight_rgba_in(&self.working_space)?;
         let output = target.output().clone();
         self.materialize_canvas_resources(canvas)?;
         let (image_view, format, extent) = target.surface();
@@ -283,7 +280,7 @@ impl CanvasRenderer {
             }
             pipelines.retain_icc_images(self.device.raw(), &active_icc);
         }
-        if let (Some(output), Some(space)) = (output, &shader_space) {
+        if let (Some(_output), Some(space)) = (output, &shader_space) {
             let descriptor_layout = self
                 .gpu
                 .image_cache
@@ -295,7 +292,6 @@ impl CanvasRenderer {
                     self.device.raw(),
                     descriptor_layout,
                     space,
-                    output.intent,
                 )?;
             }
         }
@@ -311,7 +307,7 @@ impl CanvasRenderer {
         )?;
         let pipelines = self.gpu.pipelines.as_ref().unwrap();
         let present_pipeline = match (output, &shader_space) {
-            (Some(output), Some(space)) => pipelines.output(space, output.intent),
+            (Some(_output), Some(space)) => pipelines.output(space),
             (None, _) if preserve_working => {
                 pipelines.composite(crate::canvas::Composite::SourceOver)
             }

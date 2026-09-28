@@ -4,7 +4,7 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
-use crate::color::{ColorSpace, IccRenderingIntent, Rgb, TypedColorSpace, connect_spaces};
+use crate::color::{ColorSpace, Rgb, TypedColorSpace, connect_spaces};
 
 use super::composition_shader::{self, Binding};
 
@@ -139,12 +139,7 @@ impl BlendShader {
                 ));
                 continue;
             }
-            let transfer = connect_spaces(
-                from,
-                to,
-                IccRenderingIntent::RelativeColorimetric,
-                IccRenderingIntent::RelativeColorimetric,
-            )?;
+            let transfer = connect_spaces(from, to)?;
             wgsl.push_str(&transfer.wgsl(id as u32)?);
             wgsl.push_str(&format!(
                 "\nfn {name}(value: vec3<f32>) -> vec3<f32> {{\n    let result = theoria_transfer_{id}(array<f32, 3>(value.x, value.y, value.z));\n    return vec3<f32>(result[0], result[1], result[2]);\n}}\n"
@@ -304,7 +299,7 @@ mod tests {
     use super::*;
     use crate::{
         canvas::{Composite, Composition},
-        color::{DisplayP3, IccProfile, LinearSrgb, Srgb},
+        color::{DisplayP3, IccProfile, IccRenderingIntent, LinearSrgb, Srgb},
     };
 
     #[test]
@@ -392,12 +387,18 @@ mod tests {
         )))
         .unwrap();
         let shader = BlendShader::wgsl("return backdrop * source;").unwrap();
-        let composition = Composition::new(Composite::SourceOver, icc.color_space())
-            .with_blend_shader(
-                shader.clone(),
-                crate::test_support::distinct_color_space(Srgb),
-            );
-        assert_eq!(composition.composite_space(), &icc.color_space());
+        let composition = Composition::new(
+            Composite::SourceOver,
+            icc.color_space(IccRenderingIntent::RelativeColorimetric),
+        )
+        .with_blend_shader(
+            shader.clone(),
+            crate::test_support::distinct_color_space(Srgb),
+        );
+        assert_eq!(
+            composition.composite_space(),
+            &icc.color_space(IccRenderingIntent::RelativeColorimetric)
+        );
         assert!(composition.blend().is_some());
         let source = shader
             .wgsl_module_for_spaces(

@@ -1,10 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use crate::{
-    color::{
-        ColorModel, ColorProfile, ColorSpace, IccRenderingIntent, Pcs, SpaceConnectionError,
-        Transfer,
-    },
+    color::{ColorModel, ColorProfile, ColorSpace, Pcs, SpaceConnectionError, Transfer},
     component::{ComponentInstance, MountContext},
     event::{DispatchQueue, DynDispatch, EventSink, SubmissionOutcome},
     reactive::ReactiveError,
@@ -24,30 +21,24 @@ pub(crate) fn distinct_color_space(space: impl Into<ColorSpace>) -> ColorSpace {
             self.0.pcs()
         }
 
-        fn space_to_pcs_transfer(
-            &self,
-            intent: IccRenderingIntent,
-        ) -> Result<Transfer, SpaceConnectionError> {
-            self.0.space_to_pcs(intent)
+        fn space_to_pcs_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
+            self.0.space_to_pcs()
         }
 
-        fn pcs_to_space_transfer(
-            &self,
-            intent: IccRenderingIntent,
-        ) -> Result<Transfer, SpaceConnectionError> {
-            self.0.pcs_to_space(intent)
+        fn pcs_to_space_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
+            self.0.pcs_to_space()
         }
 
         fn direct_transfer_to(
             &self,
             destination: &ColorSpace,
-            intent: IccRenderingIntent,
         ) -> Result<Option<Transfer>, SpaceConnectionError> {
-            self.0.direct_to(destination, intent)
+            self.0.direct_to(destination)
         }
     }
 
-    ColorSpace::new(Distinct(space.into()))
+    let space = space.into();
+    ColorSpace::new(Distinct(space))
 }
 
 pub(crate) struct TestDriver {

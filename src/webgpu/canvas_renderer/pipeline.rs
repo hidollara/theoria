@@ -23,8 +23,8 @@ pub(super) struct Pipelines {
     pub(super) composites: HashMap<Composite, wgpu::RenderPipeline>,
     pub(super) mask: wgpu::RenderPipeline,
     compositions: HashMap<Composition, wgpu::RenderPipeline>,
-    outputs: HashMap<(wgpu::TextureFormat, ColorSpace, IccRenderingIntent), wgpu::RenderPipeline>,
-    icc_images: HashMap<(ColorSpace, IccRenderingIntent, bool), IccImagePipeline>,
+    outputs: HashMap<(wgpu::TextureFormat, ColorSpace), wgpu::RenderPipeline>,
+    icc_images: HashMap<(ColorSpace, bool), IccImagePipeline>,
 }
 
 pub(super) struct IccImagePipeline {
@@ -177,7 +177,7 @@ impl Pipelines {
         has_alpha: bool,
         working_space: &ColorSpace,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let key = (profile.color_space(), intent, has_alpha);
+        let key = (profile.color_space(intent), has_alpha);
         if self.icc_images.contains_key(&key) {
             return Ok(());
         }
@@ -245,17 +245,11 @@ impl Pipelines {
         Ok(())
     }
 
-    pub(super) fn icc_image(
-        &self,
-        key: &(ColorSpace, IccRenderingIntent, bool),
-    ) -> &IccImagePipeline {
+    pub(super) fn icc_image(&self, key: &(ColorSpace, bool)) -> &IccImagePipeline {
         &self.icc_images[key]
     }
 
-    pub(super) fn retain_icc_images(
-        &mut self,
-        active: &HashSet<(ColorSpace, IccRenderingIntent, bool)>,
-    ) {
+    pub(super) fn retain_icc_images(&mut self, active: &HashSet<(ColorSpace, bool)>) {
         self.icc_images.retain(|key, _| active.contains(key));
     }
 
@@ -304,15 +298,13 @@ impl Pipelines {
         device: &wgpu::Device,
         format: wgpu::TextureFormat,
         space: &ColorSpace,
-        intent: IccRenderingIntent,
     ) -> Result<&wgpu::RenderPipeline, Box<dyn std::error::Error>> {
-        let key = (format, space.clone(), intent);
+        let key = (format, space.clone());
         if !self.outputs.contains_key(&key) {
             let source = crate::rgb_shader::assemble_output_for(
                 include_str!("../../../shaders/canvas_renderer/output_image.wgsl"),
                 &self.working_space,
                 space,
-                intent,
             )?;
             // Vulkan uses an immediate; WebGPU binds the same parameters as a uniform.
             let source = source.replace(

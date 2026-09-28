@@ -1,8 +1,9 @@
 #[cfg(test)]
 use super::Rgb;
 use super::TypedColorModel;
+#[cfg(test)]
 use super::icc_profile::IccRenderingIntent;
-use super::profile::{ColorProfile, ColorSpace, Pcs, SpaceConnectionError, require_relative};
+use super::profile::{ColorProfile, ColorSpace, Pcs, SpaceConnectionError};
 use super::transfer::{Transfer, TransferCurve, TransferError, TransferMatrix, TransferStage};
 
 /// Associates a statically typed color space with its coordinate model.
@@ -30,11 +31,7 @@ fn rgb_direct_to(
     counterpart: ColorSpace,
     counterpart_curve: TransferCurve,
     destination: &ColorSpace,
-    intent: IccRenderingIntent,
 ) -> Result<Option<Transfer>, SpaceConnectionError> {
-    if intent != IccRenderingIntent::RelativeColorimetric {
-        return Ok(None);
-    }
     if source == *destination {
         return Ok(Some(Transfer::new(3, Vec::<TransferStage>::new())?));
     }
@@ -196,9 +193,13 @@ mod tests {
     #[test]
     fn loaded_spaces_preserve_identity_without_equating_channel_counts() {
         let bytes = moxcms::ColorProfile::new_srgb().encode().unwrap();
-        let first = crate::IccProfile::from_bytes(&bytes).unwrap().color_space();
+        let first = crate::IccProfile::from_bytes(&bytes)
+            .unwrap()
+            .color_space(IccRenderingIntent::RelativeColorimetric);
         let same = first.clone();
-        let separate = crate::IccProfile::from_bytes(&bytes).unwrap().color_space();
+        let separate = crate::IccProfile::from_bytes(&bytes)
+            .unwrap()
+            .color_space(IccRenderingIntent::RelativeColorimetric);
         assert_eq!(first, same);
         assert_ne!(first, separate);
         assert_eq!(first.channels(), 3);

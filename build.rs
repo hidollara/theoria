@@ -55,7 +55,6 @@ fn main() {
             &fs::read_to_string(output_shader).expect("read output image shader"),
             &theoria_color::LinearSrgb.into(),
             &theoria_color::Srgb.into(),
-            theoria_color::IccRenderingIntent::RelativeColorimetric,
         )
         .expect("assemble output image shader"),
     );
