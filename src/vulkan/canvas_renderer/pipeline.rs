@@ -83,7 +83,7 @@ impl Drop for PipelineGuard<'_> {
 }
 
 pub(super) struct Pipelines {
-    pub(super) working_profile: ColorSpace,
+    pub(super) working_space: ColorSpace,
     pub(super) working_format: vk::Format,
     pub(super) output_format: vk::Format,
     pub(super) sample_count: vk::SampleCountFlags,
@@ -147,25 +147,25 @@ impl Pipelines {
         });
     }
 
-    pub(super) fn output(&self, profile: &ColorSpace, intent: IccRenderingIntent) -> &Pipeline {
-        &self.outputs[&(profile.clone(), intent)]
+    pub(super) fn output(&self, space: &ColorSpace, intent: IccRenderingIntent) -> &Pipeline {
+        &self.outputs[&(space.clone(), intent)]
     }
 
     pub(super) unsafe fn ensure_output(
         &mut self,
         device: &ash::Device,
         image_descriptor_set_layout: vk::DescriptorSetLayout,
-        profile: &ColorSpace,
+        space: &ColorSpace,
         intent: IccRenderingIntent,
     ) -> Result<()> {
-        let key = (profile.clone(), intent);
+        let key = (space.clone(), intent);
         if self.outputs.contains_key(&key) {
             return Ok(());
         }
         let source = crate::rgb_shader::assemble_output_for(
             include_str!("../../../shaders/canvas_renderer/output_image.wgsl"),
-            &self.working_profile,
-            profile,
+            &self.working_space,
+            space,
             intent,
         )?;
         let words = compile_fragment(&source)?;
@@ -201,13 +201,13 @@ impl Pipelines {
         image_descriptor_set_layout: vk::DescriptorSetLayout,
         compositions: &[Composition],
     ) -> Result<()> {
-        let working = self.working_profile.clone();
+        let working = self.working_space.clone();
         for composition in compositions {
             if self.compositions.contains_key(composition) {
                 continue;
             }
             let blend = composition.blend().map_or(&working, |blend| blend.space());
-            let source = composition.blend_shader().wgsl_module_for_profiles(
+            let source = composition.blend_shader().wgsl_module_for_spaces(
                 Binding::Vulkan,
                 &working,
                 blend,
@@ -263,14 +263,14 @@ pub(super) unsafe fn create_pipelines(
     output_format: vk::Format,
     sample_count: vk::SampleCountFlags,
     image_descriptor_set_layout: vk::DescriptorSetLayout,
-    working_profile: &ColorSpace,
+    working_space: &ColorSpace,
 ) -> Result<Pipelines> {
-    let image_fragment: Cow<'_, [u8]> = if working_profile == &LinearSrgb.into() {
+    let image_fragment: Cow<'_, [u8]> = if working_space == &LinearSrgb.into() {
         Cow::Borrowed(IMAGE_FRAGMENT_SHADER)
     } else {
         let source = crate::rgb_shader::assemble_for(
             include_str!("../../../shaders/vulkan/image.wgsl"),
-            working_profile,
+            working_space,
         )?;
         Cow::Owned(
             compile_fragment(&source)?
@@ -352,7 +352,7 @@ pub(super) unsafe fn create_pipelines(
         )?
     };
     Ok(Pipelines {
-        working_profile: working_profile.clone(),
+        working_space: working_space.clone(),
         working_format,
         output_format,
         sample_count,
@@ -532,7 +532,7 @@ mod tests {
         assert!(!compile_fragment(&source).unwrap().is_empty());
 
         let source = shader
-            .wgsl_module_for_profiles(
+            .wgsl_module_for_spaces(
                 Binding::Vulkan,
                 &ColorSpace::from(crate::color::LinearSrgb),
                 &ColorSpace::from(Srgb),

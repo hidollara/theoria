@@ -35,9 +35,9 @@ pub enum ColorField {
 }
 
 macro_rules! rgba8_image {
-    ($profile:ty) => {
-        impl From<RasterImage<Rgba8, $profile>> for ColorField {
-            fn from(image: RasterImage<Rgba8, $profile>) -> Self {
+    ($space:ty) => {
+        impl From<RasterImage<Rgba8, $space>> for ColorField {
+            fn from(image: RasterImage<Rgba8, $space>) -> Self {
                 Self::Image(ImagePattern::new(image))
             }
         }
@@ -45,9 +45,9 @@ macro_rules! rgba8_image {
 }
 
 macro_rules! rgb8_image {
-    ($profile:ty) => {
-        impl From<RasterImage<Rgb8, $profile>> for ColorField {
-            fn from(image: RasterImage<Rgb8, $profile>) -> Self {
+    ($space:ty) => {
+        impl From<RasterImage<Rgb8, $space>> for ColorField {
+            fn from(image: RasterImage<Rgb8, $space>) -> Self {
                 Self::Image(ImagePattern::new(image))
             }
         }

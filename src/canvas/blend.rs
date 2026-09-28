@@ -14,7 +14,7 @@ use super::composition_shader::{self, Binding};
 /// Implement this for a specific typed space to restrict where an operation may
 /// be used. The resulting shader is recorded in the Canvas and compiled by
 /// each renderer when first needed.
-pub trait BlendOperation<P: TypedColorSpace<Model = Rgb>> {
+pub trait BlendOperation<S: TypedColorSpace<Model = Rgb>> {
     fn shader(self) -> BlendShader;
 
     /// Whether this operation returns the source unchanged for every input.
@@ -112,7 +112,7 @@ impl BlendShader {
         composition_shader::assemble(binding, &self.0.helpers, &self.0.body)
     }
 
-    pub(crate) fn wgsl_module_for_profiles(
+    pub(crate) fn wgsl_module_for_spaces(
         &self,
         binding: Binding,
         working: &ColorSpace,
@@ -129,7 +129,7 @@ impl BlendShader {
         for (id, (from, to, name)) in conversions.into_iter().enumerate() {
             if from.channels() != 3 || to.channels() != 3 {
                 return Err(std::io::Error::other(
-                    "Canvas composition requires three-channel color profiles",
+                    "Canvas composition requires three-channel color spaces",
                 )
                 .into());
             }
@@ -247,7 +247,7 @@ impl BlendMode {
     }
 }
 
-impl<P: TypedColorSpace<Model = Rgb>> BlendOperation<P> for BlendMode {
+impl<S: TypedColorSpace<Model = Rgb>> BlendOperation<S> for BlendMode {
     fn shader(self) -> BlendShader {
         self.shader_definition()
     }
@@ -257,13 +257,13 @@ impl<P: TypedColorSpace<Model = Rgb>> BlendOperation<P> for BlendMode {
     }
 }
 
-impl<P: TypedColorSpace<Model = Rgb>> BlendOperation<P> for BlendShader {
+impl<S: TypedColorSpace<Model = Rgb>> BlendOperation<S> for BlendShader {
     fn shader(self) -> BlendShader {
         self
     }
 }
 
-/// A blend operation and the profile in which its three components are evaluated.
+/// A blend operation and the space in which its three components are evaluated.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Blend {
     shader: BlendShader,
@@ -271,10 +271,10 @@ pub struct Blend {
 }
 
 impl Blend {
-    pub fn new<P, O>(operation: O, space: P) -> Self
+    pub fn new<S, O>(operation: O, space: S) -> Self
     where
-        P: TypedColorSpace<Model = Rgb> + Into<ColorSpace>,
-        O: BlendOperation<P>,
+        S: TypedColorSpace<Model = Rgb> + Into<ColorSpace>,
+        O: BlendOperation<S>,
     {
         Self {
             shader: operation.shader(),
@@ -286,7 +286,7 @@ impl Blend {
         &self.shader
     }
 
-    /// Evaluates a custom blend shader in a profile-backed three-channel space.
+    /// Evaluates a custom blend shader in a three-channel color space.
     pub fn from_shader(shader: BlendShader, space: impl Into<ColorSpace>) -> Self {
         Self {
             shader,
@@ -342,7 +342,7 @@ mod tests {
     }
 
     #[test]
-    fn operations_can_be_restricted_to_a_profile() {
+    fn operations_can_be_restricted_to_a_space() {
         struct SrgbOnly;
         impl BlendOperation<Srgb> for SrgbOnly {
             fn shader(self) -> BlendShader {
@@ -385,7 +385,7 @@ mod tests {
     }
 
     #[test]
-    fn composition_shader_lowers_profile_transfers_without_space_numbers() {
+    fn composition_shader_lowers_space_transfers_without_space_numbers() {
         let icc = IccProfile::from_bytes(include_bytes!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/crates/theoria-color/src/color/fixtures/sRGB-v4.icc"
@@ -395,12 +395,12 @@ mod tests {
         let composition = Composition::new(Composite::SourceOver, icc.color_space())
             .with_blend_shader(
                 shader.clone(),
-                crate::test_support::distinct_color_profile(Srgb),
+                crate::test_support::distinct_color_space(Srgb),
             );
         assert_eq!(composition.composite_space(), &icc.color_space());
         assert!(composition.blend().is_some());
         let source = shader
-            .wgsl_module_for_profiles(
+            .wgsl_module_for_spaces(
                 Binding::WebGpu,
                 &ColorSpace::from(LinearSrgb),
                 composition.blend().unwrap().space(),

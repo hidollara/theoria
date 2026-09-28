@@ -8,7 +8,7 @@ use moxcms::{
 use super::icc_mpe::MpeTags;
 use super::model::ColorModel;
 use super::pcs::ICC_D50;
-use super::profile::{ColorProfile, ColorSpace, Pcs, ProfileConnectionError};
+use super::profile::{ColorProfile, ColorSpace, Pcs, SpaceConnectionError};
 use super::transfer::{
     Transfer, TransferClut, TransferCurve, TransferError, TransferMatrix, TransferStage,
 };
@@ -667,14 +667,14 @@ impl ColorProfile for IccProfileData {
     fn space_to_pcs_transfer(
         &self,
         intent: IccRenderingIntent,
-    ) -> Result<Transfer, ProfileConnectionError> {
+    ) -> Result<Transfer, SpaceConnectionError> {
         Ok(self.space_to_pcs(intent)?)
     }
 
     fn pcs_to_space_transfer(
         &self,
         intent: IccRenderingIntent,
-    ) -> Result<Transfer, ProfileConnectionError> {
+    ) -> Result<Transfer, SpaceConnectionError> {
         Ok(self.pcs_to_space(intent)?)
     }
 }
@@ -991,7 +991,7 @@ mod tests {
                 IccRenderingIntent::AbsoluteColorimetric,
                 IccRenderingIntent::RelativeColorimetric,
             ),
-            Err(ProfileConnectionError::IncompatibleIntentSpaces)
+            Err(SpaceConnectionError::IncompatibleIntentSpaces)
         ));
     }
 

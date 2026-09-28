@@ -16,9 +16,9 @@ pub(crate) fn prepare_colors(canvas: &Canvas) -> Result<PreparedColors, CanvasIc
 
 pub(crate) fn prepare_colors_in(
     canvas: &Canvas,
-    working_profile: impl Into<ColorSpace>,
+    working_space: impl Into<ColorSpace>,
 ) -> Result<PreparedColors, CanvasIccColorError> {
-    let mut prepared = PreparedColors::new(working_profile);
+    let mut prepared = PreparedColors::new(working_space);
     prepare_canvas_colors(canvas, &mut prepared)?;
     Ok(prepared)
 }
@@ -105,30 +105,30 @@ pub(crate) fn collect_compositions(canvas: &Canvas, compositions: &mut Vec<Compo
 pub(crate) fn collect_compositions_in(
     canvas: &Canvas,
     compositions: &mut Vec<Composition>,
-    working_profile: &ColorSpace,
+    working_space: &ColorSpace,
 ) {
     match canvas.node() {
         CanvasNode::Draw(draw) => {
-            collect_color_field_compositions(&draw.source, compositions, working_profile);
+            collect_color_field_compositions(&draw.source, compositions, working_space);
             if let CoverageNode::AlphaOf(source) = draw.coverage.node() {
-                collect_color_field_compositions(source, compositions, working_profile);
+                collect_color_field_compositions(source, compositions, working_space);
             }
         }
         CanvasNode::Transform { content, .. } => {
-            collect_compositions_in(content, compositions, working_profile)
+            collect_compositions_in(content, compositions, working_space)
         }
         CanvasNode::Composite {
             backdrop,
             source,
             composition,
         } => {
-            if composition.requires_destination_read_in(working_profile)
+            if composition.requires_destination_read_in(working_space)
                 && !compositions.contains(composition)
             {
                 compositions.push(composition.clone());
             }
-            collect_compositions_in(backdrop, compositions, working_profile);
-            collect_compositions_in(source, compositions, working_profile);
+            collect_compositions_in(backdrop, compositions, working_space);
+            collect_compositions_in(source, compositions, working_space);
         }
     }
 }
@@ -136,10 +136,10 @@ pub(crate) fn collect_compositions_in(
 fn collect_color_field_compositions(
     source: &ColorField,
     compositions: &mut Vec<Composition>,
-    working_profile: &ColorSpace,
+    working_space: &ColorSpace,
 ) {
     if let ColorField::Canvas(canvas) = source {
-        collect_compositions_in(canvas, compositions, working_profile);
+        collect_compositions_in(canvas, compositions, working_space);
     }
 }
 
@@ -182,48 +182,46 @@ pub(crate) fn required_scratch_images(canvas: &Canvas) -> usize {
     required_scratch_images_in(canvas, &ColorSpace::from(LinearSrgb))
 }
 
-pub(crate) fn required_scratch_images_in(canvas: &Canvas, working_profile: &ColorSpace) -> usize {
-    1 + additional_scratch_images(canvas, working_profile)
+pub(crate) fn required_scratch_images_in(canvas: &Canvas, working_space: &ColorSpace) -> usize {
+    1 + additional_scratch_images(canvas, working_space)
 }
 
-fn additional_scratch_images(canvas: &Canvas, working_profile: &ColorSpace) -> usize {
+fn additional_scratch_images(canvas: &Canvas, working_space: &ColorSpace) -> usize {
     match canvas.node() {
         CanvasNode::Draw(draw) => match &draw.source {
             ColorField::Canvas(content) => {
-                required_scratch_images_in(content, working_profile)
+                required_scratch_images_in(content, working_space)
                     + match draw.coverage.node() {
                         CoverageNode::All => 0,
                         CoverageNode::Fill { .. } | CoverageNode::Stroke { .. } => 1,
                         CoverageNode::AlphaOf(source) => {
-                            required_color_field_scratch_images(source, working_profile)
+                            required_color_field_scratch_images(source, working_space)
                         }
                     }
             }
             _ => match draw.coverage.node() {
                 CoverageNode::AlphaOf(source) => {
-                    1 + required_color_field_scratch_images(source, working_profile)
+                    1 + required_color_field_scratch_images(source, working_space)
                 }
                 CoverageNode::All | CoverageNode::Fill { .. } | CoverageNode::Stroke { .. } => 0,
             },
         },
-        CanvasNode::Transform { content, .. } => {
-            additional_scratch_images(content, working_profile)
-        }
+        CanvasNode::Transform { content, .. } => additional_scratch_images(content, working_space),
         CanvasNode::Composite {
             backdrop,
             source,
             composition,
         } => {
-            additional_scratch_images(backdrop, working_profile)
+            additional_scratch_images(backdrop, working_space)
                 + if composition.blend().is_none()
                     && composition.composite() == Composite::SourceOver
-                    && composition.composite_space() == working_profile
-                    && can_record_directly_in(source, working_profile)
+                    && composition.composite_space() == working_space
+                    && can_record_directly_in(source, working_space)
                 {
-                    additional_scratch_images(source, working_profile)
+                    additional_scratch_images(source, working_space)
                 } else {
-                    required_scratch_images_in(source, working_profile)
-                        + usize::from(composition.requires_destination_read_in(working_profile))
+                    required_scratch_images_in(source, working_space)
+                        + usize::from(composition.requires_destination_read_in(working_space))
                 }
         }
     }
@@ -234,28 +232,28 @@ pub(crate) fn can_record_directly(canvas: &Canvas) -> bool {
     can_record_directly_in(canvas, &ColorSpace::from(LinearSrgb))
 }
 
-pub(crate) fn can_record_directly_in(canvas: &Canvas, working_profile: &ColorSpace) -> bool {
+pub(crate) fn can_record_directly_in(canvas: &Canvas, working_space: &ColorSpace) -> bool {
     match canvas.node() {
         CanvasNode::Draw(_) => true,
-        CanvasNode::Transform { content, .. } => can_record_directly_in(content, working_profile),
+        CanvasNode::Transform { content, .. } => can_record_directly_in(content, working_space),
         CanvasNode::Composite {
             backdrop,
             source,
             composition,
         } if composition.blend().is_none()
             && composition.composite() == Composite::SourceOver
-            && composition.composite_space() == working_profile =>
+            && composition.composite_space() == working_space =>
         {
-            can_record_directly_in(backdrop, working_profile)
-                && can_record_directly_in(source, working_profile)
+            can_record_directly_in(backdrop, working_space)
+                && can_record_directly_in(source, working_space)
         }
         CanvasNode::Composite { .. } => false,
     }
 }
 
-fn required_color_field_scratch_images(source: &ColorField, working_profile: &ColorSpace) -> usize {
+fn required_color_field_scratch_images(source: &ColorField, working_space: &ColorSpace) -> usize {
     match source {
-        ColorField::Canvas(canvas) => required_scratch_images_in(canvas, working_profile),
+        ColorField::Canvas(canvas) => required_scratch_images_in(canvas, working_space),
         _ => 1,
     }
 }
@@ -298,15 +296,15 @@ mod tests {
     }
 
     #[test]
-    fn distinct_profile_handles_keep_distinct_composition_pipelines() {
+    fn distinct_space_handles_keep_distinct_composition_pipelines() {
         let leaf = || {
             Canvas::draw(
                 Color::new(Srgb, [64_u8, 128, 255], Opacity::<u8>::ONE),
                 Coverage::all(),
             )
         };
-        let first = crate::test_support::distinct_color_profile(Srgb);
-        let second = crate::test_support::distinct_color_profile(Srgb);
+        let first = crate::test_support::distinct_color_space(Srgb);
+        let second = crate::test_support::distinct_color_space(Srgb);
         let canvas = leaf()
             .composite(leaf(), Composition::new(Composite::SourceOver, &first))
             .composite(leaf(), Composition::new(Composite::SourceOver, &second));

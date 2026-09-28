@@ -77,10 +77,10 @@ impl Composition {
         }
     }
 
-    pub fn with_blend<P, O>(mut self, operation: O, space: P) -> Self
+    pub fn with_blend<S, O>(mut self, operation: O, space: S) -> Self
     where
-        P: TypedColorSpace<Model = Rgb> + Into<ColorSpace>,
-        O: BlendOperation<P>,
+        S: TypedColorSpace<Model = Rgb> + Into<ColorSpace>,
+        O: BlendOperation<S>,
     {
         self.blend = (!operation.is_identity()).then(|| Blend::new(operation, space));
         self
@@ -110,7 +110,7 @@ impl Composition {
         }
     }
 
-    pub(crate) fn requires_destination_read_in(&self, working_profile: &ColorSpace) -> bool {
-        self.blend.is_some() || &self.composite_space != working_profile
+    pub(crate) fn requires_destination_read_in(&self, working_space: &ColorSpace) -> bool {
+        self.blend.is_some() || &self.composite_space != working_space
     }
 }

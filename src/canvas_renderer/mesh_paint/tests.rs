@@ -14,7 +14,7 @@ fn lowered(color: impl Into<crate::canvas::CanvasColor>) -> TestWorkingColor {
 }
 
 #[test]
-fn logical_colors_are_lowered_from_their_authored_rgb_profile() {
+fn logical_colors_are_lowered_from_their_authored_rgb_space() {
     let srgb = lowered(Color::new(Srgb, [1.0_f32, 0.0, 0.0], Opacity::<f32>::ONE));
     let display_p3 = lowered(Color::new(DisplayP3, [1.0, 0.0, 0.0], Opacity::<f32>::ONE));
 

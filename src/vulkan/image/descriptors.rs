@@ -27,7 +27,7 @@ pub(in crate::vulkan) struct GpuImage {
 pub(in crate::vulkan) enum GpuImageColor {
     Rgb {
         association: RgbAlphaAssociation,
-        profile: ColorSpace,
+        space: ColorSpace,
     },
     Icc {
         key: (ColorSpace, IccRenderingIntent, bool),
@@ -235,13 +235,13 @@ impl ImageDescriptors {
         &self,
         backing: Arc<VulkanImage>,
         rgb_alpha_association: RgbAlphaAssociation,
-        rgb_profile: ColorSpace,
+        rgb_space: ColorSpace,
     ) -> Result<GpuImage> {
         self.bind_backing_with_color(
             backing,
             GpuImageColor::Rgb {
                 association: rgb_alpha_association,
-                profile: rgb_profile,
+                space: rgb_space,
             },
             None,
         )

@@ -9,7 +9,7 @@ use super::icc_profile::{IccProfileError, IccRenderingIntent};
 use super::model::ColorModel;
 use super::transfer::{Transfer, TransferError, TransferStage};
 
-/// The coordinate representation used to connect color profiles.
+/// The coordinate representation used to connect color spaces.
 ///
 /// Each variant denotes a different D50 color space, not one shared space.
 /// Profile conversions expose actual XYZ or Lab coordinates here, rather than
@@ -62,7 +62,7 @@ impl ColorSpace {
     pub fn space_to_pcs(
         &self,
         intent: IccRenderingIntent,
-    ) -> Result<Transfer, ProfileConnectionError> {
+    ) -> Result<Transfer, SpaceConnectionError> {
         let transfer = self.0.space_to_pcs_transfer(intent)?;
         require_channels(self.channels(), transfer.input_channels())?;
         require_channels(3, transfer.output_channels())?;
@@ -74,7 +74,7 @@ impl ColorSpace {
     pub fn pcs_to_space(
         &self,
         intent: IccRenderingIntent,
-    ) -> Result<Transfer, ProfileConnectionError> {
+    ) -> Result<Transfer, SpaceConnectionError> {
         let transfer = self.0.pcs_to_space_transfer(intent)?;
         require_channels(3, transfer.input_channels())?;
         require_channels(self.channels(), transfer.output_channels())?;
@@ -85,7 +85,7 @@ impl ColorSpace {
         &self,
         destination: &ColorSpace,
         intent: IccRenderingIntent,
-    ) -> Result<Option<Transfer>, ProfileConnectionError> {
+    ) -> Result<Option<Transfer>, SpaceConnectionError> {
         self.0
             .direct_transfer_to(destination, intent)?
             .map(|transfer| {
@@ -97,17 +97,17 @@ impl ColorSpace {
     }
 }
 
-fn require_channels(expected: usize, actual: usize) -> Result<(), ProfileConnectionError> {
+fn require_channels(expected: usize, actual: usize) -> Result<(), SpaceConnectionError> {
     if expected == actual {
         Ok(())
     } else {
-        Err(ProfileConnectionError::Channels { expected, actual })
+        Err(SpaceConnectionError::Channels { expected, actual })
     }
 }
 
 impl From<&ColorSpace> for ColorSpace {
-    fn from(profile: &ColorSpace) -> Self {
-        profile.clone()
+    fn from(space: &ColorSpace) -> Self {
+        space.clone()
     }
 }
 
@@ -144,40 +144,40 @@ pub trait ColorProfile: Send + Sync {
     fn space_to_pcs_transfer(
         &self,
         intent: IccRenderingIntent,
-    ) -> Result<Transfer, ProfileConnectionError>;
+    ) -> Result<Transfer, SpaceConnectionError>;
     fn pcs_to_space_transfer(
         &self,
         intent: IccRenderingIntent,
-    ) -> Result<Transfer, ProfileConnectionError>;
+    ) -> Result<Transfer, SpaceConnectionError>;
 
-    /// A one-way conversion to a particular destination profile, if available.
+    /// A one-way conversion to a particular destination space, if available.
     ///
-    /// The destination profile and intent are part of a link's meaning. A link
+    /// The destination space and intent are part of a link's meaning. A link
     /// must not stand in for another merely because its space endpoints match.
     fn direct_transfer_to(
         &self,
         _destination: &ColorSpace,
         _intent: IccRenderingIntent,
-    ) -> Result<Option<Transfer>, ProfileConnectionError> {
+    ) -> Result<Option<Transfer>, SpaceConnectionError> {
         Ok(None)
     }
 }
 
 /// Selects a direct link when the endpoints and intent match, otherwise joins
-/// the source and destination profiles through their PCS representations.
+/// the source and destination spaces through their PCS representations.
 /// Unlike [`Transfer::then`], this checks the semantic PCS and intent route.
 pub fn connect_spaces(
     source: impl Into<ColorSpace>,
     destination: impl Into<ColorSpace>,
     source_intent: IccRenderingIntent,
     destination_intent: IccRenderingIntent,
-) -> Result<Transfer, ProfileConnectionError> {
+) -> Result<Transfer, SpaceConnectionError> {
     let source = source.into();
     let destination = destination.into();
     if (source_intent == IccRenderingIntent::AbsoluteColorimetric)
         != (destination_intent == IccRenderingIntent::AbsoluteColorimetric)
     {
-        return Err(ProfileConnectionError::IncompatibleIntentSpaces);
+        return Err(SpaceConnectionError::IncompatibleIntentSpaces);
     }
     if source_intent == destination_intent
         && let Some(direct) = source.direct_to(&destination, source_intent)?
@@ -197,16 +197,17 @@ pub fn connect_spaces(
     Ok(transform.then(&destination_transform)?)
 }
 
-pub(crate) fn require_relative(intent: IccRenderingIntent) -> Result<(), ProfileConnectionError> {
+pub(crate) fn require_relative(intent: IccRenderingIntent) -> Result<(), SpaceConnectionError> {
     if intent == IccRenderingIntent::RelativeColorimetric {
         Ok(())
     } else {
-        Err(ProfileConnectionError::UnsupportedIntent(intent))
+        Err(SpaceConnectionError::UnsupportedIntent(intent))
     }
 }
 
+/// A failure to construct a conversion between color spaces.
 #[derive(Debug)]
-pub enum ProfileConnectionError {
+pub enum SpaceConnectionError {
     IncompatibleIntentSpaces,
     UnsupportedIntent(IccRenderingIntent),
     Channels { expected: usize, actual: usize },
@@ -214,19 +215,19 @@ pub enum ProfileConnectionError {
     Icc(IccProfileError),
 }
 
-impl From<TransferError> for ProfileConnectionError {
+impl From<TransferError> for SpaceConnectionError {
     fn from(error: TransferError) -> Self {
         Self::Transfer(error)
     }
 }
 
-impl From<IccProfileError> for ProfileConnectionError {
+impl From<IccProfileError> for SpaceConnectionError {
     fn from(error: IccProfileError) -> Self {
         Self::Icc(error)
     }
 }
 
-impl fmt::Display for ProfileConnectionError {
+impl fmt::Display for SpaceConnectionError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::IncompatibleIntentSpaces => {
@@ -247,7 +248,7 @@ impl fmt::Display for ProfileConnectionError {
     }
 }
 
-impl Error for ProfileConnectionError {
+impl Error for SpaceConnectionError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Transfer(error) => Some(error),
@@ -266,7 +267,7 @@ mod tests {
     use std::collections::HashSet;
 
     #[test]
-    fn predefined_profiles_share_handles_while_other_definitions_are_distinct() {
+    fn predefined_spaces_share_handles_while_other_definitions_are_distinct() {
         let canonical = ColorSpace::from(Srgb);
         let another_reference = ColorSpace::from(Srgb);
         let custom = IccProfile::from_bytes(&moxcms::ColorProfile::new_srgb().encode().unwrap())
@@ -312,7 +313,7 @@ mod tests {
     }
 
     #[test]
-    fn differing_primaries_fall_back_to_profile_pcs_directions() {
+    fn differing_primaries_fall_back_to_space_pcs_directions() {
         let actual = connect_spaces(
             Srgb,
             DisplayP3,
@@ -333,7 +334,7 @@ mod tests {
     }
 
     #[test]
-    fn icc_and_predefined_profiles_share_the_connection_path() {
+    fn icc_and_predefined_spaces_share_the_connection_path() {
         let bytes = moxcms::ColorProfile::new_srgb().encode().unwrap();
         let icc = IccProfile::from_bytes(&bytes).unwrap();
         let transform = connect_spaces(
@@ -363,7 +364,7 @@ mod tests {
     }
 
     #[test]
-    fn profiles_can_be_connected_after_type_erasure() {
+    fn spaces_can_be_connected_after_type_erasure() {
         let source: ColorSpace = Srgb.into();
         let destination: ColorSpace = LabD50.into();
         let transform = connect_spaces(
@@ -431,14 +432,14 @@ mod tests {
             fn space_to_pcs_transfer(
                 &self,
                 _: IccRenderingIntent,
-            ) -> Result<Transfer, ProfileConnectionError> {
+            ) -> Result<Transfer, SpaceConnectionError> {
                 ColorSpace::from(Srgb).space_to_pcs(IccRenderingIntent::RelativeColorimetric)
             }
 
             fn pcs_to_space_transfer(
                 &self,
                 _: IccRenderingIntent,
-            ) -> Result<Transfer, ProfileConnectionError> {
+            ) -> Result<Transfer, SpaceConnectionError> {
                 unreachable!()
             }
 
@@ -446,7 +447,7 @@ mod tests {
                 &self,
                 destination: &ColorSpace,
                 intent: IccRenderingIntent,
-            ) -> Result<Option<Transfer>, ProfileConnectionError> {
+            ) -> Result<Option<Transfer>, SpaceConnectionError> {
                 if *destination == ColorSpace::from(LinearSrgb)
                     && intent == IccRenderingIntent::Saturation
                 {
@@ -484,7 +485,7 @@ mod tests {
                 IccRenderingIntent::Perceptual,
                 IccRenderingIntent::Perceptual,
             ),
-            Err(ProfileConnectionError::UnsupportedIntent(
+            Err(SpaceConnectionError::UnsupportedIntent(
                 IccRenderingIntent::Perceptual
             ))
         ));
@@ -506,14 +507,14 @@ mod tests {
             fn space_to_pcs_transfer(
                 &self,
                 _: IccRenderingIntent,
-            ) -> Result<Transfer, ProfileConnectionError> {
+            ) -> Result<Transfer, SpaceConnectionError> {
                 unreachable!()
             }
 
             fn pcs_to_space_transfer(
                 &self,
                 _: IccRenderingIntent,
-            ) -> Result<Transfer, ProfileConnectionError> {
+            ) -> Result<Transfer, SpaceConnectionError> {
                 unreachable!()
             }
 
@@ -521,7 +522,7 @@ mod tests {
                 &self,
                 _: &ColorSpace,
                 _: IccRenderingIntent,
-            ) -> Result<Option<Transfer>, ProfileConnectionError> {
+            ) -> Result<Option<Transfer>, SpaceConnectionError> {
                 Ok(Some(Transfer::new(4, Vec::<TransferStage>::new())?))
             }
         }
@@ -533,7 +534,7 @@ mod tests {
                 IccRenderingIntent::RelativeColorimetric,
                 IccRenderingIntent::RelativeColorimetric,
             ),
-            Err(ProfileConnectionError::Channels { .. })
+            Err(SpaceConnectionError::Channels { .. })
         ));
     }
 
@@ -553,14 +554,14 @@ mod tests {
             fn space_to_pcs_transfer(
                 &self,
                 _: IccRenderingIntent,
-            ) -> Result<Transfer, ProfileConnectionError> {
+            ) -> Result<Transfer, SpaceConnectionError> {
                 Ok(Transfer::new(4, Vec::<TransferStage>::new())?)
             }
 
             fn pcs_to_space_transfer(
                 &self,
                 _: IccRenderingIntent,
-            ) -> Result<Transfer, ProfileConnectionError> {
+            ) -> Result<Transfer, SpaceConnectionError> {
                 unreachable!()
             }
         }
@@ -572,7 +573,7 @@ mod tests {
                 IccRenderingIntent::RelativeColorimetric,
                 IccRenderingIntent::RelativeColorimetric,
             ),
-            Err(ProfileConnectionError::Channels { .. })
+            Err(SpaceConnectionError::Channels { .. })
         ));
     }
 }

@@ -49,7 +49,7 @@ fn blend_to_composite(value: vec3<f32>) -> vec3<f32> { return value; }
     assemble_with_conversions(binding, helpers, body, conversions)
 }
 
-/// Assembles a module whose color conversions have been lowered from profiles.
+/// Assembles a module whose color conversions have been lowered from spaces.
 pub(crate) fn assemble_with_conversions(
     binding: Binding,
     helpers: &str,

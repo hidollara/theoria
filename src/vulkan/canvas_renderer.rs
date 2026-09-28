@@ -37,7 +37,7 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 /// Translates backend-independent Canvas commands into Vulkan commands.
 pub struct CanvasRenderer {
     device: RenderDevice,
-    working_profile: ColorSpace,
+    working_space: ColorSpace,
     gpu: CanvasGpuResources,
 }
 
@@ -50,11 +50,11 @@ impl CanvasRenderer {
     /// The choice is fixed for this renderer so cached Canvas images keep one meaning.
     pub fn new_with_working_space(
         device: RenderDevice,
-        working_profile: impl Into<ColorSpace>,
+        working_space: impl Into<ColorSpace>,
     ) -> Self {
         Self {
             device,
-            working_profile: working_profile.into(),
+            working_space: working_space.into(),
             gpu: CanvasGpuResources::new(),
         }
     }
@@ -70,9 +70,9 @@ impl CanvasRenderer {
         canvas: &Canvas,
         view: CanvasView,
     ) -> Result<()> {
-        let prepared = prepare_colors_in(canvas, &self.working_profile)?;
+        let prepared = prepare_colors_in(canvas, &self.working_space)?;
         let clear_color = target.clear_color();
-        clear_color.try_straight_rgba_in(&self.working_profile)?;
+        clear_color.try_straight_rgba_in(&self.working_space)?;
         let output = target.output().clone();
         self.materialize_canvas_resources(canvas)?;
         let (image_view, format, extent) = target.surface();
@@ -87,7 +87,7 @@ impl CanvasRenderer {
             PremultipliedWorkingRgba::from_components(
                 crate::canvas_renderer::color_space::lower_straight_color_in(
                     &clear_color,
-                    &self.working_profile,
+                    &self.working_space,
                 ),
             ),
             Some(&output),
@@ -103,13 +103,13 @@ impl CanvasRenderer {
         canvas: &Canvas,
         view: CanvasView,
     ) -> Result<Arc<VulkanImage>> {
-        let prepared = prepare_colors_in(canvas, &self.working_profile)?;
+        let prepared = prepare_colors_in(canvas, &self.working_space)?;
         let extent = vk::Extent2D { width, height };
         // A CanvasImage is an intermediate result, not an output image. Keep
         // it in the same working format as the renderer's scratch images.
         let format = self.working_format();
         self.gpu
-            .ensure_image_cache(&self.device, &self.working_profile)?;
+            .ensure_image_cache(&self.device, &self.working_space)?;
         let backing = self
             .gpu
             .image_cache
@@ -174,7 +174,7 @@ impl CanvasRenderer {
         match image.kind() {
             ImageKind::Raster(image) => {
                 self.gpu
-                    .ensure_image_cache(&self.device, &self.working_profile)?;
+                    .ensure_image_cache(&self.device, &self.working_space)?;
                 self.gpu
                     .image_cache
                     .as_mut()
@@ -187,7 +187,7 @@ impl CanvasRenderer {
 
     fn materialize_canvas_image(&mut self, image: &CanvasImage) -> Result<()> {
         self.gpu
-            .ensure_image_cache(&self.device, &self.working_profile)?;
+            .ensure_image_cache(&self.device, &self.working_space)?;
         if self
             .gpu
             .image_cache
@@ -231,10 +231,10 @@ impl CanvasRenderer {
             format,
             vk::Format::R8G8B8A8_SRGB | vk::Format::B8G8R8A8_SRGB
         );
-        if hardware_srgb && output.is_some_and(|output| output.profile != Srgb.into()) {
+        if hardware_srgb && output.is_some_and(|output| output.space != Srgb.into()) {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
-                "an sRGB attachment requires an sRGB output profile",
+                "an sRGB attachment requires an sRGB output space",
             )
             .into());
         }
@@ -246,24 +246,24 @@ impl CanvasRenderer {
             )
             .into());
         }
-        let shader_profile = output.map(|output| {
+        let shader_space = output.map(|output| {
             if hardware_srgb {
                 ColorSpace::from(LinearSrgb)
             } else {
-                output.profile.clone()
+                output.space.clone()
             }
         });
         let working_format = self.working_format();
         let sample_count = preferred_sample_count(&self.device, working_format);
         let target_region = target_region(viewport, extent);
         self.gpu
-            .ensure_image_cache(&self.device, &self.working_profile)?;
+            .ensure_image_cache(&self.device, &self.working_space)?;
         self.gpu.ensure_pipelines(
             &self.device,
             working_format,
             format,
             sample_count,
-            &self.working_profile,
+            &self.working_space,
         )?;
         let icc_layout = self
             .gpu
@@ -280,7 +280,7 @@ impl CanvasRenderer {
             }
             pipelines.retain_icc_images(self.device.raw(), &active_icc);
         }
-        if let (Some(output), Some(profile)) = (output, &shader_profile) {
+        if let (Some(output), Some(space)) = (output, &shader_space) {
             let descriptor_layout = self
                 .gpu
                 .image_cache
@@ -291,24 +291,24 @@ impl CanvasRenderer {
                 self.gpu.pipelines.as_mut().unwrap().ensure_output(
                     self.device.raw(),
                     descriptor_layout,
-                    profile,
+                    space,
                     output.intent,
                 )?;
             }
         }
         let mut compositions = Vec::new();
-        collect_compositions_in(canvas, &mut compositions, &self.working_profile);
+        collect_compositions_in(canvas, &mut compositions, &self.working_space);
         self.gpu.ensure_compositions(&self.device, &compositions)?;
         self.gpu.ensure_scratch_images(
             &self.device,
             working_format,
             extent,
             sample_count,
-            required_scratch_images_in(canvas, &self.working_profile),
+            required_scratch_images_in(canvas, &self.working_space),
         )?;
         let pipelines = self.gpu.pipelines.as_ref().unwrap();
-        let present_pipeline = match (output, &shader_profile) {
-            (Some(output), Some(profile)) => pipelines.output(profile, output.intent),
+        let present_pipeline = match (output, &shader_space) {
+            (Some(output), Some(space)) => pipelines.output(space, output.intent),
             (None, _) if preserve_working => {
                 pipelines.composite(crate::canvas::Composite::SourceOver)
             }
@@ -318,7 +318,7 @@ impl CanvasRenderer {
             Some(_) => PremultipliedWorkingRgba::from_components(
                 crate::canvas_renderer::color_space::convert_premultiplied_space(
                     clear_color.components(),
-                    &self.working_profile,
+                    &self.working_space,
                     &ColorSpace::from(LinearSrgb),
                 )?,
             ),

@@ -14,7 +14,7 @@ use super::encoding::{CompositionUniform, ImageVertex, OutputUniform, TriangleVe
 pub(super) const WORKING_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 
 pub(super) struct Pipelines {
-    working_profile: ColorSpace,
+    working_space: ColorSpace,
     pub(super) texture_layout: wgpu::BindGroupLayout,
     pub(super) blend_uniform_layout: wgpu::BindGroupLayout,
     pub(super) output_uniform_layout: wgpu::BindGroupLayout,
@@ -36,7 +36,7 @@ pub(super) struct IccImagePipeline {
 impl Pipelines {
     pub(super) fn new(
         device: &wgpu::Device,
-        working_profile: &ColorSpace,
+        working_space: &ColorSpace,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let texture_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("theoria WebGPU sampled image"),
@@ -99,7 +99,7 @@ impl Pipelines {
         );
         let image_source = crate::rgb_shader::assemble_for(
             include_str!("../../../shaders/webgpu/image.wgsl"),
-            working_profile,
+            working_space,
         )?;
         let image_shader = shader(device, "theoria WebGPU image shader", &image_source);
         let composite_shader = shader(
@@ -155,7 +155,7 @@ impl Pipelines {
             composite_blend_state(Composite::DestinationIn),
         );
         Ok(Self {
-            working_profile: working_profile.clone(),
+            working_space: working_space.clone(),
             texture_layout,
             blend_uniform_layout,
             output_uniform_layout,
@@ -175,7 +175,7 @@ impl Pipelines {
         profile: &IccProfile,
         intent: IccRenderingIntent,
         has_alpha: bool,
-        working_profile: &ColorSpace,
+        working_space: &ColorSpace,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let key = (profile.color_space(), intent, has_alpha);
         if self.icc_images.contains_key(&key) {
@@ -185,7 +185,7 @@ impl Pipelines {
             profile,
             intent,
             has_alpha,
-            working_profile,
+            working_space,
             include_str!("../../../shaders/webgpu/icc_image.wgsl"),
         )?;
         let shader = shader(device, "theoria WebGPU ICC image shader", lowered.source);
@@ -264,13 +264,13 @@ impl Pipelines {
         device: &wgpu::Device,
         compositions: &[Composition],
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let working = self.working_profile.clone();
+        let working = self.working_space.clone();
         for composition in compositions {
             if self.compositions.contains_key(composition) {
                 continue;
             }
             let blend = composition.blend().map_or(&working, |blend| blend.space());
-            let source = composition.blend_shader().wgsl_module_for_profiles(
+            let source = composition.blend_shader().wgsl_module_for_spaces(
                 Binding::WebGpu,
                 &working,
                 blend,
@@ -303,15 +303,15 @@ impl Pipelines {
         &mut self,
         device: &wgpu::Device,
         format: wgpu::TextureFormat,
-        profile: &ColorSpace,
+        space: &ColorSpace,
         intent: IccRenderingIntent,
     ) -> Result<&wgpu::RenderPipeline, Box<dyn std::error::Error>> {
-        let key = (format, profile.clone(), intent);
+        let key = (format, space.clone(), intent);
         if !self.outputs.contains_key(&key) {
             let source = crate::rgb_shader::assemble_output_for(
                 include_str!("../../../shaders/canvas_renderer/output_image.wgsl"),
-                &self.working_profile,
-                profile,
+                &self.working_space,
+                space,
                 intent,
             )?;
             // Vulkan uses an immediate; WebGPU binds the same parameters as a uniform.
@@ -464,7 +464,7 @@ mod tests {
                     &profile,
                     intent,
                     has_alpha,
-                    crate::test_support::distinct_color_profile(crate::color::LinearSrgb),
+                    crate::test_support::distinct_color_space(crate::color::LinearSrgb),
                     include_str!("../../../shaders/webgpu/icc_image.wgsl"),
                 )
                 .unwrap();

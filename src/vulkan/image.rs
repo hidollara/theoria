@@ -32,18 +32,18 @@ pub(super) struct ImageCache {
     canvas: HashMap<CanvasImageInstanceKey, GpuImage>,
     descriptors: ImageDescriptors,
     device: RenderDevice,
-    working_profile: ColorSpace,
+    working_space: ColorSpace,
 }
 
 impl ImageCache {
-    pub(super) fn new(device: RenderDevice, working_profile: ColorSpace) -> Result<Self> {
+    pub(super) fn new(device: RenderDevice, working_space: ColorSpace) -> Result<Self> {
         let descriptors = ImageDescriptors::new(device.clone())?;
         Ok(Self {
             raster: HashMap::new(),
             canvas: HashMap::new(),
             descriptors,
             device,
-            working_profile,
+            working_space,
         })
     }
 
@@ -74,7 +74,7 @@ impl ImageCache {
         let gpu_image = self.descriptors.bind_backing(
             backing,
             RgbAlphaAssociation::Premultiplied,
-            self.working_profile.clone(),
+            self.working_space.clone(),
         )?;
         self.canvas.insert(image.instance_key(), gpu_image);
         Ok(())
@@ -173,7 +173,7 @@ impl ImageCache {
                     profile,
                     intent,
                     has_alpha,
-                    &self.working_profile,
+                    &self.working_space,
                     include_str!("../../shaders/vulkan/icc_image.wgsl"),
                 )?;
                 self.descriptors.bind_icc_backing(

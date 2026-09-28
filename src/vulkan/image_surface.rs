@@ -45,7 +45,7 @@ impl ImageSurface {
     /// Readback is still returned as sRGBA8 unless an ICC output is requested.
     pub fn new_with_working_space(
         size: SurfaceSize,
-        working_profile: impl Into<ColorSpace>,
+        working_space: impl Into<ColorSpace>,
     ) -> Result<Self> {
         let byte_len = pixel_byte_len(size)?;
         let device = RenderDevice::independent()?;
@@ -67,7 +67,7 @@ impl ImageSurface {
         )?;
         Ok(Self {
             size,
-            renderer: CanvasRenderer::new_with_working_space(device, working_profile),
+            renderer: CanvasRenderer::new_with_working_space(device, working_space),
             target,
             readback,
             target_initialized: false,

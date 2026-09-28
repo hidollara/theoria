@@ -21,26 +21,26 @@ pub enum OutputAlpha {
 /// that format and the renderer converts and quantizes into it when writing.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct OutputImage {
-    pub(crate) profile: ColorSpace,
+    pub(crate) space: ColorSpace,
     pub(crate) intent: IccRenderingIntent,
     pub(crate) alpha: OutputAlpha,
 }
 
 impl OutputImage {
     pub fn new(
-        profile: impl Into<ColorSpace>,
+        space: impl Into<ColorSpace>,
         intent: IccRenderingIntent,
         alpha: OutputAlpha,
     ) -> Self {
         Self {
-            profile: profile.into(),
+            space: space.into(),
             intent,
             alpha,
         }
     }
 
-    pub fn profile(&self) -> &ColorSpace {
-        &self.profile
+    pub fn space(&self) -> &ColorSpace {
+        &self.space
     }
 
     pub const fn intent(&self) -> IccRenderingIntent {

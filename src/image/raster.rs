@@ -33,42 +33,42 @@ impl<S> RasterPlane<S> {
     }
 }
 
-struct RasterImageInner<F, P>
+struct RasterImageInner<F, S>
 where
     F: PixelFormat,
-    P: TypedColorSpace<Model = F::Model>,
+    S: TypedColorSpace<Model = F::Model>,
 {
     identity: Arc<()>,
     width: u32,
     height: u32,
     planes: Vec<RasterPlane<F::Storage>>,
-    space: P,
+    space: S,
     alpha: <F::Alpha as AlphaLayout>::Association,
 }
 
 /// An immutable typed raster image.
 ///
-/// `F` describes storage, `P` describes the color meaning of decoded
+/// `F` describes storage, `S` describes the color meaning of decoded
 /// coordinates, and `F::Alpha` determines which alpha association can be
 /// represented. Cloning shares the immutable raster allocation.
-pub struct RasterImage<F, P>
+pub struct RasterImage<F, S>
 where
     F: PixelFormat,
-    P: TypedColorSpace<Model = F::Model>,
+    S: TypedColorSpace<Model = F::Model>,
 {
-    inner: Arc<RasterImageInner<F, P>>,
+    inner: Arc<RasterImageInner<F, S>>,
 }
 
-impl<F, P> RasterImage<F, P>
+impl<F, S> RasterImage<F, S>
 where
     F: PixelFormat,
-    P: TypedColorSpace<Model = F::Model>,
+    S: TypedColorSpace<Model = F::Model>,
 {
     pub fn from_planes(
         width: u32,
         height: u32,
         planes: Vec<RasterPlane<F::Storage>>,
-        space: P,
+        space: S,
         alpha: <F::Alpha as AlphaLayout>::Association,
     ) -> Result<Self, RasterImageError> {
         if width == 0 || height == 0 {
@@ -105,7 +105,7 @@ where
         &self.inner.planes
     }
 
-    pub fn space(&self) -> &P {
+    pub fn space(&self) -> &S {
         &self.inner.space
     }
 
@@ -140,10 +140,10 @@ impl RasterImage<Rgba8, Srgb> {
     }
 }
 
-impl<F, P> Clone for RasterImage<F, P>
+impl<F, S> Clone for RasterImage<F, S>
 where
     F: PixelFormat,
-    P: TypedColorSpace<Model = F::Model>,
+    S: TypedColorSpace<Model = F::Model>,
 {
     fn clone(&self) -> Self {
         Self {
@@ -152,16 +152,16 @@ where
     }
 }
 
-impl<F, P> fmt::Debug for RasterImage<F, P>
+impl<F, S> fmt::Debug for RasterImage<F, S>
 where
     F: PixelFormat,
-    P: TypedColorSpace<Model = F::Model>,
+    S: TypedColorSpace<Model = F::Model>,
 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("RasterImage")
             .field("format", &std::any::type_name::<F>())
-            .field("profile", &std::any::type_name::<P>())
+            .field("space", &std::any::type_name::<S>())
             .field("width", &self.width())
             .field("height", &self.height())
             .field("planes", &self.planes().len())
@@ -309,7 +309,7 @@ mod tests {
     }
 
     #[test]
-    fn one_storage_format_accepts_profiles_with_the_same_model() {
+    fn one_storage_format_accepts_spaces_with_the_same_model() {
         let image = RasterImage::<Rgba8, DisplayP3>::from_planes(
             1,
             1,

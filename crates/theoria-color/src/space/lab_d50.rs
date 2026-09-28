@@ -1,5 +1,5 @@
 use super::{
-    ColorProfile, IccRenderingIntent, Pcs, ProfileConnectionError, Transfer, TypedColorSpace,
+    ColorProfile, IccRenderingIntent, Pcs, SpaceConnectionError, Transfer, TypedColorSpace,
     require_relative,
 };
 use crate::model::Lab;
@@ -19,7 +19,7 @@ impl ColorProfile for LabD50Profile {
     fn space_to_pcs_transfer(
         &self,
         intent: IccRenderingIntent,
-    ) -> Result<Transfer, ProfileConnectionError> {
+    ) -> Result<Transfer, SpaceConnectionError> {
         require_relative(intent)?;
         Ok(Transfer::new(3, [])?)
     }
@@ -27,7 +27,7 @@ impl ColorProfile for LabD50Profile {
     fn pcs_to_space_transfer(
         &self,
         intent: IccRenderingIntent,
-    ) -> Result<Transfer, ProfileConnectionError> {
+    ) -> Result<Transfer, SpaceConnectionError> {
         self.space_to_pcs_transfer(intent)
     }
 }

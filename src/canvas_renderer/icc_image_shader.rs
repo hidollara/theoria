@@ -13,12 +13,12 @@ pub(crate) fn build(
     profile: &IccProfile,
     intent: IccRenderingIntent,
     has_alpha: bool,
-    working_profile: impl Into<ColorSpace>,
+    working_space: impl Into<ColorSpace>,
     template: &str,
 ) -> Result<IccImageShader, Box<dyn std::error::Error>> {
     let conversion = connect_spaces(
         profile,
-        working_profile,
+        working_space,
         intent,
         IccRenderingIntent::RelativeColorimetric,
     )?;

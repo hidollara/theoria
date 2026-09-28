@@ -8,24 +8,24 @@ use super::{ColorCoordinates, Opacity, OpacitySample, Srgb, TypedColorSpace};
 /// The value is not converted into a renderer working space and its color
 /// coordinates are not premultiplied. Those operations belong to the renderer
 /// that evaluates a Canvas.
-pub struct Color<P = Srgb, C = [f32; 3], A = f32>
+pub struct Color<S = Srgb, C = [f32; 3], A = f32>
 where
-    P: TypedColorSpace,
-    C: ColorCoordinates<P::Model>,
+    S: TypedColorSpace,
+    C: ColorCoordinates<S::Model>,
     A: OpacitySample,
 {
-    space: P,
+    space: S,
     coordinates: C,
     opacity: Opacity<A>,
 }
 
-impl<P, C, A> Color<P, C, A>
+impl<S, C, A> Color<S, C, A>
 where
-    P: TypedColorSpace,
-    C: ColorCoordinates<P::Model>,
+    S: TypedColorSpace,
+    C: ColorCoordinates<S::Model>,
     A: OpacitySample,
 {
-    pub fn new(space: P, coordinates: C, opacity: Opacity<A>) -> Self {
+    pub fn new(space: S, coordinates: C, opacity: Opacity<A>) -> Self {
         Self {
             space,
             coordinates,
@@ -33,7 +33,7 @@ where
         }
     }
 
-    pub const fn space(&self) -> &P {
+    pub const fn space(&self) -> &S {
         &self.space
     }
 
@@ -45,15 +45,15 @@ where
         self.opacity
     }
 
-    pub fn into_parts(self) -> (P, C, Opacity<A>) {
+    pub fn into_parts(self) -> (S, C, Opacity<A>) {
         (self.space, self.coordinates, self.opacity)
     }
 }
 
-impl<P, C, A> Clone for Color<P, C, A>
+impl<S, C, A> Clone for Color<S, C, A>
 where
-    P: TypedColorSpace + Clone,
-    C: ColorCoordinates<P::Model> + Clone,
+    S: TypedColorSpace + Clone,
+    C: ColorCoordinates<S::Model> + Clone,
     A: OpacitySample,
 {
     fn clone(&self) -> Self {
@@ -61,18 +61,18 @@ where
     }
 }
 
-impl<P, C, A> Copy for Color<P, C, A>
+impl<S, C, A> Copy for Color<S, C, A>
 where
-    P: TypedColorSpace + Copy,
-    C: ColorCoordinates<P::Model> + Copy,
+    S: TypedColorSpace + Copy,
+    C: ColorCoordinates<S::Model> + Copy,
     A: OpacitySample,
 {
 }
 
-impl<P, C, A> fmt::Debug for Color<P, C, A>
+impl<S, C, A> fmt::Debug for Color<S, C, A>
 where
-    P: TypedColorSpace + fmt::Debug,
-    C: ColorCoordinates<P::Model> + fmt::Debug,
+    S: TypedColorSpace + fmt::Debug,
+    C: ColorCoordinates<S::Model> + fmt::Debug,
     A: OpacitySample,
 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -85,10 +85,10 @@ where
     }
 }
 
-impl<P, C, A> PartialEq for Color<P, C, A>
+impl<S, C, A> PartialEq for Color<S, C, A>
 where
-    P: TypedColorSpace + PartialEq,
-    C: ColorCoordinates<P::Model> + PartialEq,
+    S: TypedColorSpace + PartialEq,
+    C: ColorCoordinates<S::Model> + PartialEq,
     A: OpacitySample,
 {
     fn eq(&self, other: &Self) -> bool {
@@ -102,8 +102,8 @@ where
 mod tests {
     use super::*;
     use crate::{
-        ColorModel, ColorProfile, ColorSpace, IccRenderingIntent, Pcs, ProfileConnectionError, Rgb,
-        Transfer, TypedColorSpace,
+        ColorModel, ColorProfile, ColorSpace, IccRenderingIntent, LinearSrgb, Pcs, Rgb,
+        SpaceConnectionError, Transfer, TypedColorSpace, connect_spaces,
     };
     use std::sync::LazyLock;
 
@@ -117,6 +117,17 @@ mod tests {
 
         assert_eq!(color.coordinates().0, [12, 34, 56]);
         assert_eq!(color.opacity().sample(), 255);
+    }
+
+    #[test]
+    fn authored_color_exposes_its_space_for_connections() {
+        let color = Color::new(Srgb, [128_u8; 3], Opacity::from(255_u8));
+        let intent = IccRenderingIntent::RelativeColorimetric;
+
+        let transfer = connect_spaces(color.space(), LinearSrgb, intent, intent).unwrap();
+
+        assert_eq!(transfer.input_channels(), 3);
+        assert_eq!(transfer.output_channels(), 3);
     }
 
     struct LogicalModel;
@@ -142,15 +153,15 @@ mod tests {
         fn space_to_pcs_transfer(
             &self,
             intent: IccRenderingIntent,
-        ) -> Result<Transfer, ProfileConnectionError> {
-            Err(ProfileConnectionError::UnsupportedIntent(intent))
+        ) -> Result<Transfer, SpaceConnectionError> {
+            Err(SpaceConnectionError::UnsupportedIntent(intent))
         }
 
         fn pcs_to_space_transfer(
             &self,
             intent: IccRenderingIntent,
-        ) -> Result<Transfer, ProfileConnectionError> {
-            Err(ProfileConnectionError::UnsupportedIntent(intent))
+        ) -> Result<Transfer, SpaceConnectionError> {
+            Err(SpaceConnectionError::UnsupportedIntent(intent))
         }
     }
 

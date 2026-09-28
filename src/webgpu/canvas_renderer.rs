@@ -110,7 +110,7 @@ impl<'a> RenderTarget<'a> {
 /// uploaded Canvas images, and submits one or more command buffers from
 /// [`render`](Self::render). It does not create or present a WebGPU surface.
 pub struct CanvasRenderer {
-    working_profile: ColorSpace,
+    working_space: ColorSpace,
     device: wgpu::Device,
     queue: wgpu::Queue,
     pipelines: Pipelines,
@@ -130,20 +130,20 @@ impl CanvasRenderer {
     pub fn new_with_working_space(
         device: wgpu::Device,
         queue: wgpu::Queue,
-        working_profile: impl Into<ColorSpace>,
+        working_space: impl Into<ColorSpace>,
     ) -> Self {
-        Self::try_new_with_working_profile(device, queue, working_profile)
-            .expect("working profile transfers must be representable in WGSL")
+        Self::try_new_with_working_space(device, queue, working_space)
+            .expect("working space transfers must be representable in WGSL")
     }
 
-    /// Builds a renderer for a profile whose transfers can be lowered to WGSL.
-    pub fn try_new_with_working_profile(
+    /// Builds a renderer for a space whose transfers can be lowered to WGSL.
+    pub fn try_new_with_working_space(
         device: wgpu::Device,
         queue: wgpu::Queue,
-        working_profile: impl Into<ColorSpace>,
+        working_space: impl Into<ColorSpace>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let working_profile = working_profile.into();
-        let pipelines = Pipelines::new(&device, &working_profile)?;
+        let working_space = working_space.into();
+        let pipelines = Pipelines::new(&device, &working_space)?;
         let composite_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("theoria WebGPU Canvas sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -154,7 +154,7 @@ impl CanvasRenderer {
             ..Default::default()
         });
         Ok(Self {
-            working_profile,
+            working_space,
             device,
             queue,
             pipelines,
@@ -175,10 +175,10 @@ impl CanvasRenderer {
         if target.size.width == 0 || target.size.height == 0 {
             return Ok(());
         }
-        let prepared = prepare_colors_in(canvas, &self.working_profile)?;
+        let prepared = prepare_colors_in(canvas, &self.working_space)?;
         target
             .clear_color
-            .try_straight_rgba_in(&self.working_profile)?;
+            .try_straight_rgba_in(&self.working_space)?;
         self.materialize_canvas_resources(canvas)?;
         self.pipelines
             .retain_icc_images(&self.images.active_icc_keys());
@@ -213,7 +213,7 @@ impl CanvasRenderer {
                         profile,
                         intent,
                         has_alpha,
-                        &self.working_profile,
+                        &self.working_space,
                     )?;
                 }
                 self.images
@@ -231,14 +231,14 @@ impl CanvasRenderer {
         if self.images.contains_canvas(image) {
             return Ok(());
         }
-        let prepared = prepare_colors_in(image.content(), &self.working_profile)?;
+        let prepared = prepare_colors_in(image.content(), &self.working_space)?;
         self.materialize_canvas_resources(image.content())?;
         let backing = create_working_image(
             &self.device,
             image.width(),
             image.height(),
             "theoria WebGPU Canvas image",
-            &self.working_profile,
+            &self.working_space,
         );
         self.render_to_view(
             RenderTarget::new(
@@ -273,10 +273,10 @@ impl CanvasRenderer {
             target.format,
             wgpu::TextureFormat::Rgba8UnormSrgb | wgpu::TextureFormat::Bgra8UnormSrgb
         );
-        if hardware_srgb && output.is_some_and(|output| output.profile != Srgb.into()) {
+        if hardware_srgb && output.is_some_and(|output| output.space != Srgb.into()) {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
-                "an sRGB attachment requires an sRGB output profile",
+                "an sRGB attachment requires an sRGB output space",
             )
             .into());
         }
@@ -288,20 +288,20 @@ impl CanvasRenderer {
             )
             .into());
         }
-        let shader_profile = output.map(|output| {
+        let shader_space = output.map(|output| {
             if hardware_srgb {
                 ColorSpace::from(LinearSrgb)
             } else {
-                output.profile.clone()
+                output.space.clone()
             }
         });
         let mut compositions = Vec::new();
-        collect_compositions_in(canvas, &mut compositions, &self.working_profile);
+        collect_compositions_in(canvas, &mut compositions, &self.working_space);
         self.pipelines
             .ensure_compositions(&self.device, &compositions)?;
         self.ensure_scratch_images(
             target.size,
-            required_scratch_images_in(canvas, &self.working_profile),
+            required_scratch_images_in(canvas, &self.working_space),
         );
         let target_region = target_region(viewport, target.size);
         let mut encoder = self
@@ -334,22 +334,22 @@ impl CanvasRenderer {
             "theoria WebGPU present source",
         );
         let output_uniform_layout = self.pipelines.output_uniform_layout.clone();
-        let present = match (output, &shader_profile) {
-            (Some(output), Some(profile)) => {
+        let present = match (output, &shader_space) {
+            (Some(output), Some(space)) => {
                 self.pipelines
-                    .output(&self.device, target.format, profile, output.intent)?
+                    .output(&self.device, target.format, space, output.intent)?
             }
             (None, _) => &self.pipelines.composites[&Composite::SourceOver],
             _ => unreachable!("an external target specifies an output image"),
         };
         let clear = crate::canvas_renderer::color_space::lower_straight_color_in(
             &target.clear_color,
-            &self.working_profile,
+            &self.working_space,
         );
         let clear = match output {
             Some(_) => crate::canvas_renderer::color_space::convert_premultiplied_space(
                 clear,
-                &self.working_profile,
+                &self.working_space,
                 &ColorSpace::from(LinearSrgb),
             )?,
             None => clear,
@@ -430,7 +430,7 @@ impl CanvasRenderer {
                 size.width,
                 size.height,
                 "theoria WebGPU Canvas scratch image",
-                &self.working_profile,
+                &self.working_space,
             ));
         }
     }
@@ -479,13 +479,13 @@ impl CanvasRecorder<'_> {
                 self.render_node(accumulator, backdrop, canvas_to_root);
                 if composition.blend().is_none()
                     && composition.composite() == Composite::SourceOver
-                    && composition.composite_space() == self.prepared.working_profile()
-                    && can_record_directly_in(source, self.prepared.working_profile())
+                    && composition.composite_space() == self.prepared.working_space()
+                    && can_record_directly_in(source, self.prepared.working_space())
                 {
                     self.render_node(accumulator, source, canvas_to_root);
                 } else {
                     let source_image = self.evaluate(source, canvas_to_root);
-                    if !composition.requires_destination_read_in(self.prepared.working_profile()) {
+                    if !composition.requires_destination_read_in(self.prepared.working_space()) {
                         self.draw_composite(accumulator, source_image, composition.composite());
                     } else {
                         self.compose_with_destination(accumulator, source_image, composition);
@@ -738,15 +738,15 @@ impl CanvasRecorder<'_> {
             .images
             .get(pattern.image())
             .expect("Canvas images are materialized before command recording");
-        let (premultiplied, profile_index, icc_pipeline) = match &image.color {
+        let (premultiplied, space_index, icc_pipeline) = match &image.color {
             GpuImageColor::Rgb {
                 premultiplied,
-                profile,
+                space,
             } => (
                 *premultiplied,
-                crate::canvas_renderer::composition_encoding::encode_image_profile(
-                    profile,
-                    self.prepared.working_profile(),
+                crate::canvas_renderer::composition_encoding::encode_image_space(
+                    space,
+                    self.prepared.working_space(),
                 ),
                 None,
             ),
@@ -762,7 +762,7 @@ impl CanvasRecorder<'_> {
             vertices.extend(ImageVertex::encode(
                 pattern,
                 premultiplied,
-                profile_index,
+                space_index,
                 points,
                 mesh_to_root,
                 self.view,

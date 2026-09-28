@@ -21,7 +21,7 @@ use super::pipeline::{Pipeline, Pipelines};
 pub(super) struct CanvasRecorder<'a> {
     commands: CanvasCommandEncoder<'a>,
     next_image: usize,
-    working_profile: ColorSpace,
+    working_space: ColorSpace,
 }
 
 impl<'a> CanvasRecorder<'a> {
@@ -50,7 +50,7 @@ impl<'a> CanvasRecorder<'a> {
                 prepared,
             ),
             next_image: 0,
-            working_profile: prepared.working_profile().clone(),
+            working_space: prepared.working_space().clone(),
         }
     }
 
@@ -99,14 +99,14 @@ impl<'a> CanvasRecorder<'a> {
                 self.render_node(accumulator, backdrop, canvas_to_root);
                 if composition.blend().is_none()
                     && composition.composite() == Composite::SourceOver
-                    && composition.composite_space() == &self.working_profile
-                    && can_record_directly_in(source, &self.working_profile)
+                    && composition.composite_space() == &self.working_space
+                    && can_record_directly_in(source, &self.working_space)
                 {
                     self.render_node(accumulator, source, canvas_to_root);
                 } else {
                     self.commands.end_rendering();
                     let source_image = self.evaluate(source, canvas_to_root);
-                    if !composition.requires_destination_read_in(&self.working_profile) {
+                    if !composition.requires_destination_read_in(&self.working_space) {
                         self.commands.resume_accumulator(accumulator);
                         self.commands
                             .draw_composite(source_image, composition.composite());

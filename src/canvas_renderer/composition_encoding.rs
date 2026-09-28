@@ -3,7 +3,7 @@ use crate::{
     color::{ColorSpace, DisplayP3, LinearDisplayP3, LinearSrgb, Srgb},
 };
 
-/// Encodes only the operation flags. Profile conversions are baked into the
+/// Encodes only the operation flags. Space conversions are baked into the
 /// selected pipeline rather than assigned fixed numeric space identifiers.
 pub(crate) fn encode(composition: &Composition) -> [u32; 2] {
     let has_blend = u32::from(composition.blend().is_some());
@@ -28,22 +28,22 @@ fn encode_composite(composite: Composite) -> u32 {
     }
 }
 
-/// Raster upload uses four named input profiles; cached Canvas images are
-/// already in the renderer's working profile (index 4).
-pub(crate) fn encode_image_profile(profile: &ColorSpace, working: &ColorSpace) -> u32 {
-    if profile == working {
+/// Raster upload uses four named input spaces; cached Canvas images are
+/// already in the renderer's working space (index 4).
+pub(crate) fn encode_image_space(space: &ColorSpace, working: &ColorSpace) -> u32 {
+    if space == working {
         return 4;
     }
-    if profile == &Srgb.into() {
+    if space == &Srgb.into() {
         0
-    } else if profile == &LinearSrgb.into() {
+    } else if space == &LinearSrgb.into() {
         1
-    } else if profile == &DisplayP3.into() {
+    } else if space == &DisplayP3.into() {
         2
-    } else if profile == &LinearDisplayP3.into() {
+    } else if space == &LinearDisplayP3.into() {
         3
     } else {
-        unreachable!("RGB raster images have one of the four named profiles")
+        unreachable!("RGB raster images have one of the four named spaces")
     }
 }
 
@@ -66,7 +66,7 @@ mod tests {
     }
 
     #[test]
-    fn profiles_are_selected_by_the_pipeline_not_encoded_as_numbers() {
+    fn spaces_are_selected_by_the_pipeline_not_encoded_as_numbers() {
         let composition = Composition::new(Composite::SourceIn, LinearDisplayP3)
             .with_blend(BlendMode::Screen, DisplayP3);
         assert_eq!(encode(&composition), [1, 5]);

@@ -1,4 +1,4 @@
-//! Specializes raster sampling and presentation shaders for a renderer profile.
+//! Specializes raster sampling and presentation shaders for a renderer space.
 //! Also compiled by build.rs for the default Vulkan shader validation.
 
 use theoria_color::{
@@ -14,12 +14,12 @@ pub(crate) fn assemble(source: &str) -> String {
 
 pub(crate) fn assemble_for(
     source: &str,
-    working_profile: &ColorSpace,
+    working_space: &ColorSpace,
 ) -> Result<String, Box<dyn std::error::Error>> {
-    if working_profile.channels() != 3 {
+    if working_space.channels() != 3 {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            "Canvas working profile must have three color channels",
+            "Canvas working space must have three color channels",
         )
         .into());
     }
@@ -28,24 +28,24 @@ pub(crate) fn assemble_for(
         1,
         "WGSL source must have exactly one RGB conversion insertion point"
     );
-    let profiles: [ColorSpace; 4] = [
+    let spaces: [ColorSpace; 4] = [
         Srgb.into(),
         LinearSrgb.into(),
         DisplayP3.into(),
         LinearDisplayP3.into(),
     ];
     let mut definitions = String::new();
-    for (index, profile) in profiles.into_iter().enumerate() {
+    for (index, space) in spaces.into_iter().enumerate() {
         let transfer = connect_spaces(
-            profile,
-            working_profile,
+            space,
+            working_space,
             IccRenderingIntent::RelativeColorimetric,
             IccRenderingIntent::RelativeColorimetric,
         )?;
         definitions.push_str(&transfer.wgsl(index as u32)?);
     }
     let present = connect_spaces(
-        working_profile,
+        working_space,
         LinearSrgb,
         IccRenderingIntent::RelativeColorimetric,
         IccRenderingIntent::RelativeColorimetric,
@@ -80,27 +80,22 @@ fn working_to_linear_srgb(value: vec3<f32>) -> vec3<f32> {
 
 pub(crate) fn assemble_output_for(
     source: &str,
-    working_profile: &ColorSpace,
-    output_profile: &ColorSpace,
+    working_space: &ColorSpace,
+    output_space: &ColorSpace,
     output_intent: IccRenderingIntent,
 ) -> Result<String, Box<dyn std::error::Error>> {
-    if working_profile.channels() != 3 || output_profile.channels() != 3 {
+    if working_space.channels() != 3 || output_space.channels() != 3 {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            "Canvas output requires three-channel profiles",
+            "Canvas output requires three-channel spaces",
         )
         .into());
     }
     assert_eq!(source.matches(MARKER).count(), 1);
-    let composition_profile = ColorSpace::from(LinearSrgb);
+    let composition_space = ColorSpace::from(LinearSrgb);
     let relative = IccRenderingIntent::RelativeColorimetric;
-    let to_composition = connect_spaces(working_profile, &composition_profile, relative, relative)?;
-    let to_output = connect_spaces(
-        &composition_profile,
-        output_profile,
-        relative,
-        output_intent,
-    )?;
+    let to_composition = connect_spaces(working_space, &composition_space, relative, relative)?;
+    let to_output = connect_spaces(&composition_space, output_space, relative, output_intent)?;
     let definitions = format!(
         "{}{}\n\
          fn rgb_to_array(value: vec3<f32>) -> array<f32, 3> {{\n\
@@ -126,7 +121,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn inserts_the_profile_transfers_once() {
+    fn inserts_the_space_transfers_once() {
         let shader = assemble(MARKER);
         assert!(!shader.contains(MARKER));
         assert_eq!(shader.matches("fn to_working(").count(), 1);
@@ -134,16 +129,16 @@ mod tests {
     }
 
     #[test]
-    fn every_predefined_working_profile_validates() {
-        let profiles: [ColorSpace; 4] = [
+    fn every_predefined_working_space_validates() {
+        let spaces: [ColorSpace; 4] = [
             Srgb.into(),
             LinearSrgb.into(),
             DisplayP3.into(),
             LinearDisplayP3.into(),
         ];
-        for profile in profiles {
+        for space in spaces {
             let source =
-                assemble_for(include_str!("../shaders/webgpu/image.wgsl"), &profile).unwrap();
+                assemble_for(include_str!("../shaders/webgpu/image.wgsl"), &space).unwrap();
             let module = naga::front::wgsl::parse_str(&source).unwrap();
             naga::valid::Validator::new(
                 naga::valid::ValidationFlags::all(),
@@ -155,9 +150,9 @@ mod tests {
     }
 
     #[test]
-    fn distinct_profile_handle_can_be_used_as_working_profile() {
-        let profile = crate::test_support::distinct_color_profile(Srgb);
-        let source = assemble_for(include_str!("../shaders/webgpu/image.wgsl"), &profile).unwrap();
+    fn distinct_space_handle_can_be_used_as_working_space() {
+        let space = crate::test_support::distinct_color_space(Srgb);
+        let source = assemble_for(include_str!("../shaders/webgpu/image.wgsl"), &space).unwrap();
         let module = naga::front::wgsl::parse_str(&source).unwrap();
         naga::valid::Validator::new(
             naga::valid::ValidationFlags::all(),
@@ -168,7 +163,7 @@ mod tests {
     }
 
     #[test]
-    fn output_shader_accepts_distinct_working_and_destination_profiles() {
+    fn output_shader_accepts_distinct_working_and_destination_spaces() {
         let source = assemble_output_for(
             include_str!("../shaders/canvas_renderer/output_image.wgsl"),
             &DisplayP3.into(),

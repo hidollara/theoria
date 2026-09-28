@@ -1,5 +1,5 @@
 use super::{
-    ColorProfile, IccRenderingIntent, Pcs, ProfileConnectionError, Transfer, TypedColorSpace,
+    ColorProfile, IccRenderingIntent, Pcs, SpaceConnectionError, Transfer, TypedColorSpace,
     adaptation, require_relative,
 };
 use crate::model::Xyz;
@@ -54,7 +54,7 @@ impl ColorProfile for XyzD65Profile {
     fn space_to_pcs_transfer(
         &self,
         intent: IccRenderingIntent,
-    ) -> Result<Transfer, ProfileConnectionError> {
+    ) -> Result<Transfer, SpaceConnectionError> {
         require_relative(intent)?;
         Ok(adaptation(XyzD65::TO_XYZ_D50)?)
     }
@@ -62,7 +62,7 @@ impl ColorProfile for XyzD65Profile {
     fn pcs_to_space_transfer(
         &self,
         intent: IccRenderingIntent,
-    ) -> Result<Transfer, ProfileConnectionError> {
+    ) -> Result<Transfer, SpaceConnectionError> {
         require_relative(intent)?;
         Ok(adaptation(XyzD65::FROM_XYZ_D50)?)
     }

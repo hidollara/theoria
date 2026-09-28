@@ -30,10 +30,10 @@ impl CanvasGpuResources {
     pub(super) fn ensure_image_cache(
         &mut self,
         device: &RenderDevice,
-        working_profile: &ColorSpace,
+        working_space: &ColorSpace,
     ) -> Result<()> {
         if self.image_cache.is_none() {
-            self.image_cache = Some(ImageCache::new(device.clone(), working_profile.clone())?);
+            self.image_cache = Some(ImageCache::new(device.clone(), working_space.clone())?);
         }
         Ok(())
     }
@@ -44,13 +44,13 @@ impl CanvasGpuResources {
         working_format: vk::Format,
         output_format: vk::Format,
         sample_count: vk::SampleCountFlags,
-        working_profile: &ColorSpace,
+        working_space: &ColorSpace,
     ) -> Result<()> {
         if self.pipelines.as_ref().is_some_and(|pipelines| {
             pipelines.working_format == working_format
                 && pipelines.output_format == output_format
                 && pipelines.sample_count == sample_count
-                && &pipelines.working_profile == working_profile
+                && &pipelines.working_space == working_space
         }) {
             return Ok(());
         }
@@ -63,7 +63,7 @@ impl CanvasGpuResources {
                 output_format,
                 sample_count,
                 descriptor_layout,
-                working_profile,
+                working_space,
             )?
         });
         Ok(())

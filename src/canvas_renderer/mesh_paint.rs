@@ -59,7 +59,7 @@ fn paint_triangle(
     source: &ColorField,
 ) -> Vec<PaintedTriangle<TestWorkingColor>> {
     let mut prepared = PreparedColors::default();
-    let profile = match source {
+    let space = match source {
         ColorField::LinearGradient(gradient) => Some(gradient.interpolation_space()),
         ColorField::RadialGradient(gradient) => Some(gradient.interpolation_space()),
         ColorField::ConicGradient(gradient) => Some(gradient.interpolation_space()),
@@ -68,8 +68,8 @@ fn paint_triangle(
         ColorField::MeshGradient(gradient) => Some(gradient.interpolation_space()),
         _ => None,
     };
-    if let Some(profile) = profile {
-        prepared.prepare_interpolation(profile).unwrap();
+    if let Some(space) = space {
+        prepared.prepare_interpolation(space).unwrap();
     }
     let path_sampler = match source {
         ColorField::AlongPathGradient(gradient) => Some(PathSampler::new(

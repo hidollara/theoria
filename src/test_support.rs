@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use crate::{
     color::{
-        ColorModel, ColorProfile, ColorSpace, IccRenderingIntent, Pcs, ProfileConnectionError,
+        ColorModel, ColorProfile, ColorSpace, IccRenderingIntent, Pcs, SpaceConnectionError,
         Transfer,
     },
     component::{ComponentInstance, MountContext},
@@ -10,9 +10,9 @@ use crate::{
     reactive::ReactiveError,
 };
 
-/// A separate profile definition with the same conversions and coordinate space.
-/// This exercises profile identity without manufacturing another standard profile.
-pub(crate) fn distinct_color_profile(profile: impl Into<ColorSpace>) -> ColorSpace {
+/// A separate runtime space with the same conversions and coordinate model.
+/// This exercises space identity without manufacturing another standard space.
+pub(crate) fn distinct_color_space(space: impl Into<ColorSpace>) -> ColorSpace {
     struct Distinct(ColorSpace);
 
     impl ColorProfile for Distinct {
@@ -27,14 +27,14 @@ pub(crate) fn distinct_color_profile(profile: impl Into<ColorSpace>) -> ColorSpa
         fn space_to_pcs_transfer(
             &self,
             intent: IccRenderingIntent,
-        ) -> Result<Transfer, ProfileConnectionError> {
+        ) -> Result<Transfer, SpaceConnectionError> {
             self.0.space_to_pcs(intent)
         }
 
         fn pcs_to_space_transfer(
             &self,
             intent: IccRenderingIntent,
-        ) -> Result<Transfer, ProfileConnectionError> {
+        ) -> Result<Transfer, SpaceConnectionError> {
             self.0.pcs_to_space(intent)
         }
 
@@ -42,12 +42,12 @@ pub(crate) fn distinct_color_profile(profile: impl Into<ColorSpace>) -> ColorSpa
             &self,
             destination: &ColorSpace,
             intent: IccRenderingIntent,
-        ) -> Result<Option<Transfer>, ProfileConnectionError> {
+        ) -> Result<Option<Transfer>, SpaceConnectionError> {
             self.0.direct_to(destination, intent)
         }
     }
 
-    ColorSpace::new(Distinct(profile.into()))
+    ColorSpace::new(Distinct(space.into()))
 }
 
 pub(crate) struct TestDriver {

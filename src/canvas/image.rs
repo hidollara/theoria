@@ -73,17 +73,17 @@ impl RasterImageSource for IccRasterImage {
 }
 
 #[derive(Debug)]
-struct Rgb8Source<P>
+struct Rgb8Source<S>
 where
-    P: crate::color::TypedColorSpace<Model = crate::color::Rgb>,
+    S: crate::color::TypedColorSpace<Model = crate::color::Rgb>,
 {
-    image: RasterImage<Rgb8, P>,
+    image: RasterImage<Rgb8, S>,
     color_space: ColorSpace,
 }
 
-impl<P> RasterImageSource for Rgb8Source<P>
+impl<S> RasterImageSource for Rgb8Source<S>
 where
-    P: crate::color::TypedColorSpace<Model = crate::color::Rgb> + fmt::Debug + Send + Sync,
+    S: crate::color::TypedColorSpace<Model = crate::color::Rgb> + fmt::Debug + Send + Sync,
 {
     fn width(&self) -> u32 {
         self.image.width()
@@ -113,17 +113,17 @@ pub(crate) trait RasterImageSource: fmt::Debug + Send + Sync {
 }
 
 #[derive(Debug)]
-struct Rgba8Source<P>
+struct Rgba8Source<S>
 where
-    P: crate::color::TypedColorSpace<Model = crate::color::Rgb>,
+    S: crate::color::TypedColorSpace<Model = crate::color::Rgb>,
 {
-    image: RasterImage<Rgba8, P>,
+    image: RasterImage<Rgba8, S>,
     color_space: ColorSpace,
 }
 
-impl<P> RasterImageSource for Rgba8Source<P>
+impl<S> RasterImageSource for Rgba8Source<S>
 where
-    P: crate::color::TypedColorSpace<Model = crate::color::Rgb> + fmt::Debug + Send + Sync,
+    S: crate::color::TypedColorSpace<Model = crate::color::Rgb> + fmt::Debug + Send + Sync,
 {
     fn width(&self) -> u32 {
         self.image.width()
@@ -195,14 +195,12 @@ impl Image {
 }
 
 macro_rules! rgba8_image {
-    ($profile:ty) => {
-        impl From<RasterImage<Rgba8, $profile>> for Image {
-            fn from(image: RasterImage<Rgba8, $profile>) -> Self {
+    ($space:ty) => {
+        impl From<RasterImage<Rgba8, $space>> for Image {
+            fn from(image: RasterImage<Rgba8, $space>) -> Self {
+                let color_space = image.space().into();
                 Self {
-                    kind: ImageKind::Raster(Arc::new(Rgba8Source {
-                        image,
-                        color_space: <$profile>::default().into(),
-                    })),
+                    kind: ImageKind::Raster(Arc::new(Rgba8Source { image, color_space })),
                 }
             }
         }
@@ -210,14 +208,12 @@ macro_rules! rgba8_image {
 }
 
 macro_rules! rgb8_image {
-    ($profile:ty) => {
-        impl From<RasterImage<Rgb8, $profile>> for Image {
-            fn from(image: RasterImage<Rgb8, $profile>) -> Self {
+    ($space:ty) => {
+        impl From<RasterImage<Rgb8, $space>> for Image {
+            fn from(image: RasterImage<Rgb8, $space>) -> Self {
+                let color_space = image.space().into();
                 Self {
-                    kind: ImageKind::Raster(Arc::new(Rgb8Source {
-                        image,
-                        color_space: <$profile>::default().into(),
-                    })),
+                    kind: ImageKind::Raster(Arc::new(Rgb8Source { image, color_space })),
                 }
             }
         }
@@ -253,6 +249,27 @@ impl From<IccRasterImage> for Image {
 mod tests {
     use super::*;
     use crate::canvas_renderer::raster::convert_icc8_to_linear_rgba16;
+
+    #[test]
+    fn typed_raster_image_retains_its_space_after_erasure() {
+        let raster = RasterImage::<Rgba8, DisplayP3>::from_planes(
+            1,
+            1,
+            vec![RasterPlane::new(4, vec![255, 0, 0, 255])],
+            DisplayP3,
+            AlphaAssociation::Straight,
+        )
+        .unwrap();
+        let image = Image::from(raster);
+        let ImageKind::Raster(source) = image.kind() else {
+            panic!("typed raster image was not retained")
+        };
+        let RasterImageView::Rgba8 { color_space, .. } = source.view() else {
+            panic!("typed raster image lost its format")
+        };
+
+        assert_eq!(color_space, DisplayP3.into());
+    }
 
     #[test]
     fn icc_image_preserves_samples_until_renderer_conversion() {

@@ -2,7 +2,7 @@
 use super::Rgb;
 use super::TypedColorModel;
 use super::icc_profile::IccRenderingIntent;
-use super::profile::{ColorProfile, ColorSpace, Pcs, ProfileConnectionError, require_relative};
+use super::profile::{ColorProfile, ColorSpace, Pcs, SpaceConnectionError, require_relative};
 use super::transfer::{Transfer, TransferCurve, TransferError, TransferMatrix, TransferStage};
 
 /// Associates a statically typed color space with its coordinate model.
@@ -38,7 +38,7 @@ fn rgb_direct_to(
     counterpart_curve: TransferCurve,
     destination: &ColorSpace,
     intent: IccRenderingIntent,
-) -> Result<Option<Transfer>, ProfileConnectionError> {
+) -> Result<Option<Transfer>, SpaceConnectionError> {
     if intent != IccRenderingIntent::RelativeColorimetric {
         return Ok(None);
     }
@@ -134,7 +134,7 @@ macro_rules! predefined_space {
 
         impl From<$space> for $crate::profile::ColorSpace {
             fn from(_: $space) -> Self {
-                static PROFILE: std::sync::LazyLock<$crate::profile::ColorSpace> =
+                static SPACE: std::sync::LazyLock<$crate::profile::ColorSpace> =
                     std::sync::LazyLock::new(|| {
                         let space = $crate::profile::ColorSpace::new($definition);
                         assert_eq!(
@@ -149,13 +149,13 @@ macro_rules! predefined_space {
                         );
                         space
                     });
-                PROFILE.clone()
+                SPACE.clone()
             }
         }
 
         impl From<&$space> for $crate::profile::ColorSpace {
-            fn from(profile: &$space) -> Self {
-                (*profile).into()
+            fn from(space: &$space) -> Self {
+                (*space).into()
             }
         }
     };
@@ -182,7 +182,7 @@ mod tests {
     use super::*;
     use std::collections::HashSet;
 
-    fn assert_rgb_space<P: TypedColorSpace<Model = Rgb>>() {}
+    fn assert_rgb_space<S: TypedColorSpace<Model = Rgb>>() {}
 
     #[test]
     fn predefined_spaces_have_canonical_identity() {

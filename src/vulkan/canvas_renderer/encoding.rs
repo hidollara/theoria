@@ -122,7 +122,7 @@ impl ImagePushConstants {
     pub(super) fn new(
         pattern: &ImagePattern,
         rgb_alpha_association: RgbAlphaAssociation,
-        image_profile_index: u32,
+        image_space_index: u32,
         points: [Point; 3],
         image_to_root: Projective2,
         view: CanvasView,
@@ -132,7 +132,7 @@ impl ImagePushConstants {
             pattern.image().height(),
             pattern.canvas_to_image(),
             rgb_alpha_association,
-            image_profile_index,
+            image_space_index,
             points,
             image_to_root,
             view,
@@ -145,7 +145,7 @@ impl ImagePushConstants {
         height: u32,
         canvas_to_image: Projective2,
         rgb_alpha_association: RgbAlphaAssociation,
-        image_profile_index: u32,
+        image_space_index: u32,
         points: [Point; 3],
         image_to_root: Projective2,
         view: CanvasView,
@@ -170,7 +170,7 @@ impl ImagePushConstants {
                     ],
                 }
             }),
-            metadata: [image_profile_index, 0, 0, 0],
+            metadata: [image_space_index, 0, 0, 0],
         }
     }
 

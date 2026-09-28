@@ -21,7 +21,7 @@ pub(super) struct GpuImage {
 pub(super) enum GpuImageColor {
     Rgb {
         premultiplied: bool,
-        profile: ColorSpace,
+        space: ColorSpace,
     },
     Icc {
         key: (ColorSpace, IccRenderingIntent, bool),
@@ -117,7 +117,7 @@ impl ImageCache {
                     UploadPlane::Expanded(expanded),
                     GpuImageColor::Rgb {
                         premultiplied: false,
-                        profile: color_space,
+                        space: color_space,
                     },
                 )
             }
@@ -129,7 +129,7 @@ impl ImageCache {
                 UploadPlane::Borrowed(plane),
                 GpuImageColor::Rgb {
                     premultiplied: alpha == AlphaAssociation::Premultiplied,
-                    profile: color_space,
+                    space: color_space,
                 },
             ),
         };
@@ -215,7 +215,7 @@ pub(super) fn create_working_image(
     width: u32,
     height: u32,
     label: &'static str,
-    working_profile: &ColorSpace,
+    working_space: &ColorSpace,
 ) -> GpuImage {
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some(label),
@@ -233,7 +233,7 @@ pub(super) fn create_working_image(
         view,
         color: GpuImageColor::Rgb {
             premultiplied: true,
-            profile: working_profile.clone(),
+            space: working_space.clone(),
         },
     }
 }
