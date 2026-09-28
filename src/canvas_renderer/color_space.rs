@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::{
     canvas::{CanvasColor, CanvasIccColorError, ColorValue},
     color::{
-        ColorSpace, ColorTransform, IccRenderingIntent, LinearDisplayP3, LinearSrgb, connect_spaces,
+        ColorSpace, IccRenderingIntent, LinearDisplayP3, LinearSrgb, Transfer, connect_spaces,
     },
 };
 
@@ -19,8 +19,8 @@ pub(crate) struct PreparedColors {
 
 /// Conversion plan for one gradient's declared interpolation profile.
 pub(crate) struct PreparedInterpolation {
-    to_interpolation: ColorTransform,
-    to_working: ColorTransform,
+    to_interpolation: Transfer,
+    to_working: Transfer,
     identity: bool,
     linear_builtin: bool,
 }
@@ -40,7 +40,6 @@ impl PreparedInterpolation {
             &self.to_working
         };
         let values = transform
-            .transfer()
             .evaluate(&rgb.map(f64::from))
             .expect("a prepared gradient profile must evaluate finite RGB coordinates");
         [values[0] as f32, values[1] as f32, values[2] as f32]
@@ -137,13 +136,13 @@ impl CanvasColor {
         let converted = if self.profile == destination {
             coordinates
         } else {
-            let transform = connect_spaces(
+            let transfer = connect_spaces(
                 &self.profile,
                 &destination,
                 self.intent,
                 IccRenderingIntent::RelativeColorimetric,
             )?;
-            transform.transfer().evaluate(&coordinates)?
+            transfer.evaluate(&coordinates)?
         };
         Ok([
             converted[0] as f32,
@@ -221,7 +220,7 @@ pub(crate) fn convert_premultiplied_space(
     if value[3] == 0.0 {
         return Ok([0.0; 4]);
     }
-    let transform = connect_spaces(
+    let transfer = connect_spaces(
         from,
         to,
         IccRenderingIntent::RelativeColorimetric,
@@ -229,7 +228,7 @@ pub(crate) fn convert_premultiplied_space(
     )?;
     let alpha = value[3];
     let straight = [value[0] / alpha, value[1] / alpha, value[2] / alpha];
-    let converted = transform.transfer().evaluate(&straight.map(f64::from))?;
+    let converted = transfer.evaluate(&straight.map(f64::from))?;
     Ok([
         converted[0] as f32 * alpha,
         converted[1] as f32 * alpha,
@@ -383,7 +382,6 @@ mod tests {
             IccRenderingIntent::RelativeColorimetric,
         )
         .unwrap()
-        .transfer()
         .evaluate(&[0.5; 3])
         .unwrap();
         for (actual, expected) in actual[..3].iter().zip(expected) {

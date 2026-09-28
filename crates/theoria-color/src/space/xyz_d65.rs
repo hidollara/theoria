@@ -1,8 +1,7 @@
 use super::{
     IccRenderingIntent, Pcs, ProfileConnectionError, ProfileDefinition, Transfer, TypedColorSpace,
-    require_relative,
+    adaptation, require_relative,
 };
-use crate::color_transform::adaptation;
 use crate::model::Xyz;
 
 named_space!(XyzD65, Xyz);

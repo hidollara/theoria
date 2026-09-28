@@ -1,9 +1,9 @@
 use std::{error::Error, fmt, sync::Arc};
 
 use crate::color::{
-    Color, ColorCoordinates, ColorSpace, ColorTransformError, IccProfile, IccProfileError,
-    IccRenderingIntent, LabD50, Opacity, OpacitySample, ProfileConnectionError, Srgb,
-    TransferError, TypedColorSpace, XyzD50, XyzD65,
+    Color, ColorCoordinates, ColorSpace, IccProfile, IccProfileError, IccRenderingIntent, LabD50,
+    Opacity, OpacitySample, ProfileConnectionError, Srgb, TransferError, TypedColorSpace, XyzD50,
+    XyzD65,
 };
 
 /// A logical color whose concrete representation has been erased at the
@@ -224,14 +224,7 @@ pub enum CanvasIccColorError {
     UnsupportedColorChannels(usize),
     Profile(IccProfileError),
     Connection(ProfileConnectionError),
-    Transform(ColorTransformError),
     Transfer(TransferError),
-}
-
-impl From<ColorTransformError> for CanvasIccColorError {
-    fn from(error: ColorTransformError) -> Self {
-        Self::Transform(error)
-    }
 }
 
 impl From<IccProfileError> for CanvasIccColorError {
@@ -265,7 +258,6 @@ impl fmt::Display for CanvasIccColorError {
             ),
             Self::Profile(error) => error.fmt(formatter),
             Self::Connection(error) => error.fmt(formatter),
-            Self::Transform(error) => error.fmt(formatter),
             Self::Transfer(error) => error.fmt(formatter),
         }
     }
@@ -276,7 +268,6 @@ impl Error for CanvasIccColorError {
         match self {
             Self::Profile(error) => Some(error),
             Self::Connection(error) => Some(error),
-            Self::Transform(error) => Some(error),
             Self::Transfer(error) => Some(error),
             _ => None,
         }

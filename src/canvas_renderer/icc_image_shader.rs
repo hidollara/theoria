@@ -16,13 +16,13 @@ pub(crate) fn build(
     working_profile: impl Into<ColorSpace>,
     template: &str,
 ) -> Result<IccImageShader, Box<dyn std::error::Error>> {
-    let transform = connect_spaces(
+    let conversion = connect_spaces(
         profile,
         working_profile,
         intent,
         IccRenderingIntent::RelativeColorimetric,
     )?;
-    let transfer = transform.transfer().wgsl_with_storage(0, 0, 2)?;
+    let transfer = conversion.wgsl_with_storage(0, 0, 2)?;
     let channels = profile.device_channels();
     let total = channels + usize::from(has_alpha);
     let layers = total.div_ceil(4);

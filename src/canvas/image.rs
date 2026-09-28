@@ -293,7 +293,6 @@ mod tests {
             IccRenderingIntent::RelativeColorimetric,
         )
         .unwrap()
-        .transfer()
         .evaluate(&[64.0 / 255.0, 128.0 / 255.0, 192.0 / 255.0])
         .unwrap();
         for (actual, expected) in converted.samples()[..3].iter().zip(expected) {

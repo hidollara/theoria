@@ -326,14 +326,13 @@ mod tests {
         ] {
             let transfer = profile.space_to_pcs(intent).unwrap();
             assert_eq!(
-                transfer.transfer().evaluate(&[0.25, 0.5, 0.75]).unwrap(),
+                transfer.evaluate(&[0.25, 0.5, 0.75]).unwrap(),
                 vec![0.5, 1.0, 1.5]
             );
         }
         let shader = profile
             .space_to_pcs(IccRenderingIntent::RelativeColorimetric)
             .unwrap()
-            .transfer()
             .wgsl(7)
             .unwrap();
         let module = naga::front::wgsl::parse_str(&shader).unwrap();
@@ -353,7 +352,6 @@ mod tests {
         let output = profile
             .pcs_to_space(IccRenderingIntent::RelativeColorimetric)
             .unwrap()
-            .transfer()
             .evaluate(&[0.25, 0.5, 1.5])
             .unwrap();
         assert_eq!(output, vec![0.125, 0.25, 0.75]);
@@ -369,7 +367,6 @@ mod tests {
         let output = profile
             .space_to_pcs(IccRenderingIntent::RelativeColorimetric)
             .unwrap()
-            .transfer()
             .evaluate(&[1.0, 1.0, 1.0])
             .unwrap();
         assert!((output[1] - 1.0).abs() < 0.01);

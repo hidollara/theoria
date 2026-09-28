@@ -1,13 +1,6 @@
-use std::{
-    fmt,
-    hash::{Hash, Hasher},
-    sync::Weak,
-};
-
 #[cfg(test)]
 use super::Rgb;
 use super::TypedColorModel;
-use super::color_transform::{pcs_to_rgb_transfer, rgb_to_pcs_transfer};
 use super::icc_profile::IccRenderingIntent;
 use super::profile::{
     ColorSpace, Pcs, ProfileConnectionError, ProfileDefinition, require_relative,
@@ -102,81 +95,44 @@ fn rgb_matrix(matrix: [[f64; 3]; 3]) -> Result<TransferStage, TransferError> {
     )?))
 }
 
-/// A transform endpoint that does not retain a profile's conversion data.
-/// Keeping a weak reference also prevents an allocation address from being
-/// reused while a transform still refers to that endpoint.
-#[derive(Clone)]
-pub(crate) enum ColorSpaceId {
-    Space(Weak<dyn ProfileDefinition>, usize),
-    AbsolutePcs(Pcs),
+pub(crate) fn rgb_to_pcs_transfer(
+    mut transfer: Transfer,
+    to: Pcs,
+) -> Result<Transfer, TransferError> {
+    transfer = transfer.then(&adaptation(XyzD65::TO_XYZ_D50)?)?;
+    if to == Pcs::LabD50 {
+        transfer = transfer.then(&Transfer::new(3, [TransferStage::XyzD50ToLabD50])?)?;
+    }
+    Ok(transfer)
 }
 
-impl ColorSpaceId {
-    pub(crate) fn of(definition: Weak<dyn ProfileDefinition>, channels: usize) -> Self {
-        Self::Space(definition, channels)
+pub(crate) fn pcs_to_rgb_transfer(
+    from: Pcs,
+    xyz_d65_to_rgb: Transfer,
+) -> Result<Transfer, TransferError> {
+    let mut transfer = Transfer::new(3, Vec::<TransferStage>::new())?;
+    if from == Pcs::LabD50 {
+        transfer = transfer.then(&Transfer::new(3, [TransferStage::LabD50ToXyzD50])?)?;
     }
-
-    pub(crate) fn absolute_pcs(pcs: Pcs) -> Self {
-        Self::AbsolutePcs(pcs)
-    }
-
-    pub fn channels(&self) -> usize {
-        match self {
-            Self::Space(_, channels) => *channels,
-            Self::AbsolutePcs(_) => 3,
-        }
-    }
+    transfer = transfer.then(&adaptation(XyzD65::FROM_XYZ_D50)?)?;
+    transfer.then(&xyz_d65_to_rgb)
 }
 
-impl PartialEq for ColorSpaceId {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Space(left, _), Self::Space(right, _)) => Weak::ptr_eq(left, right),
-            (Self::AbsolutePcs(left), Self::AbsolutePcs(right)) => left == right,
-            _ => false,
-        }
-    }
-}
-
-impl Eq for ColorSpaceId {}
-
-impl Hash for ColorSpaceId {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        match self {
-            Self::Space(definition, _) => {
-                0_u8.hash(state);
-                (definition.as_ptr() as *const ()).hash(state);
-            }
-            Self::AbsolutePcs(pcs) => {
-                1_u8.hash(state);
-                pcs.hash(state);
-            }
-        }
-    }
-}
-
-impl fmt::Debug for ColorSpaceId {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Space(definition, _) => formatter
-                .debug_struct("ColorSpaceId")
-                .field("identity", &(definition.as_ptr() as *const ()))
-                .field("channels", &self.channels())
-                .finish(),
-            Self::AbsolutePcs(pcs) => formatter.debug_tuple("AbsolutePcs").field(pcs).finish(),
-        }
-    }
+pub(crate) fn adaptation(matrix: [[f64; 3]; 3]) -> Result<Transfer, TransferError> {
+    Transfer::new(
+        3,
+        [TransferStage::Matrix(TransferMatrix::new(
+            3,
+            3,
+            matrix.into_iter().flatten().collect::<Vec<_>>(),
+            [0.0; 3],
+        )?)],
+    )
 }
 
 macro_rules! predefined_space {
     ($space:ty, $definition:ident) => {
         struct $definition;
-
-        impl From<$space> for $crate::space::ColorSpaceId {
-            fn from(_: $space) -> Self {
-                $crate::profile::ColorSpace::from(<$space>::default()).id()
-            }
-        }
 
         impl From<$space> for $crate::profile::ColorSpace {
             fn from(_: $space) -> Self {
@@ -232,9 +188,8 @@ mod tests {
 
     #[test]
     fn predefined_spaces_have_canonical_identity() {
-        assert_eq!(ColorSpaceId::from(Srgb), ColorSpaceId::from(Srgb));
-        assert_ne!(ColorSpaceId::from(Srgb), ColorSpaceId::from(LinearSrgb));
-        assert_ne!(ColorSpaceId::from(XyzD50), ColorSpaceId::from(XyzD65));
+        assert_ne!(ColorSpace::from(Srgb), ColorSpace::from(LinearSrgb));
+        assert_ne!(ColorSpace::from(XyzD50), ColorSpace::from(XyzD65));
         assert_eq!(ColorSpace::from(Srgb), ColorSpace::from(Srgb));
         assert_eq!(ColorSpace::from(LinearSrgb), ColorSpace::from(LinearSrgb));
         assert_eq!(ColorSpace::from(DisplayP3), ColorSpace::from(DisplayP3));
@@ -250,15 +205,9 @@ mod tests {
     #[test]
     fn loaded_spaces_preserve_identity_without_equating_channel_counts() {
         let bytes = moxcms::ColorProfile::new_srgb().encode().unwrap();
-        let first = crate::IccProfile::from_bytes(&bytes)
-            .unwrap()
-            .color_space()
-            .id();
+        let first = crate::IccProfile::from_bytes(&bytes).unwrap().color_space();
         let same = first.clone();
-        let separate = crate::IccProfile::from_bytes(&bytes)
-            .unwrap()
-            .color_space()
-            .id();
+        let separate = crate::IccProfile::from_bytes(&bytes).unwrap().color_space();
         assert_eq!(first, same);
         assert_ne!(first, separate);
         assert_eq!(first.channels(), 3);

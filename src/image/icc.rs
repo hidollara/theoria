@@ -31,7 +31,7 @@ impl IccRasterImage {
         if intent == IccRenderingIntent::AbsoluteColorimetric {
             return Err(Box::new(IccImageError::AbsoluteIntent));
         }
-        let transform = connect_spaces(
+        let transfer = connect_spaces(
             Srgb,
             &profile,
             IccRenderingIntent::RelativeColorimetric,
@@ -51,7 +51,7 @@ impl IccRasterImage {
                 .iter()
                 .map(|&sample| f64::from(sample) / 255.0)
                 .collect::<Vec<_>>();
-            let device = transform.transfer().evaluate(&rgb)?;
+            let device = transfer.evaluate(&rgb)?;
             for value in device {
                 pixels.push((value.clamp(0.0, 1.0) * 255.0).round() as u8);
             }
@@ -199,7 +199,6 @@ mod tests {
                 IccRenderingIntent::RelativeColorimetric,
             )
             .unwrap()
-            .transfer()
             .evaluate(&source_rgb.map(f64::from))
             .unwrap();
             for (actual, expected) in actual[..3].iter().zip(linear) {

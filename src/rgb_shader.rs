@@ -42,7 +42,7 @@ pub(crate) fn assemble_for(
             IccRenderingIntent::RelativeColorimetric,
             IccRenderingIntent::RelativeColorimetric,
         )?;
-        definitions.push_str(&transfer.transfer().wgsl(index as u32)?);
+        definitions.push_str(&transfer.wgsl(index as u32)?);
     }
     let present = connect_spaces(
         working_profile,
@@ -50,7 +50,7 @@ pub(crate) fn assemble_for(
         IccRenderingIntent::RelativeColorimetric,
         IccRenderingIntent::RelativeColorimetric,
     )?;
-    definitions.push_str(&present.transfer().wgsl(4)?);
+    definitions.push_str(&present.wgsl(4)?);
     definitions.push_str(
         r#"
 fn rgb_to_array(value: vec3<f32>) -> array<f32, 3> {
@@ -115,8 +115,8 @@ pub(crate) fn assemble_output_for(
          fn composition_to_output(value: vec3<f32>) -> vec3<f32> {{\n\
              return array_to_rgb(theoria_transfer_1(rgb_to_array(value)));\n\
          }}\n",
-        to_composition.transfer().wgsl(0)?,
-        to_output.transfer().wgsl(1)?,
+        to_composition.wgsl(0)?,
+        to_output.wgsl(1)?,
     );
     Ok(source.replacen(MARKER, &definitions, 1))
 }

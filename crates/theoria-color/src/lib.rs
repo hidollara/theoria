@@ -1,4 +1,3 @@
-mod color_transform;
 mod connection;
 mod icc_mpe;
 mod icc_profile;
@@ -13,7 +12,6 @@ mod transform;
 mod value;
 mod white_point;
 
-pub use color_transform::{ColorTransform, ColorTransformError};
 pub use connection::XyzD50Profile;
 pub use icc_profile::{IccProfile, IccProfileError, IccRenderingIntent};
 pub use model::{Cmyk, ColorCoordinates, ColorModel, Lab, Rgb, TypedColorModel, Xyz, Ycbcr};

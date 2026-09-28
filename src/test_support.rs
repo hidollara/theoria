@@ -28,14 +28,14 @@ pub(crate) fn distinct_color_profile(profile: impl Into<ColorSpace>) -> ColorSpa
             &self,
             intent: IccRenderingIntent,
         ) -> Result<Transfer, ProfileConnectionError> {
-            Ok(self.0.space_to_pcs(intent)?.into_transfer())
+            self.0.space_to_pcs(intent)
         }
 
         fn pcs_to_space_transfer(
             &self,
             intent: IccRenderingIntent,
         ) -> Result<Transfer, ProfileConnectionError> {
-            Ok(self.0.pcs_to_space(intent)?.into_transfer())
+            self.0.pcs_to_space(intent)
         }
 
         fn direct_transfer_to(
@@ -43,10 +43,7 @@ pub(crate) fn distinct_color_profile(profile: impl Into<ColorSpace>) -> ColorSpa
             destination: &ColorSpace,
             intent: IccRenderingIntent,
         ) -> Result<Option<Transfer>, ProfileConnectionError> {
-            Ok(self
-                .0
-                .direct_to(destination, intent)?
-                .map(|transform| transform.into_transfer()))
+            self.0.direct_to(destination, intent)
         }
     }
 

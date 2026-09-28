@@ -68,7 +68,7 @@ pub(crate) fn convert_icc8_to_linear_rgba16(
             .iter()
             .map(|&sample| f64::from(sample) / 255.0)
             .collect();
-        let rgb = transfer.transfer().evaluate(&coordinates)?;
+        let rgb = transfer.evaluate(&coordinates)?;
         for &sample in &rgb[..3] {
             let sample = sample as f32;
             if !sample.is_finite() || sample.abs() > f32::from(f16::MAX) {

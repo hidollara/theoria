@@ -5,7 +5,6 @@ use moxcms::{
     LutType, LutWarehouse, ProfileClass, ProfileVersion, ToneReprCurve,
 };
 
-use super::color_transform::{ColorTransform, ColorTransformError, pcs_key_for_intent};
 use super::icc_mpe::MpeTags;
 use super::model::ColorModel;
 use super::pcs::ICC_D50;
@@ -126,33 +125,17 @@ impl IccProfile {
     ///
     /// The reverse direction is selected independently with [`Self::pcs_to_space`];
     /// a profile is not required to provide both directions.
-    pub fn space_to_pcs(
-        &self,
-        intent: IccRenderingIntent,
-    ) -> Result<ColorTransform, IccProfileError> {
-        ColorTransform::from_ids(
-            self.color_space().id(),
-            pcs_key_for_intent(self.pcs(), intent),
-            self.inner
-                .selected_transfer(IccTransferDirection::DeviceToPcs, intent)?,
-        )
-        .map_err(Into::into)
+    pub fn space_to_pcs(&self, intent: IccRenderingIntent) -> Result<Transfer, IccProfileError> {
+        self.inner
+            .selected_transfer(IccTransferDirection::DeviceToPcs, intent)
     }
 
     /// Selects this profile's PCS-to-device transfer for the given intent.
     ///
     /// This is not inferred by inverting [`Self::space_to_pcs`].
-    pub fn pcs_to_space(
-        &self,
-        intent: IccRenderingIntent,
-    ) -> Result<ColorTransform, IccProfileError> {
-        ColorTransform::from_ids(
-            pcs_key_for_intent(self.pcs(), intent),
-            self.color_space().id(),
-            self.inner
-                .selected_transfer(IccTransferDirection::PcsToDevice, intent)?,
-        )
-        .map_err(Into::into)
+    pub fn pcs_to_space(&self, intent: IccRenderingIntent) -> Result<Transfer, IccProfileError> {
+        self.inner
+            .selected_transfer(IccTransferDirection::PcsToDevice, intent)
     }
 }
 
@@ -166,7 +149,7 @@ impl IccProfile {
         destination: &Self,
         source_intent: IccRenderingIntent,
         destination_intent: IccRenderingIntent,
-    ) -> Result<ColorTransform, ProfileConnectionError> {
+    ) -> Result<Transfer, ProfileConnectionError> {
         connect_spaces(
             self.color_space(),
             destination.color_space(),
@@ -665,18 +648,11 @@ pub enum IccProfileError {
     MissingTransfer,
     MalformedTransfer,
     Transfer(TransferError),
-    ColorTransform(ColorTransformError),
 }
 
 impl From<TransferError> for IccProfileError {
     fn from(error: TransferError) -> Self {
         Self::Transfer(error)
-    }
-}
-
-impl From<ColorTransformError> for IccProfileError {
-    fn from(error: ColorTransformError) -> Self {
-        Self::ColorTransform(error)
     }
 }
 
@@ -699,7 +675,6 @@ impl fmt::Display for IccProfileError {
                 f.write_str("the ICC profile transfer is malformed or unsupported")
             }
             Self::Transfer(error) => error.fmt(f),
-            Self::ColorTransform(error) => error.fmt(f),
         }
     }
 }
@@ -709,7 +684,6 @@ impl Error for IccProfileError {
         match self {
             Self::Parse(error) => Some(error),
             Self::Transfer(error) => Some(error),
-            Self::ColorTransform(error) => Some(error),
             _ => None,
         }
     }
@@ -754,8 +728,7 @@ impl From<&IccProfile> for ColorSpace {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::space::ColorSpaceId;
-    use crate::{XyzD50, connect_spaces};
+    use crate::connect_spaces;
 
     #[test]
     fn icc_data_model_is_not_inferred_from_channel_count() {
@@ -803,8 +776,8 @@ mod tests {
             let backward = profile
                 .pcs_to_space(IccRenderingIntent::RelativeColorimetric)
                 .unwrap();
-            let pcs = forward.transfer().evaluate(sample).unwrap();
-            let restored = backward.transfer().evaluate(&pcs).unwrap();
+            let pcs = forward.evaluate(sample).unwrap();
+            let restored = backward.evaluate(&pcs).unwrap();
             for (&actual, &expected) in restored.iter().zip(sample) {
                 assert!((actual - expected).abs() < 0.01, "{actual} != {expected}");
             }
@@ -850,12 +823,9 @@ mod tests {
         let saturation = profile
             .space_to_pcs(IccRenderingIntent::Saturation)
             .unwrap();
-        assert_eq!(saturation.transfer(), perceptual.transfer());
+        assert_eq!(saturation, perceptual);
         let sample = [0.5; 3];
-        assert!(
-            relative.transfer().evaluate(&sample).unwrap()[0]
-                < perceptual.transfer().evaluate(&sample).unwrap()[0]
-        );
+        assert!(relative.evaluate(&sample).unwrap()[0] < perceptual.evaluate(&sample).unwrap()[0]);
 
         // AToB LUTs do not prevent the opposite direction from using the
         // matrix/TRC model when no BToA LUT is present.
@@ -865,23 +835,20 @@ mod tests {
         let matrix_reverse = matrix_only
             .pcs_to_space(IccRenderingIntent::RelativeColorimetric)
             .unwrap();
-        assert_eq!(reverse.transfer(), matrix_reverse.transfer());
+        assert_eq!(reverse, matrix_reverse);
         assert_eq!(
             profile
                 .pcs_to_space(IccRenderingIntent::Saturation)
-                .unwrap()
-                .transfer(),
-            matrix_reverse.transfer()
+                .unwrap(),
+            matrix_reverse
         );
         assert_eq!(
             matrix_only
                 .space_to_pcs(IccRenderingIntent::Perceptual)
-                .unwrap()
-                .transfer(),
+                .unwrap(),
             matrix_only
                 .space_to_pcs(IccRenderingIntent::RelativeColorimetric)
                 .unwrap()
-                .transfer()
         );
     }
 
@@ -896,13 +863,12 @@ mod tests {
         let saturation = profile
             .pcs_to_space(IccRenderingIntent::Saturation)
             .unwrap();
-        assert_eq!(saturation.transfer(), perceptual.transfer());
+        assert_eq!(saturation, perceptual);
         assert_ne!(
-            saturation.transfer(),
+            saturation,
             IccProfile::from_parsed(ParsedProfile::new_srgb(), Pcs::XyzD50)
                 .pcs_to_space(IccRenderingIntent::Saturation)
                 .unwrap()
-                .transfer()
         );
     }
 
@@ -917,8 +883,8 @@ mod tests {
         let backward = profile
             .pcs_to_space(IccRenderingIntent::RelativeColorimetric)
             .unwrap();
-        let xyz = forward.transfer().evaluate(&[0.4, 0.5, 0.6]).unwrap();
-        let rgb = backward.transfer().evaluate(&xyz).unwrap();
+        let xyz = forward.evaluate(&[0.4, 0.5, 0.6]).unwrap();
+        let rgb = backward.evaluate(&xyz).unwrap();
         for (actual, expected) in rgb.into_iter().zip([0.4, 0.5, 0.6]) {
             assert!((actual - expected).abs() < 0.003);
         }
@@ -930,9 +896,7 @@ mod tests {
                 IccRenderingIntent::RelativeColorimetric,
             )
             .unwrap();
-        assert_eq!(semantic.from(), &profile.color_space().id());
-        assert_eq!(semantic.to(), &profile.color_space().id());
-        let restored = semantic.transfer().evaluate(&[0.4, 0.5, 0.6]).unwrap();
+        let restored = semantic.evaluate(&[0.4, 0.5, 0.6]).unwrap();
         for (actual, expected) in restored.into_iter().zip([0.4, 0.5, 0.6]) {
             assert!((actual - expected).abs() < 0.003);
         }
@@ -948,16 +912,6 @@ mod tests {
         let source = IccProfile::from_parsed(ParsedProfile::new_gray_with_gamma(1.0), Pcs::XyzD50);
         let destination =
             IccProfile::from_parsed(ParsedProfile::new_gray_with_gamma(1.0), Pcs::LabD50);
-        let to_pcs = source
-            .space_to_pcs(IccRenderingIntent::RelativeColorimetric)
-            .unwrap();
-        let from_pcs = destination
-            .pcs_to_space(IccRenderingIntent::RelativeColorimetric)
-            .unwrap();
-        assert_eq!(
-            to_pcs.then(&from_pcs),
-            Err(ColorTransformError::SpaceMismatch)
-        );
         let connected = source
             .connect_to(
                 &destination,
@@ -965,9 +919,7 @@ mod tests {
                 IccRenderingIntent::RelativeColorimetric,
             )
             .unwrap();
-        assert_eq!(connected.from(), &source.color_space().id());
-        assert_eq!(connected.to(), &destination.color_space().id());
-        let result = connected.transfer().evaluate(&[0.4]).unwrap();
+        let result = connected.evaluate(&[0.4]).unwrap();
         let relative_xyz = ICC_D50.map(|component| component * 0.4);
         let expected = crate::pcs::xyz_to_lab(relative_xyz, ICC_D50)[0] / 100.0;
         assert!((result[0] - expected).abs() < 1e-8);
@@ -987,8 +939,8 @@ mod tests {
             .pcs_to_space(IccRenderingIntent::RelativeColorimetric)
             .unwrap();
         let sample = [0.3, 0.5, 0.7];
-        let xyz = forward.transfer().evaluate(&sample).unwrap();
-        let rgb = backward.transfer().evaluate(&xyz).unwrap();
+        let xyz = forward.evaluate(&sample).unwrap();
+        let rgb = backward.evaluate(&xyz).unwrap();
         for (actual, expected) in rgb.into_iter().zip(sample) {
             assert!((actual - expected).abs() < 1e-10);
         }
@@ -1005,17 +957,15 @@ mod tests {
         let backward = profile
             .pcs_to_space(IccRenderingIntent::RelativeColorimetric)
             .unwrap();
-        let xyz = forward.transfer().evaluate(&[0.5]).unwrap();
+        let xyz = forward.evaluate(&[0.5]).unwrap();
         let white = ICC_D50;
         for (actual, expected) in xyz.iter().zip(white) {
             assert!((actual - expected * 0.5_f64.powf(2.2)).abs() < 0.002);
         }
-        let gray = backward.transfer().evaluate(&xyz).unwrap();
+        let gray = backward.evaluate(&xyz).unwrap();
         assert!((gray[0] - 0.5).abs() < 0.002, "gray={gray:?}, xyz={xyz:?}");
-        assert_eq!(forward.to(), &ColorSpaceId::from(XyzD50));
-        assert_eq!(backward.to(), &profile.color_space().id());
         assert!(forward.then(&backward).is_ok());
-        let shader = forward.transfer().wgsl_with_storage(22, 1, 4).unwrap();
+        let shader = forward.wgsl_with_storage(22, 1, 4).unwrap();
         let module = naga::front::wgsl::parse_str(shader.source())
             .unwrap_or_else(|error| panic!("{}", error.emit_to_string(shader.source())));
         naga::valid::Validator::new(
@@ -1042,8 +992,8 @@ mod tests {
             .space_to_pcs(IccRenderingIntent::AbsoluteColorimetric)
             .unwrap();
         let sample = [0.3, 0.5, 0.7];
-        let relative_xyz = relative.transfer().evaluate(&sample).unwrap();
-        let absolute_xyz = absolute.transfer().evaluate(&sample).unwrap();
+        let relative_xyz = relative.evaluate(&sample).unwrap();
+        let absolute_xyz = absolute.evaluate(&sample).unwrap();
         for ((actual, relative), (media, pcs)) in absolute_xyz
             .iter()
             .zip(&relative_xyz)
@@ -1054,30 +1004,11 @@ mod tests {
         let restored = profile
             .pcs_to_space(IccRenderingIntent::AbsoluteColorimetric)
             .unwrap()
-            .transfer()
             .evaluate(&absolute_xyz)
             .unwrap();
         for (actual, expected) in restored.into_iter().zip(sample) {
             assert!((actual - expected).abs() < 0.003);
         }
-        let absolute_pcs = absolute.to().clone();
-        assert_ne!(absolute_pcs, ColorSpaceId::from(XyzD50));
-        assert_eq!(
-            absolute_pcs,
-            profile
-                .pcs_to_space(IccRenderingIntent::AbsoluteColorimetric)
-                .unwrap()
-                .from()
-                .clone()
-        );
-        assert_eq!(
-            relative.then(
-                &profile
-                    .pcs_to_space(IccRenderingIntent::AbsoluteColorimetric)
-                    .unwrap()
-            ),
-            Err(ColorTransformError::SpaceMismatch)
-        );
         assert!(matches!(
             profile.connect_to(
                 &profile,
@@ -1100,7 +1031,6 @@ mod tests {
         let absolute_lab = profile
             .space_to_pcs(IccRenderingIntent::AbsoluteColorimetric)
             .unwrap()
-            .transfer()
             .evaluate(&[1.0])
             .unwrap();
         let xyz = Transfer::new(3, [TransferStage::LabD50ToXyzD50])
@@ -1113,14 +1043,12 @@ mod tests {
         let restored = profile
             .pcs_to_space(IccRenderingIntent::AbsoluteColorimetric)
             .unwrap()
-            .transfer()
             .evaluate(&absolute_lab)
             .unwrap();
         assert!((restored[0] - 1.0).abs() < 0.001);
         let shader = profile
             .space_to_pcs(IccRenderingIntent::AbsoluteColorimetric)
             .unwrap()
-            .transfer()
             .wgsl(41)
             .unwrap();
         let module = naga::front::wgsl::parse_str(&shader)
@@ -1165,7 +1093,6 @@ mod tests {
         let actual = profile
             .space_to_pcs(IccRenderingIntent::AbsoluteColorimetric)
             .unwrap()
-            .transfer()
             .evaluate(&[0.2, 0.4, 0.6])
             .unwrap();
         assert_eq!(actual, vec![0.2, 0.4, 0.6]);
@@ -1191,7 +1118,7 @@ mod tests {
     }
 
     #[test]
-    fn profile_transform_keeps_runtime_device_identity() {
+    fn loaded_spaces_are_distinct_while_their_transfers_can_connect() {
         let bytes = ParsedProfile::new_srgb().encode().unwrap();
         let source = IccProfile::from_bytes(&bytes).unwrap();
         let same_source = source.clone();
@@ -1205,12 +1132,9 @@ mod tests {
         let from_pcs = separate_load
             .pcs_to_space(IccRenderingIntent::RelativeColorimetric)
             .unwrap();
-        assert_eq!(to_pcs.from(), &source.color_space().id());
-        assert_eq!(to_pcs.to(), &ColorSpaceId::from(XyzD50));
-        assert_eq!(from_pcs.from(), &ColorSpaceId::from(XyzD50));
-        assert_eq!(from_pcs.to(), &separate_load.color_space().id());
         let connected = to_pcs.then(&from_pcs).unwrap();
-        assert_eq!(connected.to(), &separate_load.color_space().id());
+        assert_eq!(connected.input_channels(), 3);
+        assert_eq!(connected.output_channels(), 3);
     }
 
     #[test]
@@ -1221,27 +1145,20 @@ mod tests {
 
         assert_eq!(first.color_space(), first.clone().color_space());
         assert_ne!(first.color_space(), second.color_space());
-        assert_eq!(
-            first
-                .space_to_pcs(IccRenderingIntent::RelativeColorimetric)
-                .unwrap()
-                .from(),
-            &first.color_space().id()
-        );
+        assert_eq!(ColorSpace::from(&first), first.color_space());
     }
 
     #[test]
-    fn transform_keeps_space_identity_without_retaining_parsed_profile() {
+    fn transfer_does_not_retain_parsed_profile() {
         let bytes = ParsedProfile::new_srgb().encode().unwrap();
         let profile = IccProfile::from_bytes(&bytes).unwrap();
         let parsed = Arc::downgrade(&profile.inner.parsed);
-        let device = profile.color_space().id();
         let transform = profile
             .space_to_pcs(IccRenderingIntent::RelativeColorimetric)
             .unwrap();
         drop(profile);
         assert!(parsed.upgrade().is_none());
-        assert_eq!(transform.from(), &device);
+        assert_eq!(transform.input_channels(), 3);
     }
 
     #[test]
@@ -1267,7 +1184,7 @@ mod tests {
         let transfer = profile
             .space_to_pcs(IccRenderingIntent::RelativeColorimetric)
             .unwrap();
-        let xyz = transfer.transfer().evaluate(&[1.0, 1.0, 1.0]).unwrap();
+        let xyz = transfer.evaluate(&[1.0, 1.0, 1.0]).unwrap();
         assert!((xyz[1] - 1.0).abs() < 0.01);
     }
 
@@ -1306,9 +1223,9 @@ mod tests {
             .pcs_to_space(IccRenderingIntent::RelativeColorimetric)
             .unwrap();
         let encoded = [0.25, 0.5, 0.75];
-        let xyz = forward.transfer().evaluate(&encoded).unwrap();
+        let xyz = forward.evaluate(&encoded).unwrap();
         assert!((xyz[1] - 65535.0 / 65536.0).abs() < 1e-12);
-        let restored = backward.transfer().evaluate(&xyz).unwrap();
+        let restored = backward.evaluate(&xyz).unwrap();
         for (actual, expected) in restored.into_iter().zip(encoded) {
             assert!((actual - expected).abs() < 1e-12);
         }
@@ -1373,12 +1290,12 @@ mod tests {
         let transfer = profile
             .space_to_pcs(IccRenderingIntent::RelativeColorimetric)
             .unwrap();
-        let result = transfer.transfer().evaluate(&[0.8, 0.2, 0.6, 0.5]).unwrap();
+        let result = transfer.evaluate(&[0.8, 0.2, 0.6, 0.5]).unwrap();
         let xyz_scale = 65535.0 / 32768.0;
         for (actual, expected) in result.into_iter().zip([0.8, 0.2, 0.6]) {
             assert!((actual - expected * xyz_scale).abs() < 1e-8);
         }
-        let shader = transfer.transfer().wgsl_with_storage(22, 1, 4).unwrap();
+        let shader = transfer.wgsl_with_storage(22, 1, 4).unwrap();
         assert_eq!(shader.table_values().len(), 48);
         let module = naga::front::wgsl::parse_str(shader.source())
             .unwrap_or_else(|error| panic!("{}", error.emit_to_string(shader.source())));
