@@ -14,9 +14,9 @@ use ::windows::Win32::{
     System::Threading::GetCurrentThreadId,
     UI::WindowsAndMessaging::{PostQuitMessage, PostThreadMessageW, WM_APP},
 };
-use theoria::{canvas::Opacity, color::Srgb};
 use theoria::{
-    canvas::{Canvas, CanvasImage, CanvasView, Coverage},
+    canvas::{Canvas, CanvasImage, CanvasView, Coverage, Opacity},
+    color::Srgb,
     event::EventSink,
     font::Font,
     geometry::Point,

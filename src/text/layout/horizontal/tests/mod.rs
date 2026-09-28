@@ -1,9 +1,9 @@
 use super::*;
-use crate::text::shaping::ShapingDirection;
-use crate::text::test_support::{
-    bundled_latin_font, horizontal, windows_test_font, windows_vertical_fonts,
+use crate::text::{
+    HyphenationMark, HyphenationOpportunity, Hyphenator,
+    shaping::ShapingDirection,
+    test_support::{bundled_latin_font, horizontal, windows_test_font, windows_vertical_fonts},
 };
-use crate::text::{HyphenationMark, HyphenationOpportunity, Hyphenator};
 
 #[derive(Clone, Copy)]
 struct TestHyphenator;

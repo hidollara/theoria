@@ -9,8 +9,10 @@ use std::{
 
 use ash::vk;
 
-use crate::canvas::{Composite, Composition, composition_shader::Binding};
-use crate::color::{ColorSpace, LinearSrgb};
+use crate::{
+    canvas::{Composite, Composition, composition_shader::Binding},
+    color::{ColorSpace, LinearSrgb},
+};
 
 use super::encoding::{
     CompositionPushConstants, ImagePushConstants, OutputPushConstants, TrianglePushConstants,

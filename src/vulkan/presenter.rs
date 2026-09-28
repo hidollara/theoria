@@ -5,8 +5,9 @@ use std::{
 
 use ash::vk;
 
-use crate::vulkan::image_layout::transition_image;
-use crate::{surface::SurfaceSize, windows::Win32PresentationTarget};
+use crate::{
+    surface::SurfaceSize, vulkan::image_layout::transition_image, windows::Win32PresentationTarget,
+};
 
 mod device;
 mod frame;

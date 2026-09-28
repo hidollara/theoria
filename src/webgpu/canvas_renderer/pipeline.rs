@@ -5,9 +5,11 @@ use std::{
 
 use wgpu::util::DeviceExt;
 
-use crate::canvas::{Composite, Composition, composition_shader::Binding};
-use crate::canvas_renderer::icc_image_shader;
-use crate::color::{ColorSpace, IccProfile, IccRenderingIntent};
+use crate::{
+    canvas::{Composite, Composition, composition_shader::Binding},
+    canvas_renderer::icc_image_shader,
+    color::{ColorSpace, IccProfile, IccRenderingIntent},
+};
 
 use super::encoding::{CompositionUniform, ImageVertex, OutputUniform, TriangleVertex};
 

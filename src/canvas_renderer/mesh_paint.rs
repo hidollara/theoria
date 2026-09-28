@@ -12,10 +12,10 @@ use super::{
 };
 
 #[cfg(test)]
-mod tests;
+use crate::tessellation::DEFAULT_TESSELLATION_TOLERANCE;
 
 #[cfg(test)]
-use crate::tessellation::DEFAULT_TESSELLATION_TOLERANCE;
+mod tests;
 
 #[cfg(test)]
 #[derive(Clone, Copy, Debug, PartialEq)]

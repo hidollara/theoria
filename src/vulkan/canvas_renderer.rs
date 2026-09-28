@@ -8,8 +8,15 @@ use crate::{
         canvas_image::CanvasImage,
         image::{Image, ImageKind},
     },
+    canvas_renderer::{
+        canvas_plan::{
+            collect_compositions_in, collect_images, prepare_colors_in, required_scratch_images_in,
+        },
+        color_space::PreparedColors,
+    },
     color::{ColorSpace, LinearSrgb, Srgb},
     surface::{OutputAlpha, OutputImage, Viewport},
+    vulkan::one_shot::OneShotCommands,
 };
 
 use super::{
@@ -24,11 +31,6 @@ mod pipeline;
 mod recording;
 mod resources;
 
-use crate::canvas_renderer::canvas_plan::{
-    collect_compositions_in, collect_images, prepare_colors_in, required_scratch_images_in,
-};
-use crate::canvas_renderer::color_space::PreparedColors;
-use crate::vulkan::one_shot::OneShotCommands;
 use recording::CanvasRecorder;
 use resources::CanvasGpuResources;
 

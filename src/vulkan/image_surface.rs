@@ -229,9 +229,8 @@ fn pixel_byte_len(size: SurfaceSize) -> Result<usize> {
 mod tests {
     use super::{ImageSurface, pixel_byte_len};
     use crate::{
-        canvas::Color,
         canvas::{
-            Canvas, CanvasView, Composite, Composition, Coverage, ImageExtend, ImagePattern,
+            Canvas, CanvasView, Color, Composite, Composition, Coverage, ImageExtend, ImagePattern,
             Opacity,
         },
         color::{IccProfile, IccRenderingIntent, LinearDisplayP3, LinearSrgb, Srgb},

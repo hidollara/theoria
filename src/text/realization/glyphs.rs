@@ -1,8 +1,7 @@
 use std::ops::Range;
 
 use crate::{
-    canvas::Color,
-    canvas::{Canvas, ColorField, Coverage, Opacity},
+    canvas::{Canvas, Color, ColorField, Coverage, Opacity},
     color::Srgb,
     font::{GlyphPresentationError, GlyphRealizationRequest, RealizedGlyph},
     math::Vector2,

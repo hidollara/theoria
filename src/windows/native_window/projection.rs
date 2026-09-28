@@ -7,10 +7,11 @@ use ::windows::Win32::UI::WindowsAndMessaging::{
 
 use crate::{
     surface::SurfaceSize,
-    windows::event_buffer::{Win32WindowEvent, WindowEventBuffer},
+    windows::{
+        event_buffer::{Win32WindowEvent, WindowEventBuffer},
+        native_window::{message::Win32WindowMessage, pointer},
+    },
 };
-
-use crate::windows::native_window::{message::Win32WindowMessage, pointer};
 
 pub(super) fn observe(events: &WindowEventBuffer, message: Win32WindowMessage<'_>) {
     let contents = message.message();

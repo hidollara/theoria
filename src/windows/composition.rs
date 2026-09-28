@@ -11,9 +11,8 @@ use crate::{
     event_loop::{ComponentParticipant, EventLoopHandle, EventLoopParticipant},
     reactive::Computed,
     surface::SurfaceContent,
+    windows::{Result, capabilities::WindowCapabilities, host::WindowHost},
 };
-
-use crate::windows::{Result, capabilities::WindowCapabilities, host::WindowHost};
 
 /// Owns one Component execution boundary and its mounted Window producers.
 pub(super) struct WindowComposition {

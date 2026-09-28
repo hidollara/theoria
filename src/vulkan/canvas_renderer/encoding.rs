@@ -4,11 +4,11 @@ use crate::{
     canvas::{CanvasView, Composition, ImageExtend, ImagePattern, ImageSampling},
     canvas_renderer::{composition_encoding, view_space::transformed_point_to_clip},
     geometry::Point,
+    surface::OutputAlpha,
     transform::Projective2,
 };
 
 use super::super::color::PremultipliedWorkingRgba;
-use crate::surface::OutputAlpha;
 
 #[repr(C)]
 #[derive(Clone, Copy)]

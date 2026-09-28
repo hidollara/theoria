@@ -1,6 +1,7 @@
 use super::*;
-use crate::text::test_support::windows_vertical_fonts;
-use crate::text::{HyphenationMark, HyphenationOpportunity, Hyphenator, Span};
+use crate::text::{
+    HyphenationMark, HyphenationOpportunity, Hyphenator, Span, test_support::windows_vertical_fonts,
+};
 
 #[derive(Clone, Copy)]
 struct TestHyphenator;

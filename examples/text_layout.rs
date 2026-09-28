@@ -1,7 +1,6 @@
 use theoria::{
-    canvas::Color,
-    canvas::{CanvasView, Composite, Composition},
-    color::LinearSrgb,
+    canvas::{CanvasView, Color, Composite, Composition, Opacity},
+    color::{LinearSrgb, Srgb},
     font::Font,
     geometry::Point,
     math::Vector2,
@@ -10,7 +9,6 @@ use theoria::{
     transform::Affine2,
     windows::{self, Window},
 };
-use theoria::{canvas::Opacity, color::Srgb};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut event_loop = windows::event_loop();

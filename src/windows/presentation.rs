@@ -11,9 +11,8 @@ use crate::{
     reactive::Computed,
     surface::{SurfaceContent, SurfaceSize, Viewport},
     vulkan::{CanvasRenderer, PresentOutcome, Win32Presenter},
+    windows::{Result, presentation_target::Win32PresentationTarget},
 };
-
-use crate::windows::{Result, presentation_target::Win32PresentationTarget};
 
 pub(super) struct WindowPresentation {
     presenter: Win32Presenter,

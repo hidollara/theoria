@@ -126,8 +126,7 @@ fn tatweel_words(runs: &[PositionedRun], content: &str) -> Vec<TatweelWord> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::text::test_support::windows_test_font;
-    use crate::text::{JustificationOptions, Text, TextStyle};
+    use crate::text::{JustificationOptions, Text, TextStyle, test_support::windows_test_font};
 
     #[cfg(target_os = "windows")]
     #[test]

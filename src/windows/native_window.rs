@@ -17,7 +17,10 @@ use ::windows::{
     core::{PCWSTR, Result, w},
 };
 
-use crate::surface::SurfaceSize;
+use crate::{
+    surface::SurfaceSize,
+    windows::{event_buffer::WindowEventBuffer, presentation_target::Win32PresentationTarget},
+};
 
 mod message;
 mod pointer;
@@ -29,9 +32,6 @@ pub use self::message::{Win32WindowMessage, Win32WindowMessageSource};
 use self::{
     message::WindowMessages, procedure::initialize_windowing, procedure::resize_client_area,
     state::WindowState,
-};
-use crate::windows::{
-    event_buffer::WindowEventBuffer, presentation_target::Win32PresentationTarget,
 };
 
 pub(super) struct Win32Window {

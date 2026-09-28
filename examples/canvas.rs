@@ -1,11 +1,10 @@
 use theoria::{
-    canvas::Color,
     canvas::{
-        AcrossPathGradient, AlongPathGradient, BlendMode, Canvas, CanvasImage, CanvasView,
+        AcrossPathGradient, AlongPathGradient, BlendMode, Canvas, CanvasImage, CanvasView, Color,
         ColorRamp, Composite, Composition, ConicGradient, Coverage, GradientPoint, GradientStop,
-        ImageExtend, ImagePattern, LinearGradient, MeshGradient, RadialGradient,
+        ImageExtend, ImagePattern, LinearGradient, MeshGradient, Opacity, RadialGradient,
     },
-    color::LinearSrgb,
+    color::{LinearSrgb, Srgb},
     geometry::Point,
     image::{Srgba8Image, Srgba8ImageError},
     math::Vector2,
@@ -16,7 +15,6 @@ use theoria::{
     transform::Affine2,
     windows::{self, Window},
 };
-use theoria::{canvas::Opacity, color::Srgb};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut event_loop = windows::event_loop();

@@ -4,10 +4,12 @@ use std::{error::Error, marker::PhantomData};
 
 use ash::vk;
 
-use crate::canvas::Color;
-use crate::color::{IccProfile, IccRenderingIntent, LinearSrgb, Srgb};
-use crate::surface::{OutputAlpha, OutputImage};
-use crate::vulkan::image_layout::transition_image;
+use crate::{
+    canvas::Color,
+    color::{IccProfile, IccRenderingIntent, LinearSrgb, Srgb},
+    surface::{OutputAlpha, OutputImage},
+    vulkan::image_layout::transition_image,
+};
 
 use super::{device::PresentationDevice, swapchain::SwapchainResources};
 

@@ -8,9 +8,9 @@ use crate::{
     transform::Affine2,
 };
 
-use super::shaping::ShapingDirection;
 use super::shaping::{
-    GlyphRun, ShapingError, shape_directional_segment, shape_directional_segment_in_context,
+    GlyphRun, ShapingDirection, ShapingError, shape_directional_segment,
+    shape_directional_segment_in_context,
 };
 use super::unicode::{
     VerticalGlyphOrientation, bidi_info, grapheme_indices, vertical_glyph_orientation,

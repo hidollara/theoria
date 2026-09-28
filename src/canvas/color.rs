@@ -1,11 +1,10 @@
 use std::{error::Error, fmt, sync::Arc};
 
+use super::opacity::{Opacity, OpacitySample};
 use crate::color::{
     ColorCoordinates, ColorSpace, IccProfileError, SpaceConnectionError, TransferError,
     TypedColorSpace,
 };
-
-use super::opacity::{Opacity, OpacitySample};
 
 /// A Canvas color retaining its authored space and coordinate representation.
 ///
@@ -261,9 +260,9 @@ impl Error for ColorError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::color::IccProfile;
     use crate::color::{
-        DisplayP3, IccRenderingIntent, LabD50, LinearDisplayP3, LinearSrgb, Srgb, XyzD50, XyzD65,
+        DisplayP3, IccProfile, IccRenderingIntent, LabD50, LinearDisplayP3, LinearSrgb, Srgb,
+        XyzD50, XyzD65,
     };
 
     // CSS Color 4 §10.9 gives these equivalent coordinates for #7654CD.

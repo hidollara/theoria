@@ -9,8 +9,7 @@ use std::{
 
 use ::windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 
-use crate::event::EventSource;
-use crate::windows::message::Win32Message;
+use crate::{event::EventSource, windows::message::Win32Message};
 
 /// One message observed while its Win32 Window procedure is executing.
 ///

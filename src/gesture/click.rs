@@ -1,11 +1,10 @@
 use crate::{
     geometry::Point,
     input::pointer::{
-        PointerButton, PointerButtonChange, PointerEvent, PointerId, PointerKind, PointerPhase,
+        MovementThreshold, PointerButton, PointerButtonChange, PointerEvent, PointerId,
+        PointerKind, PointerPhase,
     },
 };
-
-use crate::input::pointer::MovementThreshold;
 
 /// A completed press-and-release gesture in one input coordinate space.
 ///

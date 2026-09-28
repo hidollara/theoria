@@ -1,9 +1,8 @@
 use std::f32::consts::PI;
 
 use theoria::{
-    canvas::Color,
-    canvas::{Canvas, CanvasView, Composite, Composition, Coverage},
-    color::LinearSrgb,
+    canvas::{Canvas, CanvasView, Color, Composite, Composition, Coverage, Opacity},
+    color::{LinearSrgb, Srgb},
     event::OwningSink,
     font::Font,
     geometry::Point,
@@ -17,7 +16,6 @@ use theoria::{
     transform::Affine2,
     windows::{self, WindowGroup},
 };
-use theoria::{canvas::Opacity, color::Srgb};
 
 const WIDTH: u32 = 640;
 const HEIGHT: u32 = 480;

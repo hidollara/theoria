@@ -1,7 +1,6 @@
-use crate::{geometry::Point, path::Path};
+use crate::{canvas::Coverage, geometry::Point, path::Path};
 
 use super::super::{TextDecoration, TextDecorationKind, TextError, WritingMode};
-use crate::canvas::Coverage;
 
 pub(super) fn decoration_coverage(
     points: [Point; 4],

@@ -1,8 +1,13 @@
 use super::*;
-use crate::text::shaping::ShapingDirection;
-use crate::text::test_support::{bundled_latin_font, windows_test_font, windows_vertical_fonts};
-use crate::text::{MissingGlyphPolicy, OpenTypeFeatureTag, ShapingOptions};
-use crate::{font::GlyphId, math::Vector2};
+use crate::{
+    font::GlyphId,
+    math::Vector2,
+    text::{
+        MissingGlyphPolicy, OpenTypeFeatureTag, ShapingOptions,
+        shaping::ShapingDirection,
+        test_support::{bundled_latin_font, windows_test_font, windows_vertical_fonts},
+    },
+};
 
 #[cfg(target_os = "windows")]
 #[test]

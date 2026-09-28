@@ -4,9 +4,11 @@ use std::error::Error;
 
 use ash::vk;
 
-use crate::canvas::Composition;
-use crate::color::ColorSpace;
-use crate::vulkan::{image::ImageCache, presenter::RenderDevice, scratch_image::ScratchImage};
+use crate::{
+    canvas::Composition,
+    color::ColorSpace,
+    vulkan::{image::ImageCache, presenter::RenderDevice, scratch_image::ScratchImage},
+};
 
 use super::pipeline::{Pipelines, create_pipelines};
 

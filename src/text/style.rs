@@ -2,8 +2,7 @@ use std::sync::Arc;
 
 use super::OpenTypeFeature;
 use super::paint::{TextDecoration, TextPaint};
-use crate::canvas::ColorField;
-use crate::font::Font;
+use crate::{canvas::ColorField, font::Font};
 
 #[derive(Clone, Debug)]
 struct TextStyleData {

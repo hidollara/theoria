@@ -1,9 +1,8 @@
 use std::time::{Duration, Instant};
 
-use theoria::{canvas::Opacity, color::Srgb};
 use theoria::{
-    canvas::{Canvas, Color, Composite, Composition, Coverage},
-    color::LinearSrgb,
+    canvas::{Canvas, Color, Composite, Composition, Coverage, Opacity},
+    color::{LinearSrgb, Srgb},
     font::Font,
     geometry::Point,
     math::Vector2,

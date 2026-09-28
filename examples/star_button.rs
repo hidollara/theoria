@@ -1,9 +1,8 @@
 use std::{cell::RefCell, f32::consts::PI, rc::Rc};
 
 use theoria::{
-    canvas::Color,
-    canvas::{Canvas, CanvasView, Composite, Composition, Coverage},
-    color::LinearSrgb,
+    canvas::{Canvas, CanvasView, Color, Composite, Composition, Coverage, Opacity},
+    color::{LinearSrgb, Srgb},
     component::{Component, MountContext},
     event::ChannelSource,
     font::Font,
@@ -22,7 +21,6 @@ use theoria::{
     transform::Affine2,
     windows::{self, Window},
 };
-use theoria::{canvas::Opacity, color::Srgb};
 
 const WIDTH: u32 = 960;
 const HEIGHT: u32 = 640;
@@ -260,13 +258,13 @@ fn star_path(center: Point, outer_radius: f32, inner_radius: f32) -> Path {
 mod tests {
     use std::{cell::Cell, rc::Rc};
 
-    use theoria::input::pointer::MovementThreshold;
-    use theoria::input::pointer::{
-        PointerButtonChange, PointerButtons, PointerEvent, PointerId, PointerKind, PointerPhase,
-    };
     use theoria::{
         component::{ComponentInstance, ComponentSink, MountContext},
         event::DispatchQueue,
+        input::pointer::{
+            MovementThreshold, PointerButtonChange, PointerButtons, PointerEvent, PointerId,
+            PointerKind, PointerPhase,
+        },
     };
 
     use super::*;

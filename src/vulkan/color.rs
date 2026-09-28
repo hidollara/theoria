@@ -5,8 +5,10 @@
 //! that working representation through interpolation and compositing. The
 //! destination image's color and alpha contract is applied at output.
 
-use crate::canvas::Color;
-use crate::canvas_renderer::{WorkingColor, color_space};
+use crate::{
+    canvas::Color,
+    canvas_renderer::{WorkingColor, color_space},
+};
 
 #[cfg(test)]
 use crate::{canvas::Opacity, color::Srgb};

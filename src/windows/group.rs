@@ -6,14 +6,15 @@ use std::{
 };
 
 use crate::{
-    component::MountContext, event_loop::EventLoopHandle, reactive::Computed,
+    component::MountContext,
+    event_loop::EventLoopHandle,
+    reactive::Computed,
     surface::SurfaceContent,
-};
-
-use crate::windows::{
-    Result,
-    capabilities::WindowCapabilities,
-    composition::{WindowChildren, WindowComposition},
+    windows::{
+        Result,
+        capabilities::WindowCapabilities,
+        composition::{WindowChildren, WindowComposition},
+    },
 };
 
 /// Convenience ownership for one Component root with multiple Window children.

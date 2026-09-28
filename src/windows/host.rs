@@ -17,14 +17,13 @@ use crate::{
     reactive::Computed,
     surface::{Surface, SurfaceContent, SurfaceEvent},
     window::CloseRequested,
-};
-
-use crate::windows::{
-    Result,
-    capabilities::WindowCapabilities,
-    event_buffer::{Win32WindowEvent, WindowEventBuffer},
-    native_window::Win32Window,
-    presentation::WindowPresentation,
+    windows::{
+        Result,
+        capabilities::WindowCapabilities,
+        event_buffer::{Win32WindowEvent, WindowEventBuffer},
+        native_window::Win32Window,
+        presentation::WindowPresentation,
+    },
 };
 
 /// Native and presentation state for one Window attached to a Component tree.

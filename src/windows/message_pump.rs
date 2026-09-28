@@ -6,8 +6,7 @@ use std::{
     fmt,
     marker::PhantomData,
     rc::{Rc, Weak},
-    sync::OnceLock,
-    sync::{Arc, Mutex, Weak as SyncWeak},
+    sync::{Arc, Mutex, OnceLock, Weak as SyncWeak},
     time::Duration,
 };
 
@@ -24,9 +23,11 @@ use ::windows::{
     core::{Error, Result, w},
 };
 
-use crate::event::EventSource;
-use crate::event_loop::pump::{EventPump, EventPumpWake, PumpEvent, PumpResult};
-use crate::windows::message::{Win32Message, Win32QueuedMessage, Win32ThreadMessage};
+use crate::{
+    event::EventSource,
+    event_loop::pump::{EventPump, EventPumpWake, PumpEvent, PumpResult},
+    windows::message::{Win32Message, Win32QueuedMessage, Win32ThreadMessage},
+};
 
 /// Drives the Win32 message queue belonging to the current GUI thread.
 ///

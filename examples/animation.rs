@@ -1,9 +1,8 @@
 use std::f32::consts::TAU;
 
 use theoria::{
-    canvas::Color,
-    canvas::{Canvas, CanvasView, Composite, Composition, Coverage},
-    color::LinearSrgb,
+    canvas::{Canvas, CanvasView, Color, Composite, Composition, Coverage, Opacity},
+    color::{LinearSrgb, Srgb},
     event::OwningSink,
     geometry::Point,
     input::pointer::{PointerButton, PointerEvent, PointerPhase},
@@ -13,7 +12,6 @@ use theoria::{
     transform::Affine2,
     windows::{self, Window},
 };
-use theoria::{canvas::Opacity, color::Srgb};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut event_loop = windows::event_loop();
