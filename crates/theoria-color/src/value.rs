@@ -102,8 +102,8 @@ where
 mod tests {
     use super::*;
     use crate::{
-        ColorModel, ColorSpace, IccRenderingIntent, Pcs, ProfileConnectionError, ProfileDefinition,
-        Rgb, Transfer, TypedColorSpace,
+        ColorModel, ColorProfile, ColorSpace, IccRenderingIntent, Pcs, ProfileConnectionError, Rgb,
+        Transfer, TypedColorSpace,
     };
     use std::sync::LazyLock;
 
@@ -130,7 +130,7 @@ mod tests {
 
     struct LogicalProfile;
 
-    impl ProfileDefinition for LogicalProfile {
+    impl ColorProfile for LogicalProfile {
         fn model(&self) -> ColorModel {
             ColorModel::Channels(2)
         }

@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use crate::{
     color::{
-        ColorModel, ColorSpace, IccRenderingIntent, Pcs, ProfileConnectionError, ProfileDefinition,
+        ColorModel, ColorProfile, ColorSpace, IccRenderingIntent, Pcs, ProfileConnectionError,
         Transfer,
     },
     component::{ComponentInstance, MountContext},
@@ -15,7 +15,7 @@ use crate::{
 pub(crate) fn distinct_color_profile(profile: impl Into<ColorSpace>) -> ColorSpace {
     struct Distinct(ColorSpace);
 
-    impl ProfileDefinition for Distinct {
+    impl ColorProfile for Distinct {
         fn model(&self) -> ColorModel {
             self.0.model()
         }

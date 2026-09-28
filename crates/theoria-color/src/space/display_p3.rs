@@ -1,5 +1,5 @@
 use super::{
-    ColorSpace, IccRenderingIntent, Pcs, ProfileConnectionError, ProfileDefinition, Transfer,
+    ColorProfile, ColorSpace, IccRenderingIntent, Pcs, ProfileConnectionError, Transfer,
     TransferCurve, TypedColorSpace, pcs_to_rgb_transfer, require_relative, rgb_direct_to,
     rgb_to_pcs_transfer, rgb_to_xyz_d65_transfer, xyz_d65_to_rgb_transfer,
 };
@@ -36,7 +36,7 @@ impl DisplayP3 {
 
 predefined_space!(DisplayP3, DisplayP3Profile);
 
-impl ProfileDefinition for DisplayP3Profile {
+impl ColorProfile for DisplayP3Profile {
     fn model(&self) -> crate::model::ColorModel {
         crate::model::ColorModel::Rgb
     }

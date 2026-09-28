@@ -23,12 +23,12 @@ pub enum Pcs {
 /// A shared, runtime color space with its coordinate and conversion definition.
 /// Clones retain the same identity; loading another definition creates another space.
 #[derive(Clone)]
-pub struct ColorSpace(Arc<dyn ProfileDefinition>);
+pub struct ColorSpace(Arc<dyn ColorProfile>);
 
 impl ColorSpace {
     /// Owns a definition as a new color space. Named spaces use their canonical
     /// `Into<ColorSpace>` conversion instead.
-    pub fn new(definition: impl ProfileDefinition + 'static) -> Self {
+    pub fn new(definition: impl ColorProfile + 'static) -> Self {
         assert!(
             definition.model().channels() > 0,
             "color model needs channels"
@@ -37,7 +37,7 @@ impl ColorSpace {
     }
 
     /// Reuses an already shared definition without another allocation.
-    pub fn from_arc<D: ProfileDefinition + 'static>(definition: Arc<D>) -> Self {
+    pub fn from_arc<D: ColorProfile + 'static>(definition: Arc<D>) -> Self {
         assert!(
             definition.model().channels() > 0,
             "color model needs channels"
@@ -138,7 +138,7 @@ impl fmt::Debug for ColorSpace {
 /// The two PCS directions are independent, and a direct link is optional.
 /// Definitions are `Send + Sync` so their handles can be shared by renderers.
 /// `model` and `pcs` must remain stable for the lifetime of the definition.
-pub trait ProfileDefinition: Send + Sync {
+pub trait ColorProfile: Send + Sync {
     fn model(&self) -> ColorModel;
     fn pcs(&self) -> Pcs;
     fn space_to_pcs_transfer(
@@ -393,7 +393,7 @@ mod tests {
     fn direct_link_is_used_only_for_its_declared_intent() {
         struct LinkedSpace;
 
-        impl ProfileDefinition for LinkedSpace {
+        impl ColorProfile for LinkedSpace {
             fn model(&self) -> ColorModel {
                 ColorModel::Rgb
             }
@@ -468,7 +468,7 @@ mod tests {
     fn direct_transfer_with_wrong_channel_count_is_rejected() {
         struct InvalidLink;
 
-        impl ProfileDefinition for InvalidLink {
+        impl ColorProfile for InvalidLink {
             fn model(&self) -> ColorModel {
                 ColorModel::Rgb
             }
@@ -515,7 +515,7 @@ mod tests {
     fn profile_transfer_with_wrong_channel_count_is_rejected() {
         struct InvalidPcs;
 
-        impl ProfileDefinition for InvalidPcs {
+        impl ColorProfile for InvalidPcs {
             fn model(&self) -> ColorModel {
                 ColorModel::Rgb
             }

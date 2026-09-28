@@ -1,6 +1,6 @@
 use super::{
-    ColorSpace, DisplayP3, IccRenderingIntent, Pcs, ProfileConnectionError, ProfileDefinition,
-    Transfer, TransferCurve, TypedColorSpace, pcs_to_rgb_transfer, require_relative, rgb_direct_to,
+    ColorProfile, ColorSpace, DisplayP3, IccRenderingIntent, Pcs, ProfileConnectionError, Transfer,
+    TransferCurve, TypedColorSpace, pcs_to_rgb_transfer, require_relative, rgb_direct_to,
     rgb_to_pcs_transfer, rgb_to_xyz_d65_transfer, xyz_d65_to_rgb_transfer,
 };
 use crate::model::Rgb;
@@ -14,7 +14,7 @@ impl LinearDisplayP3 {
 
 predefined_space!(LinearDisplayP3, LinearDisplayP3Profile);
 
-impl ProfileDefinition for LinearDisplayP3Profile {
+impl ColorProfile for LinearDisplayP3Profile {
     fn model(&self) -> crate::model::ColorModel {
         crate::model::ColorModel::Rgb
     }

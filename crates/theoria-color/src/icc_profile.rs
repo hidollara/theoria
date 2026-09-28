@@ -8,7 +8,7 @@ use moxcms::{
 use super::icc_mpe::MpeTags;
 use super::model::ColorModel;
 use super::pcs::ICC_D50;
-use super::profile::{ColorSpace, Pcs, ProfileConnectionError, ProfileDefinition, connect_spaces};
+use super::profile::{ColorProfile, ColorSpace, Pcs, ProfileConnectionError, connect_spaces};
 use super::transfer::{
     Transfer, TransferClut, TransferCurve, TransferError, TransferMatrix, TransferStage,
 };
@@ -689,7 +689,7 @@ impl Error for IccProfileError {
     }
 }
 
-impl ProfileDefinition for IccProfileData {
+impl ColorProfile for IccProfileData {
     fn model(&self) -> ColorModel {
         self.device_model()
     }

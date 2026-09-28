@@ -2,9 +2,7 @@
 use super::Rgb;
 use super::TypedColorModel;
 use super::icc_profile::IccRenderingIntent;
-use super::profile::{
-    ColorSpace, Pcs, ProfileConnectionError, ProfileDefinition, require_relative,
-};
+use super::profile::{ColorProfile, ColorSpace, Pcs, ProfileConnectionError, require_relative};
 use super::transfer::{Transfer, TransferCurve, TransferError, TransferMatrix, TransferStage};
 
 /// Associates a statically typed color space with its coordinate model.
