@@ -7,10 +7,10 @@ use moxcms::{
 
 use super::icc_mpe::MpeTags;
 use super::model::ColorModel;
-use super::pcs::ICC_D50;
 use super::profile::{ColorProfile, ColorSpace, Pcs, SpaceConnectionError};
 use super::transfer::{
-    Transfer, TransferClut, TransferCurve, TransferError, TransferMatrix, TransferStage,
+    ICC_PCS_D50_XYZ, Transfer, TransferClut, TransferCurve, TransferError, TransferMatrix,
+    TransferStage,
 };
 
 /// The requested rendering intent for selecting a profile conversion.
@@ -229,14 +229,14 @@ impl IccProfileData {
 
     fn absolute_to_pcs(&self) -> Result<Transfer, IccProfileError> {
         let media_white = self.media_white()?;
-        let scale = std::array::from_fn(|index| media_white[index] / ICC_D50[index]);
+        let scale = std::array::from_fn(|index| media_white[index] / ICC_PCS_D50_XYZ[index]);
         let relative = self.space_to_pcs(IccRenderingIntent::RelativeColorimetric)?;
         self.validate_to_pcs(relative.then(&self.absolute_adjustment(scale)?)?)
     }
 
     fn absolute_from_pcs(&self) -> Result<Transfer, IccProfileError> {
         let media_white = self.media_white()?;
-        let scale = std::array::from_fn(|index| ICC_D50[index] / media_white[index]);
+        let scale = std::array::from_fn(|index| ICC_PCS_D50_XYZ[index] / media_white[index]);
         let relative = self.pcs_to_space(IccRenderingIntent::RelativeColorimetric)?;
         self.validate_from_pcs(self.absolute_adjustment(scale)?.then(&relative)?)
     }
@@ -574,7 +574,7 @@ fn gray_trc_to_pcs(profile: &ParsedProfile, pcs: Pcs) -> Result<Transfer, IccPro
         .as_ref()
         .ok_or(IccProfileError::MissingTransfer)?;
     let coefficients = match pcs {
-        Pcs::XyzD50 => ICC_D50,
+        Pcs::XyzD50 => ICC_PCS_D50_XYZ,
         Pcs::LabD50 => [100.0, 0.0, 0.0],
     };
     Ok(Transfer::new(
@@ -888,8 +888,7 @@ mod tests {
         )
         .unwrap();
         let result = connected.evaluate(&[0.4]).unwrap();
-        let relative_xyz = ICC_D50.map(|component| component * 0.4);
-        let expected = crate::pcs::xyz_to_lab(relative_xyz, ICC_D50)[0] / 100.0;
+        let expected = (116.0 * 0.4_f64.cbrt() - 16.0) / 100.0;
         assert!((result[0] - expected).abs() < 1e-8);
     }
 
@@ -930,7 +929,7 @@ mod tests {
             .pcs_to_space(IccRenderingIntent::RelativeColorimetric)
             .unwrap();
         let xyz = forward.evaluate(&[0.5]).unwrap();
-        let white = ICC_D50;
+        let white = ICC_PCS_D50_XYZ;
         for (actual, expected) in xyz.iter().zip(white) {
             assert!((actual - expected * 0.5_f64.powf(2.2)).abs() < 0.002);
         }
@@ -971,7 +970,7 @@ mod tests {
         for ((actual, relative), (media, pcs)) in absolute_xyz
             .iter()
             .zip(&relative_xyz)
-            .zip([0.75, 0.8, 0.6].into_iter().zip(ICC_D50))
+            .zip([0.75, 0.8, 0.6].into_iter().zip(ICC_PCS_D50_XYZ))
         {
             assert!((actual - relative * media / pcs).abs() < 1e-12);
         }

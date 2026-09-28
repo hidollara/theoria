@@ -293,7 +293,7 @@ mod tests {
             transform.stages(),
             &[TransferStage::curves([TransferCurve::SRGB_DECODE; 3]).unwrap()]
         );
-        let expected = crate::transform::decode_srgb_f64(0.5);
+        let expected = 0.214_041_140_482_232_55;
         for actual in transform.evaluate(&[0.5; 3]).unwrap() {
             assert!((actual - expected).abs() < 1e-12);
         }

@@ -1,7 +1,5 @@
 use std::{error::Error, fmt, sync::Arc};
 
-use super::{pcs, transform};
-
 /// A directed sequence of color-coordinate operations.
 ///
 /// An ICC profile can provide different device-to-PCS and PCS-to-device
@@ -95,8 +93,8 @@ impl Transfer {
                     .into_iter()
                     .map(|value| value.clamp(0.0, 1.0))
                     .collect(),
-                TransferStage::XyzD50ToLabD50 => pcs::xyz_d50_to_lab_d50(&values),
-                TransferStage::LabD50ToXyzD50 => pcs::lab_d50_to_xyz_d50(&values),
+                TransferStage::XyzD50ToLabD50 => xyz_d50_to_lab_d50(&values),
+                TransferStage::LabD50ToXyzD50 => lab_d50_to_xyz_d50(&values),
             };
         }
         if values.iter().any(|value| !value.is_finite()) {
@@ -159,8 +157,8 @@ impl Transfer {
             ) {
                 let name = format!("{prefix}_pcs_{stage_index}");
                 helpers.push_str(&match stage {
-                    TransferStage::XyzD50ToLabD50 => pcs::xyz_d50_to_lab_d50_wgsl(&name),
-                    TransferStage::LabD50ToXyzD50 => pcs::lab_d50_to_xyz_d50_wgsl(&name),
+                    TransferStage::XyzD50ToLabD50 => xyz_d50_to_lab_d50_wgsl(&name),
+                    TransferStage::LabD50ToXyzD50 => lab_d50_to_xyz_d50_wgsl(&name),
                     _ => unreachable!(),
                 });
                 body.push_str(&format!("    let {output_name} = {name}({input_name});\n"));
@@ -724,8 +722,8 @@ impl TransferCurve {
                 .find(|segment| value <= segment.upper)
                 .unwrap_or_else(|| segments.last().unwrap())
                 .evaluate(value),
-            CurveKind::SrgbDecode => transform::decode_srgb_f64(value),
-            CurveKind::SrgbEncode => transform::encode_srgb_f64(value),
+            CurveKind::SrgbDecode => decode_srgb_f64(value),
+            CurveKind::SrgbEncode => encode_srgb_f64(value),
         }
     }
 
@@ -877,28 +875,28 @@ impl TransferCurve {
             CurveKind::SrgbDecode | CurveKind::SrgbEncode => {
                 let decode = matches!(self.0, CurveKind::SrgbDecode);
                 let threshold = if decode {
-                    transform::SRGB_DECODE_THRESHOLD
+                    SRGB_DECODE_THRESHOLD
                 } else {
-                    transform::SRGB_ENCODE_THRESHOLD
+                    SRGB_ENCODE_THRESHOLD
                 };
                 let linear = if decode {
-                    format!("value / {}", wgsl_literal(transform::SRGB_LINEAR_SCALE)?)
+                    format!("value / {}", wgsl_literal(SRGB_LINEAR_SCALE)?)
                 } else {
-                    format!("value * {}", wgsl_literal(transform::SRGB_LINEAR_SCALE)?)
+                    format!("value * {}", wgsl_literal(SRGB_LINEAR_SCALE)?)
                 };
                 let nonlinear = if decode {
                     format!(
                         "sign(value) * pow((magnitude + {}) / {}, {})",
-                        wgsl_literal(transform::SRGB_POWER_OFFSET)?,
-                        wgsl_literal(transform::SRGB_POWER_SCALE)?,
-                        wgsl_literal(transform::SRGB_GAMMA)?,
+                        wgsl_literal(SRGB_POWER_OFFSET)?,
+                        wgsl_literal(SRGB_POWER_SCALE)?,
+                        wgsl_literal(SRGB_GAMMA)?,
                     )
                 } else {
                     format!(
                         "sign(value) * ({} * pow(magnitude, 1.0 / {}) - {})",
-                        wgsl_literal(transform::SRGB_POWER_SCALE)?,
-                        wgsl_literal(transform::SRGB_GAMMA)?,
-                        wgsl_literal(transform::SRGB_POWER_OFFSET)?,
+                        wgsl_literal(SRGB_POWER_SCALE)?,
+                        wgsl_literal(SRGB_GAMMA)?,
+                        wgsl_literal(SRGB_POWER_OFFSET)?,
                     )
                 };
                 helpers.push_str(&format!(
@@ -921,6 +919,109 @@ fn wgsl_literal(value: f64) -> Result<String, TransferError> {
         return Err(TransferError::NotRepresentableInF32);
     }
     Ok(format!("{rounded:?}"))
+}
+
+/// ICC D50 PCS white, expressed as the specified XYZ tristimulus values.
+pub(super) const ICC_PCS_D50_XYZ: [f64; 3] = [0.9642, 1.0, 0.8249];
+const LAB_DELTA: f64 = 6.0 / 29.0;
+const LAB_EPSILON: f64 = LAB_DELTA * LAB_DELTA * LAB_DELTA;
+
+fn lab_f(value: f64) -> f64 {
+    if value > LAB_EPSILON {
+        value.cbrt()
+    } else {
+        value / (3.0 * LAB_DELTA * LAB_DELTA) + 4.0 / 29.0
+    }
+}
+
+fn lab_f_inverse(value: f64) -> f64 {
+    if value > LAB_DELTA {
+        value * value * value
+    } else {
+        3.0 * LAB_DELTA * LAB_DELTA * (value - 4.0 / 29.0)
+    }
+}
+
+fn xyz_to_lab(xyz: [f64; 3], white: [f64; 3]) -> [f64; 3] {
+    let x = lab_f(xyz[0] / white[0]);
+    let y = lab_f(xyz[1] / white[1]);
+    let z = lab_f(xyz[2] / white[2]);
+    [116.0 * y - 16.0, 500.0 * (x - y), 200.0 * (y - z)]
+}
+
+fn lab_to_xyz(lab: [f64; 3], white: [f64; 3]) -> [f64; 3] {
+    let y = (lab[0] + 16.0) / 116.0;
+    let x = y + lab[1] / 500.0;
+    let z = y - lab[2] / 200.0;
+    [
+        white[0] * lab_f_inverse(x),
+        white[1] * lab_f_inverse(y),
+        white[2] * lab_f_inverse(z),
+    ]
+}
+
+fn xyz_d50_to_lab_d50(xyz: &[f64]) -> Vec<f64> {
+    xyz_to_lab([xyz[0], xyz[1], xyz[2]], ICC_PCS_D50_XYZ).to_vec()
+}
+
+fn lab_d50_to_xyz_d50(lab: &[f64]) -> Vec<f64> {
+    lab_to_xyz([lab[0], lab[1], lab[2]], ICC_PCS_D50_XYZ).to_vec()
+}
+
+fn xyz_d50_to_lab_d50_wgsl(name: &str) -> String {
+    format!(
+        "fn {name}_f(value: f32) -> f32 {{\n\
+             if value > 0.00885645168 {{ return pow(value, 1.0 / 3.0); }}\n\
+             return value / 0.12841854935 + 0.13793103448;\n\
+         }}\n\
+         fn {name}(value: array<f32, 3>) -> array<f32, 3> {{\n\
+             let x = {name}_f(value[0] / 0.9642);\n\
+             let y = {name}_f(value[1]);\n\
+             let z = {name}_f(value[2] / 0.8249);\n\
+             return array<f32, 3>(116.0 * y - 16.0, 500.0 * (x - y), 200.0 * (y - z));\n\
+         }}\n"
+    )
+}
+
+fn lab_d50_to_xyz_d50_wgsl(name: &str) -> String {
+    format!(
+        "fn {name}_inverse(value: f32) -> f32 {{\n\
+             if value > 0.20689655172 {{ return value * value * value; }}\n\
+             return 0.12841854935 * (value - 0.13793103448);\n\
+         }}\n\
+         fn {name}(value: array<f32, 3>) -> array<f32, 3> {{\n\
+             let y = (value[0] + 16.0) / 116.0;\n\
+             let x = y + value[1] / 500.0;\n\
+             let z = y - value[2] / 200.0;\n\
+             return array<f32, 3>(0.9642 * {name}_inverse(x), {name}_inverse(y), 0.8249 * {name}_inverse(z));\n\
+         }}\n"
+    )
+}
+
+// Shared by CPU evaluation and shader generation of the sRGB transfer curve.
+const SRGB_DECODE_THRESHOLD: f64 = 0.04045;
+const SRGB_ENCODE_THRESHOLD: f64 = 0.003_130_8;
+const SRGB_LINEAR_SCALE: f64 = 12.92;
+const SRGB_POWER_SCALE: f64 = 1.055;
+const SRGB_POWER_OFFSET: f64 = 0.055;
+const SRGB_GAMMA: f64 = 2.4;
+
+fn decode_srgb_f64(value: f64) -> f64 {
+    let magnitude = value.abs();
+    if magnitude <= SRGB_DECODE_THRESHOLD {
+        value / SRGB_LINEAR_SCALE
+    } else {
+        value.signum() * ((magnitude + SRGB_POWER_OFFSET) / SRGB_POWER_SCALE).powf(SRGB_GAMMA)
+    }
+}
+
+fn encode_srgb_f64(value: f64) -> f64 {
+    let magnitude = value.abs();
+    if magnitude <= SRGB_ENCODE_THRESHOLD {
+        SRGB_LINEAR_SCALE * value
+    } else {
+        value.signum() * (SRGB_POWER_SCALE * magnitude.powf(1.0 / SRGB_GAMMA) - SRGB_POWER_OFFSET)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -963,6 +1064,45 @@ impl Error for TransferError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn d50_pcs_white_black_and_negative_roundtrip() {
+        let white = xyz_d50_to_lab_d50(&ICC_PCS_D50_XYZ);
+        assert!((white[0] - 100.0).abs() < 1e-12);
+        assert!(white[1].abs() < 1e-12);
+        assert!(white[2].abs() < 1e-12);
+        assert!(
+            xyz_d50_to_lab_d50(&[0.0; 3])
+                .iter()
+                .all(|value| value.abs() < 1e-12)
+        );
+        for xyz in [[0.1, 0.2, 0.4], [-0.01, 0.02, 0.03], ICC_PCS_D50_XYZ] {
+            let restored = lab_d50_to_xyz_d50(&xyz_d50_to_lab_d50(&xyz));
+            for (actual, expected) in restored.into_iter().zip(xyz) {
+                assert!((actual - expected).abs() < 1e-12);
+            }
+        }
+    }
+
+    #[test]
+    fn pcs_shader_stages_parse_and_validate() {
+        let transfer = Transfer::new(
+            3,
+            [TransferStage::XyzD50ToLabD50, TransferStage::LabD50ToXyzD50],
+        )
+        .unwrap();
+        let source = transfer.wgsl(51).unwrap();
+        let module = naga::front::wgsl::parse_str(&source)
+            .unwrap_or_else(|error| panic!("{}", error.emit_to_string(&source)));
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::all(),
+        )
+        .validate(&module)
+        .unwrap();
+        assert!(source.contains("theoria_transfer_51_pcs_0"));
+        assert!(source.contains("theoria_transfer_51_pcs_1"));
+    }
 
     #[test]
     fn directed_stages_evaluate_in_order_and_change_channel_count() {
@@ -1110,7 +1250,7 @@ mod tests {
         )
         .unwrap();
         for input in [0.0, 0.02, 0.04, 0.05, 0.25, 0.5, 1.0] {
-            assert!((curve.evaluate(input) - transform::decode_srgb_f64(input)).abs() < 1e-12);
+            assert!((curve.evaluate(input) - decode_srgb_f64(input)).abs() < 1e-12);
         }
         assert_eq!(curve.evaluate(-0.5), 0.0);
         assert_eq!(curve.evaluate(1.5), 1.0);
