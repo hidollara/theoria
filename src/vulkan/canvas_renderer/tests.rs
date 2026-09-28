@@ -2,13 +2,14 @@ use super::super::color::RgbAlphaAssociation;
 use super::encoding::ImagePushConstants;
 use super::pipeline::composite_blend_factors;
 use super::*;
+use crate::canvas::Color;
 use crate::canvas::{
     Composite, Composition, Coverage, ImagePattern, canvas_image::CanvasImage, image::ImageKind,
 };
 use crate::canvas_renderer::canvas_plan::{
     can_record_directly, collect_images, required_scratch_images,
 };
-use crate::color::{Color, LinearSrgb, Opacity, Srgb};
+use crate::color::{LinearSrgb, Opacity, Srgb};
 use crate::geometry::Point;
 use crate::image::Srgba8Image;
 use crate::transform::Projective2;

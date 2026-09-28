@@ -2,8 +2,9 @@ use std::{cell::RefCell, f32::consts::PI, rc::Rc};
 
 use theoria::color::{Opacity, Srgb};
 use theoria::{
+    canvas::Color,
     canvas::{Canvas, CanvasView, Composite, Composition, Coverage},
-    color::{Color, LinearSrgb},
+    color::LinearSrgb,
     component::{Component, MountContext},
     event::ChannelSource,
     font::Font,

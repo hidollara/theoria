@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::{canvas::CanvasColor, color::ColorSpace, geometry::Point, path::Path};
+use crate::{canvas::Color, color::ColorSpace, geometry::Point, path::Path};
 
 /// Defines how a gradient color line is evaluated outside its `[0, 1]` span.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -14,7 +14,7 @@ pub enum GradientExtend {
 #[derive(Clone, Debug, PartialEq)]
 pub struct GradientStop {
     offset: f32,
-    color: CanvasColor,
+    color: Color,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -37,7 +37,7 @@ impl std::fmt::Display for GradientStopError {
 impl std::error::Error for GradientStopError {}
 
 impl GradientStop {
-    pub fn new(offset: f32, color: impl Into<CanvasColor>) -> Result<Self, GradientStopError> {
+    pub fn new(offset: f32, color: impl Into<Color>) -> Result<Self, GradientStopError> {
         if !offset.is_finite() {
             return Err(GradientStopError::NonFiniteOffset);
         }
@@ -54,7 +54,7 @@ impl GradientStop {
         self.offset
     }
 
-    pub const fn color(&self) -> &CanvasColor {
+    pub const fn color(&self) -> &Color {
         &self.color
     }
 }
@@ -548,11 +548,11 @@ fn validate_gradient_stops(stops: &[GradientStop]) -> Result<(), GradientStopsEr
 #[derive(Clone, Debug, PartialEq)]
 pub struct GradientPoint {
     position: Point,
-    color: CanvasColor,
+    color: Color,
 }
 
 impl GradientPoint {
-    pub fn new(position: Point, color: impl Into<CanvasColor>) -> Self {
+    pub fn new(position: Point, color: impl Into<Color>) -> Self {
         Self {
             position,
             color: color.into(),
@@ -563,7 +563,7 @@ impl GradientPoint {
         self.position
     }
 
-    pub const fn color(&self) -> &CanvasColor {
+    pub const fn color(&self) -> &Color {
         &self.color
     }
 }

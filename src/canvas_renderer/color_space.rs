@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    canvas::{CanvasColor, CanvasIccColorError, ColorValue},
+    canvas::{Color, ColorValue, IccColorError},
     color::{
         ColorSpace, IccRenderingIntent, LinearDisplayP3, LinearSrgb, Transfer, connect_spaces,
     },
@@ -68,14 +68,12 @@ impl PreparedColors {
     pub(crate) fn prepare_interpolation(
         &mut self,
         space: &ColorSpace,
-    ) -> Result<(), CanvasIccColorError> {
+    ) -> Result<(), IccColorError> {
         if self.interpolations.contains_key(space) {
             return Ok(());
         }
         if space.channels() != 3 {
-            return Err(CanvasIccColorError::UnsupportedColorChannels(
-                space.channels(),
-            ));
+            return Err(IccColorError::UnsupportedColorChannels(space.channels()));
         }
         let working = &self.working_space;
         let intent = IccRenderingIntent::RelativeColorimetric;
@@ -94,17 +92,20 @@ impl PreparedColors {
         &self.interpolations[space]
     }
 
-    pub(crate) fn prepare(&mut self, color: &CanvasColor) -> Result<(), CanvasIccColorError> {
-        let key = color as *const CanvasColor as usize;
+    pub(crate) fn prepare(&mut self, color: &Color) -> Result<(), IccColorError> {
+        let key = color as *const Color as usize;
         if let std::collections::hash_map::Entry::Vacant(entry) = self.premultiplied.entry(key) {
-            let [red, green, blue, alpha] = color.try_straight_rgba_in(&self.working_space)?;
+            let [red, green, blue, alpha] = color.try_straight_rgba_in(
+                &self.working_space,
+                IccRenderingIntent::RelativeColorimetric,
+            )?;
             entry.insert([red * alpha, green * alpha, blue * alpha, alpha]);
         }
         Ok(())
     }
 
-    pub(crate) fn lower(&self, color: &CanvasColor) -> [f32; 4] {
-        let key = color as *const CanvasColor as usize;
+    pub(crate) fn lower(&self, color: &Color) -> [f32; 4] {
+        let key = color as *const Color as usize;
         self.premultiplied
             .get(&key)
             .copied()
@@ -112,24 +113,29 @@ impl PreparedColors {
     }
 }
 
-impl CanvasColor {
+impl Color {
     /// Resolves the declared source color into a renderer-selected RGB space.
-    pub(crate) fn straight_rgba_in(&self, space: impl Into<ColorSpace>) -> [f32; 4] {
-        self.try_straight_rgba_in(space)
+    pub(crate) fn straight_rgba_in(
+        &self,
+        space: impl Into<ColorSpace>,
+        intent: IccRenderingIntent,
+    ) -> [f32; 4] {
+        self.try_straight_rgba_in(space, intent)
             .expect("this caller requires an ICC conversion known to succeed")
     }
 
     pub(crate) fn try_straight_rgba_in(
         &self,
         space: impl Into<ColorSpace>,
-    ) -> Result<[f32; 4], CanvasIccColorError> {
+        intent: IccRenderingIntent,
+    ) -> Result<[f32; 4], IccColorError> {
         let coordinates: Vec<f64> = match &self.value {
             ColorValue::Dynamic(coordinates, _) => coordinates.to_vec(),
             _ => self.value.coordinates_as_f64().to_vec(),
         };
         let destination = space.into();
         if destination.channels() != 3 {
-            return Err(CanvasIccColorError::UnsupportedColorChannels(
+            return Err(IccColorError::UnsupportedColorChannels(
                 destination.channels(),
             ));
         }
@@ -139,7 +145,7 @@ impl CanvasColor {
             let transfer = connect_spaces(
                 &self.space,
                 &destination,
-                self.intent,
+                intent,
                 IccRenderingIntent::RelativeColorimetric,
             )?;
             transfer.evaluate(&coordinates)?
@@ -170,15 +176,13 @@ impl ColorValue {
 }
 
 #[cfg(test)]
-pub(crate) fn lower_straight_color(color: &CanvasColor) -> [f32; 4] {
+pub(crate) fn lower_straight_color(color: &Color) -> [f32; 4] {
     lower_straight_color_in(color, LinearSrgb)
 }
 
-pub(crate) fn lower_straight_color_in(
-    color: &CanvasColor,
-    space: impl Into<ColorSpace>,
-) -> [f32; 4] {
-    let [red, green, blue, alpha] = color.straight_rgba_in(space);
+pub(crate) fn lower_straight_color_in(color: &Color, space: impl Into<ColorSpace>) -> [f32; 4] {
+    let [red, green, blue, alpha] =
+        color.straight_rgba_in(space, IccRenderingIntent::RelativeColorimetric);
     [red * alpha, green * alpha, blue * alpha, alpha]
 }
 
@@ -260,11 +264,7 @@ mod tests {
 
     #[test]
     fn a_solid_color_is_lowered_once_per_render() {
-        let color = CanvasColor::from(crate::color::Color::new(
-            Srgb,
-            [255_u8, 0, 0],
-            Opacity::<u8>::ONE,
-        ));
+        let color = Color::new(Srgb, [255_u8, 0, 0], Opacity::<u8>::ONE);
         let mut prepared = PreparedColors::default();
         prepared.prepare(&color).unwrap();
         prepared.prepare(&color).unwrap();
@@ -274,19 +274,28 @@ mod tests {
     }
 
     #[test]
+    fn conversion_intent_is_chosen_when_the_color_is_used() {
+        let color = Color::new(Srgb, [128_u8, 64, 32], Opacity::<u8>::ONE);
+        assert!(
+            color
+                .try_straight_rgba_in(LinearSrgb, IccRenderingIntent::RelativeColorimetric)
+                .is_ok()
+        );
+        assert!(
+            color
+                .try_straight_rgba_in(LinearSrgb, IccRenderingIntent::Perceptual)
+                .is_err()
+        );
+    }
+
+    #[test]
     fn icc_transfer_failure_is_reported_during_renderer_preparation() {
         let mut raw = moxcms::ColorProfile::new_srgb();
         raw.red_trc = None;
         raw.green_trc = None;
         raw.blue_trc = None;
         let profile = crate::color::IccProfile::from_bytes(&raw.encode().unwrap()).unwrap();
-        let color = CanvasColor::from_icc(
-            &profile,
-            vec![0.25, 0.5, 0.75],
-            Opacity::<f32>::ONE,
-            crate::color::IccRenderingIntent::RelativeColorimetric,
-        )
-        .unwrap();
+        let color = Color::from_icc(&profile, vec![0.25, 0.5, 0.75], Opacity::<f32>::ONE).unwrap();
 
         let mut prepared = PreparedColors::default();
         assert!(prepared.prepare(&color).is_err());
@@ -299,13 +308,7 @@ mod tests {
             "/crates/theoria-color/src/color/fixtures/sRGB-v4.icc"
         )))
         .unwrap();
-        let color = CanvasColor::from_icc(
-            &profile,
-            vec![0.25, 0.5, 0.75],
-            Opacity::<f32>::ONE,
-            crate::color::IccRenderingIntent::RelativeColorimetric,
-        )
-        .unwrap();
+        let color = Color::from_icc(&profile, vec![0.25, 0.5, 0.75], Opacity::<f32>::ONE).unwrap();
         let original = color.clone();
         let mut prepared = PreparedColors::default();
         prepared.prepare(&color).unwrap();
@@ -357,11 +360,7 @@ mod tests {
 
     #[test]
     fn preparation_uses_the_selected_working_space() {
-        let color = CanvasColor::from(crate::color::Color::new(
-            Srgb,
-            [0.5_f32, 0.5, 0.5],
-            Opacity::<f32>::ONE,
-        ));
+        let color = Color::new(Srgb, [0.5_f32, 0.5, 0.5], Opacity::<f32>::ONE);
         let mut prepared = PreparedColors::new(Srgb);
         prepared.prepare(&color).unwrap();
         assert_eq!(prepared.lower(&color), [0.5, 0.5, 0.5, 1.0]);

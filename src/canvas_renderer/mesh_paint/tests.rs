@@ -1,15 +1,16 @@
 use super::{TestWorkingColor, paint_triangle};
 use crate::{
+    canvas::Color,
     canvas::{
         ColorField, ConicGradient, GradientExtend, GradientPoint, GradientStop, LinearGradient,
         MeshGradient, RadialGradient,
     },
     canvas_renderer::WorkingColor,
-    color::{Color, DisplayP3, LinearSrgb, Opacity, Srgb},
+    color::{DisplayP3, LinearSrgb, Opacity, Srgb},
     geometry::Point,
 };
 
-fn lowered(color: impl Into<crate::canvas::CanvasColor>) -> TestWorkingColor {
+fn lowered(color: impl Into<crate::canvas::Color>) -> TestWorkingColor {
     TestWorkingColor::from_color(&color.into(), &super::PreparedColors::default())
 }
 
@@ -142,7 +143,7 @@ fn triangular_mesh_gradient_reproduces_its_vertex_colors() {
         Color::new(Srgb, [0_u8, 0, 255], Opacity::<u8>::ONE),
     ];
     let gradient = MeshGradient::from_triangle(
-        std::array::from_fn(|index| GradientPoint::new(positions[index], colors[index])),
+        std::array::from_fn(|index| GradientPoint::new(positions[index], &colors[index])),
         LinearSrgb,
     )
     .unwrap();
@@ -202,8 +203,8 @@ fn radial_gradient_samples_center_and_radius_colors() {
         Point::new(0.0, 0.0),
         10.0,
         [
-            GradientStop::new(0.0, red).unwrap(),
-            GradientStop::new(1.0, blue).unwrap(),
+            GradientStop::new(0.0, &red).unwrap(),
+            GradientStop::new(1.0, &blue).unwrap(),
         ],
         LinearSrgb,
     )
@@ -223,14 +224,14 @@ fn radial_gradient_samples_center_and_radius_colors() {
             .points
             .iter()
             .zip(triangle.colors)
-            .any(|(point, color)| *point == Point::new(0.0, 0.0) && color == lowered(red))
+            .any(|(point, color)| *point == Point::new(0.0, 0.0) && color == lowered(&red))
     }));
     assert!(triangles.iter().any(|triangle| {
         triangle
             .points
             .iter()
             .zip(triangle.colors)
-            .any(|(point, color)| *point == Point::new(10.0, 0.0) && color == lowered(blue))
+            .any(|(point, color)| *point == Point::new(10.0, 0.0) && color == lowered(&blue))
     }));
 }
 
@@ -306,8 +307,8 @@ fn signed_radial_gradient_uses_only_nonnegative_radius_solutions() {
         Point::new(0.0, 0.0),
         1.0,
         [
-            GradientStop::new(0.0, red).unwrap(),
-            GradientStop::new(1.0, blue).unwrap(),
+            GradientStop::new(0.0, &red).unwrap(),
+            GradientStop::new(1.0, &blue).unwrap(),
         ],
         LinearSrgb,
     )
@@ -331,7 +332,7 @@ fn signed_radial_gradient_uses_only_nonnegative_radius_solutions() {
                 .points
                 .iter()
                 .zip(triangle.colors)
-                .any(|(candidate, color)| *candidate == point && color == lowered(blue))
+                .any(|(candidate, color)| *candidate == point && color == lowered(&blue))
         }));
     }
 }
@@ -345,7 +346,7 @@ fn negative_radial_endpoints_can_reach_a_positive_extended_cone() {
         Point::new(0.0, 0.0),
         -2.0,
         [
-            GradientStop::new(0.0, red).unwrap(),
+            GradientStop::new(0.0, &red).unwrap(),
             GradientStop::new(1.0, Color::new(Srgb, [0_u8, 0, 255], Opacity::<u8>::ONE)).unwrap(),
         ],
         LinearSrgb,
@@ -365,7 +366,7 @@ fn negative_radial_endpoints_can_reach_a_positive_extended_cone() {
             .points
             .iter()
             .zip(triangle.colors)
-            .any(|(point, color)| *point == Point::new(1.0, 0.0) && color == lowered(red))
+            .any(|(point, color)| *point == Point::new(1.0, 0.0) && color == lowered(&red))
     }));
 }
 
@@ -378,9 +379,9 @@ fn conic_gradient_uses_positive_parameter_angle() {
         Point::new(0.0, 0.0),
         0.0,
         [
-            GradientStop::new(0.0, red).unwrap(),
-            GradientStop::new(0.5, green).unwrap(),
-            GradientStop::new(1.0, blue).unwrap(),
+            GradientStop::new(0.0, &red).unwrap(),
+            GradientStop::new(0.5, &green).unwrap(),
+            GradientStop::new(1.0, &blue).unwrap(),
         ],
         LinearSrgb,
     )
@@ -400,14 +401,14 @@ fn conic_gradient_uses_positive_parameter_angle() {
             .points
             .iter()
             .zip(triangle.colors)
-            .any(|(point, color)| *point == Point::new(10.0, 0.0) && color == lowered(red))
+            .any(|(point, color)| *point == Point::new(10.0, 0.0) && color == lowered(&red))
     }));
     assert!(triangles.iter().any(|triangle| {
         triangle
             .points
             .iter()
             .zip(triangle.colors)
-            .any(|(point, color)| *point == Point::new(-10.0, 0.0) && color == lowered(green))
+            .any(|(point, color)| *point == Point::new(-10.0, 0.0) && color == lowered(&green))
     }));
 }
 
@@ -420,8 +421,8 @@ fn partial_conic_gradient_pads_on_the_absolute_turn() {
         std::f32::consts::FRAC_PI_2,
         std::f32::consts::PI,
         [
-            GradientStop::new(0.0, red).unwrap(),
-            GradientStop::new(1.0, blue).unwrap(),
+            GradientStop::new(0.0, &red).unwrap(),
+            GradientStop::new(1.0, &blue).unwrap(),
         ],
         LinearSrgb,
     )
@@ -444,8 +445,8 @@ fn partial_conic_gradient_pads_on_the_absolute_turn() {
                 .map(|index| triangle.colors[index])
         })
     };
-    assert_eq!(color_at(Point::new(10.0, 0.0)), Some(lowered(red)));
-    assert_eq!(color_at(Point::new(-10.0, 0.0)), Some(lowered(blue)));
+    assert_eq!(color_at(Point::new(10.0, 0.0)), Some(lowered(&red)));
+    assert_eq!(color_at(Point::new(-10.0, 0.0)), Some(lowered(&blue)));
 }
 
 #[test]
@@ -457,8 +458,8 @@ fn coincident_conic_angles_form_a_pad_step() {
         std::f32::consts::FRAC_PI_2,
         std::f32::consts::FRAC_PI_2,
         [
-            GradientStop::new(0.0, red).unwrap(),
-            GradientStop::new(1.0, blue).unwrap(),
+            GradientStop::new(0.0, &red).unwrap(),
+            GradientStop::new(1.0, &blue).unwrap(),
         ],
         LinearSrgb,
     )
@@ -477,14 +478,14 @@ fn coincident_conic_angles_form_a_pad_step() {
             .points
             .iter()
             .zip(triangle.colors)
-            .any(|(point, color)| *point == Point::new(10.0, 0.0) && color == lowered(red))
+            .any(|(point, color)| *point == Point::new(10.0, 0.0) && color == lowered(&red))
     }));
     assert!(triangles.iter().any(|triangle| {
         triangle
             .points
             .iter()
             .zip(triangle.colors)
-            .any(|(point, color)| *point == Point::new(-10.0, 0.0) && color == lowered(blue))
+            .any(|(point, color)| *point == Point::new(-10.0, 0.0) && color == lowered(&blue))
     }));
 }
 

@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use crate::{
-    color::{Color, ColorSpace, DisplayP3, LinearSrgb, Opacity, Srgb},
+    canvas::Color,
+    color::{ColorSpace, DisplayP3, LinearSrgb, Opacity, Srgb},
     geometry::Point,
     image::{AlphaAssociation, RasterImage, RasterPlane, Rgba8, Srgba8Image},
     math::Vector2,
@@ -770,9 +771,9 @@ fn mesh_gradient_rejects_invalid_triangle_geometry() {
     assert_eq!(
         MeshGradient::from_triangle(
             [
-                GradientPoint::new(Point::new(0.0, 0.0), color),
-                GradientPoint::new(Point::new(1.0, 1.0), color),
-                GradientPoint::new(Point::new(2.0, 2.0), color),
+                GradientPoint::new(Point::new(0.0, 0.0), &color),
+                GradientPoint::new(Point::new(1.0, 1.0), &color),
+                GradientPoint::new(Point::new(2.0, 2.0), &color),
             ],
             LinearSrgb
         ),
@@ -781,9 +782,9 @@ fn mesh_gradient_rejects_invalid_triangle_geometry() {
     assert_eq!(
         MeshGradient::from_triangle(
             [
-                GradientPoint::new(Point::new(f32::NAN, 0.0), color),
-                GradientPoint::new(Point::new(1.0, 0.0), color),
-                GradientPoint::new(Point::new(0.0, 1.0), color),
+                GradientPoint::new(Point::new(f32::NAN, 0.0), &color),
+                GradientPoint::new(Point::new(1.0, 0.0), &color),
+                GradientPoint::new(Point::new(0.0, 1.0), &color),
             ],
             LinearSrgb
         ),

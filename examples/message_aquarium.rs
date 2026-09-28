@@ -254,7 +254,7 @@ fn aquarium_content(
     SurfaceContent::new(
         canvas,
         view,
-        theoria::color::Color::new(Srgb, [5_u8, 8, 15], Opacity::<u8>::ONE),
+        theoria::canvas::Color::new(Srgb, [5_u8, 8, 15], Opacity::<u8>::ONE),
     )
 }
 

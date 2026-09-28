@@ -36,7 +36,10 @@ pub(super) fn canvas(
     let foreground_color = match foreground {
         ColorField::Solid(color) => Some(css_rgba_f32(
             color
-                .try_straight_rgba_in(crate::color::Srgb)
+                .try_straight_rgba_in(
+                    crate::color::Srgb,
+                    crate::color::IccRenderingIntent::RelativeColorimetric,
+                )
                 .map_err(|_| GlyphPresentationError::UnsupportedSvg)?,
         )),
         _ => None,
@@ -267,7 +270,7 @@ mod tests {
             GlyphId::new(7),
             20.0,
             0,
-            &crate::color::Color::new(Srgb, [0_u8, 0, 0], Opacity::<u8>::ONE).into(),
+            &crate::canvas::Color::new(Srgb, [0_u8, 0, 0], Opacity::<u8>::ONE).into(),
         )
         .unwrap();
         let crate::canvas::CanvasNode::Draw(draw) = result.node() else {
@@ -302,7 +305,7 @@ mod tests {
                 GlyphId::new(7),
                 20.0,
                 0,
-                &crate::color::Color::new(Srgb, [0_u8, 0, 0], Opacity::<u8>::ONE).into(),
+                &crate::canvas::Color::new(Srgb, [0_u8, 0, 0], Opacity::<u8>::ONE).into(),
             ),
             Err(GlyphPresentationError::UnsupportedSvg)
         ));
@@ -323,7 +326,7 @@ mod tests {
                 GlyphId::new(7),
                 20.0,
                 0,
-                &crate::color::Color::new(Srgb, [0_u8, 0, 0], Opacity::<u8>::ONE).into(),
+                &crate::canvas::Color::new(Srgb, [0_u8, 0, 0], Opacity::<u8>::ONE).into(),
             )
             .is_ok()
         );
@@ -342,7 +345,7 @@ mod tests {
             GlyphId::new(7),
             20.0,
             0,
-            &crate::color::Color::new(Srgb, [210_u8, 30, 90], Opacity::<u8>::ONE).into(),
+            &crate::canvas::Color::new(Srgb, [210_u8, 30, 90], Opacity::<u8>::ONE).into(),
         )
         .unwrap();
         let crate::canvas::CanvasNode::Draw(draw) = canvas.node() else {

@@ -2,8 +2,9 @@ use std::f32::consts::TAU;
 
 use theoria::color::{Opacity, Srgb};
 use theoria::{
+    canvas::Color,
     canvas::{Canvas, CanvasView, Composite, Composition, Coverage},
-    color::{Color, LinearSrgb},
+    color::LinearSrgb,
     event::OwningSink,
     geometry::Point,
     input::pointer::{PointerButton, PointerEvent, PointerPhase},

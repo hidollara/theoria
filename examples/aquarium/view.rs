@@ -2,8 +2,8 @@ use std::time::{Duration, Instant};
 
 use theoria::color::{Opacity, Srgb};
 use theoria::{
-    canvas::{Canvas, CanvasColor, Composite, Composition, Coverage},
-    color::{Color, LinearSrgb},
+    canvas::{Canvas, Color, Composite, Composition, Coverage},
+    color::LinearSrgb,
     font::Font,
     geometry::Point,
     math::Vector2,
@@ -170,14 +170,7 @@ fn rectangle(x: f32, y: f32, width: f32, height: f32) -> Path {
     ])
 }
 
-fn label(
-    font: &Font,
-    content: &str,
-    size: f32,
-    color: impl Into<CanvasColor>,
-    x: f32,
-    y: f32,
-) -> Canvas {
+fn label(font: &Font, content: &str, size: f32, color: impl Into<Color>, x: f32, y: f32) -> Canvas {
     Text::horizontal(TextStyle::new(std::slice::from_ref(font), size))
         .push(content)
         .layout()
@@ -204,16 +197,16 @@ fn stage_rgb(stage: MessageStage) -> (u8, u8, u8) {
     }
 }
 
-fn stage_color(stage: MessageStage) -> CanvasColor {
+fn stage_color(stage: MessageStage) -> Color {
     let (red, green, blue) = stage_rgb(stage);
-    Color::new(Srgb, [red, green, blue], Opacity::<u8>::ONE).into()
+    Color::new(Srgb, [red, green, blue], Opacity::<u8>::ONE)
 }
 
-fn lane_background(stage: MessageStage) -> CanvasColor {
+fn lane_background(stage: MessageStage) -> Color {
     match stage {
-        MessageStage::Queued => Color::new(Srgb, [23_u8, 92, 120], Opacity::<u8>::from(64)).into(),
-        MessageStage::Thread => Color::new(Srgb, [111_u8, 31, 98], Opacity::<u8>::from(64)).into(),
-        MessageStage::Window => Color::new(Srgb, [112_u8, 82, 18], Opacity::<u8>::from(64)).into(),
+        MessageStage::Queued => Color::new(Srgb, [23_u8, 92, 120], Opacity::<u8>::from(64)),
+        MessageStage::Thread => Color::new(Srgb, [111_u8, 31, 98], Opacity::<u8>::from(64)),
+        MessageStage::Window => Color::new(Srgb, [112_u8, 82, 18], Opacity::<u8>::from(64)),
     }
 }
 

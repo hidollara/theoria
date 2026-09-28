@@ -2,8 +2,9 @@ use std::f32::consts::PI;
 
 use theoria::color::{Opacity, Srgb};
 use theoria::{
+    canvas::Color,
     canvas::{Canvas, CanvasView, Composite, Composition, Coverage},
-    color::{Color, LinearSrgb},
+    color::LinearSrgb,
     event::OwningSink,
     font::Font,
     geometry::Point,

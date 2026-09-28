@@ -3,7 +3,7 @@ use crate::{
     image::{RasterImage, Rgb8, Rgba8},
 };
 
-use super::{Canvas, CanvasColor, canvas_image::CanvasImage, image::Image};
+use super::{Canvas, Color, canvas_image::CanvasImage, image::Image};
 
 mod gradient;
 mod image_pattern;
@@ -22,7 +22,7 @@ pub use image_pattern::{ImageExtend, ImagePattern, ImageSampling};
 /// translucent gradient); it is not the amount by which a draw is applied.
 #[derive(Clone, Debug)]
 pub enum ColorField {
-    Solid(CanvasColor),
+    Solid(Color),
     LinearGradient(LinearGradient),
     RadialGradient(RadialGradient),
     ConicGradient(ConicGradient),
@@ -77,7 +77,7 @@ impl From<Image> for ColorField {
 
 impl<C> From<C> for ColorField
 where
-    C: Into<CanvasColor>,
+    C: Into<Color>,
 {
     fn from(color: C) -> Self {
         Self::Solid(color.into())

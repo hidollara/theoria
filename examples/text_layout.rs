@@ -1,7 +1,7 @@
 use theoria::color::{Opacity, Srgb};
 use theoria::{
+    canvas::Color,
     canvas::{CanvasView, Composite, Composition},
-    color::Color,
     color::LinearSrgb,
     font::Font,
     geometry::Point,

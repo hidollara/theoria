@@ -1,10 +1,10 @@
 use crate::{
-    canvas::CanvasColor,
+    canvas::Color,
     canvas_renderer::{WorkingColor, color_space},
 };
 
 #[cfg(test)]
-use crate::color::{Color, Opacity, Srgb};
+use crate::color::{Opacity, Srgb};
 
 /// WebGPU Canvas working color in premultiplied renderer-selected RGB coordinates.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -14,12 +14,12 @@ impl PremultipliedWorkingRgba {
     pub(super) const TRANSPARENT: Self = Self([0.0; 4]);
 
     #[cfg(test)]
-    pub(super) fn from_color(color: impl Into<CanvasColor>) -> Self {
+    pub(super) fn from_color(color: impl Into<Color>) -> Self {
         Self::from_canvas_color(&color.into())
     }
 
     #[cfg(test)]
-    fn from_canvas_color(color: &CanvasColor) -> Self {
+    fn from_canvas_color(color: &Color) -> Self {
         Self(color_space::lower_straight_color(color))
     }
 
@@ -35,7 +35,7 @@ impl PremultipliedWorkingRgba {
 impl WorkingColor for PremultipliedWorkingRgba {
     const TRANSPARENT: Self = Self::TRANSPARENT;
 
-    fn from_color(color: &CanvasColor, prepared: &color_space::PreparedColors) -> Self {
+    fn from_color(color: &Color, prepared: &color_space::PreparedColors) -> Self {
         Self(prepared.lower(color))
     }
 

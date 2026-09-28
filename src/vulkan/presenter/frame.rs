@@ -4,7 +4,7 @@ use std::{error::Error, marker::PhantomData};
 
 use ash::vk;
 
-use crate::canvas::CanvasColor;
+use crate::canvas::Color;
 use crate::color::{IccProfile, IccRenderingIntent, LinearSrgb, Srgb};
 use crate::surface::{OutputAlpha, OutputImage};
 use crate::vulkan::image_layout::transition_image;
@@ -50,7 +50,7 @@ pub struct RenderTarget<'a> {
     image_view: vk::ImageView,
     format: vk::Format,
     extent: vk::Extent2D,
-    clear_color: CanvasColor,
+    clear_color: Color,
     output: OutputImage,
     _frame: PhantomData<&'a ()>,
 }
@@ -61,7 +61,7 @@ impl<'a> RenderTarget<'a> {
         image_view: vk::ImageView,
         format: vk::Format,
         extent: vk::Extent2D,
-        clear_color: CanvasColor,
+        clear_color: Color,
     ) -> Self {
         Self {
             command_buffer,
@@ -82,7 +82,7 @@ impl<'a> RenderTarget<'a> {
         (self.image_view, self.format, self.extent)
     }
 
-    pub(crate) fn clear_color(&self) -> CanvasColor {
+    pub(crate) fn clear_color(&self) -> Color {
         self.clear_color.clone()
     }
 
@@ -147,7 +147,7 @@ impl<'a> PresentFrame<'a> {
         }
     }
 
-    pub fn render_target(&self, clear_color: impl Into<CanvasColor>) -> RenderTarget<'_> {
+    pub fn render_target(&self, clear_color: impl Into<Color>) -> RenderTarget<'_> {
         let surface = self.swapchain.render_targets[self.image_index as usize];
         RenderTarget::new(
             self.command_buffer,

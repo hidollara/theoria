@@ -11,11 +11,12 @@ use skrifa::{
 };
 
 use crate::{
+    canvas::Color,
     canvas::{
         BlendMode, Canvas, ColorField, Composite, Composition, ConicGradient, Coverage,
         GradientExtend, GradientStop, LinearGradient, RadialGradient,
     },
-    color::{Color, LinearSrgb, Opacity, Srgb},
+    color::{LinearSrgb, Opacity, Srgb},
     geometry::Point,
     math::{Matrix2, Vector2},
     path::Path,
@@ -491,8 +492,14 @@ mod tests {
             ])
             .unwrap();
 
-        let first = stops[0].color().straight_rgba_in(crate::color::Srgb);
-        let last = stops[1].color().straight_rgba_in(crate::color::Srgb);
+        let first = stops[0].color().straight_rgba_in(
+            crate::color::Srgb,
+            crate::color::IccRenderingIntent::RelativeColorimetric,
+        );
+        let last = stops[1].color().straight_rgba_in(
+            crate::color::Srgb,
+            crate::color::IccRenderingIntent::RelativeColorimetric,
+        );
         assert!((first[3] - 64.0 / 255.0).abs() < 0.000_001);
         assert!((last[3] - 128.0 / 255.0).abs() < 0.000_001);
         for component in 0..3 {

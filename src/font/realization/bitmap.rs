@@ -141,7 +141,8 @@ fn unpremultiply(component: u8, alpha: u8) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::color::{Color, Opacity, Srgb};
+    use crate::canvas::Color;
+    use crate::color::{Opacity, Srgb};
 
     #[test]
     fn unpremultiplies_bgra_channels() {

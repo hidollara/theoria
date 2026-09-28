@@ -8,7 +8,7 @@ use crate::{
         canvas_image::CanvasImage,
         image::{Image, ImageKind},
     },
-    color::{ColorSpace, LinearSrgb, Srgb},
+    color::{ColorSpace, IccRenderingIntent, LinearSrgb, Srgb},
     surface::{OutputAlpha, OutputImage, Viewport},
 };
 
@@ -72,7 +72,10 @@ impl CanvasRenderer {
     ) -> Result<()> {
         let prepared = prepare_colors_in(canvas, &self.working_space)?;
         let clear_color = target.clear_color();
-        clear_color.try_straight_rgba_in(&self.working_space)?;
+        clear_color.try_straight_rgba_in(
+            &self.working_space,
+            IccRenderingIntent::RelativeColorimetric,
+        )?;
         let output = target.output().clone();
         self.materialize_canvas_resources(canvas)?;
         let (image_view, format, extent) = target.surface();

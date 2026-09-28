@@ -7,14 +7,11 @@ use super::transfer::{Transfer, TransferCurve, TransferError, TransferMatrix, Tr
 
 /// Associates a statically typed color space with its coordinate model.
 ///
-/// This constrains authored color values at compile time. Its runtime space
-/// carries the corresponding model and profile conversion definition.
-/// Implementations must return a stable space whose model matches `Model`.
-/// Named spaces share one canonical runtime handle per space.
-pub trait TypedColorSpace: 'static {
+/// This constrains authored coordinates at compile time and supplies their
+/// runtime color space for rendering. The runtime space's model must match
+/// `Model`, and conversion must return the same space on repeated calls.
+pub trait TypedColorSpace: Into<ColorSpace> + 'static {
     type Model: TypedColorModel;
-
-    fn color_space(&self) -> ColorSpace;
 }
 
 macro_rules! named_space {
@@ -24,10 +21,6 @@ macro_rules! named_space {
 
         impl TypedColorSpace for $name {
             type Model = $model;
-
-            fn color_space(&self) -> $crate::profile::ColorSpace {
-                (*self).into()
-            }
         }
     };
 }

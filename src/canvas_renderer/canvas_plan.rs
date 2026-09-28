@@ -1,7 +1,7 @@
 use super::color_space::PreparedColors;
 use crate::canvas::{
-    Canvas, CanvasIccColorError, CanvasNode, ColorField, Composite, Composition, CoverageNode,
-    Draw, image::Image,
+    Canvas, CanvasNode, ColorField, Composite, Composition, CoverageNode, Draw, IccColorError,
+    image::Image,
 };
 use crate::color::ColorSpace;
 #[cfg(test)]
@@ -10,14 +10,14 @@ use crate::color::LinearSrgb;
 /// Resolves fallible authored colors before either backend starts recording.
 /// The converted values belong to this render, not to the Canvas definition.
 #[cfg(test)]
-pub(crate) fn prepare_colors(canvas: &Canvas) -> Result<PreparedColors, CanvasIccColorError> {
+pub(crate) fn prepare_colors(canvas: &Canvas) -> Result<PreparedColors, IccColorError> {
     prepare_colors_in(canvas, LinearSrgb)
 }
 
 pub(crate) fn prepare_colors_in(
     canvas: &Canvas,
     working_space: impl Into<ColorSpace>,
-) -> Result<PreparedColors, CanvasIccColorError> {
+) -> Result<PreparedColors, IccColorError> {
     let mut prepared = PreparedColors::new(working_space);
     prepare_canvas_colors(canvas, &mut prepared)?;
     Ok(prepared)
@@ -26,7 +26,7 @@ pub(crate) fn prepare_colors_in(
 fn prepare_canvas_colors(
     canvas: &Canvas,
     prepared: &mut PreparedColors,
-) -> Result<(), CanvasIccColorError> {
+) -> Result<(), IccColorError> {
     match canvas.node() {
         CanvasNode::Draw(draw) => {
             prepare_color_field(&draw.source, prepared)?;
@@ -48,7 +48,7 @@ fn prepare_canvas_colors(
 fn prepare_color_field(
     source: &ColorField,
     prepared: &mut PreparedColors,
-) -> Result<(), CanvasIccColorError> {
+) -> Result<(), IccColorError> {
     match source {
         ColorField::Solid(color) => prepared.prepare(color)?,
         ColorField::LinearGradient(gradient) => {
@@ -262,8 +262,9 @@ fn required_color_field_scratch_images(source: &ColorField, working_space: &Colo
 mod tests {
     use super::*;
     use crate::{
+        canvas::Color,
         canvas::{BlendMode, Composition, Coverage},
-        color::{Color, LinearSrgb, Opacity, Srgb},
+        color::{LinearSrgb, Opacity, Srgb},
     };
 
     #[test]
@@ -320,13 +321,9 @@ mod tests {
             "/crates/theoria-color/src/color/fixtures/sRGB-v4.icc"
         )))
         .unwrap();
-        let color = crate::canvas::CanvasColor::from_icc(
-            &profile,
-            vec![0.25, 0.5, 0.75],
-            Opacity::<f32>::ONE,
-            crate::color::IccRenderingIntent::RelativeColorimetric,
-        )
-        .unwrap();
+        let color =
+            crate::canvas::Color::from_icc(&profile, vec![0.25, 0.5, 0.75], Opacity::<f32>::ONE)
+                .unwrap();
         let canvas = Canvas::draw(color.clone(), Coverage::all());
         let prepared = prepare_colors(&canvas).unwrap();
         assert!(prepared.lower(&color)[0] > 0.0);
@@ -334,11 +331,7 @@ mod tests {
 
     #[test]
     fn renderer_prepares_solid_colors_without_changing_canvas_storage() {
-        let color = crate::canvas::CanvasColor::from(Color::new(
-            Srgb,
-            [255_u8, 128, 0],
-            Opacity::<u8>::ONE,
-        ));
+        let color = Color::new(Srgb, [255_u8, 128, 0], Opacity::<u8>::ONE);
         let canvas = Canvas::draw(color.clone(), Coverage::all());
         let prepared = prepare_colors(&canvas).unwrap();
         let CanvasNode::Draw(draw) = canvas.node() else {

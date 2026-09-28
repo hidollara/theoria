@@ -26,7 +26,7 @@ impl WorkingColor for TestWorkingColor {
     const TRANSPARENT: Self = Self([0.0; 4]);
 
     fn from_color(
-        color: &crate::canvas::CanvasColor,
+        color: &crate::canvas::Color,
         prepared: &super::color_space::PreparedColors,
     ) -> Self {
         Self(prepared.lower(color))

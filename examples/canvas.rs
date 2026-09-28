@@ -1,11 +1,12 @@
 use theoria::color::{Opacity, Srgb};
 use theoria::{
+    canvas::Color,
     canvas::{
         AcrossPathGradient, AlongPathGradient, BlendMode, Canvas, CanvasImage, CanvasView,
         ColorRamp, Composite, Composition, ConicGradient, Coverage, GradientPoint, GradientStop,
         ImageExtend, ImagePattern, LinearGradient, MeshGradient, RadialGradient,
     },
-    color::{Color, LinearSrgb},
+    color::LinearSrgb,
     geometry::Point,
     image::{Srgba8Image, Srgba8ImageError},
     math::Vector2,

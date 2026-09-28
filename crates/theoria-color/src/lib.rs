@@ -5,7 +5,6 @@ mod profile;
 mod sample;
 mod space;
 mod transfer;
-mod value;
 mod white_point;
 
 pub use icc_profile::{IccProfile, IccProfileError, IccRenderingIntent};
@@ -19,5 +18,4 @@ pub use transfer::{
     Transfer, TransferClut, TransferCurve, TransferError, TransferMatrix, TransferShader,
     TransferStage,
 };
-pub use value::Color;
 pub use white_point::{WhitePoint, WhitePointError};

@@ -179,7 +179,7 @@ mod tests {
     #[test]
     fn text_without_drawable_glyphs_has_no_canvas_or_coverage() {
         use crate::{
-            color::Color,
+            canvas::Color,
             text::{TextStyle, test_support::bundled_latin_font},
         };
 
@@ -215,7 +215,7 @@ mod tests {
     #[test]
     fn painted_spans_lower_foregrounds_and_decorations_only_at_canvas_boundary() {
         use crate::{
-            color::Color,
+            canvas::Color,
             text::{
                 Span, TextDecoration, TextDecorationKind, TextStyle,
                 test_support::bundled_latin_font,
@@ -245,7 +245,7 @@ mod tests {
     #[cfg(target_os = "windows")]
     #[test]
     fn installed_color_font_realizes_intrinsic_glyph_paint() {
-        use crate::color::Color;
+        use crate::canvas::Color;
 
         let Ok(data) = std::fs::read(r"C:\Windows\Fonts\seguiemj.ttf") else {
             return;

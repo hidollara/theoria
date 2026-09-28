@@ -2,7 +2,7 @@ use wgpu::util::DeviceExt;
 
 use crate::{
     canvas::{
-        Canvas, CanvasColor, CanvasNode, CanvasView, ColorField, Composite, Composition, Coverage,
+        Canvas, CanvasNode, CanvasView, Color, ColorField, Composite, Composition, Coverage,
         CoverageNode, Draw, ImageExtend, ImagePattern, ImageSampling,
         canvas_image::CanvasImage,
         image::{Image, ImageKind},
@@ -17,7 +17,7 @@ use crate::{
         path_sampling::PathSampler,
         view_space::screen_space_tolerance,
     },
-    color::{Color, ColorSpace, IccProfile, IccRenderingIntent, LinearSrgb, Opacity, Srgb},
+    color::{ColorSpace, IccProfile, IccRenderingIntent, LinearSrgb, Opacity, Srgb},
     geometry::Point,
     path::Path,
     surface::{OutputAlpha, OutputImage, SurfaceSize, Viewport},
@@ -47,7 +47,7 @@ pub struct RenderTarget<'a> {
     view: &'a wgpu::TextureView,
     format: wgpu::TextureFormat,
     size: SurfaceSize,
-    clear_color: CanvasColor,
+    clear_color: Color,
     output: OutputImage,
     preserve_working: bool,
 }
@@ -57,7 +57,7 @@ impl<'a> RenderTarget<'a> {
         view: &'a wgpu::TextureView,
         format: wgpu::TextureFormat,
         size: SurfaceSize,
-        clear_color: impl Into<CanvasColor>,
+        clear_color: impl Into<Color>,
     ) -> Self {
         Self {
             view,
@@ -176,9 +176,10 @@ impl CanvasRenderer {
             return Ok(());
         }
         let prepared = prepare_colors_in(canvas, &self.working_space)?;
-        target
-            .clear_color
-            .try_straight_rgba_in(&self.working_space)?;
+        target.clear_color.try_straight_rgba_in(
+            &self.working_space,
+            IccRenderingIntent::RelativeColorimetric,
+        )?;
         self.materialize_canvas_resources(canvas)?;
         self.pipelines
             .retain_icc_images(&self.images.active_icc_keys());
