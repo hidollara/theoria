@@ -1,9 +1,11 @@
 use std::{error::Error, fmt, sync::Arc};
 
 use crate::color::{
-    ColorCoordinates, ColorSpace, IccProfileError, Opacity, OpacitySample, SpaceConnectionError,
-    TransferError, TypedColorSpace,
+    ColorCoordinates, ColorSpace, IccProfileError, SpaceConnectionError, TransferError,
+    TypedColorSpace,
 };
+
+use super::opacity::{Opacity, OpacitySample};
 
 /// A Canvas color retaining its authored space and coordinate representation.
 ///

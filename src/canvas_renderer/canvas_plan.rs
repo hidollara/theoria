@@ -259,9 +259,8 @@ fn required_color_field_scratch_images(source: &ColorField, working_space: &Colo
 mod tests {
     use super::*;
     use crate::{
-        canvas::Color,
-        canvas::{BlendMode, Composition, Coverage},
-        color::{LinearSrgb, Opacity, Srgb},
+        canvas::{BlendMode, Color, Composition, Coverage, Opacity},
+        color::{LinearSrgb, Srgb},
     };
 
     #[test]

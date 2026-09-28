@@ -9,7 +9,7 @@ use crate::canvas::Color;
 use crate::canvas_renderer::{WorkingColor, color_space};
 
 #[cfg(test)]
-use crate::color::{Opacity, Srgb};
+use crate::{canvas::Opacity, color::Srgb};
 
 /// Vulkan Canvas working color in premultiplied renderer-selected RGB coordinates.
 ///

@@ -1,12 +1,11 @@
 use super::{TestWorkingColor, paint_triangle};
 use crate::{
-    canvas::Color,
     canvas::{
-        ColorField, ConicGradient, GradientExtend, GradientPoint, GradientStop, LinearGradient,
-        MeshGradient, RadialGradient,
+        Color, ColorField, ConicGradient, GradientExtend, GradientPoint, GradientStop,
+        LinearGradient, MeshGradient, Opacity, RadialGradient,
     },
     canvas_renderer::WorkingColor,
-    color::{DisplayP3, LinearSrgb, Opacity, Srgb},
+    color::{DisplayP3, LinearSrgb, Srgb},
     geometry::Point,
 };
 

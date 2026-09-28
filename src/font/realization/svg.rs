@@ -244,7 +244,7 @@ fn raster_dimension(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::color::{Opacity, Srgb};
+    use crate::{canvas::Opacity, color::Srgb};
 
     fn test_font() -> ResolvedFont {
         crate::font::Font::from_bytes(font_test_data::COLRV0V1)

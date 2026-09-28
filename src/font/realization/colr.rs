@@ -14,9 +14,9 @@ use crate::{
     canvas::Color,
     canvas::{
         BlendMode, Canvas, ColorField, Composite, Composition, ConicGradient, Coverage,
-        GradientExtend, GradientStop, LinearGradient, RadialGradient,
+        GradientExtend, GradientStop, LinearGradient, Opacity, RadialGradient,
     },
-    color::{LinearSrgb, Opacity, Srgb},
+    color::{LinearSrgb, Srgb},
     geometry::Point,
     math::{Matrix2, Vector2},
     path::Path,

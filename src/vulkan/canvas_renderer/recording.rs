@@ -6,10 +6,10 @@ use crate::{
     canvas::Color,
     canvas::{
         Canvas, CanvasNode, CanvasView, ColorField, Composite, Composition, Coverage, CoverageNode,
-        Draw,
+        Draw, Opacity,
     },
     canvas_renderer::{canvas_plan::can_record_directly_in, color_space::PreparedColors},
-    color::{ColorSpace, Opacity, Srgb},
+    color::{ColorSpace, Srgb},
     surface::OutputAlpha,
     tessellation::{Mesh, tessellate_fill_with_tolerance, tessellate_stroke_with_tolerance},
     transform::Projective2,

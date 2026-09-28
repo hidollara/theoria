@@ -9,10 +9,13 @@ use crate::canvas::{
 use crate::canvas_renderer::canvas_plan::{
     can_record_directly, collect_images, required_scratch_images,
 };
-use crate::color::{LinearSrgb, Opacity, Srgb};
 use crate::geometry::Point;
 use crate::image::Srgba8Image;
 use crate::transform::Projective2;
+use crate::{
+    canvas::Opacity,
+    color::{LinearSrgb, Srgb},
+};
 
 fn sample_canvas() -> Canvas {
     Canvas::draw(

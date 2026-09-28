@@ -3,7 +3,7 @@ use wgpu::util::DeviceExt;
 use crate::{
     canvas::{
         Canvas, CanvasNode, CanvasView, Color, ColorField, Composite, Composition, Coverage,
-        CoverageNode, Draw, ImageExtend, ImagePattern, ImageSampling,
+        CoverageNode, Draw, ImageExtend, ImagePattern, ImageSampling, Opacity,
         canvas_image::CanvasImage,
         image::{Image, ImageKind},
     },
@@ -17,7 +17,7 @@ use crate::{
         path_sampling::PathSampler,
         view_space::screen_space_tolerance,
     },
-    color::{ColorSpace, IccProfile, IccRenderingIntent, LinearSrgb, Opacity, Srgb},
+    color::{ColorSpace, IccProfile, IccRenderingIntent, LinearSrgb, Srgb},
     geometry::Point,
     path::Path,
     surface::{OutputAlpha, OutputImage, SurfaceSize, Viewport},

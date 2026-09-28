@@ -1,6 +1,5 @@
 use std::f32::consts::TAU;
 
-use theoria::color::{Opacity, Srgb};
 use theoria::{
     canvas::Color,
     canvas::{Canvas, CanvasView, Composite, Composition, Coverage},
@@ -14,6 +13,7 @@ use theoria::{
     transform::Affine2,
     windows::{self, Window},
 };
+use theoria::{canvas::Opacity, color::Srgb};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut event_loop = windows::event_loop();

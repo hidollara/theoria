@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use theoria::color::{Opacity, Srgb};
+use theoria::{canvas::Opacity, color::Srgb};
 use theoria::{
     canvas::{Canvas, Color, Composite, Composition, Coverage},
     color::LinearSrgb,

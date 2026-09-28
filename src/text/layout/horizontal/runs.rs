@@ -73,8 +73,8 @@ pub(super) fn shape_bidi_line(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::color::{Opacity, Srgb};
     use crate::text::test_support::windows_test_font;
+    use crate::{canvas::Opacity, color::Srgb};
 
     #[cfg(target_os = "windows")]
     #[test]

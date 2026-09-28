@@ -230,8 +230,11 @@ mod tests {
     use super::{ImageSurface, pixel_byte_len};
     use crate::{
         canvas::Color,
-        canvas::{Canvas, CanvasView, Composite, Composition, Coverage, ImageExtend, ImagePattern},
-        color::{IccProfile, IccRenderingIntent, LinearDisplayP3, LinearSrgb, Opacity, Srgb},
+        canvas::{
+            Canvas, CanvasView, Composite, Composition, Coverage, ImageExtend, ImagePattern,
+            Opacity,
+        },
+        color::{IccProfile, IccRenderingIntent, LinearDisplayP3, LinearSrgb, Srgb},
         geometry::Point,
         surface::{SurfaceContent, SurfaceSize},
     };

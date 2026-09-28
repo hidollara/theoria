@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use crate::{
-    canvas::Color,
-    color::{ColorSpace, DisplayP3, LinearSrgb, Opacity, Srgb},
+    canvas::{Color, Opacity},
+    color::{ColorSpace, DisplayP3, LinearSrgb, Srgb},
     geometry::Point,
     image::{AlphaAssociation, RasterImage, RasterPlane, Rgba8, Srgba8Image},
     math::Vector2,

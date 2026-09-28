@@ -233,7 +233,8 @@ fn convert_premultiplied(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::color::{IccRenderingIntent, Opacity, Srgb};
+    use crate::canvas::Opacity;
+    use crate::color::{IccRenderingIntent, Srgb};
 
     #[test]
     fn a_solid_color_is_lowered_once_per_render() {

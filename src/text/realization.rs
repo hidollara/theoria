@@ -174,7 +174,7 @@ fn transformed_bounds(minimum: Point, maximum: Point, transform: Affine2) -> Opt
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::color::{Opacity, Srgb};
+    use crate::{canvas::Opacity, color::Srgb};
 
     #[test]
     fn text_without_drawable_glyphs_has_no_canvas_or_coverage() {

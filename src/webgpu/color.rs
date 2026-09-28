@@ -4,7 +4,7 @@ use crate::{
 };
 
 #[cfg(test)]
-use crate::color::{Opacity, Srgb};
+use crate::{canvas::Opacity, color::Srgb};
 
 /// WebGPU Canvas working color in premultiplied renderer-selected RGB coordinates.
 #[derive(Clone, Copy, Debug, PartialEq)]

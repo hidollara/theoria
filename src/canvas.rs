@@ -7,6 +7,7 @@ pub(crate) mod composition_shader;
 mod coverage;
 pub(crate) mod image;
 mod model;
+mod opacity;
 mod view;
 
 pub use blend::{Blend, BlendMode, BlendOperation, BlendShader, BlendShaderError, WgslBlend};
@@ -23,6 +24,7 @@ pub use composition::{Composite, Composition};
 pub use coverage::Coverage;
 pub use image::{IccImageError, Image};
 pub use model::Canvas;
+pub use opacity::{Opacity, OpacityError, OpacitySample};
 pub use view::CanvasView;
 
 pub(crate) use coverage::CoverageNode;
