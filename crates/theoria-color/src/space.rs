@@ -43,11 +43,11 @@ pub enum Pcs {
 ///
 /// This handle does not itself validate the range of an individual coordinate
 /// value or guarantee that the profile supports both directions for the
-/// selected intent. Clones retain the same identity.
+/// selected intent. Equality is the identity of the shared profile allocation,
+/// which clones retain.
 #[derive(Clone)]
 pub struct ColorSpace {
     profile: Arc<dyn ColorProfile>,
-    identity: (usize, usize),
 }
 
 impl ColorSpace {
@@ -55,25 +55,9 @@ impl ColorSpace {
     /// Named spaces use their canonical `Into<ColorSpace>` conversion instead.
     pub fn new(profile: impl ColorProfile + 'static) -> Self {
         assert!(profile.model().channels() > 0, "color model needs channels");
-        Self::from_arc(Arc::new(profile))
-    }
-
-    /// Reuses an already shared selected profile without another allocation.
-    pub fn from_arc<D: ColorProfile + 'static>(profile: Arc<D>) -> Self {
-        assert!(profile.model().channels() > 0, "color model needs channels");
-        let identity = (Arc::as_ptr(&profile) as usize, 0);
-        Self { profile, identity }
-    }
-
-    /// Shares the identity of a reusable source definition across separately
-    /// allocated selected-profile views. The source allocation must be kept
-    /// alive by `profile` for as long as this space exists.
-    pub(crate) fn from_arc_with_identity<D: ColorProfile + 'static>(
-        profile: Arc<D>,
-        identity: (usize, usize),
-    ) -> Self {
-        assert!(profile.model().channels() > 0, "color model needs channels");
-        Self { profile, identity }
+        Self {
+            profile: Arc::new(profile),
+        }
     }
 
     pub fn channels(&self) -> usize {
@@ -136,7 +120,7 @@ impl From<&ColorSpace> for ColorSpace {
 
 impl PartialEq for ColorSpace {
     fn eq(&self, other: &Self) -> bool {
-        self.identity == other.identity
+        Arc::ptr_eq(&self.profile, &other.profile)
     }
 }
 
@@ -144,7 +128,7 @@ impl Eq for ColorSpace {}
 
 impl Hash for ColorSpace {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.identity.hash(state);
+        (Arc::as_ptr(&self.profile) as *const ()).hash(state);
     }
 }
 
@@ -152,7 +136,7 @@ impl fmt::Debug for ColorSpace {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_tuple("ColorSpace")
-            .field(&self.identity)
+            .field(&(Arc::as_ptr(&self.profile) as *const ()))
             .finish()
     }
 }

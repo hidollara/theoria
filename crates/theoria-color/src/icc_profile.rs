@@ -1,4 +1,8 @@
-use std::{error::Error, fmt, sync::Arc};
+use std::{
+    error::Error,
+    fmt,
+    sync::{Arc, OnceLock},
+};
 
 use moxcms::{
     ColorProfile as ParsedProfile, DataColorSpace, LutDataType, LutMultidimensionalType, LutStore,
@@ -34,6 +38,9 @@ pub enum IccRenderingIntent {
 #[derive(Clone, Debug)]
 pub struct IccProfile {
     inner: Arc<IccProfileData>,
+    // Separate from `inner` so selected spaces can own the data without a cycle.
+    // Clones share these slots and therefore reuse one space per intent.
+    selected: Arc<[OnceLock<ColorSpace>; 4]>,
 }
 
 struct IccColorProfile {
@@ -97,6 +104,7 @@ impl IccProfile {
                 pcs,
                 mpe: MpeTags::default(),
             }),
+            selected: Arc::new(std::array::from_fn(|_| OnceLock::new())),
         }
     }
 
@@ -113,15 +121,14 @@ impl IccProfile {
     /// Selects one rendering intent as a Theoria color profile and returns its
     /// shared color-space handle. The ICC data remains reusable for other intents.
     pub fn color_space(&self, intent: IccRenderingIntent) -> ColorSpace {
-        // Selected views are cheap to recreate, but spaces from the same ICC
-        // allocation and intent must retain one logical identity.
-        ColorSpace::from_arc_with_identity(
-            Arc::new(IccColorProfile {
-                data: self.inner.clone(),
-                intent,
-            }),
-            (Arc::as_ptr(&self.inner) as usize, intent.index()),
-        )
+        self.selected[intent.index()]
+            .get_or_init(|| {
+                ColorSpace::new(IccColorProfile {
+                    data: self.inner.clone(),
+                    intent,
+                })
+            })
+            .clone()
     }
 }
 
