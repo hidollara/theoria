@@ -261,7 +261,7 @@ impl Error for ProfileConnectionError {
 mod tests {
     use super::*;
     use crate::icc_profile::IccProfile;
-    use crate::space::{DisplayP3, LabD50, LinearSrgb, Srgb};
+    use crate::space::{DisplayP3, LabD50, LinearSrgb, Srgb, XyzD50, XyzD65};
     use crate::transfer::{Transfer, TransferCurve, TransferStage};
     use std::collections::HashSet;
 
@@ -386,6 +386,32 @@ mod tests {
         let restored = to_rgb.evaluate(&lab).unwrap();
         for (actual, expected) in restored.into_iter().zip(sample) {
             assert!((actual - expected).abs() < 1e-7);
+        }
+    }
+
+    #[test]
+    fn predefined_spaces_match_css_reference_coordinates() {
+        // CSS Color 4 §10.9 gives these equivalent coordinates for #7654CD.
+        // https://www.w3.org/TR/css-color-4/#predefined
+        let srgb = [118.0 / 255.0, 84.0 / 255.0, 205.0 / 255.0];
+        let intent = IccRenderingIntent::RelativeColorimetric;
+        for (destination, expected, tolerance) in [
+            (ColorSpace::from(XyzD50), [0.2005, 0.14089, 0.4472], 0.0005),
+            (
+                ColorSpace::from(XyzD65),
+                [0.21661, 0.14602, 0.59452],
+                0.0005,
+            ),
+            (ColorSpace::from(LabD50), [44.36, 36.05, -58.99], 0.05),
+        ] {
+            let transfer = connect_spaces(Srgb, destination, intent, intent).unwrap();
+            let actual = transfer.evaluate(&srgb).unwrap();
+            for (actual, expected) in actual.into_iter().zip(expected) {
+                assert!(
+                    (actual - expected).abs() < tolerance,
+                    "{actual} != {expected}"
+                );
+            }
         }
     }
 

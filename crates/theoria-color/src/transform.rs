@@ -23,7 +23,3 @@ pub(crate) fn encode_srgb_f64(value: f64) -> f64 {
         value.signum() * (SRGB_POWER_SCALE * magnitude.powf(1.0 / SRGB_GAMMA) - SRGB_POWER_OFFSET)
     }
 }
-
-pub(crate) fn multiply_f64(matrix: [[f64; 3]; 3], vector: [f64; 3]) -> [f64; 3] {
-    matrix.map(|row| row[0] * vector[0] + row[1] * vector[1] + row[2] * vector[2])
-}

@@ -277,7 +277,14 @@ impl Error for CanvasIccColorError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::color::{DisplayP3, LinearDisplayP3, LinearSrgb, Srgb, XyzD50Profile};
+    use crate::color::{DisplayP3, LinearDisplayP3, LinearSrgb, Srgb};
+
+    // CSS Color 4 §10.9 gives these equivalent coordinates for #7654CD.
+    // https://www.w3.org/TR/css-color-4/#predefined
+    const CSS_SRGB: [f32; 3] = [118.0 / 255.0, 84.0 / 255.0, 205.0 / 255.0];
+    const CSS_XYZ_D50: [f64; 3] = [0.2005, 0.14089, 0.4472];
+    const CSS_XYZ_D65: [f64; 3] = [0.21661, 0.14602, 0.59452];
+    const CSS_LAB_D50: [f64; 3] = [44.36, 36.05, -58.99];
 
     #[test]
     fn icc_color_preserves_device_coordinates_until_renderer_lowering() {
@@ -402,25 +409,19 @@ mod tests {
     }
 
     #[test]
-    fn profile_reference_coordinates_enter_canvas_without_losing_storage() {
+    fn linear_coordinates_enter_canvas_without_losing_storage() {
         let authored = Color::new(
-            Srgb,
-            [0.25_f32, 0.5, 0.75],
+            LinearSrgb,
+            [0.05_f64, 0.2, 0.5],
             Opacity::<f32>::new(0.4).unwrap(),
         );
-        let xyz = Srgb.coordinates_to_xyz_d50(&authored.coordinates().map(f64::from));
-        let converted = Color::new(
-            LinearSrgb,
-            LinearSrgb.xyz_d50_to_coordinates(xyz),
-            authored.opacity(),
-        );
-        let canvas = CanvasColor::from(converted);
+        let canvas = CanvasColor::from(authored);
 
         assert!(matches!(canvas.value, ColorValue::F64(_, Alpha::F32(_))));
         assert_eq!(canvas.profile, ColorSpace::from(LinearSrgb));
-        let rgba = canvas.straight_rgba_in(Srgb);
-        for (actual, expected) in rgba.into_iter().zip([0.25, 0.5, 0.75, 0.4]) {
-            assert!((actual - expected).abs() < 0.000_01);
+        let rgba = canvas.straight_rgba_in(LinearSrgb);
+        for (actual, expected) in rgba.into_iter().zip([0.05, 0.2, 0.5, 0.4]) {
+            assert!((actual - expected).abs() < 0.000_001);
         }
     }
 
@@ -445,72 +446,51 @@ mod tests {
 
     #[test]
     fn xyz_and_lab_colors_remain_authored_until_renderer_lowering() {
-        let source = Color::new(
-            Srgb,
-            [0.25_f32, 0.5, 0.75],
-            Opacity::<f32>::new(0.4).unwrap(),
-        );
+        let source = Color::new(Srgb, CSS_SRGB, Opacity::<f32>::new(0.4).unwrap());
         let original = CanvasColor::from(source);
         let lowered_original = crate::canvas_renderer::color_space::lower_straight_color(&original);
-        let xyz = Srgb.coordinates_to_xyz_d50(&source.coordinates().map(f64::from));
 
         for (canvas, profile) in [
             (
-                CanvasColor::from(Color::new(
-                    XyzD50,
-                    XyzD50.xyz_d50_to_coordinates(xyz),
-                    source.opacity(),
-                )),
+                CanvasColor::from(Color::new(XyzD50, CSS_XYZ_D50, source.opacity())),
                 ColorSpace::from(XyzD50),
             ),
             (
-                CanvasColor::from(Color::new(
-                    XyzD65,
-                    XyzD65.xyz_d50_to_coordinates(xyz),
-                    source.opacity(),
-                )),
+                CanvasColor::from(Color::new(XyzD65, CSS_XYZ_D65, source.opacity())),
                 ColorSpace::from(XyzD65),
             ),
             (
-                CanvasColor::from(Color::new(
-                    LabD50,
-                    LabD50.xyz_d50_to_coordinates(xyz),
-                    source.opacity(),
-                )),
+                CanvasColor::from(Color::new(LabD50, CSS_LAB_D50, source.opacity())),
                 ColorSpace::from(LabD50),
             ),
         ] {
             assert_eq!(canvas.profile, profile);
             assert!(matches!(canvas.value, ColorValue::F64(_, Alpha::F32(_))));
+            let rgba = canvas.straight_rgba_in(Srgb);
+            for (actual, expected) in
+                rgba.into_iter()
+                    .zip([CSS_SRGB[0], CSS_SRGB[1], CSS_SRGB[2], 0.4])
+            {
+                assert!((actual - expected).abs() < 0.002, "{actual} != {expected}");
+            }
             let lowered = crate::canvas_renderer::color_space::lower_straight_color(&canvas);
-            // ICC PCS D50 and the typed Lab reference use slightly different
-            // rounded D50 whites; their RGB renderings should remain close.
             for (actual, expected) in lowered.into_iter().zip(lowered_original) {
-                assert!(
-                    (actual - expected).abs() < 0.000_1,
-                    "{actual} != {expected}"
-                );
+                assert!((actual - expected).abs() < 0.001, "{actual} != {expected}");
             }
         }
     }
 
     #[test]
     fn profile_authored_lab_color_can_be_used_as_a_gradient_stop() {
-        let source = Color::new(
-            Srgb,
-            [0.25_f32, 0.5, 0.75],
-            Opacity::<f32>::new(0.4).unwrap(),
-        );
-        let xyz = Srgb.coordinates_to_xyz_d50(&source.coordinates().map(f64::from));
-        let lab = Color::new(LabD50, LabD50.xyz_d50_to_coordinates(xyz), source.opacity());
+        let lab = Color::new(LabD50, CSS_LAB_D50, Opacity::<f32>::new(0.4).unwrap());
         let stop = crate::canvas::GradientStop::new(0.5, lab).unwrap();
 
         let rgba = stop.color().straight_rgba_in(Srgb);
-        for (actual, expected) in rgba.into_iter().zip([0.25, 0.5, 0.75, 0.4]) {
-            assert!(
-                (actual - expected).abs() < 0.000_1,
-                "{actual} != {expected}"
-            );
+        for (actual, expected) in rgba
+            .into_iter()
+            .zip([CSS_SRGB[0], CSS_SRGB[1], CSS_SRGB[2], 0.4])
+        {
+            assert!((actual - expected).abs() < 0.002, "{actual} != {expected}");
         }
     }
 }
