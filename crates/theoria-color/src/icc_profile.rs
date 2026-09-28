@@ -8,7 +8,7 @@ use moxcms::{
 use super::icc_mpe::MpeTags;
 use super::model::ColorModel;
 use super::pcs::ICC_D50;
-use super::profile::{ColorProfile, ColorSpace, Pcs, ProfileConnectionError, connect_spaces};
+use super::profile::{ColorProfile, ColorSpace, Pcs, ProfileConnectionError};
 use super::transfer::{
     Transfer, TransferClut, TransferCurve, TransferError, TransferMatrix, TransferStage,
 };
@@ -102,18 +102,14 @@ impl IccProfile {
         }
     }
 
-    pub fn pcs(&self) -> Pcs {
-        self.inner.pcs
+    pub fn device_channels(&self) -> usize {
+        self.inner.device_channels()
     }
 
     /// Returns the exact loaded ICC payload for embedding in an encoded image.
     /// Profiles synthesized internally for tests do not have source bytes.
     pub fn original_bytes(&self) -> Option<&[u8]> {
         self.inner.original_bytes.as_deref()
-    }
-
-    pub fn device_channels(&self) -> usize {
-        self.inner.device_channels()
     }
 
     /// The color space defined by this particular loaded profile.
@@ -125,7 +121,11 @@ impl IccProfile {
     ///
     /// The reverse direction is selected independently with [`Self::pcs_to_space`];
     /// a profile is not required to provide both directions.
-    pub fn space_to_pcs(&self, intent: IccRenderingIntent) -> Result<Transfer, IccProfileError> {
+    #[cfg(test)]
+    pub(crate) fn space_to_pcs(
+        &self,
+        intent: IccRenderingIntent,
+    ) -> Result<Transfer, IccProfileError> {
         self.inner
             .selected_transfer(IccTransferDirection::DeviceToPcs, intent)
     }
@@ -133,29 +133,13 @@ impl IccProfile {
     /// Selects this profile's PCS-to-device transfer for the given intent.
     ///
     /// This is not inferred by inverting [`Self::space_to_pcs`].
-    pub fn pcs_to_space(&self, intent: IccRenderingIntent) -> Result<Transfer, IccProfileError> {
+    #[cfg(test)]
+    pub(crate) fn pcs_to_space(
+        &self,
+        intent: IccRenderingIntent,
+    ) -> Result<Transfer, IccProfileError> {
         self.inner
             .selected_transfer(IccTransferDirection::PcsToDevice, intent)
-    }
-}
-
-impl IccProfile {
-    /// Connects this profile's device coordinates to another profile's.
-    ///
-    /// Selects this profile's device-to-PCS conversion and the destination's
-    /// PCS-to-device conversion through the shared profile connection path.
-    pub fn connect_to(
-        &self,
-        destination: &Self,
-        source_intent: IccRenderingIntent,
-        destination_intent: IccRenderingIntent,
-    ) -> Result<Transfer, ProfileConnectionError> {
-        connect_spaces(
-            self.color_space(),
-            destination.color_space(),
-            source_intent,
-            destination_intent,
-        )
     }
 }
 
@@ -739,20 +723,6 @@ mod tests {
     }
 
     #[test]
-    fn generic_profile_connection_matches_icc_connection() {
-        let profile = IccProfile::from_parsed(ParsedProfile::new_srgb(), Pcs::XyzD50);
-        for intent in [
-            IccRenderingIntent::RelativeColorimetric,
-            IccRenderingIntent::Perceptual,
-            IccRenderingIntent::AbsoluteColorimetric,
-        ] {
-            let generic = connect_spaces(&profile, &profile, intent, intent).unwrap();
-            let icc = profile.connect_to(&profile, intent, intent).unwrap();
-            assert_eq!(generic, icc);
-        }
-    }
-
-    #[test]
     fn real_v4_profiles_round_trip_device_coordinates() {
         for (bytes, sample) in [
             (
@@ -876,7 +846,7 @@ mod tests {
     fn parses_matrix_trc_profile_and_connects_both_directions() {
         let bytes = ParsedProfile::new_srgb().encode().unwrap();
         let profile = IccProfile::from_bytes(&bytes).unwrap();
-        assert_eq!(profile.pcs(), Pcs::XyzD50);
+        assert_eq!(profile.inner.pcs, Pcs::XyzD50);
         let forward = profile
             .space_to_pcs(IccRenderingIntent::RelativeColorimetric)
             .unwrap();
@@ -889,13 +859,13 @@ mod tests {
             assert!((actual - expected).abs() < 0.003);
         }
         assert!(forward.then(&backward).is_ok());
-        let semantic = profile
-            .connect_to(
-                &profile,
-                IccRenderingIntent::RelativeColorimetric,
-                IccRenderingIntent::RelativeColorimetric,
-            )
-            .unwrap();
+        let semantic = connect_spaces(
+            &profile,
+            &profile,
+            IccRenderingIntent::RelativeColorimetric,
+            IccRenderingIntent::RelativeColorimetric,
+        )
+        .unwrap();
         let restored = semantic.evaluate(&[0.4, 0.5, 0.6]).unwrap();
         for (actual, expected) in restored.into_iter().zip([0.4, 0.5, 0.6]) {
             assert!((actual - expected).abs() < 0.003);
@@ -912,13 +882,13 @@ mod tests {
         let source = IccProfile::from_parsed(ParsedProfile::new_gray_with_gamma(1.0), Pcs::XyzD50);
         let destination =
             IccProfile::from_parsed(ParsedProfile::new_gray_with_gamma(1.0), Pcs::LabD50);
-        let connected = source
-            .connect_to(
-                &destination,
-                IccRenderingIntent::RelativeColorimetric,
-                IccRenderingIntent::RelativeColorimetric,
-            )
-            .unwrap();
+        let connected = connect_spaces(
+            &source,
+            &destination,
+            IccRenderingIntent::RelativeColorimetric,
+            IccRenderingIntent::RelativeColorimetric,
+        )
+        .unwrap();
         let result = connected.evaluate(&[0.4]).unwrap();
         let relative_xyz = ICC_D50.map(|component| component * 0.4);
         let expected = crate::pcs::xyz_to_lab(relative_xyz, ICC_D50)[0] / 100.0;
@@ -1010,7 +980,8 @@ mod tests {
             assert!((actual - expected).abs() < 0.003);
         }
         assert!(matches!(
-            profile.connect_to(
+            connect_spaces(
+                &profile,
                 &profile,
                 IccRenderingIntent::AbsoluteColorimetric,
                 IccRenderingIntent::RelativeColorimetric,

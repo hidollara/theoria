@@ -8,15 +8,6 @@ use crate::model::Rgb;
 named_space!(Srgb, Rgb);
 
 impl Srgb {
-    // Display P3 uses the same transfer curve. Keep these aliases tied to the
-    // values used by CPU evaluation and generated transfer shaders.
-    pub const DECODE_THRESHOLD: f64 = crate::transform::SRGB_DECODE_THRESHOLD;
-    pub const ENCODE_THRESHOLD: f64 = crate::transform::SRGB_ENCODE_THRESHOLD;
-    pub const LINEAR_SCALE: f64 = crate::transform::SRGB_LINEAR_SCALE;
-    pub const POWER_SCALE: f64 = crate::transform::SRGB_POWER_SCALE;
-    pub const POWER_OFFSET: f64 = crate::transform::SRGB_POWER_OFFSET;
-    pub const GAMMA: f64 = crate::transform::SRGB_GAMMA;
-
     // Exact rational matrices from CSS Color 4's color-conversion sample code.
     // The linear and encoded sRGB spaces share these primaries.
     pub(crate) const TO_XYZ_D65: [[f64; 3]; 3] = [

@@ -1,9 +1,9 @@
-use super::pcs;
-use super::transform::multiply_f64;
 use super::{
-    DisplayP3, LabD50, LinearDisplayP3, LinearSrgb, Srgb, TypedColorSpace, WhitePoint, XyzD50,
-    XyzD65,
+    DisplayP3, LabD50, LinearDisplayP3, LinearSrgb, Srgb, TypedColorSpace, XyzD50, XyzD65,
 };
+use crate::WhitePoint;
+use crate::pcs;
+use crate::transform::multiply_f64;
 
 /// A profile with a reference conversion to and from D50-adapted CIE XYZ.
 ///
