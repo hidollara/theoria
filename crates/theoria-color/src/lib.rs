@@ -13,7 +13,6 @@ mod profile;
 mod sample;
 mod space;
 mod transfer;
-mod white_point;
 
 pub use icc_profile::{IccProfile, IccProfileError, IccRenderingIntent};
 pub use model::{Cmyk, ColorCoordinates, ColorModel, Lab, Rgb, TypedColorModel, Xyz, Ycbcr};
@@ -26,4 +25,3 @@ pub use transfer::{
     Transfer, TransferClut, TransferCurve, TransferError, TransferMatrix, TransferShader,
     TransferStage,
 };
-pub use white_point::{WhitePoint, WhitePointError};
