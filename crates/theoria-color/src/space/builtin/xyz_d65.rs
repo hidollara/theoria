@@ -2,7 +2,7 @@ use super::{ColorProfile, Pcs, SpaceConnectionError, Transfer, TypedColorSpace, 
 use crate::model::Xyz;
 
 named_space!(XyzD65, Xyz);
-predefined_space!(XyzD65, XyzD65Profile);
+builtin_space!(XyzD65, XyzD65Profile);
 
 impl XyzD65 {
     // Linear Bradford adaptation from the CSS Color 4 conversion sample.

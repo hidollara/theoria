@@ -7,7 +7,7 @@ use moxcms::{
 
 use super::icc_mpe::MpeTags;
 use super::model::ColorModel;
-use super::profile::{ColorProfile, ColorSpace, Pcs, SpaceConnectionError};
+use super::space::{ColorProfile, ColorSpace, Pcs, SpaceConnectionError};
 use super::transfer::{
     ICC_PCS_D50_XYZ, Transfer, TransferClut, TransferCurve, TransferError, TransferMatrix,
     TransferStage,

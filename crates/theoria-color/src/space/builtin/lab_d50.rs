@@ -2,7 +2,7 @@ use super::{ColorProfile, Pcs, SpaceConnectionError, Transfer, TypedColorSpace};
 use crate::model::Lab;
 
 named_space!(LabD50, Lab);
-predefined_space!(LabD50, LabD50Profile);
+builtin_space!(LabD50, LabD50Profile);
 
 impl ColorProfile for LabD50Profile {
     fn model(&self) -> crate::model::ColorModel {

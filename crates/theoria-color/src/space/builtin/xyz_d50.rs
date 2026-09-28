@@ -2,7 +2,7 @@ use super::{ColorProfile, Pcs, SpaceConnectionError, Transfer, TypedColorSpace};
 use crate::model::Xyz;
 
 named_space!(XyzD50, Xyz);
-predefined_space!(XyzD50, XyzD50Profile);
+builtin_space!(XyzD50, XyzD50Profile);
 
 impl ColorProfile for XyzD50Profile {
     fn model(&self) -> crate::model::ColorModel {

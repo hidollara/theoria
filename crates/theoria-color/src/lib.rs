@@ -9,15 +9,14 @@
 mod icc_mpe;
 mod icc_profile;
 mod model;
-mod profile;
 mod space;
 mod transfer;
 
 pub use icc_profile::{IccProfile, IccProfileError, IccRenderingIntent};
 pub use model::{Cmyk, ColorCoordinates, ColorModel, Lab, Rgb, TypedColorModel, Xyz, Ycbcr};
-pub use profile::{ColorProfile, ColorSpace, Pcs, SpaceConnectionError, connect_spaces};
 pub use space::{
-    DisplayP3, LabD50, LinearDisplayP3, LinearSrgb, Srgb, TypedColorSpace, XyzD50, XyzD65,
+    ColorProfile, ColorSpace, DisplayP3, LabD50, LinearDisplayP3, LinearSrgb, Pcs,
+    SpaceConnectionError, Srgb, TypedColorSpace, XyzD50, XyzD65, connect_spaces,
 };
 pub use transfer::{
     Transfer, TransferClut, TransferCurve, TransferError, TransferMatrix, TransferShader,

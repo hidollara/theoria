@@ -5,30 +5,38 @@ use super::{
 };
 use crate::model::Rgb;
 
-named_space!(Srgb, Rgb);
+named_space!(DisplayP3, Rgb);
 
-impl Srgb {
+impl DisplayP3 {
     // Exact rational matrices from CSS Color 4's color-conversion sample code.
-    // The linear and encoded sRGB spaces share these primaries.
+    // The linear and encoded Display P3 spaces share these primaries.
     pub(crate) const TO_XYZ_D65: [[f64; 3]; 3] = [
-        [506752.0 / 1228815.0, 87881.0 / 245763.0, 12673.0 / 70218.0],
-        [87098.0 / 409605.0, 175762.0 / 245763.0, 12673.0 / 175545.0],
-        [7918.0 / 409605.0, 87881.0 / 737289.0, 1001167.0 / 1053270.0],
+        [
+            608311.0 / 1250200.0,
+            189793.0 / 714400.0,
+            198249.0 / 1000160.0,
+        ],
+        [
+            35783.0 / 156275.0,
+            247089.0 / 357200.0,
+            198249.0 / 2500400.0,
+        ],
+        [0.0, 32229.0 / 714400.0, 5220557.0 / 5000800.0],
     ];
     pub(crate) const FROM_XYZ_D65: [[f64; 3]; 3] = [
-        [12831.0 / 3959.0, -329.0 / 214.0, -1974.0 / 3959.0],
         [
-            -851781.0 / 878810.0,
-            1648619.0 / 878810.0,
-            36519.0 / 878810.0,
+            446124.0 / 178915.0,
+            -333277.0 / 357830.0,
+            -72051.0 / 178915.0,
         ],
-        [705.0 / 12673.0, -2585.0 / 12673.0, 705.0 / 667.0],
+        [-14852.0 / 17905.0, 63121.0 / 35810.0, 423.0 / 17905.0],
+        [11844.0 / 330415.0, -50337.0 / 660830.0, 316169.0 / 330415.0],
     ];
 }
 
-predefined_space!(Srgb, SrgbProfile);
+builtin_space!(DisplayP3, DisplayP3Profile);
 
-impl ColorProfile for SrgbProfile {
+impl ColorProfile for DisplayP3Profile {
     fn model(&self) -> crate::model::ColorModel {
         crate::model::ColorModel::Rgb
     }
@@ -39,7 +47,7 @@ impl ColorProfile for SrgbProfile {
 
     fn space_to_pcs_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
         Ok(rgb_to_pcs_transfer(
-            rgb_to_xyz_d65_transfer(Srgb::TO_XYZ_D65, TransferCurve::SRGB_DECODE)?,
+            rgb_to_xyz_d65_transfer(DisplayP3::TO_XYZ_D65, TransferCurve::SRGB_DECODE)?,
             self.pcs(),
         )?)
     }
@@ -47,7 +55,7 @@ impl ColorProfile for SrgbProfile {
     fn pcs_to_space_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
         Ok(pcs_to_rgb_transfer(
             self.pcs(),
-            xyz_d65_to_rgb_transfer(Srgb::FROM_XYZ_D65, TransferCurve::SRGB_ENCODE)?,
+            xyz_d65_to_rgb_transfer(DisplayP3::FROM_XYZ_D65, TransferCurve::SRGB_ENCODE)?,
         )?)
     }
 
@@ -56,8 +64,8 @@ impl ColorProfile for SrgbProfile {
         destination: &ColorSpace,
     ) -> Result<Option<Transfer>, SpaceConnectionError> {
         rgb_direct_to(
-            Srgb.into(),
-            super::LinearSrgb.into(),
+            DisplayP3.into(),
+            super::LinearDisplayP3.into(),
             TransferCurve::SRGB_DECODE,
             destination,
         )
