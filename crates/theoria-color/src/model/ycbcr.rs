@@ -4,7 +4,6 @@ use super::{ColorCoordinates, ColorModel, TypedColorModel};
 pub struct Ycbcr;
 
 impl TypedColorModel for Ycbcr {
-    const COMPONENTS: usize = 3;
     const ERASED: ColorModel = ColorModel::Ycbcr;
 }
 

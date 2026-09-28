@@ -132,11 +132,6 @@ macro_rules! predefined_space {
                             <<$space as $crate::space::TypedColorSpace>::Model as $crate::model::TypedColorModel>::ERASED,
                             "typed and runtime color models differ"
                         );
-                        assert_eq!(
-                            space.channels(),
-                            <<$space as $crate::space::TypedColorSpace>::Model as $crate::model::TypedColorModel>::COMPONENTS,
-                            "typed and runtime channel counts differ"
-                        );
                         space
                     });
                 SPACE.clone()

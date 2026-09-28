@@ -4,7 +4,6 @@ use super::{ColorCoordinates, ColorModel, TypedColorModel};
 pub struct Rgb;
 
 impl TypedColorModel for Rgb {
-    const COMPONENTS: usize = 3;
     const ERASED: ColorModel = ColorModel::Rgb;
 }
 

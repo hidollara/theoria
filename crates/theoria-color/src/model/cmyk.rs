@@ -4,7 +4,6 @@ use super::{ColorCoordinates, ColorModel, TypedColorModel};
 pub struct Cmyk;
 
 impl TypedColorModel for Cmyk {
-    const COMPONENTS: usize = 4;
     const ERASED: ColorModel = ColorModel::Cmyk;
 }
 

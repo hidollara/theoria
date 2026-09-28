@@ -21,7 +21,6 @@ pub trait ColorCoordinates<M: TypedColorModel>: 'static {}
 /// A model assigns no physical color meaning by itself. Primaries, transfer
 /// functions, white points, matrices, and lookup tables belong to a profile.
 pub trait TypedColorModel: Sized + 'static {
-    const COMPONENTS: usize;
     const ERASED: ColorModel;
 }
 
@@ -75,7 +74,6 @@ mod tests {
     fn models_accept_whole_coordinate_representations() {
         accepts::<Rgb, [u8; 3]>();
         accepts::<Cmyk, [f32; 4]>();
-        assert_eq!(Rgb::COMPONENTS, 3);
         assert_eq!(Rgb::ERASED, ColorModel::Rgb);
     }
 }
