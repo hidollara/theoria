@@ -87,9 +87,7 @@ fn parse_mpe(data: &[u8]) -> Result<Option<Transfer>, MpeParseError> {
     if channels != outputs {
         return Err(MpeParseError);
     }
-    Transfer::new(inputs, stages)
-        .map(Some)
-        .map_err(|_| MpeParseError)
+    Transfer::new(stages).map(Some).map_err(|_| MpeParseError)
 }
 
 fn parse_matrix(

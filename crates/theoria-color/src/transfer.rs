@@ -12,43 +12,56 @@ mod tests;
 /// same stages can be evaluated on the CPU or lowered by a renderer.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Transfer {
-    input_channels: usize,
-    output_channels: usize,
     stages: Arc<[TransferStage]>,
 }
 
 impl Transfer {
-    pub fn new(
-        input_channels: usize,
-        stages: impl Into<Arc<[TransferStage]>>,
-    ) -> Result<Self, TransferError> {
-        if input_channels == 0 {
-            return Err(TransferError::EmptyChannels);
-        }
+    /// Validates the stage sequence. With no stages, this is an identity for
+    /// any positive channel count; endpoints are checked when it is connected.
+    pub fn new(stages: impl Into<Arc<[TransferStage]>>) -> Result<Self, TransferError> {
         let stages = stages.into();
-        let mut channels = input_channels;
         for stage in stages.iter() {
-            if stage.input_channels() != channels {
+            if stage.input_channels() == 0 || stage.output_channels() == 0 {
+                return Err(TransferError::EmptyChannels);
+            }
+        }
+        for pair in stages.windows(2) {
+            if pair[0].output_channels() != pair[1].input_channels() {
                 return Err(TransferError::ChannelMismatch {
-                    expected: channels,
-                    actual: stage.input_channels(),
+                    expected: pair[0].output_channels(),
+                    actual: pair[1].input_channels(),
                 });
             }
-            channels = stage.output_channels();
         }
-        Ok(Self {
-            input_channels,
-            output_channels: channels,
-            stages,
-        })
+        Ok(Self { stages })
     }
 
-    pub const fn input_channels(&self) -> usize {
-        self.input_channels
+    /// Returns `None` for an empty, channel-polymorphic identity.
+    pub fn input_channels(&self) -> Option<usize> {
+        self.stages.first().map(TransferStage::input_channels)
     }
 
-    pub const fn output_channels(&self) -> usize {
-        self.output_channels
+    /// Returns `None` for an empty, channel-polymorphic identity.
+    pub fn output_channels(&self) -> Option<usize> {
+        self.stages.last().map(TransferStage::output_channels)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.stages.is_empty()
+    }
+
+    /// Checks this transfer against endpoints whose channel counts are known.
+    pub fn supports_channels(&self, input: usize, output: usize) -> bool {
+        if input == 0 || output == 0 {
+            return false;
+        }
+        match (self.input_channels(), self.output_channels()) {
+            (Some(actual_input), Some(actual_output)) => {
+                actual_input == input && actual_output == output
+            }
+            (None, None) => input == output,
+            _ => unreachable!("a transfer has both endpoints or neither"),
+        }
     }
 
     pub fn stages(&self) -> &[TransferStage] {
@@ -57,14 +70,21 @@ impl Transfer {
 
     /// Connects two directed transfers when their adjacent channel counts match.
     pub fn then(&self, next: &Self) -> Result<Self, TransferError> {
-        if self.output_channels != next.input_channels {
-            return Err(TransferError::ChannelMismatch {
-                expected: self.output_channels,
-                actual: next.input_channels,
-            });
+        if let (Some(output), Some(input)) = (self.output_channels(), next.input_channels()) {
+            if output != input {
+                return Err(TransferError::ChannelMismatch {
+                    expected: output,
+                    actual: input,
+                });
+            }
+        }
+        if self.is_empty() {
+            return Ok(next.clone());
+        }
+        if next.is_empty() {
+            return Ok(self.clone());
         }
         Self::new(
-            self.input_channels,
             self.stages
                 .iter()
                 .chain(next.stages.iter())

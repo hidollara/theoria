@@ -31,7 +31,7 @@ fn sample_device(uv: vec2<f32>) -> array<f32, THEORIA_SAMPLE_CHANNELS> {
 }
 
 fn convert_device(sample: array<f32, THEORIA_SAMPLE_CHANNELS>) -> vec4<f32> {
-    let rgb = theoria_transfer_0(array<f32, THEORIA_DEVICE_CHANNELS>(THEORIA_DEVICE_VALUES));
+    let rgb = THEORIA_CONVERTED_VALUES;
     let alpha = THEORIA_ALPHA;
     return vec4<f32>(rgb[0], rgb[1], rgb[2], alpha);
 }

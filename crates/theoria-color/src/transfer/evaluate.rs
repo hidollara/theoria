@@ -5,11 +5,13 @@ use super::{
 
 impl Transfer {
     pub fn evaluate(&self, input: &[f64]) -> Result<Vec<f64>, TransferError> {
-        if input.len() != self.input_channels {
-            return Err(TransferError::ChannelMismatch {
-                expected: self.input_channels,
-                actual: input.len(),
-            });
+        if let Some(expected) = self.input_channels() {
+            if input.len() != expected {
+                return Err(TransferError::ChannelMismatch {
+                    expected,
+                    actual: input.len(),
+                });
+            }
         }
         if input.iter().any(|value| !value.is_finite()) {
             return Err(TransferError::NonFiniteValue);

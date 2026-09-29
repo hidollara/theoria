@@ -35,14 +35,24 @@ pub(crate) fn assemble_for(
         LinearDisplayP3.into(),
     ];
     let mut definitions = String::new();
+    let mut conversions = Vec::new();
     for (index, space) in spaces.into_iter().enumerate() {
         let transfer = space.transfer_to(working_space)?;
+        conversions.push(if transfer.is_empty() {
+            "values".to_owned()
+        } else {
+            format!("theoria_transfer_{index}(values)")
+        });
         definitions.push_str(&transfer.wgsl(index as u32)?);
     }
     let present = working_space.transfer_to(LinearSrgb)?;
     definitions.push_str(&present.wgsl(4)?);
-    definitions.push_str(
-        r#"
+    let present_value = if present.is_empty() {
+        "rgb_to_array(value)".to_owned()
+    } else {
+        "theoria_transfer_4(rgb_to_array(value))".to_owned()
+    };
+    let helpers = r#"
 fn rgb_to_array(value: vec3<f32>) -> array<f32, 3> {
     return array<f32, 3>(value.r, value.g, value.b);
 }
@@ -54,17 +64,22 @@ fn array_to_rgb(value: array<f32, 3>) -> vec3<f32> {
 fn to_working(value: vec3<f32>, space: u32) -> vec3<f32> {
     if space == 4u { return value; }
     let values = rgb_to_array(value);
-    if space == 0u { return array_to_rgb(theoria_transfer_0(values)); }
-    if space == 1u { return array_to_rgb(theoria_transfer_1(values)); }
-    if space == 2u { return array_to_rgb(theoria_transfer_2(values)); }
-    return array_to_rgb(theoria_transfer_3(values));
+    if space == 0u { return array_to_rgb(THEORIA_TRANSFER_0); }
+    if space == 1u { return array_to_rgb(THEORIA_TRANSFER_1); }
+    if space == 2u { return array_to_rgb(THEORIA_TRANSFER_2); }
+    return array_to_rgb(THEORIA_TRANSFER_3);
 }
 
 fn working_to_linear_srgb(value: vec3<f32>) -> vec3<f32> {
-    return array_to_rgb(theoria_transfer_4(rgb_to_array(value)));
+    return array_to_rgb(THEORIA_PRESENT_TRANSFER);
 }
-"#,
-    );
+"#;
+    let mut helpers = helpers.to_owned();
+    for (index, expression) in conversions.iter().enumerate() {
+        helpers = helpers.replace(&format!("THEORIA_TRANSFER_{index}"), expression);
+    }
+    helpers = helpers.replace("THEORIA_PRESENT_TRANSFER", &present_value);
+    definitions.push_str(&helpers);
     Ok(source.replacen(MARKER, &definitions, 1))
 }
 
@@ -84,6 +99,16 @@ pub(crate) fn assemble_output_for(
     let composition_space = ColorSpace::from(LinearSrgb);
     let to_composition = working_space.transfer_to(&composition_space)?;
     let to_output = composition_space.transfer_to(output_space)?;
+    let composition_value = if to_composition.is_empty() {
+        "value"
+    } else {
+        "array_to_rgb(theoria_transfer_0(rgb_to_array(value)))"
+    };
+    let output_value = if to_output.is_empty() {
+        "value"
+    } else {
+        "array_to_rgb(theoria_transfer_1(rgb_to_array(value)))"
+    };
     let definitions = format!(
         "{}{}\n\
          fn rgb_to_array(value: vec3<f32>) -> array<f32, 3> {{\n\
@@ -93,10 +118,10 @@ pub(crate) fn assemble_output_for(
              return vec3<f32>(value[0], value[1], value[2]);\n\
          }}\n\
          fn working_to_composition(value: vec3<f32>) -> vec3<f32> {{\n\
-             return array_to_rgb(theoria_transfer_0(rgb_to_array(value)));\n\
+             return {composition_value};\n\
          }}\n\
          fn composition_to_output(value: vec3<f32>) -> vec3<f32> {{\n\
-             return array_to_rgb(theoria_transfer_1(rgb_to_array(value)));\n\
+             return {output_value};\n\
          }}\n",
         to_composition.wgsl(0)?,
         to_output.wgsl(1)?,
@@ -113,7 +138,7 @@ mod tests {
         let shader = assemble(MARKER);
         assert!(!shader.contains(MARKER));
         assert_eq!(shader.matches("fn to_working(").count(), 1);
-        assert_eq!(shader.matches("fn theoria_transfer_4(").count(), 1);
+        assert_eq!(shader.matches("fn theoria_transfer_4(").count(), 0);
     }
 
     #[test]

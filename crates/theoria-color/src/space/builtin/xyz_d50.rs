@@ -33,34 +33,31 @@ impl XyzD50 {
                 },
             ),
         ])?;
-        Transfer::new(
-            3,
-            [
-                TransferStage::Matrix(TransferMatrix::new(
-                    3,
-                    3,
-                    [
-                        1.0 / ICC_PCS_D50_XYZ[0],
-                        0.0,
-                        0.0,
-                        0.0,
-                        1.0 / ICC_PCS_D50_XYZ[1],
-                        0.0,
-                        0.0,
-                        0.0,
-                        1.0 / ICC_PCS_D50_XYZ[2],
-                    ],
-                    [0.0; 3],
-                )?),
-                TransferStage::curves(vec![curve; 3])?,
-                TransferStage::Matrix(TransferMatrix::new(
-                    3,
-                    3,
-                    [0.0, 116.0, 0.0, 500.0, -500.0, 0.0, 0.0, 200.0, -200.0],
-                    [-16.0, 0.0, 0.0],
-                )?),
-            ],
-        )
+        Transfer::new([
+            TransferStage::Matrix(TransferMatrix::new(
+                3,
+                3,
+                [
+                    1.0 / ICC_PCS_D50_XYZ[0],
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0 / ICC_PCS_D50_XYZ[1],
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0 / ICC_PCS_D50_XYZ[2],
+                ],
+                [0.0; 3],
+            )?),
+            TransferStage::curves(vec![curve; 3])?,
+            TransferStage::Matrix(TransferMatrix::new(
+                3,
+                3,
+                [0.0, 116.0, 0.0, 500.0, -500.0, 0.0, 0.0, 200.0, -200.0],
+                [-16.0, 0.0, 0.0],
+            )?),
+        ])
     }
 }
 
@@ -74,7 +71,7 @@ impl ColorProfile for XyzD50Profile {
     }
 
     fn space_to_pcs_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
-        Ok(Transfer::new(3, [])?)
+        Ok(Transfer::new([])?)
     }
 
     fn pcs_to_space_transfer(&self) -> Result<Transfer, SpaceConnectionError> {

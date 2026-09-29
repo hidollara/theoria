@@ -163,7 +163,7 @@ impl IccProfileData {
                 LutWarehouse::Multidimensional(lut) => multidimensional_lut_to_pcs(lut)?,
             };
             stages.push(pcs_decoding(self.pcs, tag)?);
-            Transfer::new(self.device_channels(), stages)?
+            Transfer::new(stages)?
         } else if self.parsed.color_space == DataColorSpace::Gray {
             gray_trc_to_pcs(&self.parsed, self.pcs)?
         } else if self.parsed.color_space == DataColorSpace::Rgb && self.pcs == Pcs::XyzD50 {
@@ -196,7 +196,7 @@ impl IccProfileData {
                 LutWarehouse::Lut(lut) => legacy_lut_from_pcs(lut, self.pcs)?,
                 LutWarehouse::Multidimensional(lut) => multidimensional_lut_from_pcs(lut)?,
             });
-            Transfer::new(3, stages)?
+            Transfer::new(stages)?
         } else if self.parsed.color_space == DataColorSpace::Gray {
             gray_trc_from_pcs(&self.parsed, self.pcs)?
         } else if self.parsed.color_space == DataColorSpace::Rgb && self.pcs == Pcs::XyzD50 {
@@ -208,14 +208,14 @@ impl IccProfileData {
     }
 
     fn validate_to_pcs(&self, transfer: Transfer) -> Result<Transfer, IccProfileError> {
-        if transfer.input_channels() != self.device_channels() || transfer.output_channels() != 3 {
+        if !transfer.supports_channels(self.device_channels(), 3) {
             return Err(IccProfileError::MalformedTransfer);
         }
         Ok(transfer)
     }
 
     fn validate_from_pcs(&self, transfer: Transfer) -> Result<Transfer, IccProfileError> {
-        if transfer.input_channels() != 3 || transfer.output_channels() != self.device_channels() {
+        if !transfer.supports_channels(3, self.device_channels()) {
             return Err(IccProfileError::MalformedTransfer);
         }
         Ok(transfer)
@@ -237,7 +237,7 @@ impl IccProfileData {
     }
 
     fn absolute_adjustment(&self, scale: [f64; 3]) -> Result<Transfer, IccProfileError> {
-        let adjustment = Transfer::new(3, [diagonal(scale, [0.0; 3])?])?;
+        let adjustment = Transfer::new([diagonal(scale, [0.0; 3])?])?;
         if self.pcs == Pcs::LabD50 {
             Ok(LabD50::to_xyz_transfer()?
                 .then(&adjustment)?
@@ -601,17 +601,14 @@ fn rgb_trcs(profile: &ParsedProfile) -> Result<[&ToneReprCurve; 3], IccProfileEr
 fn rgb_matrix_trc_to_pcs(profile: &ParsedProfile) -> Result<Transfer, IccProfileError> {
     let trcs = rgb_trcs(profile)?;
     let matrix_value = profile.rgb_to_xyz_matrix();
-    Ok(Transfer::new(
-        3,
-        [
-            TransferStage::curves(
-                trcs.iter()
-                    .map(|value| curve(value))
-                    .collect::<Result<Vec<_>, _>>()?,
-            )?,
-            matrix(&matrix_value, [0.0; 3])?,
-        ],
-    )?)
+    Ok(Transfer::new([
+        TransferStage::curves(
+            trcs.iter()
+                .map(|value| curve(value))
+                .collect::<Result<Vec<_>, _>>()?,
+        )?,
+        matrix(&matrix_value, [0.0; 3])?,
+    ])?)
 }
 
 fn rgb_matrix_trc_from_pcs(profile: &ParsedProfile) -> Result<Transfer, IccProfileError> {
@@ -620,17 +617,14 @@ fn rgb_matrix_trc_from_pcs(profile: &ParsedProfile) -> Result<Transfer, IccProfi
     if matrix_value.determinant().is_none() {
         return Err(IccProfileError::MalformedTransfer);
     }
-    Ok(Transfer::new(
-        3,
-        [
-            matrix(&matrix_value.inverse(), [0.0; 3])?,
-            TransferStage::curves(
-                trcs.iter()
-                    .map(|value| inverse_curve(value))
-                    .collect::<Result<Vec<_>, _>>()?,
-            )?,
-        ],
-    )?)
+    Ok(Transfer::new([
+        matrix(&matrix_value.inverse(), [0.0; 3])?,
+        TransferStage::curves(
+            trcs.iter()
+                .map(|value| inverse_curve(value))
+                .collect::<Result<Vec<_>, _>>()?,
+        )?,
+    ])?)
 }
 
 fn gray_trc_to_pcs(profile: &ParsedProfile, pcs: Pcs) -> Result<Transfer, IccProfileError> {
@@ -642,13 +636,10 @@ fn gray_trc_to_pcs(profile: &ParsedProfile, pcs: Pcs) -> Result<Transfer, IccPro
         Pcs::XyzD50 => ICC_PCS_D50_XYZ,
         Pcs::LabD50 => [100.0, 0.0, 0.0],
     };
-    Ok(Transfer::new(
-        1,
-        [
-            TransferStage::curves([curve(trc)?])?,
-            TransferStage::Matrix(TransferMatrix::new(1, 3, coefficients, [0.0; 3])?),
-        ],
-    )?)
+    Ok(Transfer::new([
+        TransferStage::curves([curve(trc)?])?,
+        TransferStage::Matrix(TransferMatrix::new(1, 3, coefficients, [0.0; 3])?),
+    ])?)
 }
 
 fn gray_trc_from_pcs(profile: &ParsedProfile, pcs: Pcs) -> Result<Transfer, IccProfileError> {
@@ -660,13 +651,10 @@ fn gray_trc_from_pcs(profile: &ParsedProfile, pcs: Pcs) -> Result<Transfer, IccP
         Pcs::XyzD50 => [0.0, 1.0, 0.0],
         Pcs::LabD50 => [0.01, 0.0, 0.0],
     };
-    Ok(Transfer::new(
-        3,
-        [
-            TransferStage::Matrix(TransferMatrix::new(3, 1, coefficients, [0.0])?),
-            TransferStage::curves([inverse_curve(trc)?])?,
-        ],
-    )?)
+    Ok(Transfer::new([
+        TransferStage::Matrix(TransferMatrix::new(3, 1, coefficients, [0.0])?),
+        TransferStage::curves([inverse_curve(trc)?])?,
+    ])?)
 }
 
 #[derive(Debug)]
@@ -1146,8 +1134,7 @@ mod tests {
         let mut raw = ParsedProfile::new_srgb();
         raw.media_white_point = None;
         let mut profile = IccProfile::from_parsed(raw, Pcs::XyzD50);
-        Arc::get_mut(&mut profile.inner).unwrap().mpe.to_pcs[3] =
-            Some(Transfer::new(3, Vec::<TransferStage>::new()).unwrap());
+        Arc::get_mut(&mut profile.inner).unwrap().mpe.to_pcs[3] = Some(Transfer::new([]).unwrap());
         let actual = profile
             .inner
             .space_to_pcs(IccRenderingIntent::AbsoluteColorimetric)
@@ -1169,12 +1156,7 @@ mod tests {
                 .is_ok()
         );
         let result = profile.inner.space_to_pcs(IccRenderingIntent::Perceptual);
-        assert!(matches!(
-            result,
-            Err(IccProfileError::Transfer(
-                TransferError::ChannelMismatch { .. }
-            ))
-        ));
+        assert!(matches!(result, Err(IccProfileError::MalformedTransfer)));
     }
 
     #[test]
@@ -1201,8 +1183,8 @@ mod tests {
             .pcs_to_space(IccRenderingIntent::RelativeColorimetric)
             .unwrap();
         let connected = to_pcs.then(&from_pcs).unwrap();
-        assert_eq!(connected.input_channels(), 3);
-        assert_eq!(connected.output_channels(), 3);
+        assert_eq!(connected.input_channels(), Some(3));
+        assert_eq!(connected.output_channels(), Some(3));
     }
 
     #[test]
@@ -1244,7 +1226,7 @@ mod tests {
             .unwrap();
         drop(profile);
         assert!(parsed.upgrade().is_none());
-        assert_eq!(transform.input_channels(), 3);
+        assert_eq!(transform.input_channels(), Some(3));
     }
 
     #[test]
@@ -1338,7 +1320,7 @@ mod tests {
             lut_type: LutType::Lut16,
         };
         let tag = LutWarehouse::Lut(lut);
-        let decoded = Transfer::new(3, [pcs_decoding(Pcs::LabD50, &tag).unwrap()]).unwrap();
+        let decoded = Transfer::new([pcs_decoding(Pcs::LabD50, &tag).unwrap()]).unwrap();
         let lab = decoded
             .evaluate(&[65280.0 / 65535.0, 32768.0 / 65535.0, 32768.0 / 65535.0])
             .unwrap();

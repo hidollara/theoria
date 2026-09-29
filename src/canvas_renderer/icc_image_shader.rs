@@ -43,12 +43,18 @@ pub(crate) fn build(
     } else {
         "1.0".to_owned()
     };
+    let device_values = format!("array<f32, {channels}>({input})");
+    let converted_values = if conversion.is_empty() {
+        device_values
+    } else {
+        format!("theoria_transfer_0({device_values})")
+    };
     let source = template
         .replace("// @theoria-transfer", transfer.source())
         .replace("// @theoria-sample-values", &samples)
         .replace("THEORIA_SAMPLE_CHANNELS", &total.to_string())
         .replace("THEORIA_DEVICE_CHANNELS", &channels.to_string())
-        .replace("THEORIA_DEVICE_VALUES", &input)
+        .replace("THEORIA_CONVERTED_VALUES", &converted_values)
         .replace("THEORIA_ALPHA", &alpha);
     let tables = if transfer.table_values().is_empty() {
         vec![0.0f32]

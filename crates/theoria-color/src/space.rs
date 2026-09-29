@@ -33,6 +33,16 @@ pub enum Pcs {
     LabD50,
 }
 
+impl Pcs {
+    fn transfer_to(self, destination: Self) -> Result<Transfer, TransferError> {
+        match (self, destination) {
+            (Self::XyzD50, Self::XyzD50) | (Self::LabD50, Self::LabD50) => Transfer::new([]),
+            (Self::XyzD50, Self::LabD50) => XyzD50::to_lab_transfer(),
+            (Self::LabD50, Self::XyzD50) => LabD50::to_xyz_transfer(),
+        }
+    }
+}
+
 /// A shared runtime color space with a fixed interpretation in PCS.
 ///
 /// Its selected profile supplies the coordinate model and PCS conversions.
@@ -75,8 +85,7 @@ impl ColorSpace {
     /// Returns a directed transfer from this space to its PCS representation.
     pub fn space_to_pcs(&self) -> Result<Transfer, SpaceConnectionError> {
         let transfer = self.profile.space_to_pcs_transfer()?;
-        require_channels(self.channels(), transfer.input_channels())?;
-        require_channels(3, transfer.output_channels())?;
+        require_transfer_channels(&transfer, self.channels(), 3)?;
         Ok(transfer)
     }
 
@@ -84,8 +93,7 @@ impl ColorSpace {
     /// space-to-PCS direction.
     pub fn pcs_to_space(&self) -> Result<Transfer, SpaceConnectionError> {
         let transfer = self.profile.pcs_to_space_transfer()?;
-        require_channels(3, transfer.input_channels())?;
-        require_channels(self.channels(), transfer.output_channels())?;
+        require_transfer_channels(&transfer, 3, self.channels())?;
         Ok(transfer)
     }
 
@@ -96,8 +104,7 @@ impl ColorSpace {
         self.profile
             .direct_transfer_to(destination)?
             .map(|transfer| {
-                require_channels(self.channels(), transfer.input_channels())?;
-                require_channels(destination.channels(), transfer.output_channels())?;
+                require_transfer_channels(&transfer, self.channels(), destination.channels())?;
                 Ok(transfer)
             })
             .transpose()
@@ -112,17 +119,12 @@ impl ColorSpace {
         if let Some(direct) = self.direct_to(&destination)? {
             return Ok(direct);
         }
-        let mut transform = self.space_to_pcs()?;
-        if self.pcs() != destination.pcs() {
-            let bridge = match (self.pcs(), destination.pcs()) {
-                (Pcs::XyzD50, Pcs::LabD50) => XyzD50::to_lab_transfer()?,
-                (Pcs::LabD50, Pcs::XyzD50) => LabD50::to_xyz_transfer()?,
-                _ => unreachable!("different PCS representations"),
-            };
-            transform = transform.then(&bridge)?;
-        }
+        let bridge = self.pcs().transfer_to(destination.pcs())?;
         let destination_transform = destination.pcs_to_space()?;
-        Ok(transform.then(&destination_transform)?)
+        Ok(self
+            .space_to_pcs()?
+            .then(&bridge)?
+            .then(&destination_transform)?)
     }
 }
 
@@ -131,6 +133,22 @@ fn require_channels(expected: usize, actual: usize) -> Result<(), SpaceConnectio
         Ok(())
     } else {
         Err(SpaceConnectionError::Channels { expected, actual })
+    }
+}
+
+fn require_transfer_channels(
+    transfer: &Transfer,
+    input: usize,
+    output: usize,
+) -> Result<(), SpaceConnectionError> {
+    if transfer.is_empty() {
+        require_channels(input, output)
+    } else {
+        require_channels(input, transfer.input_channels().expect("nonempty transfer"))?;
+        require_channels(
+            output,
+            transfer.output_channels().expect("nonempty transfer"),
+        )
     }
 }
 
@@ -266,6 +284,19 @@ mod tests {
         for actual in transform.evaluate(&[0.5; 3]).unwrap() {
             assert!((actual - expected).abs() < 1e-12);
         }
+    }
+
+    #[test]
+    fn matching_pcs_uses_an_empty_transfer() {
+        for pcs in [Pcs::XyzD50, Pcs::LabD50] {
+            assert!(pcs.transfer_to(pcs).unwrap().is_empty());
+        }
+        assert!(
+            ColorSpace::from(XyzD50)
+                .transfer_to(XyzD50)
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]
@@ -415,7 +446,7 @@ mod tests {
                 destination: &ColorSpace,
             ) -> Result<Option<Transfer>, SpaceConnectionError> {
                 if self.0.as_ref() == Some(destination) {
-                    return Ok(Some(Transfer::new(3, Vec::<TransferStage>::new())?));
+                    return Ok(Some(Transfer::new([])?));
                 }
                 Ok(None)
             }
@@ -455,7 +486,7 @@ mod tests {
                 &self,
                 _: &ColorSpace,
             ) -> Result<Option<Transfer>, SpaceConnectionError> {
-                Ok(Some(Transfer::new(4, Vec::<TransferStage>::new())?))
+                Ok(Some(Transfer::new([TransferStage::Clamp(4)])?))
             }
         }
 
@@ -471,7 +502,7 @@ mod tests {
 
         impl ColorProfile for InvalidPcs {
             fn model(&self) -> ColorModel {
-                ColorModel::Rgb
+                ColorModel::Cmyk
             }
 
             fn pcs(&self) -> Pcs {
@@ -479,7 +510,7 @@ mod tests {
             }
 
             fn space_to_pcs_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
-                Ok(Transfer::new(4, Vec::<TransferStage>::new())?)
+                Ok(Transfer::new([])?)
             }
 
             fn pcs_to_space_transfer(&self) -> Result<Transfer, SpaceConnectionError> {

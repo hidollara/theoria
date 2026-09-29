@@ -24,45 +24,36 @@ fn rgb_direct_to(
     destination: &ColorSpace,
 ) -> Result<Option<Transfer>, SpaceConnectionError> {
     if source == *destination {
-        return Ok(Some(Transfer::new(3, Vec::<TransferStage>::new())?));
+        return Ok(Some(Transfer::new([])?));
     }
     if counterpart != *destination {
         return Ok(None);
     }
-    Ok(Some(Transfer::new(
-        3,
-        [TransferStage::curves([
-            counterpart_curve.clone(),
-            counterpart_curve.clone(),
-            counterpart_curve,
-        ])?],
-    )?))
+    Ok(Some(Transfer::new([TransferStage::curves([
+        counterpart_curve.clone(),
+        counterpart_curve.clone(),
+        counterpart_curve,
+    ])?])?))
 }
 
 pub(crate) fn rgb_to_xyz_d65_transfer(
     matrix: [[f64; 3]; 3],
     curve: TransferCurve,
 ) -> Result<Transfer, TransferError> {
-    Transfer::new(
-        3,
-        [
-            TransferStage::curves([curve.clone(), curve.clone(), curve])?,
-            rgb_matrix(matrix)?,
-        ],
-    )
+    Transfer::new([
+        TransferStage::curves([curve.clone(), curve.clone(), curve])?,
+        rgb_matrix(matrix)?,
+    ])
 }
 
 pub(crate) fn xyz_d65_to_rgb_transfer(
     matrix: [[f64; 3]; 3],
     curve: TransferCurve,
 ) -> Result<Transfer, TransferError> {
-    Transfer::new(
-        3,
-        [
-            rgb_matrix(matrix)?,
-            TransferStage::curves([curve.clone(), curve.clone(), curve])?,
-        ],
-    )
+    Transfer::new([
+        rgb_matrix(matrix)?,
+        TransferStage::curves([curve.clone(), curve.clone(), curve])?,
+    ])
 }
 
 fn rgb_matrix(matrix: [[f64; 3]; 3]) -> Result<TransferStage, TransferError> {
@@ -83,15 +74,12 @@ pub(crate) fn pcs_to_rgb_transfer(xyz_d65_to_rgb: Transfer) -> Result<Transfer, 
 }
 
 pub(crate) fn adaptation(matrix: [[f64; 3]; 3]) -> Result<Transfer, TransferError> {
-    Transfer::new(
+    Transfer::new([TransferStage::Matrix(TransferMatrix::new(
         3,
-        [TransferStage::Matrix(TransferMatrix::new(
-            3,
-            3,
-            matrix.into_iter().flatten().collect::<Vec<_>>(),
-            [0.0; 3],
-        )?)],
-    )
+        3,
+        matrix.into_iter().flatten().collect::<Vec<_>>(),
+        [0.0; 3],
+    )?)])
 }
 
 macro_rules! builtin_space {

@@ -32,23 +32,20 @@ fn d50_pcs_white_black_and_negative_roundtrip() {
 
 #[test]
 fn directed_stages_evaluate_in_order_and_change_channel_count() {
-    let transfer = Transfer::new(
-        3,
-        [
-            TransferStage::curves([
-                TransferCurve::gamma(2.0).unwrap(),
-                TransferCurve::IDENTITY,
-                TransferCurve::IDENTITY,
-            ])
-            .unwrap(),
-            TransferStage::Matrix(
-                TransferMatrix::new(3, 2, [1.0, 0.5, 0.0, 0.0, 0.0, 1.0], [0.1, 0.0]).unwrap(),
-            ),
-        ],
-    )
+    let transfer = Transfer::new([
+        TransferStage::curves([
+            TransferCurve::gamma(2.0).unwrap(),
+            TransferCurve::IDENTITY,
+            TransferCurve::IDENTITY,
+        ])
+        .unwrap(),
+        TransferStage::Matrix(
+            TransferMatrix::new(3, 2, [1.0, 0.5, 0.0, 0.0, 0.0, 1.0], [0.1, 0.0]).unwrap(),
+        ),
+    ])
     .unwrap();
-    assert_eq!(transfer.input_channels(), 3);
-    assert_eq!(transfer.output_channels(), 2);
+    assert_eq!(transfer.input_channels(), Some(3));
+    assert_eq!(transfer.output_channels(), Some(2));
     assert_eq!(
         transfer.evaluate(&[0.5, 0.25, 0.75]).unwrap(),
         vec![0.475, 0.75]
@@ -67,7 +64,7 @@ fn sampled_curves_interpolate_and_clamp_the_icc_domain() {
 #[test]
 fn multidimensional_clut_uses_icc_channel_order_and_interpolates() {
     let clut = TransferClut::new([2, 2], 1, [0.0, 0.4, 0.6, 1.0]).unwrap();
-    let transfer = Transfer::new(2, [TransferStage::Clut(clut)]).unwrap();
+    let transfer = Transfer::new([TransferStage::Clut(clut)]).unwrap();
     assert_eq!(transfer.evaluate(&[0.0, 1.0]).unwrap(), vec![0.4]);
     assert_eq!(transfer.evaluate(&[1.0, 0.0]).unwrap(), vec![0.6]);
     assert!((transfer.evaluate(&[0.25, 0.75]).unwrap()[0] - 0.45).abs() < 1e-12);
@@ -154,18 +151,18 @@ fn invalid_transfer_data_is_rejected_before_evaluation() {
     assert!(TransferCurve::sampled([0.0, f64::NAN]).is_err());
     assert!(TransferMatrix::new(3, 2, [0.0; 3], [0.0; 2]).is_err());
     assert!(
-        Transfer::new(
-            2,
-            [TransferStage::curves([TransferCurve::IDENTITY]).unwrap()]
-        )
+        Transfer::new([
+            TransferStage::curves([TransferCurve::IDENTITY]).unwrap(),
+            TransferStage::Clamp(2),
+        ])
         .is_err()
     );
 }
 
 #[test]
 fn transfer_composition_rejects_mismatched_channel_counts() {
-    let first = Transfer::new(2, Vec::<TransferStage>::new()).unwrap();
-    let second = Transfer::new(3, Vec::<TransferStage>::new()).unwrap();
+    let first = Transfer::new([TransferStage::Clamp(2)]).unwrap();
+    let second = Transfer::new([TransferStage::Clamp(3)]).unwrap();
     assert_eq!(
         first.then(&second),
         Err(TransferError::ChannelMismatch {
@@ -173,4 +170,24 @@ fn transfer_composition_rejects_mismatched_channel_counts() {
             actual: 3,
         })
     );
+}
+
+#[test]
+fn empty_transfer_is_a_channel_polymorphic_identity() {
+    let identity = Transfer::new([]).unwrap();
+    assert_eq!(identity.input_channels(), None);
+    assert_eq!(identity.output_channels(), None);
+    assert!(identity.supports_channels(2, 2));
+    assert!(identity.supports_channels(3, 3));
+    assert!(!identity.supports_channels(2, 3));
+    assert_eq!(
+        identity.evaluate(&[0.2, 0.5, 0.7]).unwrap(),
+        vec![0.2, 0.5, 0.7]
+    );
+
+    for channels in [2, 3] {
+        let transfer = Transfer::new([TransferStage::Clamp(channels)]).unwrap();
+        assert_eq!(identity.then(&transfer).unwrap(), transfer);
+        assert_eq!(transfer.then(&identity).unwrap(), transfer);
+    }
 }

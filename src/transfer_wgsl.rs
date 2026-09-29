@@ -37,6 +37,7 @@ pub(crate) trait TransferWgslExt {
 
 impl TransferWgslExt for Transfer {
     /// Generates one WGSL function named `theoria_transfer_{id}`.
+    /// An empty transfer needs no function and produces an empty string.
     ///
     /// Both endpoints use fixed-size WGSL arrays so a transfer need not be
     /// limited to three-channel RGB. Numeric data are rounded to `f32` only
@@ -76,6 +77,9 @@ fn lower_wgsl(
     id: u32,
     tables: &mut ShaderTables,
 ) -> Result<String, TransferWgslError> {
+    if transfer.is_empty() {
+        return Ok(String::new());
+    }
     let prefix = format!("theoria_transfer_{id}");
     let mut helpers = String::new();
     let mut body = String::new();
@@ -133,8 +137,8 @@ fn lower_wgsl(
     let source = format!(
         "{}{helpers}\nfn {prefix}(value: array<f32, {}>) -> array<f32, {}> {{\n{body}    return {input_name};\n}}\n",
         tables.declaration(),
-        transfer.input_channels(),
-        transfer.output_channels()
+        transfer.input_channels().expect("nonempty transfer"),
+        transfer.output_channels().expect("nonempty transfer")
     );
     Ok(source)
 }
@@ -464,45 +468,42 @@ mod tests {
 
     #[test]
     fn curves_and_matrix_generate_valid_wgsl() {
-        let transfer = Transfer::new(
-            4,
-            [
-                TransferStage::curves([
-                    TransferCurve::IDENTITY,
-                    TransferCurve::gamma(2.0).unwrap(),
-                    TransferCurve::sampled([0.0, 0.3, 1.0]).unwrap(),
-                    TransferCurve::clamped(
-                        TransferCurve::piecewise([
-                            CurveSegment::exclusive(0.5, CurveSegmentKind::Constant(0.0)),
-                            CurveSegment::new(
-                                f64::INFINITY,
-                                CurveSegmentKind::PowerAffine {
-                                    scale: 1.0,
-                                    offset: 0.0,
-                                    exponent: 2.0,
-                                    output_scale: 1.0,
-                                    output_offset: 0.0,
-                                },
-                            ),
-                        ])
-                        .unwrap(),
-                        [0.0, 1.0],
-                        [0.0, 1.0],
-                    )
+        let transfer = Transfer::new([
+            TransferStage::curves([
+                TransferCurve::IDENTITY,
+                TransferCurve::gamma(2.0).unwrap(),
+                TransferCurve::sampled([0.0, 0.3, 1.0]).unwrap(),
+                TransferCurve::clamped(
+                    TransferCurve::piecewise([
+                        CurveSegment::exclusive(0.5, CurveSegmentKind::Constant(0.0)),
+                        CurveSegment::new(
+                            f64::INFINITY,
+                            CurveSegmentKind::PowerAffine {
+                                scale: 1.0,
+                                offset: 0.0,
+                                exponent: 2.0,
+                                output_scale: 1.0,
+                                output_offset: 0.0,
+                            },
+                        ),
+                    ])
                     .unwrap(),
-                ])
+                    [0.0, 1.0],
+                    [0.0, 1.0],
+                )
                 .unwrap(),
-                TransferStage::Matrix(
-                    TransferMatrix::new(
-                        4,
-                        3,
-                        [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
-                        [0.0; 3],
-                    )
-                    .unwrap(),
-                ),
-            ],
-        )
+            ])
+            .unwrap(),
+            TransferStage::Matrix(
+                TransferMatrix::new(
+                    4,
+                    3,
+                    [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                    [0.0; 3],
+                )
+                .unwrap(),
+            ),
+        ])
         .unwrap();
         let source = transfer.wgsl(7).unwrap();
         validate(&source);
@@ -512,35 +513,41 @@ mod tests {
     }
 
     #[test]
+    fn empty_transfer_needs_no_shader_function_or_table() {
+        let identity = Transfer::new([]).unwrap();
+        assert!(identity.wgsl(7).unwrap().is_empty());
+        let shader = identity.wgsl_with_storage(7, 0, 0).unwrap();
+        assert!(shader.source().is_empty());
+        assert!(shader.table_values().is_empty());
+    }
+
+    #[test]
     fn logarithmic_and_exponential_segments_generate_valid_wgsl() {
-        let transfer = Transfer::new(
-            2,
-            [TransferStage::curves([
-                TransferCurve::piecewise([CurveSegment::new(
-                    f64::INFINITY,
-                    CurveSegmentKind::Logarithmic {
-                        exponent: 1.0,
-                        input_scale: 1.0,
-                        input_offset: 1.0,
-                        output_scale: 1.0,
-                        output_offset: 0.0,
-                    },
-                )])
-                .unwrap(),
-                TransferCurve::piecewise([CurveSegment::new(
-                    f64::INFINITY,
-                    CurveSegmentKind::Exponential {
-                        scale: 1.0,
-                        base: 2.0,
-                        exponent_scale: 1.0,
-                        exponent_offset: 0.0,
-                        output_offset: 0.0,
-                    },
-                )])
-                .unwrap(),
-            ])
-            .unwrap()],
-        )
+        let transfer = Transfer::new([TransferStage::curves([
+            TransferCurve::piecewise([CurveSegment::new(
+                f64::INFINITY,
+                CurveSegmentKind::Logarithmic {
+                    exponent: 1.0,
+                    input_scale: 1.0,
+                    input_offset: 1.0,
+                    output_scale: 1.0,
+                    output_offset: 0.0,
+                },
+            )])
+            .unwrap(),
+            TransferCurve::piecewise([CurveSegment::new(
+                f64::INFINITY,
+                CurveSegmentKind::Exponential {
+                    scale: 1.0,
+                    base: 2.0,
+                    exponent_scale: 1.0,
+                    exponent_offset: 0.0,
+                    output_offset: 0.0,
+                },
+            )])
+            .unwrap(),
+        ])
+        .unwrap()])
         .unwrap();
         validate(&transfer.wgsl(13).unwrap());
     }
@@ -560,11 +567,11 @@ mod tests {
     #[test]
     fn clut_uses_storage_when_inline_table_is_too_large() {
         let clut = TransferClut::new([2, 2, 2, 2], 3, vec![0.5; 48]).unwrap();
-        let transfer = Transfer::new(4, [TransferStage::Clut(clut)]).unwrap();
+        let transfer = Transfer::new([TransferStage::Clut(clut)]).unwrap();
         validate(&transfer.wgsl(11).unwrap());
 
         let large = TransferClut::new([17, 17, 17], 1, vec![0.0; 4913]).unwrap();
-        let transfer = Transfer::new(3, [TransferStage::Clut(large)]).unwrap();
+        let transfer = Transfer::new([TransferStage::Clut(large)]).unwrap();
         assert_eq!(
             transfer.wgsl(12),
             Err(TransferWgslError::ShaderTableTooLarge)
@@ -610,7 +617,7 @@ mod tests {
     fn storage_shader_packs_curves_into_one_binding() {
         let first = TransferCurve::sampled([0.0, 0.5, 1.0]).unwrap();
         let second = TransferCurve::sampled([0.0, 1.0]).unwrap();
-        let transfer = Transfer::new(2, [TransferStage::curves([first, second]).unwrap()]).unwrap();
+        let transfer = Transfer::new([TransferStage::curves([first, second]).unwrap()]).unwrap();
         let shader = transfer.wgsl_with_storage(8, 0, 1).unwrap();
         assert_eq!(shader.table_values(), &[0.0, 0.5, 1.0, 0.0, 1.0]);
         assert_eq!(shader.source().matches("@binding(1)").count(), 1);

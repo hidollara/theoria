@@ -33,44 +33,41 @@ impl LabD50 {
             ),
         ])?;
         let y_offset = 16.0 / 116.0;
-        Transfer::new(
-            3,
-            [
-                TransferStage::Matrix(TransferMatrix::new(
-                    3,
-                    3,
-                    [
-                        1.0 / 116.0,
-                        1.0 / 500.0,
-                        0.0,
-                        1.0 / 116.0,
-                        0.0,
-                        0.0,
-                        1.0 / 116.0,
-                        0.0,
-                        -1.0 / 200.0,
-                    ],
-                    [y_offset; 3],
-                )?),
-                TransferStage::curves(vec![curve; 3])?,
-                TransferStage::Matrix(TransferMatrix::new(
-                    3,
-                    3,
-                    [
-                        ICC_PCS_D50_XYZ[0],
-                        0.0,
-                        0.0,
-                        0.0,
-                        ICC_PCS_D50_XYZ[1],
-                        0.0,
-                        0.0,
-                        0.0,
-                        ICC_PCS_D50_XYZ[2],
-                    ],
-                    [0.0; 3],
-                )?),
-            ],
-        )
+        Transfer::new([
+            TransferStage::Matrix(TransferMatrix::new(
+                3,
+                3,
+                [
+                    1.0 / 116.0,
+                    1.0 / 500.0,
+                    0.0,
+                    1.0 / 116.0,
+                    0.0,
+                    0.0,
+                    1.0 / 116.0,
+                    0.0,
+                    -1.0 / 200.0,
+                ],
+                [y_offset; 3],
+            )?),
+            TransferStage::curves(vec![curve; 3])?,
+            TransferStage::Matrix(TransferMatrix::new(
+                3,
+                3,
+                [
+                    ICC_PCS_D50_XYZ[0],
+                    0.0,
+                    0.0,
+                    0.0,
+                    ICC_PCS_D50_XYZ[1],
+                    0.0,
+                    0.0,
+                    0.0,
+                    ICC_PCS_D50_XYZ[2],
+                ],
+                [0.0; 3],
+            )?),
+        ])
     }
 }
 
@@ -84,7 +81,7 @@ impl ColorProfile for LabD50Profile {
     }
 
     fn space_to_pcs_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
-        Ok(Transfer::new(3, [])?)
+        Ok(Transfer::new([])?)
     }
 
     fn pcs_to_space_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
