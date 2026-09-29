@@ -2,7 +2,7 @@ use std::{
     error::Error,
     fmt,
     hash::{Hash, Hasher},
-    sync::Arc,
+    sync::{Arc, LazyLock},
 };
 
 use super::icc_profile::IccProfileError;
@@ -34,9 +34,11 @@ pub enum Pcs {
 }
 
 impl Pcs {
-    fn transfer_to(self, destination: Self) -> Result<Transfer, TransferError> {
+    fn transfer_to(self, destination: Self) -> Transfer {
+        static IDENTITY: LazyLock<Transfer> =
+            LazyLock::new(|| Transfer::new([]).expect("an empty PCS transfer is a valid identity"));
         match (self, destination) {
-            (Self::XyzD50, Self::XyzD50) | (Self::LabD50, Self::LabD50) => Transfer::new([]),
+            (Self::XyzD50, Self::XyzD50) | (Self::LabD50, Self::LabD50) => IDENTITY.clone(),
             (Self::XyzD50, Self::LabD50) => XyzD50::to_lab_transfer(),
             (Self::LabD50, Self::XyzD50) => LabD50::to_xyz_transfer(),
         }
@@ -119,7 +121,7 @@ impl ColorSpace {
         if let Some(direct) = self.direct_to(&destination)? {
             return Ok(direct);
         }
-        let bridge = self.pcs().transfer_to(destination.pcs())?;
+        let bridge = self.pcs().transfer_to(destination.pcs());
         let destination_transform = destination.pcs_to_space()?;
         Ok(self
             .space_to_pcs()?
@@ -289,7 +291,7 @@ mod tests {
     #[test]
     fn matching_pcs_uses_an_empty_transfer() {
         for pcs in [Pcs::XyzD50, Pcs::LabD50] {
-            assert!(pcs.transfer_to(pcs).unwrap().is_empty());
+            assert!(pcs.transfer_to(pcs).is_empty());
         }
         assert!(
             ColorSpace::from(XyzD50)
@@ -305,20 +307,14 @@ mod tests {
         let lab = ColorSpace::from(LabD50);
         assert_eq!(
             xyz.direct_to(&lab).unwrap(),
-            Some(XyzD50::to_lab_transfer().unwrap())
+            Some(XyzD50::to_lab_transfer())
         );
         assert_eq!(
             lab.direct_to(&xyz).unwrap(),
-            Some(LabD50::to_xyz_transfer().unwrap())
+            Some(LabD50::to_xyz_transfer())
         );
-        assert_eq!(
-            xyz.transfer_to(&lab).unwrap(),
-            XyzD50::to_lab_transfer().unwrap()
-        );
-        assert_eq!(
-            lab.transfer_to(&xyz).unwrap(),
-            LabD50::to_xyz_transfer().unwrap()
-        );
+        assert_eq!(xyz.transfer_to(&lab).unwrap(), XyzD50::to_lab_transfer());
+        assert_eq!(lab.transfer_to(&xyz).unwrap(), LabD50::to_xyz_transfer());
     }
 
     #[test]

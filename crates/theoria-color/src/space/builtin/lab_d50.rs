@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use super::{ColorProfile, ColorSpace, Pcs, SpaceConnectionError, Transfer, TypedColorSpace};
 use crate::model::Lab;
 use crate::transfer::{
@@ -9,7 +11,14 @@ named_space!(LabD50, Lab);
 builtin_space!(LabD50, LabD50Profile);
 
 impl LabD50 {
-    pub(crate) fn to_xyz_transfer() -> Result<Transfer, TransferError> {
+    pub(crate) fn to_xyz_transfer() -> Transfer {
+        static TRANSFER: LazyLock<Transfer> = LazyLock::new(|| {
+            LabD50::build_to_xyz_transfer().expect("built-in Lab D50 to XYZ D50 transfer is valid")
+        });
+        TRANSFER.clone()
+    }
+
+    fn build_to_xyz_transfer() -> Result<Transfer, TransferError> {
         const DELTA: f64 = 6.0 / 29.0;
         const LINEAR_SCALE: f64 = 3.0 * DELTA * DELTA;
 
@@ -93,7 +102,7 @@ impl ColorProfile for LabD50Profile {
         destination: &ColorSpace,
     ) -> Result<Option<Transfer>, SpaceConnectionError> {
         if *destination == ColorSpace::from(super::XyzD50) {
-            Ok(Some(LabD50::to_xyz_transfer()?))
+            Ok(Some(LabD50::to_xyz_transfer()))
         } else {
             Ok(None)
         }
