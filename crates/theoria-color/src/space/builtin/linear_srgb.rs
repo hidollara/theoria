@@ -1,5 +1,5 @@
 use super::{
-    ColorProfile, ColorSpace, Pcs, SpaceConnectionError, Srgb, TypedColorSpace, XyzD50, XyzD65,
+    ColorProfile, ColorSpace, ConnectionSpace, SpaceConnectionError, Srgb, TypedColorSpace, XyzD65,
 };
 use crate::model::Rgb;
 use crate::transfer::{Transfer, TransferCurve, TransferError, TransferMatrix, TransferStage};
@@ -24,16 +24,16 @@ impl ColorProfile for LinearSrgbProfile {
         crate::model::ColorModel::Rgb
     }
 
-    fn pcs(&self) -> Pcs {
-        Pcs::XyzD50
+    fn connection_space(&self) -> ConnectionSpace {
+        ConnectionSpace::XyzD65
     }
 
-    fn space_to_pcs_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
-        Ok(LinearSrgb::to_xyz_d65_transfer()?.then(&XyzD65::to_xyz_d50_transfer())?)
+    fn transfer_to_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
+        Ok(LinearSrgb::to_xyz_d65_transfer()?)
     }
 
-    fn pcs_to_space_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
-        Ok(XyzD50::to_xyz_d65_transfer().then(&XyzD65::to_linear_srgb_transfer()?)?)
+    fn transfer_from_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
+        Ok(XyzD65::to_linear_srgb_transfer()?)
     }
 
     fn direct_transfer_to(

@@ -1,7 +1,9 @@
 use std::{cell::RefCell, rc::Rc};
 
 use crate::{
-    color::{ColorModel, ColorProfile, ColorSpace, Pcs, SpaceConnectionError, Transfer},
+    color::{
+        ColorModel, ColorProfile, ColorSpace, ConnectionSpace, SpaceConnectionError, Transfer,
+    },
     component::{ComponentInstance, MountContext},
     event::{DispatchQueue, DynDispatch, EventSink, SubmissionOutcome},
     reactive::ReactiveError,
@@ -17,16 +19,16 @@ pub(crate) fn distinct_color_space(space: impl Into<ColorSpace>) -> ColorSpace {
             self.0.model()
         }
 
-        fn pcs(&self) -> Pcs {
-            self.0.pcs()
+        fn connection_space(&self) -> ConnectionSpace {
+            self.0.connection_space()
         }
 
-        fn space_to_pcs_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
-            self.0.space_to_pcs()
+        fn transfer_to_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
+            self.0.transfer_to_connection_space()
         }
 
-        fn pcs_to_space_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
-            self.0.pcs_to_space()
+        fn transfer_from_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
+            self.0.transfer_from_connection_space()
         }
 
         fn direct_transfer_to(

@@ -11,11 +11,29 @@ use moxcms::{
 
 use super::icc_mpe::MpeTags;
 use super::model::ColorModel;
-use super::space::{ColorProfile, ColorSpace, LabD50, Pcs, SpaceConnectionError, XyzD50};
+use super::space::{
+    ColorProfile, ColorSpace, ConnectionSpace, LabD50, SpaceConnectionError, XyzD50,
+};
 use super::transfer::{
     CurveSegment, CurveSegmentKind, ICC_PCS_D50_XYZ, Transfer, TransferClut, TransferCurve,
     TransferError, TransferMatrix, TransferStage,
 };
+
+/// The two PCS encodings permitted by the supported ICC profiles.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Pcs {
+    XyzD50,
+    LabD50,
+}
+
+impl From<Pcs> for ConnectionSpace {
+    fn from(pcs: Pcs) -> Self {
+        match pcs {
+            Pcs::XyzD50 => Self::XyzD50,
+            Pcs::LabD50 => Self::LabD50,
+        }
+    }
+}
 
 /// The requested rendering intent for selecting a profile conversion.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -713,15 +731,15 @@ impl ColorProfile for IccColorProfile {
         self.data.device_model()
     }
 
-    fn pcs(&self) -> Pcs {
-        self.data.pcs
+    fn connection_space(&self) -> ConnectionSpace {
+        self.data.pcs.into()
     }
 
-    fn space_to_pcs_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
+    fn transfer_to_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
         Ok(self.data.space_to_pcs(self.intent)?)
     }
 
-    fn pcs_to_space_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
+    fn transfer_from_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
         Ok(self.data.pcs_to_space(self.intent)?)
     }
 }
@@ -897,8 +915,8 @@ mod tests {
 
         assert_ne!(perceptual, relative);
         assert_ne!(
-            perceptual.space_to_pcs().unwrap(),
-            relative.space_to_pcs().unwrap()
+            perceptual.transfer_to_connection_space().unwrap(),
+            relative.transfer_to_connection_space().unwrap()
         );
     }
 

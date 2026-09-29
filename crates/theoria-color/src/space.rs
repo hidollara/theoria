@@ -24,32 +24,45 @@ pub trait TypedColorSpace: Into<ColorSpace> + 'static {
 
 /// The coordinate representation used to connect color spaces.
 ///
-/// Each variant denotes a different D50 color space, not one shared space.
-/// Profile conversions expose actual XYZ or Lab coordinates here, rather than
-/// the normalized encodings used inside some ICC LUT tags.
+/// Built-in D65 spaces connect through XYZ D65 without adapting to the ICC
+/// D50 PCS. Loaded ICC profiles use only XYZ D50 or Lab D50 here; their
+/// normalized LUT encodings are decoded before reaching this boundary.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Pcs {
+pub enum ConnectionSpace {
+    XyzD65,
     XyzD50,
     LabD50,
 }
 
-impl Pcs {
+impl ConnectionSpace {
     fn transfer_to(self, destination: Self) -> Transfer {
-        match (self, destination) {
-            (Self::XyzD50, Self::XyzD50) | (Self::LabD50, Self::LabD50) => Transfer::IDENTITY,
-            (Self::XyzD50, Self::LabD50) => XyzD50::to_lab_transfer(),
-            (Self::LabD50, Self::XyzD50) => LabD50::to_xyz_transfer(),
+        if self == destination {
+            return Transfer::IDENTITY;
         }
+        let to_d50 = match self {
+            Self::XyzD65 => XyzD65::to_xyz_d50_transfer(),
+            Self::XyzD50 => Transfer::IDENTITY,
+            Self::LabD50 => LabD50::to_xyz_transfer(),
+        };
+        let from_d50 = match destination {
+            Self::XyzD65 => XyzD50::to_xyz_d65_transfer(),
+            Self::XyzD50 => Transfer::IDENTITY,
+            Self::LabD50 => XyzD50::to_lab_transfer(),
+        };
+        to_d50
+            .then(&from_d50)
+            .expect("built-in connection spaces have matching channels")
     }
 }
 
-/// A shared runtime color space with a fixed interpretation in PCS.
+/// A shared runtime color space with a profile-defined connection space.
 ///
-/// Its selected profile supplies the coordinate model and PCS conversions.
+/// Its selected profile supplies the coordinate model and directed connection
+/// transforms. Built-in D65 spaces can connect without a D50 adaptation.
 /// Two spaces selected from the same ICC data with different intents are
 /// distinct, even though their input coordinates are the same. The colors
-/// reached in PCS are determined by those conversions, not merely by the
-/// coordinate model.
+/// reached in the ICC PCS are determined by those conversions, not merely by
+/// the coordinate model.
 ///
 /// This handle does not itself validate the range of an individual coordinate
 /// value or guarantee that the profile supports both directions for the
@@ -78,21 +91,21 @@ impl ColorSpace {
         self.profile.model()
     }
 
-    pub fn pcs(&self) -> Pcs {
-        self.profile.pcs()
+    pub fn connection_space(&self) -> ConnectionSpace {
+        self.profile.connection_space()
     }
 
-    /// Returns a directed transfer from this space to its PCS representation.
-    pub fn space_to_pcs(&self) -> Result<Transfer, SpaceConnectionError> {
-        let transfer = self.profile.space_to_pcs_transfer()?;
+    /// Returns a directed transfer to this profile's connection space.
+    pub fn transfer_to_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
+        let transfer = self.profile.transfer_to_connection_space()?;
         require_transfer_channels(&transfer, self.channels(), 3)?;
         Ok(transfer)
     }
 
     /// Returns a raw directed transfer. It is not inferred by inverting the
-    /// space-to-PCS direction.
-    pub fn pcs_to_space(&self) -> Result<Transfer, SpaceConnectionError> {
-        let transfer = self.profile.pcs_to_space_transfer()?;
+    /// transfer to the connection space.
+    pub fn transfer_from_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
+        let transfer = self.profile.transfer_from_connection_space()?;
         require_transfer_channels(&transfer, 3, self.channels())?;
         Ok(transfer)
     }
@@ -113,7 +126,7 @@ impl ColorSpace {
             .transpose()
     }
 
-    /// Selects a direct link to the destination, or connects through PCS.
+    /// Selects a direct link or connects through the profiles' connection spaces.
     pub fn transfer_to(
         &self,
         destination: impl Into<ColorSpace>,
@@ -122,10 +135,12 @@ impl ColorSpace {
         if let Some(direct) = self.direct_to(&destination)? {
             return Ok(direct);
         }
-        let bridge = self.pcs().transfer_to(destination.pcs());
-        let destination_transform = destination.pcs_to_space()?;
+        let bridge = self
+            .connection_space()
+            .transfer_to(destination.connection_space());
+        let destination_transform = destination.transfer_from_connection_space()?;
         Ok(self
-            .space_to_pcs()?
+            .transfer_to_connection_space()?
             .then(&bridge)?
             .then(&destination_transform)?)
     }
@@ -188,15 +203,15 @@ impl fmt::Debug for ColorSpace {
 ///
 /// An [`IccProfile`](super::icc_profile::IccProfile) can define multiple
 /// implementations of this trait by selecting different rendering intents.
-/// The two PCS directions are independent, and a direct link is optional.
+/// The two connection-space directions are independent, and a direct link is optional.
 /// Definitions are `Send + Sync` so their handles can be shared by renderers.
-/// `model` and `pcs` must remain stable for the lifetime of
+/// `model` and `connection_space` must remain stable for the lifetime of
 /// the profile so its [`ColorSpace`] handle has stable identity.
 pub trait ColorProfile: Send + Sync {
     fn model(&self) -> ColorModel;
-    fn pcs(&self) -> Pcs;
-    fn space_to_pcs_transfer(&self) -> Result<Transfer, SpaceConnectionError>;
-    fn pcs_to_space_transfer(&self) -> Result<Transfer, SpaceConnectionError>;
+    fn connection_space(&self) -> ConnectionSpace;
+    fn transfer_to_connection_space(&self) -> Result<Transfer, SpaceConnectionError>;
+    fn transfer_from_connection_space(&self) -> Result<Transfer, SpaceConnectionError>;
 
     /// A one-way conversion to a particular destination space, if available.
     ///
@@ -320,15 +335,34 @@ mod tests {
     }
 
     #[test]
-    fn matching_pcs_uses_an_empty_transfer() {
-        for pcs in [Pcs::XyzD50, Pcs::LabD50] {
-            assert!(pcs.transfer_to(pcs).is_empty());
+    fn matching_connection_space_uses_an_empty_transfer() {
+        for connection in [
+            ConnectionSpace::XyzD65,
+            ConnectionSpace::XyzD50,
+            ConnectionSpace::LabD50,
+        ] {
+            assert!(connection.transfer_to(connection).is_empty());
         }
         assert!(
             ColorSpace::from(XyzD50)
                 .transfer_to(XyzD50)
                 .unwrap()
                 .is_empty()
+        );
+    }
+
+    #[test]
+    fn d65_and_lab_connection_spaces_bridge_through_xyz_d50() {
+        let expected = XyzD65::to_xyz_d50_transfer()
+            .then(&XyzD50::to_lab_transfer())
+            .unwrap();
+        assert_eq!(
+            ConnectionSpace::XyzD65.transfer_to(ConnectionSpace::LabD50),
+            expected
+        );
+        assert_eq!(
+            ColorSpace::from(XyzD65).transfer_to(LabD50).unwrap(),
+            expected
         );
     }
 
@@ -379,18 +413,25 @@ mod tests {
     }
 
     #[test]
-    fn differing_primaries_fall_back_to_space_pcs_directions() {
+    fn differing_primaries_share_xyz_d65_connection_space() {
         let actual = ColorSpace::from(Srgb).transfer_to(DisplayP3).unwrap();
         let expected = ColorSpace::from(Srgb)
-            .space_to_pcs()
+            .transfer_to_connection_space()
             .unwrap()
-            .then(&ColorSpace::from(DisplayP3).pcs_to_space().unwrap())
+            .then(
+                &ColorSpace::from(DisplayP3)
+                    .transfer_from_connection_space()
+                    .unwrap(),
+            )
             .unwrap();
         assert_eq!(actual, expected);
+        // Decode, source RGB to D65 XYZ, D65 XYZ to destination RGB, encode.
+        // No D65-to-D50 or D50-to-D65 adaptation is inserted.
+        assert_eq!(actual.stages().len(), 4);
     }
 
     #[test]
-    fn icc_and_builtin_spaces_share_the_connection_path() {
+    fn icc_and_builtin_spaces_bridge_their_connection_spaces() {
         let bytes = moxcms::ColorProfile::new_srgb().encode().unwrap();
         let icc = IccProfile::from_bytes(&bytes).unwrap();
         let transform = icc
@@ -402,7 +443,7 @@ mod tests {
     }
 
     #[test]
-    fn predefined_and_icc_spaces_round_trip_through_pcs() {
+    fn predefined_and_icc_spaces_round_trip_through_connection_spaces() {
         let bytes = moxcms::ColorProfile::new_srgb().encode().unwrap();
         let icc = IccProfile::from_bytes(&bytes).unwrap();
         let icc = icc.color_space(IccRenderingIntent::RelativeColorimetric);
@@ -425,7 +466,7 @@ mod tests {
     }
 
     #[test]
-    fn pcs_bridge_round_trips_between_rgb_and_lab() {
+    fn connection_bridge_round_trips_between_rgb_and_lab() {
         let to_lab = ColorSpace::from(LinearSrgb).transfer_to(LabD50).unwrap();
         let to_rgb = ColorSpace::from(LabD50).transfer_to(LinearSrgb).unwrap();
         let sample = [0.2, 0.4, 0.6];
@@ -470,15 +511,15 @@ mod tests {
                 ColorModel::Rgb
             }
 
-            fn pcs(&self) -> Pcs {
-                Pcs::XyzD50
+            fn connection_space(&self) -> ConnectionSpace {
+                ConnectionSpace::XyzD65
             }
 
-            fn space_to_pcs_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
-                ColorSpace::from(Srgb).space_to_pcs()
+            fn transfer_to_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
+                ColorSpace::from(Srgb).transfer_to_connection_space()
             }
 
-            fn pcs_to_space_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
+            fn transfer_from_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
                 unreachable!()
             }
 
@@ -511,15 +552,15 @@ mod tests {
                 ColorModel::Rgb
             }
 
-            fn pcs(&self) -> Pcs {
-                Pcs::XyzD50
+            fn connection_space(&self) -> ConnectionSpace {
+                ConnectionSpace::XyzD50
             }
 
-            fn space_to_pcs_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
+            fn transfer_to_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
                 unreachable!()
             }
 
-            fn pcs_to_space_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
+            fn transfer_from_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
                 unreachable!()
             }
 
@@ -546,15 +587,15 @@ mod tests {
                 ColorModel::Cmyk
             }
 
-            fn pcs(&self) -> Pcs {
-                Pcs::XyzD50
+            fn connection_space(&self) -> ConnectionSpace {
+                ConnectionSpace::XyzD50
             }
 
-            fn space_to_pcs_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
+            fn transfer_to_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
                 Ok(Transfer::IDENTITY)
             }
 
-            fn pcs_to_space_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
+            fn transfer_from_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
                 unreachable!()
             }
         }

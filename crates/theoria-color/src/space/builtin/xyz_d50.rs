@@ -1,6 +1,6 @@
 use std::sync::LazyLock;
 
-use super::{ColorProfile, ColorSpace, Pcs, SpaceConnectionError, TypedColorSpace};
+use super::{ColorProfile, ColorSpace, ConnectionSpace, SpaceConnectionError, TypedColorSpace};
 use crate::model::Xyz;
 use crate::transfer::Transfer;
 use crate::transfer::{
@@ -108,16 +108,16 @@ impl ColorProfile for XyzD50Profile {
         crate::model::ColorModel::Xyz
     }
 
-    fn pcs(&self) -> Pcs {
-        Pcs::XyzD50
+    fn connection_space(&self) -> ConnectionSpace {
+        ConnectionSpace::XyzD50
     }
 
-    fn space_to_pcs_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
+    fn transfer_to_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
         Ok(Transfer::IDENTITY)
     }
 
-    fn pcs_to_space_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
-        self.space_to_pcs_transfer()
+    fn transfer_from_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
+        self.transfer_to_connection_space()
     }
 
     fn direct_transfer_to(

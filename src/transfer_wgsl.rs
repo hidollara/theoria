@@ -630,7 +630,7 @@ mod tests {
         let bytes = include_bytes!("../crates/theoria-color/src/color/fixtures/sRGB-v4.icc");
         let profile = IccProfile::from_bytes(bytes).unwrap();
         let space = profile.color_space(IccRenderingIntent::RelativeColorimetric);
-        let transfer = space.space_to_pcs().unwrap();
+        let transfer = space.transfer_to_connection_space().unwrap();
         let shader = transfer.wgsl_with_storage(22, 1, 4).unwrap();
         validate(shader.source());
     }
@@ -694,7 +694,7 @@ mod tests {
         let profile = IccProfile::from_bytes(&bytes).unwrap();
         let transfer = profile
             .color_space(IccRenderingIntent::RelativeColorimetric)
-            .space_to_pcs()
+            .transfer_to_connection_space()
             .unwrap();
         assert!(matches!(
             &transfer.stages()[0],

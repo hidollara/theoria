@@ -1,4 +1,4 @@
-use super::{ColorProfile, ColorSpace, Pcs, SpaceConnectionError, TypedColorSpace};
+use super::{ColorProfile, ColorSpace, ConnectionSpace, SpaceConnectionError, TypedColorSpace};
 #[cfg(test)]
 use crate::icc_profile::IccRenderingIntent;
 #[cfg(test)]
@@ -83,11 +83,13 @@ mod tests {
     }
 
     #[test]
-    fn xyz_d50_and_d65_profiles_use_their_named_adaptation_transfers() {
+    fn xyz_d50_and_d65_connection_spaces_use_their_named_adaptation_transfers() {
         let d50 = ColorSpace::from(XyzD50);
         let d65 = ColorSpace::from(XyzD65);
-        assert_eq!(d65.space_to_pcs().unwrap(), XyzD65::to_xyz_d50_transfer());
-        assert_eq!(d65.pcs_to_space().unwrap(), XyzD50::to_xyz_d65_transfer());
+        assert_eq!(d50.connection_space(), ConnectionSpace::XyzD50);
+        assert_eq!(d65.connection_space(), ConnectionSpace::XyzD65);
+        assert!(d65.transfer_to_connection_space().unwrap().is_empty());
+        assert!(d65.transfer_from_connection_space().unwrap().is_empty());
         assert!(d50.direct_to(&d65).unwrap().is_none());
         assert!(d65.direct_to(&d50).unwrap().is_none());
         assert_eq!(
@@ -101,7 +103,7 @@ mod tests {
     }
 
     #[test]
-    fn rgb_profiles_reach_xyz_through_pcs() {
+    fn rgb_profiles_connect_through_xyz_d65() {
         let d50 = ColorSpace::from(XyzD50);
         let d65 = ColorSpace::from(XyzD65);
         for rgb in [
@@ -113,7 +115,22 @@ mod tests {
             assert!(rgb.direct_to(&d65).unwrap().is_none());
             assert!(rgb.direct_to(&d50).unwrap().is_none());
             assert!(d65.direct_to(&rgb).unwrap().is_none());
-            assert_eq!(rgb.transfer_to(&d50).unwrap(), rgb.space_to_pcs().unwrap());
+            assert_eq!(rgb.connection_space(), ConnectionSpace::XyzD65);
+            assert_eq!(
+                rgb.transfer_to(&d65).unwrap(),
+                rgb.transfer_to_connection_space().unwrap()
+            );
+            assert_eq!(
+                d65.transfer_to(&rgb).unwrap(),
+                rgb.transfer_from_connection_space().unwrap()
+            );
+            assert_eq!(
+                rgb.transfer_to(&d50).unwrap(),
+                rgb.transfer_to_connection_space()
+                    .unwrap()
+                    .then(&XyzD65::to_xyz_d50_transfer())
+                    .unwrap()
+            );
             let sample = [0.2, 0.4, 0.6];
             let xyz = rgb.transfer_to(&d65).unwrap().evaluate(&sample).unwrap();
             let restored = d65.transfer_to(&rgb).unwrap().evaluate(&xyz).unwrap();
@@ -136,6 +153,7 @@ mod tests {
         assert_eq!(first, same);
         assert_ne!(first, separate);
         assert_eq!(first.channels(), 3);
+        assert_eq!(first.connection_space(), ConnectionSpace::XyzD50);
         let keys = HashSet::from([first]);
         assert!(keys.contains(&same));
         assert!(!keys.contains(&separate));

@@ -346,7 +346,10 @@ mod tests {
             IccRenderingIntent::RelativeColorimetric,
             IccRenderingIntent::AbsoluteColorimetric,
         ] {
-            let transfer = profile.color_space(intent).space_to_pcs().unwrap();
+            let transfer = profile
+                .color_space(intent)
+                .transfer_to_connection_space()
+                .unwrap();
             assert_eq!(
                 transfer.evaluate(&[0.25, 0.5, 0.75]).unwrap(),
                 vec![0.5, 1.0, 1.5]
@@ -361,7 +364,7 @@ mod tests {
         let profile = IccProfile::from_bytes(&bytes).unwrap();
         let output = profile
             .color_space(IccRenderingIntent::RelativeColorimetric)
-            .pcs_to_space()
+            .transfer_from_connection_space()
             .unwrap()
             .evaluate(&[0.25, 0.5, 1.5])
             .unwrap();
@@ -377,7 +380,7 @@ mod tests {
         let profile = IccProfile::from_bytes(&bytes).unwrap();
         let output = profile
             .color_space(IccRenderingIntent::RelativeColorimetric)
-            .space_to_pcs()
+            .transfer_to_connection_space()
             .unwrap()
             .evaluate(&[1.0, 1.0, 1.0])
             .unwrap();
