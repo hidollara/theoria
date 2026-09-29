@@ -4,7 +4,7 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
-use crate::color::{ColorSpace, Rgb, TypedColorSpace, connect_spaces};
+use crate::color::{ColorSpace, Rgb, TypedColorSpace};
 
 use super::composition_shader::{self, Binding};
 
@@ -139,7 +139,7 @@ impl BlendShader {
                 ));
                 continue;
             }
-            let transfer = connect_spaces(from, to)?;
+            let transfer = from.transfer_to(to)?;
             wgsl.push_str(&transfer.wgsl(id as u32)?);
             wgsl.push_str(&format!(
                 "\nfn {name}(value: vec3<f32>) -> vec3<f32> {{\n    let result = theoria_transfer_{id}(array<f32, 3>(value.x, value.y, value.z));\n    return vec3<f32>(result[0], result[1], result[2]);\n}}\n"

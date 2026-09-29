@@ -102,6 +102,28 @@ impl ColorSpace {
             })
             .transpose()
     }
+
+    /// Selects a direct link to the destination, or connects through PCS.
+    pub fn transfer_to(
+        &self,
+        destination: impl Into<ColorSpace>,
+    ) -> Result<Transfer, SpaceConnectionError> {
+        let destination = destination.into();
+        if let Some(direct) = self.direct_to(&destination)? {
+            return Ok(direct);
+        }
+        let mut transform = self.space_to_pcs()?;
+        if self.pcs() != destination.pcs() {
+            let bridge = match (self.pcs(), destination.pcs()) {
+                (Pcs::XyzD50, Pcs::LabD50) => TransferStage::XyzD50ToLabD50,
+                (Pcs::LabD50, Pcs::XyzD50) => TransferStage::LabD50ToXyzD50,
+                _ => unreachable!("different PCS representations"),
+            };
+            transform = transform.then(&Transfer::new(3, [bridge])?)?;
+        }
+        let destination_transform = destination.pcs_to_space()?;
+        Ok(transform.then(&destination_transform)?)
+    }
 }
 
 fn require_channels(expected: usize, actual: usize) -> Result<(), SpaceConnectionError> {
@@ -165,30 +187,6 @@ pub trait ColorProfile: Send + Sync {
     ) -> Result<Option<Transfer>, SpaceConnectionError> {
         Ok(None)
     }
-}
-
-/// Selects a direct link supplied by the source profile, otherwise joins the
-/// spaces through their PCS representations.
-pub fn connect_spaces(
-    source: impl Into<ColorSpace>,
-    destination: impl Into<ColorSpace>,
-) -> Result<Transfer, SpaceConnectionError> {
-    let source = source.into();
-    let destination = destination.into();
-    if let Some(direct) = source.direct_to(&destination)? {
-        return Ok(direct);
-    }
-    let mut transform = source.space_to_pcs()?;
-    if source.pcs() != destination.pcs() {
-        let bridge = match (source.pcs(), destination.pcs()) {
-            (Pcs::XyzD50, Pcs::LabD50) => TransferStage::XyzD50ToLabD50,
-            (Pcs::LabD50, Pcs::XyzD50) => TransferStage::LabD50ToXyzD50,
-            _ => unreachable!("different PCS representations"),
-        };
-        transform = transform.then(&Transfer::new(3, [bridge])?)?;
-    }
-    let destination_transform = destination.pcs_to_space()?;
-    Ok(transform.then(&destination_transform)?)
 }
 
 /// A failure to construct a conversion between color spaces.
@@ -259,7 +257,7 @@ mod tests {
 
     #[test]
     fn known_encoding_link_is_selected_without_a_pcs_round_trip() {
-        let transform = connect_spaces(Srgb, LinearSrgb).unwrap();
+        let transform = ColorSpace::from(Srgb).transfer_to(LinearSrgb).unwrap();
         assert_eq!(
             transform.stages(),
             &[TransferStage::curves([TransferCurve::SRGB_DECODE; 3]).unwrap()]
@@ -288,7 +286,7 @@ mod tests {
 
     #[test]
     fn differing_primaries_fall_back_to_space_pcs_directions() {
-        let actual = connect_spaces(Srgb, DisplayP3).unwrap();
+        let actual = ColorSpace::from(Srgb).transfer_to(DisplayP3).unwrap();
         let expected = ColorSpace::from(Srgb)
             .space_to_pcs()
             .unwrap()
@@ -301,11 +299,10 @@ mod tests {
     fn icc_and_builtin_spaces_share_the_connection_path() {
         let bytes = moxcms::ColorProfile::new_srgb().encode().unwrap();
         let icc = IccProfile::from_bytes(&bytes).unwrap();
-        let transform = connect_spaces(
-            icc.color_space(IccRenderingIntent::RelativeColorimetric),
-            LinearSrgb,
-        )
-        .unwrap();
+        let transform = icc
+            .color_space(IccRenderingIntent::RelativeColorimetric)
+            .transfer_to(LinearSrgb)
+            .unwrap();
         let converted = transform.evaluate(&[0.5; 3]).unwrap();
         assert!(converted.iter().all(|value| *value > 0.2 && *value < 0.23));
     }
@@ -315,8 +312,8 @@ mod tests {
         let bytes = moxcms::ColorProfile::new_srgb().encode().unwrap();
         let icc = IccProfile::from_bytes(&bytes).unwrap();
         let icc = icc.color_space(IccRenderingIntent::RelativeColorimetric);
-        let forward = connect_spaces(Srgb, &icc).unwrap();
-        let backward = connect_spaces(&icc, Srgb).unwrap();
+        let forward = ColorSpace::from(Srgb).transfer_to(&icc).unwrap();
+        let backward = icc.transfer_to(Srgb).unwrap();
         let sample = [0.3, 0.5, 0.7];
         let converted = forward.evaluate(&sample).unwrap();
         let restored = backward.evaluate(&converted).unwrap();
@@ -329,14 +326,14 @@ mod tests {
     fn spaces_can_be_connected_after_type_erasure() {
         let source: ColorSpace = Srgb.into();
         let destination: ColorSpace = LabD50.into();
-        let transform = connect_spaces(&source, &destination).unwrap();
+        let transform = source.transfer_to(&destination).unwrap();
         assert_eq!(transform.evaluate(&[1.0; 3]).unwrap()[0], 100.0);
     }
 
     #[test]
     fn pcs_bridge_round_trips_between_rgb_and_lab() {
-        let to_lab = connect_spaces(LinearSrgb, LabD50).unwrap();
-        let to_rgb = connect_spaces(LabD50, LinearSrgb).unwrap();
+        let to_lab = ColorSpace::from(LinearSrgb).transfer_to(LabD50).unwrap();
+        let to_rgb = ColorSpace::from(LabD50).transfer_to(LinearSrgb).unwrap();
         let sample = [0.2, 0.4, 0.6];
         let lab = to_lab.evaluate(&sample).unwrap();
         let restored = to_rgb.evaluate(&lab).unwrap();
@@ -359,7 +356,7 @@ mod tests {
             ),
             (ColorSpace::from(LabD50), [44.36, 36.05, -58.99], 0.05),
         ] {
-            let transfer = connect_spaces(Srgb, destination).unwrap();
+            let transfer = ColorSpace::from(Srgb).transfer_to(destination).unwrap();
             let actual = transfer.evaluate(&srgb).unwrap();
             for (actual, expected) in actual.into_iter().zip(expected) {
                 assert!(
@@ -404,10 +401,10 @@ mod tests {
 
         let destination = ColorSpace::new(LinkedSpace(None));
         let source = ColorSpace::new(LinkedSpace(Some(destination.clone())));
-        let direct = connect_spaces(&source, &destination).unwrap();
+        let direct = source.transfer_to(&destination).unwrap();
         assert!(direct.stages().is_empty());
 
-        let fallback = connect_spaces(source, LinearSrgb).unwrap();
+        let fallback = source.transfer_to(LinearSrgb).unwrap();
         assert!(!fallback.stages().is_empty());
     }
 
@@ -441,7 +438,7 @@ mod tests {
         }
 
         assert!(matches!(
-            connect_spaces(ColorSpace::new(InvalidLink), LinearSrgb),
+            ColorSpace::new(InvalidLink).transfer_to(LinearSrgb),
             Err(SpaceConnectionError::Channels { .. })
         ));
     }
@@ -469,7 +466,7 @@ mod tests {
         }
 
         assert!(matches!(
-            connect_spaces(ColorSpace::new(InvalidPcs), LinearSrgb),
+            ColorSpace::new(InvalidPcs).transfer_to(LinearSrgb),
             Err(SpaceConnectionError::Channels { .. })
         ));
     }

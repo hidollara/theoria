@@ -16,7 +16,7 @@ pub use icc_profile::{IccProfile, IccProfileError, IccRenderingIntent};
 pub use model::{Cmyk, ColorCoordinates, ColorModel, Lab, Rgb, TypedColorModel, Xyz, Ycbcr};
 pub use space::{
     ColorProfile, ColorSpace, DisplayP3, LabD50, LinearDisplayP3, LinearSrgb, Pcs,
-    SpaceConnectionError, Srgb, TypedColorSpace, XyzD50, XyzD65, connect_spaces,
+    SpaceConnectionError, Srgb, TypedColorSpace, XyzD50, XyzD65,
 };
 pub use transfer::{
     Transfer, TransferClut, TransferCurve, TransferError, TransferMatrix, TransferShader,

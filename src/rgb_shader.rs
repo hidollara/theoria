@@ -1,7 +1,7 @@
 //! Specializes raster sampling and presentation shaders for a renderer space.
 //! Also compiled by build.rs for the default Vulkan shader validation.
 
-use theoria_color::{ColorSpace, DisplayP3, LinearDisplayP3, LinearSrgb, Srgb, connect_spaces};
+use theoria_color::{ColorSpace, DisplayP3, LinearDisplayP3, LinearSrgb, Srgb};
 
 const MARKER: &str = "// @theoria-rgb-conversions";
 
@@ -34,10 +34,10 @@ pub(crate) fn assemble_for(
     ];
     let mut definitions = String::new();
     for (index, space) in spaces.into_iter().enumerate() {
-        let transfer = connect_spaces(space, working_space)?;
+        let transfer = space.transfer_to(working_space)?;
         definitions.push_str(&transfer.wgsl(index as u32)?);
     }
-    let present = connect_spaces(working_space, LinearSrgb)?;
+    let present = working_space.transfer_to(LinearSrgb)?;
     definitions.push_str(&present.wgsl(4)?);
     definitions.push_str(
         r#"
@@ -80,8 +80,8 @@ pub(crate) fn assemble_output_for(
     }
     assert_eq!(source.matches(MARKER).count(), 1);
     let composition_space = ColorSpace::from(LinearSrgb);
-    let to_composition = connect_spaces(working_space, &composition_space)?;
-    let to_output = connect_spaces(&composition_space, output_space)?;
+    let to_composition = working_space.transfer_to(&composition_space)?;
+    let to_output = composition_space.transfer_to(output_space)?;
     let definitions = format!(
         "{}{}\n\
          fn rgb_to_array(value: vec3<f32>) -> array<f32, 3> {{\n\

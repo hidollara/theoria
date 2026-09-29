@@ -303,7 +303,8 @@ mod tests {
         assert_eq!(pixels, source.as_ref());
         let converted =
             convert_icc8_to_linear_rgba16(1, pixels, profile, intent, has_alpha).unwrap();
-        let expected = crate::color::connect_spaces(Srgb, LinearSrgb)
+        let expected = crate::color::ColorSpace::from(Srgb)
+            .transfer_to(LinearSrgb)
             .unwrap()
             .evaluate(&[64.0 / 255.0, 128.0 / 255.0, 192.0 / 255.0])
             .unwrap();

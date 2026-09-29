@@ -1,6 +1,6 @@
 use std::{error::Error, fmt, sync::Arc};
 
-use crate::color::{IccProfile, IccRenderingIntent, Srgb, connect_spaces};
+use crate::color::{ColorSpace, IccProfile, IccRenderingIntent, Srgb};
 
 use super::{RasterImageInstanceKey, Srgba8Image};
 
@@ -31,7 +31,7 @@ impl IccRasterImage {
         if intent == IccRenderingIntent::AbsoluteColorimetric {
             return Err(Box::new(IccImageError::AbsoluteIntent));
         }
-        let transfer = connect_spaces(Srgb, profile.color_space(intent))?;
+        let transfer = ColorSpace::from(Srgb).transfer_to(profile.color_space(intent))?;
         let channels = profile.device_channels();
         let mut pixels = Vec::with_capacity(
             image
@@ -187,7 +187,8 @@ mod tests {
         {
             let source_rgb: [f32; 3] =
                 std::array::from_fn(|index| f32::from(expected[index]) / 255.0);
-            let linear = crate::color::connect_spaces(Srgb, crate::color::LinearSrgb)
+            let linear = ColorSpace::from(Srgb)
+                .transfer_to(crate::color::LinearSrgb)
                 .unwrap()
                 .evaluate(&source_rgb.map(f64::from))
                 .unwrap();

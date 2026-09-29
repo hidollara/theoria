@@ -697,7 +697,6 @@ impl ColorProfile for IccColorProfile {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::connect_spaces;
 
     #[test]
     fn icc_data_model_is_not_inferred_from_channel_count() {
@@ -875,11 +874,10 @@ mod tests {
             assert!((actual - expected).abs() < 0.003);
         }
         assert!(forward.then(&backward).is_ok());
-        let semantic = connect_spaces(
-            profile.color_space(IccRenderingIntent::RelativeColorimetric),
-            profile.color_space(IccRenderingIntent::RelativeColorimetric),
-        )
-        .unwrap();
+        let semantic = profile
+            .color_space(IccRenderingIntent::RelativeColorimetric)
+            .transfer_to(profile.color_space(IccRenderingIntent::RelativeColorimetric))
+            .unwrap();
         let restored = semantic.evaluate(&[0.4, 0.5, 0.6]).unwrap();
         for (actual, expected) in restored.into_iter().zip([0.4, 0.5, 0.6]) {
             assert!((actual - expected).abs() < 0.003);
@@ -897,11 +895,10 @@ mod tests {
         let source = IccProfile::from_parsed(ParsedProfile::new_gray_with_gamma(1.0), Pcs::XyzD50);
         let destination =
             IccProfile::from_parsed(ParsedProfile::new_gray_with_gamma(1.0), Pcs::LabD50);
-        let connected = connect_spaces(
-            source.color_space(IccRenderingIntent::RelativeColorimetric),
-            destination.color_space(IccRenderingIntent::RelativeColorimetric),
-        )
-        .unwrap();
+        let connected = source
+            .color_space(IccRenderingIntent::RelativeColorimetric)
+            .transfer_to(destination.color_space(IccRenderingIntent::RelativeColorimetric))
+            .unwrap();
         let result = connected.evaluate(&[0.4]).unwrap();
         let expected = (116.0 * 0.4_f64.cbrt() - 16.0) / 100.0;
         assert!((result[0] - expected).abs() < 1e-8);
@@ -998,11 +995,10 @@ mod tests {
         for (actual, expected) in restored.into_iter().zip(sample) {
             assert!((actual - expected).abs() < 0.003);
         }
-        let connected = connect_spaces(
-            profile.color_space(IccRenderingIntent::AbsoluteColorimetric),
-            profile.color_space(IccRenderingIntent::RelativeColorimetric),
-        )
-        .unwrap();
+        let connected = profile
+            .color_space(IccRenderingIntent::AbsoluteColorimetric)
+            .transfer_to(profile.color_space(IccRenderingIntent::RelativeColorimetric))
+            .unwrap();
         let expected = profile
             .inner
             .pcs_to_space(IccRenderingIntent::RelativeColorimetric)

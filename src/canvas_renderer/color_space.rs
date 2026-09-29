@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     canvas::{Color, ColorError, ColorValue},
-    color::{ColorSpace, LinearDisplayP3, LinearSrgb, Transfer, connect_spaces},
+    color::{ColorSpace, LinearDisplayP3, LinearSrgb, Transfer},
 };
 
 /// Renderer-owned conversions prepared before commands are recorded.
@@ -72,8 +72,8 @@ impl PreparedColors {
         }
         let working = &self.working_space;
         let plan = PreparedInterpolation {
-            to_interpolation: connect_spaces(working, space)?,
-            to_working: connect_spaces(space, working)?,
+            to_interpolation: working.transfer_to(space)?,
+            to_working: space.transfer_to(working)?,
             identity: space == working,
             linear_builtin: *space == ColorSpace::from(LinearSrgb)
                 || *space == ColorSpace::from(LinearDisplayP3),
@@ -126,7 +126,7 @@ impl Color {
         let converted = if self.space == destination {
             coordinates
         } else {
-            let transfer = connect_spaces(&self.space, &destination)?;
+            let transfer = self.space.transfer_to(&destination)?;
             transfer.evaluate(&coordinates)?
         };
         Ok([
@@ -202,7 +202,7 @@ pub(crate) fn convert_premultiplied_space(
     if value[3] == 0.0 {
         return Ok([0.0; 4]);
     }
-    let transfer = connect_spaces(from, to)?;
+    let transfer = from.transfer_to(to)?;
     let alpha = value[3];
     let straight = [value[0] / alpha, value[1] / alpha, value[2] / alpha];
     let converted = transfer.evaluate(&straight.map(f64::from))?;
@@ -343,7 +343,8 @@ mod tests {
         prepared.prepare_interpolation(&Srgb.into()).unwrap();
         let actual =
             interpolate_premultiplied_rgba(black, white, 0.5, prepared.interpolation(&Srgb.into()));
-        let expected = connect_spaces(Srgb, LinearDisplayP3)
+        let expected = ColorSpace::from(Srgb)
+            .transfer_to(LinearDisplayP3)
             .unwrap()
             .evaluate(&[0.5; 3])
             .unwrap();
