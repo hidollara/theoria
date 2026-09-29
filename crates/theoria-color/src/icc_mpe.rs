@@ -1,5 +1,5 @@
 use super::transfer::{
-    MpeSegment, MpeSegmentKind, Transfer, TransferClut, TransferCurve, TransferMatrix,
+    CurveSegment, CurveSegmentKind, Transfer, TransferClut, TransferCurve, TransferMatrix,
     TransferStage,
 };
 
@@ -169,7 +169,7 @@ fn parse_curve(data: &[u8]) -> Result<TransferCurve, MpeParseError> {
     if breaks.windows(2).any(|pair| pair[0] > pair[1]) {
         return Err(MpeParseError);
     }
-    let mut segments: Vec<MpeSegment> = Vec::with_capacity(count);
+    let mut segments: Vec<CurveSegment> = Vec::with_capacity(count);
     let mut offset = 12 + breaks_len;
     for index in 0..count {
         let upper = breaks.get(index).copied().unwrap_or(f64::INFINITY);
@@ -187,13 +187,31 @@ fn parse_curve(data: &[u8]) -> Result<TransferCurve, MpeParseError> {
                 let parameters = (0..parameter_count)
                     .map(|p| f32_at(data, offset + 12 + 4 * p))
                     .collect::<Result<Vec<_>, _>>()?;
-                (
-                    MpeSegmentKind::Formula {
-                        function,
-                        parameters,
+                let kind = match function {
+                    0 => CurveSegmentKind::PowerAffine {
+                        scale: parameters[1],
+                        offset: parameters[2],
+                        exponent: parameters[0],
+                        output_scale: 1.0,
+                        output_offset: parameters[3],
                     },
-                    length,
-                )
+                    1 => CurveSegmentKind::Logarithmic {
+                        exponent: parameters[0],
+                        input_scale: parameters[2],
+                        input_offset: parameters[3],
+                        output_scale: parameters[1],
+                        output_offset: parameters[4],
+                    },
+                    2 => CurveSegmentKind::Exponential {
+                        scale: parameters[0],
+                        base: parameters[1],
+                        exponent_scale: parameters[2],
+                        exponent_offset: parameters[3],
+                        output_offset: parameters[4],
+                    },
+                    _ => unreachable!("ICC function type was checked above"),
+                };
+                (kind, length)
             }
             b"samf" if index > 0 && index + 1 < count => {
                 let sample_count =
@@ -215,14 +233,20 @@ fn parse_curve(data: &[u8]) -> Result<TransferCurve, MpeParseError> {
                 for sample in 0..sample_count {
                     samples.push(f32_at(data, offset + 12 + 4 * sample)?);
                 }
-                (MpeSegmentKind::Sampled { lower, samples }, length)
+                (
+                    CurveSegmentKind::Sampled {
+                        lower,
+                        samples: samples.into(),
+                    },
+                    length,
+                )
             }
             _ => return Err(MpeParseError),
         };
-        segments.push(MpeSegment { upper, kind });
+        segments.push(CurveSegment::new(upper, kind));
         offset = offset.checked_add(length).ok_or(MpeParseError)?;
     }
-    TransferCurve::mpe(segments).map_err(|_| MpeParseError)
+    TransferCurve::piecewise(segments).map_err(|_| MpeParseError)
 }
 
 fn section(bytes: &[u8], offset: usize, length: usize) -> Result<&[u8], MpeParseError> {

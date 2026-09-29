@@ -506,11 +506,14 @@ mod tests {
         let rendered = surface.render(&content).unwrap();
         for channel in 0..3 {
             let linear = half::f16::from_bits(reference.samples()[channel]).to_f32();
-            let expected = (crate::color::TransferCurve::SRGB_ENCODE
-                .evaluate(f64::from(linear))
-                .clamp(0.0, 1.0)
-                * 255.0)
-                .round() as u8;
+            let linear = f64::from(linear);
+            let magnitude = linear.abs();
+            let encoded = if magnitude <= 0.003_130_8 {
+                12.92 * linear
+            } else {
+                linear.signum() * (1.055 * magnitude.powf(1.0 / 2.4) - 0.055)
+            };
+            let expected = (encoded.clamp(0.0, 1.0) * 255.0).round() as u8;
             let actual = rendered.pixels()[channel];
             assert!(
                 actual.abs_diff(expected) <= 6,

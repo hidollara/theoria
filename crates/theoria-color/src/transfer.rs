@@ -6,10 +6,10 @@ mod tests;
 
 /// A directed sequence of color-coordinate operations.
 ///
-/// An ICC profile can provide different device-to-PCS and PCS-to-device
-/// transforms for each rendering intent. A `Transfer` describes one such
-/// direction, not an automatically invertible color space. The same stages
-/// can be evaluated on the CPU or lowered to WGSL for a renderer.
+/// A `Transfer` describes one direction between coordinate systems, not an
+/// automatically invertible color space. ICC profiles can be decoded into
+/// this representation, as can transfers defined without a profile. The
+/// same stages can be evaluated on the CPU or lowered by a renderer.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Transfer {
     input_channels: usize,
@@ -177,13 +177,13 @@ impl TransferMatrix {
     }
 }
 
-/// An ICC-style multidimensional lookup table.
+/// A multidimensional lookup table.
 ///
 /// The first input channel varies least rapidly in `values`; output channels
 /// are interleaved at each grid point. Evaluation uses multilinear
-/// interpolation. This representation is independent of ICC's 8-/16-bit
-/// storage encoding, which a profile decoder must normalize when loading.
-/// Float32 MPE tables may contain values outside the normalized range.
+/// interpolation. This representation is independent of source encodings;
+/// a profile decoder normalizes its storage when loading. Table outputs may
+/// extend beyond the normalized range.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TransferClut {
     grid: Arc<[u8]>,
@@ -232,11 +232,11 @@ impl TransferClut {
     }
 }
 
-/// One-dimensional curves used in ICC-style transfer stages.
+/// One-dimensional curves in a color transfer.
 ///
-/// ICC gamma and sampled curves operate on the encoded `[0, 1]` domain.
-/// The signed sRGB variants are Theoria's extended-range built-ins, not an
-/// assertion that an ICC TRC has that out-of-range behavior.
+/// Gamma and sampled curves operate on the `[0, 1]` domain. The
+/// signed sRGB variants are extended-range built-ins. Piecewise curves can
+/// describe wider domains, including curves decoded from ICC profiles.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TransferCurve(CurveKind);
 
@@ -246,13 +246,12 @@ pub enum TransferCurveKind<'a> {
     Identity,
     Gamma(f64),
     Sampled(&'a [f64]),
-    IccParametric {
-        function: u16,
-        parameters: &'a [f64],
+    Piecewise(&'a [CurveSegment]),
+    Clamped {
+        curve: &'a TransferCurve,
+        input: [f64; 2],
+        output: [f64; 2],
     },
-    Mpe(&'a [MpeSegment]),
-    SrgbDecode,
-    SrgbEncode,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -260,119 +259,236 @@ enum CurveKind {
     Identity,
     Gamma(f64),
     Sampled(Arc<[f64]>),
-    IccParametric {
-        function: u16,
-        parameters: Arc<[f64]>,
+    Piecewise(CurveSegments),
+    Clamped {
+        curve: Box<TransferCurve>,
+        input: [f64; 2],
+        output: [f64; 2],
     },
-    Mpe(Arc<[MpeSegment]>),
-    SrgbDecode,
-    SrgbEncode,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct MpeSegment {
-    pub(super) upper: f64,
-    pub(super) kind: MpeSegmentKind,
+enum CurveSegments {
+    Static(&'static [CurveSegment]),
+    Shared(Arc<[CurveSegment]>),
 }
 
+impl AsRef<[CurveSegment]> for CurveSegments {
+    fn as_ref(&self) -> &[CurveSegment] {
+        match self {
+            Self::Static(segments) => segments,
+            Self::Shared(segments) => segments,
+        }
+    }
+}
+
+/// One interval of a piecewise curve, with an explicit upper-boundary rule.
 #[derive(Clone, Debug, PartialEq)]
-pub(super) enum MpeSegmentKind {
-    Formula { function: u16, parameters: Vec<f64> },
-    Sampled { lower: f64, samples: Vec<f64> },
+pub struct CurveSegment {
+    upper: f64,
+    upper_inclusive: bool,
+    kind: CurveSegmentKind,
 }
 
-/// A borrowed description of a validated ICC multi-process curve segment.
-#[derive(Clone, Copy, Debug)]
-pub enum MpeSegmentView<'a> {
-    Formula {
-        function: u16,
-        parameters: &'a [f64],
+/// A numerical operation within a piecewise curve segment.
+#[derive(Clone, Debug, PartialEq)]
+pub enum CurveSegmentKind {
+    Constant(f64),
+    Linear {
+        scale: f64,
+        offset: f64,
     },
+    /// `output_scale * (scale * x + offset)^exponent + output_offset`.
+    PowerAffine {
+        scale: f64,
+        offset: f64,
+        exponent: f64,
+        output_scale: f64,
+        output_offset: f64,
+    },
+    /// `output_scale * log10(input_scale * x^exponent + input_offset) + output_offset`.
+    Logarithmic {
+        exponent: f64,
+        input_scale: f64,
+        input_offset: f64,
+        output_scale: f64,
+        output_offset: f64,
+    },
+    /// `scale * base^(exponent_scale * x + exponent_offset) + output_offset`.
+    Exponential {
+        scale: f64,
+        base: f64,
+        exponent_scale: f64,
+        exponent_offset: f64,
+        output_offset: f64,
+    },
+    /// Equally spaced samples over `(lower, segment.upper]`, including the
+    /// preceding segment's value at `lower` as the first sample.
     Sampled {
         lower: f64,
-        samples: &'a [f64],
+        samples: Arc<[f64]>,
     },
 }
 
-impl MpeSegment {
+impl CurveSegment {
+    /// Creates a segment that includes its upper boundary.
+    pub const fn new(upper: f64, kind: CurveSegmentKind) -> Self {
+        Self {
+            upper,
+            upper_inclusive: true,
+            kind,
+        }
+    }
+
+    /// Creates a segment whose upper boundary belongs to the next segment.
+    pub const fn exclusive(upper: f64, kind: CurveSegmentKind) -> Self {
+        Self {
+            upper,
+            upper_inclusive: false,
+            kind,
+        }
+    }
+
     pub const fn upper(&self) -> f64 {
         self.upper
     }
 
-    pub fn view(&self) -> MpeSegmentView<'_> {
-        match &self.kind {
-            MpeSegmentKind::Formula {
-                function,
-                parameters,
-            } => MpeSegmentView::Formula {
-                function: *function,
-                parameters,
-            },
-            MpeSegmentKind::Sampled { lower, samples } => MpeSegmentView::Sampled {
-                lower: *lower,
-                samples,
-            },
-        }
+    pub const fn upper_inclusive(&self) -> bool {
+        self.upper_inclusive
+    }
+
+    pub const fn kind(&self) -> &CurveSegmentKind {
+        &self.kind
     }
 }
 
 impl TransferCurve {
     pub const IDENTITY: Self = Self(CurveKind::Identity);
-    pub const SRGB_DECODE: Self = Self(CurveKind::SrgbDecode);
-    pub const SRGB_ENCODE: Self = Self(CurveKind::SrgbEncode);
-    pub const SRGB_DECODE_THRESHOLD: f64 = SRGB_DECODE_THRESHOLD;
-    pub const SRGB_ENCODE_THRESHOLD: f64 = SRGB_ENCODE_THRESHOLD;
-    pub const SRGB_LINEAR_SCALE: f64 = SRGB_LINEAR_SCALE;
-    pub const SRGB_POWER_SCALE: f64 = SRGB_POWER_SCALE;
-    pub const SRGB_POWER_OFFSET: f64 = SRGB_POWER_OFFSET;
-    pub const SRGB_GAMMA: f64 = SRGB_GAMMA;
+    pub const SRGB_DECODE: Self = Self(CurveKind::Piecewise(CurveSegments::Static(
+        &SRGB_DECODE_SEGMENTS,
+    )));
+    pub const SRGB_ENCODE: Self = Self(CurveKind::Piecewise(CurveSegments::Static(
+        &SRGB_ENCODE_SEGMENTS,
+    )));
 
     pub fn kind(&self) -> TransferCurveKind<'_> {
         match &self.0 {
             CurveKind::Identity => TransferCurveKind::Identity,
             CurveKind::Gamma(exponent) => TransferCurveKind::Gamma(*exponent),
             CurveKind::Sampled(values) => TransferCurveKind::Sampled(values),
-            CurveKind::IccParametric {
-                function,
-                parameters,
-            } => TransferCurveKind::IccParametric {
-                function: *function,
-                parameters,
+            CurveKind::Piecewise(segments) => TransferCurveKind::Piecewise(segments.as_ref()),
+            CurveKind::Clamped {
+                curve,
+                input,
+                output,
+            } => TransferCurveKind::Clamped {
+                curve,
+                input: *input,
+                output: *output,
             },
-            CurveKind::Mpe(segments) => TransferCurveKind::Mpe(segments),
-            CurveKind::SrgbDecode => TransferCurveKind::SrgbDecode,
-            CurveKind::SrgbEncode => TransferCurveKind::SrgbEncode,
         }
     }
 
-    pub(super) fn mpe(segments: Vec<MpeSegment>) -> Result<Self, TransferError> {
-        if segments.is_empty()
-            || segments.iter().any(|segment| match &segment.kind {
-                MpeSegmentKind::Formula {
-                    function,
-                    parameters,
-                } => {
-                    let expected = match function {
-                        0 => 4,
-                        1 | 2 => 5,
-                        _ => 0,
-                    };
-                    expected == 0
-                        || parameters.len() != expected
-                        || parameters.iter().any(|value| !value.is_finite())
+    /// Whether this is the built-in sRGB decoding curve, rather than merely an
+    /// equivalent caller-defined curve. Backends may use this as an optimization hint.
+    pub fn is_srgb_decode(&self) -> bool {
+        matches!(
+            &self.0,
+            CurveKind::Piecewise(CurveSegments::Static(segments))
+                if std::ptr::eq(*segments, &SRGB_DECODE_SEGMENTS[..])
+        )
+    }
+
+    /// Whether this is the built-in sRGB encoding curve.
+    pub fn is_srgb_encode(&self) -> bool {
+        matches!(
+            &self.0,
+            CurveKind::Piecewise(CurveSegments::Static(segments))
+                if std::ptr::eq(*segments, &SRGB_ENCODE_SEGMENTS[..])
+        )
+    }
+
+    pub fn piecewise(segments: impl Into<Arc<[CurveSegment]>>) -> Result<Self, TransferError> {
+        let segments = segments.into();
+        if segments.is_empty() {
+            return Err(TransferError::InvalidCurve);
+        }
+        let mut previous = f64::NEG_INFINITY;
+        for (index, segment) in segments.iter().enumerate() {
+            if (index + 1 == segments.len() && segment.upper != f64::INFINITY)
+                || (index + 1 < segments.len() && !segment.upper.is_finite())
+                || segment.upper < previous
+            {
+                return Err(TransferError::InvalidCurve);
+            }
+            let valid = match &segment.kind {
+                CurveSegmentKind::Constant(value) => value.is_finite(),
+                CurveSegmentKind::Linear { scale, offset } => {
+                    scale.is_finite() && offset.is_finite()
                 }
-                MpeSegmentKind::Sampled { lower, samples } => {
-                    !lower.is_finite()
-                        || !segment.upper.is_finite()
-                        || segment.upper <= *lower
-                        || samples.len() < 2
-                        || samples.iter().any(|value| !value.is_finite())
+                CurveSegmentKind::PowerAffine {
+                    scale,
+                    offset,
+                    exponent,
+                    output_scale,
+                    output_offset,
+                } => [scale, offset, exponent, output_scale, output_offset]
+                    .into_iter()
+                    .all(|value| value.is_finite()),
+                CurveSegmentKind::Logarithmic {
+                    exponent,
+                    input_scale,
+                    input_offset,
+                    output_scale,
+                    output_offset,
+                } => [
+                    exponent,
+                    input_scale,
+                    input_offset,
+                    output_scale,
+                    output_offset,
+                ]
+                .into_iter()
+                .all(|value| value.is_finite()),
+                CurveSegmentKind::Exponential {
+                    scale,
+                    base,
+                    exponent_scale,
+                    exponent_offset,
+                    output_offset,
+                } => [scale, base, exponent_scale, exponent_offset, output_offset]
+                    .into_iter()
+                    .all(|value| value.is_finite()),
+                CurveSegmentKind::Sampled { lower, samples } => {
+                    index > 0
+                        && *lower == previous
+                        && segment.upper.is_finite()
+                        && segment.upper > *lower
+                        && samples.len() >= 2
+                        && samples.iter().all(|value| value.is_finite())
                 }
-            })
+            };
+            if !valid {
+                return Err(TransferError::InvalidCurve);
+            }
+            previous = segment.upper;
+        }
+        Ok(Self(CurveKind::Piecewise(CurveSegments::Shared(segments))))
+    }
+
+    /// Restricts a curve's input and output to inclusive numerical bounds.
+    pub fn clamped(curve: Self, input: [f64; 2], output: [f64; 2]) -> Result<Self, TransferError> {
+        if [input, output]
+            .iter()
+            .any(|[min, max]| !min.is_finite() || !max.is_finite() || min > max)
         {
             return Err(TransferError::InvalidCurve);
         }
-        Ok(Self(CurveKind::Mpe(segments.into())))
+        Ok(Self(CurveKind::Clamped {
+            curve: Box::new(curve),
+            input,
+            output,
+        }))
     }
 
     pub fn gamma(exponent: f64) -> Result<Self, TransferError> {
@@ -393,48 +509,78 @@ impl TransferCurve {
         }
         Ok(Self(CurveKind::Sampled(values)))
     }
-
-    /// Creates one of ICC.1's parametric curve functions (types 0 through 4).
-    ///
-    /// Parameters are in the specification's `g, a, b, c, d, e, f` order;
-    /// each function uses only its defined prefix. Values outside the ICC
-    /// curve domain and range are clipped to `[0, 1]`.
-    pub fn icc_parametric(function: u16, parameters: &[f64]) -> Result<Self, TransferError> {
-        let expected = match function {
-            0 => 1,
-            1 => 3,
-            2 => 4,
-            3 => 5,
-            4 => 7,
-            _ => return Err(TransferError::InvalidCurve),
-        };
-        if parameters.len() != expected
-            || parameters.iter().any(|value| !value.is_finite())
-            || parameters[0] <= 0.0
-            || (function == 1 || function == 2) && parameters[1] <= 0.0
-            || (function == 3 || function == 4)
-                && (parameters[1] < 0.0
-                    || (parameters[4] <= 1.0
-                        && parameters[1] * parameters[4].max(0.0) + parameters[2] < 0.0))
-        {
-            return Err(TransferError::InvalidCurve);
-        }
-        Ok(Self(CurveKind::IccParametric {
-            function,
-            parameters: parameters.into(),
-        }))
-    }
 }
 
 /// ICC D50 PCS white, expressed as the specified XYZ tristimulus values.
 pub(super) const ICC_PCS_D50_XYZ: [f64; 3] = [0.9642, 1.0, 0.8249];
-// Shared by CPU evaluation and shader generation of the sRGB transfer curve.
+// The built-in names retain their identity as optimization hints, but use the
+// same piecewise representation as curves supplied by callers or ICC profiles.
 const SRGB_DECODE_THRESHOLD: f64 = 0.04045;
 const SRGB_ENCODE_THRESHOLD: f64 = 0.003_130_8;
 const SRGB_LINEAR_SCALE: f64 = 12.92;
 const SRGB_POWER_SCALE: f64 = 1.055;
 const SRGB_POWER_OFFSET: f64 = 0.055;
 const SRGB_GAMMA: f64 = 2.4;
+
+static SRGB_DECODE_SEGMENTS: [CurveSegment; 3] = [
+    CurveSegment::exclusive(
+        -SRGB_DECODE_THRESHOLD,
+        CurveSegmentKind::PowerAffine {
+            scale: -1.0 / SRGB_POWER_SCALE,
+            offset: SRGB_POWER_OFFSET / SRGB_POWER_SCALE,
+            exponent: SRGB_GAMMA,
+            output_scale: -1.0,
+            output_offset: 0.0,
+        },
+    ),
+    CurveSegment::new(
+        SRGB_DECODE_THRESHOLD,
+        CurveSegmentKind::Linear {
+            scale: 1.0 / SRGB_LINEAR_SCALE,
+            offset: 0.0,
+        },
+    ),
+    CurveSegment::new(
+        f64::INFINITY,
+        CurveSegmentKind::PowerAffine {
+            scale: 1.0 / SRGB_POWER_SCALE,
+            offset: SRGB_POWER_OFFSET / SRGB_POWER_SCALE,
+            exponent: SRGB_GAMMA,
+            output_scale: 1.0,
+            output_offset: 0.0,
+        },
+    ),
+];
+
+static SRGB_ENCODE_SEGMENTS: [CurveSegment; 3] = [
+    CurveSegment::exclusive(
+        -SRGB_ENCODE_THRESHOLD,
+        CurveSegmentKind::PowerAffine {
+            scale: -1.0,
+            offset: 0.0,
+            exponent: 1.0 / SRGB_GAMMA,
+            output_scale: -SRGB_POWER_SCALE,
+            output_offset: SRGB_POWER_OFFSET,
+        },
+    ),
+    CurveSegment::new(
+        SRGB_ENCODE_THRESHOLD,
+        CurveSegmentKind::Linear {
+            scale: SRGB_LINEAR_SCALE,
+            offset: 0.0,
+        },
+    ),
+    CurveSegment::new(
+        f64::INFINITY,
+        CurveSegmentKind::PowerAffine {
+            scale: 1.0,
+            offset: 0.0,
+            exponent: 1.0 / SRGB_GAMMA,
+            output_scale: SRGB_POWER_SCALE,
+            output_offset: -SRGB_POWER_OFFSET,
+        },
+    ),
+];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TransferError {

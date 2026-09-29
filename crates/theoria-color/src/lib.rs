@@ -19,6 +19,6 @@ pub use space::{
     SpaceConnectionError, Srgb, TypedColorSpace, XyzD50, XyzD65,
 };
 pub use transfer::{
-    MpeSegment, MpeSegmentView, Transfer, TransferClut, TransferCurve, TransferCurveKind,
+    CurveSegment, CurveSegmentKind, Transfer, TransferClut, TransferCurve, TransferCurveKind,
     TransferError, TransferMatrix, TransferStage,
 };

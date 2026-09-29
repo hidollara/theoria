@@ -260,7 +260,7 @@ mod tests {
         let transform = ColorSpace::from(Srgb).transfer_to(LinearSrgb).unwrap();
         assert_eq!(
             transform.stages(),
-            &[TransferStage::curves([TransferCurve::SRGB_DECODE; 3]).unwrap()]
+            &[TransferStage::curves(vec![TransferCurve::SRGB_DECODE; 3]).unwrap()]
         );
         let expected = 0.214_041_140_482_232_55;
         for actual in transform.evaluate(&[0.5; 3]).unwrap() {

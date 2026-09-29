@@ -1,7 +1,6 @@
 use super::{
-    CurveKind, ICC_PCS_D50_XYZ, MpeSegment, MpeSegmentKind, SRGB_DECODE_THRESHOLD,
-    SRGB_ENCODE_THRESHOLD, SRGB_GAMMA, SRGB_LINEAR_SCALE, SRGB_POWER_OFFSET, SRGB_POWER_SCALE,
-    Transfer, TransferClut, TransferCurve, TransferError, TransferMatrix, TransferStage,
+    CurveSegment, CurveSegmentKind, ICC_PCS_D50_XYZ, Transfer, TransferClut, TransferCurve,
+    TransferCurveKind, TransferError, TransferMatrix, TransferStage,
 };
 
 impl Transfer {
@@ -86,26 +85,36 @@ impl TransferClut {
     }
 }
 
-impl MpeSegment {
+impl CurveSegment {
     pub(crate) fn evaluate(&self, value: f64) -> f64 {
         match &self.kind {
-            MpeSegmentKind::Formula {
-                function,
-                parameters,
-            } => match function {
-                0 => (parameters[1] * value + parameters[2]).powf(parameters[0]) + parameters[3],
-                1 => {
-                    parameters[1]
-                        * (parameters[2] * value.powf(parameters[0]) + parameters[3]).log10()
-                        + parameters[4]
-                }
-                2 => {
-                    parameters[0] * parameters[1].powf(parameters[2] * value + parameters[3])
-                        + parameters[4]
-                }
-                _ => unreachable!(),
-            },
-            MpeSegmentKind::Sampled { lower, samples } => {
+            CurveSegmentKind::Constant(result) => *result,
+            CurveSegmentKind::Linear { scale, offset } => scale * value + offset,
+            CurveSegmentKind::PowerAffine {
+                scale,
+                offset,
+                exponent,
+                output_scale,
+                output_offset,
+            } => output_scale * (scale * value + offset).powf(*exponent) + output_offset,
+            CurveSegmentKind::Logarithmic {
+                exponent,
+                input_scale,
+                input_offset,
+                output_scale,
+                output_offset,
+            } => {
+                output_scale * (input_scale * value.powf(*exponent) + input_offset).log10()
+                    + output_offset
+            }
+            CurveSegmentKind::Exponential {
+                scale,
+                base,
+                exponent_scale,
+                exponent_offset,
+                output_offset,
+            } => scale * base.powf(exponent_scale * value + exponent_offset) + output_offset,
+            CurveSegmentKind::Sampled { lower, samples } => {
                 let position = (value - lower) / (self.upper - lower) * (samples.len() - 1) as f64;
                 let index = (position.floor() as usize).min(samples.len() - 2);
                 let amount = position - index as f64;
@@ -117,53 +126,29 @@ impl MpeSegment {
 
 impl TransferCurve {
     pub fn evaluate(&self, value: f64) -> f64 {
-        match &self.0 {
-            CurveKind::Identity => value,
-            CurveKind::Gamma(exponent) => value.clamp(0.0, 1.0).powf(*exponent),
-            CurveKind::Sampled(values) => {
+        match self.kind() {
+            TransferCurveKind::Identity => value,
+            TransferCurveKind::Gamma(exponent) => value.clamp(0.0, 1.0).powf(exponent),
+            TransferCurveKind::Sampled(values) => {
                 let position = value.clamp(0.0, 1.0) * (values.len() - 1) as f64;
                 let index = (position.floor() as usize).min(values.len() - 2);
                 let amount = position - index as f64;
                 values[index] + (values[index + 1] - values[index]) * amount
             }
-            CurveKind::IccParametric {
-                function,
-                parameters,
-            } => {
-                let x = value.clamp(0.0, 1.0);
-                let g = parameters[0];
-                let result = match function {
-                    0 => x.powf(g),
-                    1 | 2 => {
-                        let [a, b] = [parameters[1], parameters[2]];
-                        if x >= -b / a {
-                            (a * x + b).powf(g) + if *function == 2 { parameters[3] } else { 0.0 }
-                        } else if *function == 2 {
-                            parameters[3]
-                        } else {
-                            0.0
-                        }
-                    }
-                    3 | 4 => {
-                        let [a, b, c, d] =
-                            [parameters[1], parameters[2], parameters[3], parameters[4]];
-                        if x >= d {
-                            (a * x + b).powf(g) + if *function == 4 { parameters[5] } else { 0.0 }
-                        } else {
-                            c * x + if *function == 4 { parameters[6] } else { 0.0 }
-                        }
-                    }
-                    _ => unreachable!("ICC function type is validated at construction"),
-                };
-                result.clamp(0.0, 1.0)
-            }
-            CurveKind::Mpe(segments) => segments
+            TransferCurveKind::Piecewise(segments) => segments
                 .iter()
-                .find(|segment| value <= segment.upper)
+                .find(|segment| {
+                    value < segment.upper || (segment.upper_inclusive && value == segment.upper)
+                })
                 .unwrap_or_else(|| segments.last().unwrap())
                 .evaluate(value),
-            CurveKind::SrgbDecode => decode_srgb_f64(value),
-            CurveKind::SrgbEncode => encode_srgb_f64(value),
+            TransferCurveKind::Clamped {
+                curve,
+                input,
+                output,
+            } => curve
+                .evaluate(value.clamp(input[0], input[1]))
+                .clamp(output[0], output[1]),
         }
     }
 }
@@ -211,22 +196,4 @@ pub(super) fn xyz_d50_to_lab_d50(xyz: &[f64]) -> Vec<f64> {
 
 pub(super) fn lab_d50_to_xyz_d50(lab: &[f64]) -> Vec<f64> {
     lab_to_xyz([lab[0], lab[1], lab[2]], ICC_PCS_D50_XYZ).to_vec()
-}
-
-pub(super) fn decode_srgb_f64(value: f64) -> f64 {
-    let magnitude = value.abs();
-    if magnitude <= SRGB_DECODE_THRESHOLD {
-        value / SRGB_LINEAR_SCALE
-    } else {
-        value.signum() * ((magnitude + SRGB_POWER_OFFSET) / SRGB_POWER_SCALE).powf(SRGB_GAMMA)
-    }
-}
-
-fn encode_srgb_f64(value: f64) -> f64 {
-    let magnitude = value.abs();
-    if magnitude <= SRGB_ENCODE_THRESHOLD {
-        SRGB_LINEAR_SCALE * value
-    } else {
-        value.signum() * (SRGB_POWER_SCALE * magnitude.powf(1.0 / SRGB_GAMMA) - SRGB_POWER_OFFSET)
-    }
 }

@@ -1,7 +1,7 @@
 use std::{error::Error, fmt};
 
 use theoria_color::{
-    MpeSegmentView, Transfer, TransferClut, TransferCurve, TransferCurveKind, TransferStage,
+    CurveSegmentKind, Transfer, TransferClut, TransferCurve, TransferCurveKind, TransferStage,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -327,87 +327,59 @@ impl CurveWgslExt for TransferCurve {
                 ));
                 Ok(format!("{name}({source})"))
             }
-            TransferCurveKind::IccParametric {
-                function,
-                parameters,
-            } => {
-                let p = parameters
-                    .iter()
-                    .copied()
-                    .map(wgsl_literal)
-                    .collect::<Result<Vec<_>, _>>()?;
-                let (condition, high, low) = match function {
-                    0 => (
-                        "true".to_owned(),
-                        format!("pow(x, {})", p[0]),
-                        "0.0".to_owned(),
-                    ),
-                    1 | 2 => (
-                        format!("x >= -{} / {}", p[2], p[1]),
-                        format!(
-                            "pow({} * x + {}, {}) + {}",
-                            p[1],
-                            p[2],
-                            p[0],
-                            if function == 2 { &p[3] } else { "0.0" }
-                        ),
-                        if function == 2 {
-                            p[3].clone()
-                        } else {
-                            "0.0".to_owned()
-                        },
-                    ),
-                    3 | 4 => (
-                        format!("x >= {}", p[4]),
-                        format!(
-                            "pow({} * x + {}, {}) + {}",
-                            p[1],
-                            p[2],
-                            p[0],
-                            if function == 4 { &p[5] } else { "0.0" }
-                        ),
-                        format!(
-                            "{} * x + {}",
-                            p[3],
-                            if function == 4 { &p[6] } else { "0.0" }
-                        ),
-                    ),
-                    _ => unreachable!("ICC function type is validated at construction"),
-                };
-                helpers.push_str(&format!(
-                    "fn {name}(value: f32) -> f32 {{\n    let x = clamp(value, 0.0, 1.0);\n    if {condition} {{ return clamp({high}, 0.0, 1.0); }}\n    return clamp({low}, 0.0, 1.0);\n}}\n"
-                ));
-                Ok(format!("{name}({source})"))
-            }
-            TransferCurveKind::Mpe(segments) => {
+            TransferCurveKind::Piecewise(segments) => {
                 let mut body = String::new();
                 for (index, segment) in segments.iter().enumerate() {
-                    let expression = match segment.view() {
-                        MpeSegmentView::Formula {
-                            function,
-                            parameters,
-                        } => {
-                            let p = parameters
-                                .iter()
-                                .copied()
-                                .map(wgsl_literal)
-                                .collect::<Result<Vec<_>, _>>()?;
-                            match function {
-                                0 => {
-                                    format!("pow({} * value + {}, {}) + {}", p[1], p[2], p[0], p[3])
-                                }
-                                1 => format!(
-                                    "{} * log({} * pow(value, {}) + {}) / 2.302585092994046 + {}",
-                                    p[1], p[2], p[0], p[3], p[4]
-                                ),
-                                2 => format!(
-                                    "{} * pow({}, {} * value + {}) + {}",
-                                    p[0], p[1], p[2], p[3], p[4]
-                                ),
-                                _ => unreachable!(),
-                            }
-                        }
-                        MpeSegmentView::Sampled { lower, samples } => {
+                    let expression = match segment.kind() {
+                        CurveSegmentKind::Constant(value) => wgsl_literal(*value)?,
+                        CurveSegmentKind::Linear { scale, offset } => format!(
+                            "{} * value + {}",
+                            wgsl_literal(*scale)?,
+                            wgsl_literal(*offset)?
+                        ),
+                        CurveSegmentKind::PowerAffine {
+                            scale,
+                            offset,
+                            exponent,
+                            output_scale,
+                            output_offset,
+                        } => format!(
+                            "{} * pow({} * value + {}, {}) + {}",
+                            wgsl_literal(*output_scale)?,
+                            wgsl_literal(*scale)?,
+                            wgsl_literal(*offset)?,
+                            wgsl_literal(*exponent)?,
+                            wgsl_literal(*output_offset)?
+                        ),
+                        CurveSegmentKind::Logarithmic {
+                            exponent,
+                            input_scale,
+                            input_offset,
+                            output_scale,
+                            output_offset,
+                        } => format!(
+                            "{} * log({} * pow(value, {}) + {}) / 2.302585092994046 + {}",
+                            wgsl_literal(*output_scale)?,
+                            wgsl_literal(*input_scale)?,
+                            wgsl_literal(*exponent)?,
+                            wgsl_literal(*input_offset)?,
+                            wgsl_literal(*output_offset)?
+                        ),
+                        CurveSegmentKind::Exponential {
+                            scale,
+                            base,
+                            exponent_scale,
+                            exponent_offset,
+                            output_offset,
+                        } => format!(
+                            "{} * pow({}, {} * value + {}) + {}",
+                            wgsl_literal(*scale)?,
+                            wgsl_literal(*base)?,
+                            wgsl_literal(*exponent_scale)?,
+                            wgsl_literal(*exponent_offset)?,
+                            wgsl_literal(*output_offset)?
+                        ),
+                        CurveSegmentKind::Sampled { lower, samples } => {
                             let table_name = format!("{name}_segment_{index}");
                             let (table, offset) = tables.add(
                                 &table_name,
@@ -415,7 +387,7 @@ impl CurveWgslExt for TransferCurve {
                                 helpers,
                                 Some(MAX_INLINE_TABLE_VALUES),
                             )?;
-                            let lower = wgsl_literal(lower)?;
+                            let lower = wgsl_literal(*lower)?;
                             let upper = wgsl_literal(segment.upper())?;
                             let count = samples.len() - 1;
                             helpers.push_str(&format!(
@@ -432,8 +404,9 @@ impl CurveWgslExt for TransferCurve {
                         }
                     };
                     if segment.upper().is_finite() {
+                        let comparison = if segment.upper_inclusive() { "<=" } else { "<" };
                         body.push_str(&format!(
-                            "    if value <= {} {{ return {expression}; }}\n",
+                            "    if value {comparison} {} {{ return {expression}; }}\n",
                             wgsl_literal(segment.upper())?
                         ));
                     } else {
@@ -443,48 +416,22 @@ impl CurveWgslExt for TransferCurve {
                 helpers.push_str(&format!("fn {name}(value: f32) -> f32 {{\n{body}}}\n"));
                 Ok(format!("{name}({source})"))
             }
-            TransferCurveKind::SrgbDecode | TransferCurveKind::SrgbEncode => {
-                let decode = matches!(self.kind(), TransferCurveKind::SrgbDecode);
-                let threshold = if decode {
-                    TransferCurve::SRGB_DECODE_THRESHOLD
-                } else {
-                    TransferCurve::SRGB_ENCODE_THRESHOLD
-                };
-                let linear = if decode {
-                    format!(
-                        "value / {}",
-                        wgsl_literal(TransferCurve::SRGB_LINEAR_SCALE)?
-                    )
-                } else {
-                    format!(
-                        "value * {}",
-                        wgsl_literal(TransferCurve::SRGB_LINEAR_SCALE)?
-                    )
-                };
-                let nonlinear = if decode {
-                    format!(
-                        "sign(value) * pow((magnitude + {}) / {}, {})",
-                        wgsl_literal(TransferCurve::SRGB_POWER_OFFSET)?,
-                        wgsl_literal(TransferCurve::SRGB_POWER_SCALE)?,
-                        wgsl_literal(TransferCurve::SRGB_GAMMA)?,
-                    )
-                } else {
-                    format!(
-                        "sign(value) * ({} * pow(magnitude, 1.0 / {}) - {})",
-                        wgsl_literal(TransferCurve::SRGB_POWER_SCALE)?,
-                        wgsl_literal(TransferCurve::SRGB_GAMMA)?,
-                        wgsl_literal(TransferCurve::SRGB_POWER_OFFSET)?,
-                    )
-                };
-                helpers.push_str(&format!(
-                    "fn {name}(value: f32) -> f32 {{\n\
-                         let magnitude = abs(value);\n\
-                         if magnitude <= {} {{ return {linear}; }}\n\
-                         return {nonlinear};\n\
-                     }}\n",
-                    wgsl_literal(threshold)?
-                ));
-                Ok(format!("{name}({source})"))
+            TransferCurveKind::Clamped {
+                curve,
+                input,
+                output,
+            } => {
+                let input = format!(
+                    "clamp({source}, {}, {})",
+                    wgsl_literal(input[0])?,
+                    wgsl_literal(input[1])?
+                );
+                let expression = curve.wgsl_expression(&input, name, helpers, tables)?;
+                Ok(format!(
+                    "clamp({expression}, {}, {})",
+                    wgsl_literal(output[0])?,
+                    wgsl_literal(output[1])?
+                ))
             }
         }
     }
@@ -531,7 +478,9 @@ fn lab_d50_to_xyz_d50_wgsl(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use theoria_color::{IccProfile, IccRenderingIntent, TransferMatrix};
+    use theoria_color::{
+        ColorSpace, CurveSegment, IccProfile, IccRenderingIntent, LinearSrgb, Srgb, TransferMatrix,
+    };
 
     fn validate(source: &str) {
         let module = naga::front::wgsl::parse_str(source)
@@ -563,10 +512,28 @@ mod tests {
             4,
             [
                 TransferStage::curves([
-                    TransferCurve::SRGB_DECODE,
+                    TransferCurve::IDENTITY,
                     TransferCurve::gamma(2.0).unwrap(),
                     TransferCurve::sampled([0.0, 0.3, 1.0]).unwrap(),
-                    TransferCurve::icc_parametric(0, &[2.0]).unwrap(),
+                    TransferCurve::clamped(
+                        TransferCurve::piecewise([
+                            CurveSegment::exclusive(0.5, CurveSegmentKind::Constant(0.0)),
+                            CurveSegment::new(
+                                f64::INFINITY,
+                                CurveSegmentKind::PowerAffine {
+                                    scale: 1.0,
+                                    offset: 0.0,
+                                    exponent: 2.0,
+                                    output_scale: 1.0,
+                                    output_offset: 0.0,
+                                },
+                            ),
+                        ])
+                        .unwrap(),
+                        [0.0, 1.0],
+                        [0.0, 1.0],
+                    )
+                    .unwrap(),
                 ])
                 .unwrap(),
                 TransferStage::Matrix(
@@ -585,6 +552,53 @@ mod tests {
         validate(&source);
         assert!(source.contains("fn theoria_transfer_7("));
         assert!(source.contains("theoria_transfer_7_curve_0_2_table"));
+        assert!(source.contains("if value < 0.5"));
+    }
+
+    #[test]
+    fn logarithmic_and_exponential_segments_generate_valid_wgsl() {
+        let transfer = Transfer::new(
+            2,
+            [TransferStage::curves([
+                TransferCurve::piecewise([CurveSegment::new(
+                    f64::INFINITY,
+                    CurveSegmentKind::Logarithmic {
+                        exponent: 1.0,
+                        input_scale: 1.0,
+                        input_offset: 1.0,
+                        output_scale: 1.0,
+                        output_offset: 0.0,
+                    },
+                )])
+                .unwrap(),
+                TransferCurve::piecewise([CurveSegment::new(
+                    f64::INFINITY,
+                    CurveSegmentKind::Exponential {
+                        scale: 1.0,
+                        base: 2.0,
+                        exponent_scale: 1.0,
+                        exponent_offset: 0.0,
+                        output_offset: 0.0,
+                    },
+                )])
+                .unwrap(),
+            ])
+            .unwrap()],
+        )
+        .unwrap();
+        validate(&transfer.wgsl(13).unwrap());
+    }
+
+    #[test]
+    fn named_srgb_curves_lower_through_piecewise_wgsl() {
+        let decode = ColorSpace::from(Srgb).transfer_to(LinearSrgb).unwrap();
+        let encode = ColorSpace::from(LinearSrgb).transfer_to(Srgb).unwrap();
+        for (index, transfer, threshold) in [(14, decode, "-0.04045"), (15, encode, "-0.0031308")] {
+            let shader = transfer.wgsl(index).unwrap();
+            validate(&shader);
+            assert!(shader.contains(&format!("if value < {threshold}")));
+            assert!(!shader.contains("sign(value)"));
+        }
     }
 
     #[test]
@@ -722,7 +736,7 @@ mod tests {
         assert!(matches!(
             &transfer.stages()[0],
             TransferStage::Curves(curves)
-                if matches!(curves[0].kind(), TransferCurveKind::Mpe(_))
+                if matches!(curves[0].kind(), TransferCurveKind::Piecewise(_))
         ));
         validate(&transfer.wgsl(8).unwrap());
     }

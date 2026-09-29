@@ -13,8 +13,8 @@ use super::icc_mpe::MpeTags;
 use super::model::ColorModel;
 use super::space::{ColorProfile, ColorSpace, Pcs, SpaceConnectionError};
 use super::transfer::{
-    ICC_PCS_D50_XYZ, Transfer, TransferClut, TransferCurve, TransferError, TransferMatrix,
-    TransferStage,
+    CurveSegment, CurveSegmentKind, ICC_PCS_D50_XYZ, Transfer, TransferClut, TransferCurve,
+    TransferError, TransferMatrix, TransferStage,
 };
 
 /// The requested rendering intent for selecting a profile conversion.
@@ -316,21 +316,66 @@ fn curve(curve: &ToneReprCurve) -> Result<TransferCurve, IccProfileError> {
                 .map(|value| f64::from(*value) / 65535.0)
                 .collect::<Vec<_>>(),
         )?,
-        ToneReprCurve::Parametric(values) => TransferCurve::icc_parametric(
-            match values.len() {
-                1 => 0,
-                3 => 1,
-                4 => 2,
-                5 => 3,
-                7 => 4,
-                _ => return Err(IccProfileError::MalformedTransfer),
-            },
+        ToneReprCurve::Parametric(values) => parametric_curve(
             &values
                 .iter()
                 .map(|value| f64::from(*value))
                 .collect::<Vec<_>>(),
         )?,
     })
+}
+
+fn parametric_curve(parameters: &[f64]) -> Result<TransferCurve, IccProfileError> {
+    let function = match parameters.len() {
+        1 => 0,
+        3 => 1,
+        4 => 2,
+        5 => 3,
+        7 => 4,
+        _ => return Err(IccProfileError::MalformedTransfer),
+    };
+    let p = parameters;
+    if p.iter().any(|value| !value.is_finite())
+        || p[0] <= 0.0
+        || (function == 1 || function == 2) && p[1] <= 0.0
+        || (function == 3 || function == 4)
+            && (p[1] < 0.0 || (p[4] <= 1.0 && p[1] * p[4].max(0.0) + p[2] < 0.0))
+    {
+        return Err(TransferError::InvalidCurve.into());
+    }
+    if function == 0 {
+        return Ok(TransferCurve::gamma(p[0])?);
+    }
+    let output_offset = if function == 2 {
+        p[3]
+    } else if function == 4 {
+        p[5]
+    } else {
+        0.0
+    };
+    let high = CurveSegmentKind::PowerAffine {
+        scale: p[1],
+        offset: p[2],
+        exponent: p[0],
+        output_scale: 1.0,
+        output_offset,
+    };
+    let (breakpoint, low) = if function == 1 || function == 2 {
+        (-p[2] / p[1], CurveSegmentKind::Constant(output_offset))
+    } else {
+        (
+            p[4],
+            CurveSegmentKind::Linear {
+                scale: p[3],
+                offset: if function == 4 { p[6] } else { 0.0 },
+            },
+        )
+    };
+    let curve = TransferCurve::piecewise([
+        CurveSegment::exclusive(breakpoint, low),
+        CurveSegment::new(f64::INFINITY, high),
+    ])?;
+    Ok(TransferCurve::clamped(curve, [0.0, 1.0], [0.0, 1.0])?)
 }
 
 fn inverse_curve(value: &ToneReprCurve) -> Result<TransferCurve, IccProfileError> {
@@ -697,6 +742,44 @@ impl ColorProfile for IccColorProfile {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parametric_trc_is_lowered_without_icc_function_numbers() {
+        assert_eq!(parametric_curve(&[2.0]).unwrap().evaluate(0.5), 0.25);
+        let type_one = parametric_curve(&[2.0, 2.0, -0.5]).unwrap();
+        assert_eq!(type_one.evaluate(0.2), 0.0);
+        assert_eq!(type_one.evaluate(0.5), 0.25);
+        let type_two = parametric_curve(&[2.0, 2.0, -0.5, 0.1]).unwrap();
+        assert_eq!(type_two.evaluate(0.2), 0.1);
+        assert_eq!(type_two.evaluate(0.5), 0.35);
+        let type_three = parametric_curve(&[2.0, 1.0, 0.0, 0.5, 0.3]).unwrap();
+        assert_eq!(type_three.evaluate(0.2), 0.1);
+        assert_eq!(type_three.evaluate(0.3), 0.09);
+
+        let curve = parametric_curve(&[
+            2.4,
+            1.0 / 1.055,
+            0.055 / 1.055,
+            1.0 / 12.92,
+            0.04045,
+            0.0,
+            0.0,
+        ])
+        .unwrap();
+        for input in [0.0, 0.02, 0.04, 0.05, 0.25, 0.5, 1.0] {
+            assert!(
+                (curve.evaluate(input) - TransferCurve::SRGB_DECODE.evaluate(input)).abs() < 1e-12
+            );
+        }
+        assert_eq!(curve.evaluate(-0.5), 0.0);
+        assert_eq!(curve.evaluate(1.5), 1.0);
+        assert!(parametric_curve(&[1.0; 6]).is_err());
+
+        // Type 4 may be discontinuous: the breakpoint belongs to the high branch.
+        let discontinuous = parametric_curve(&[1.0, 1.0, 0.0, 0.0, 0.5, 0.0, 0.25]).unwrap();
+        assert_eq!(discontinuous.evaluate(0.5), 0.5);
+        assert_eq!(discontinuous.evaluate(0.5 - f64::EPSILON), 0.25);
+    }
 
     #[test]
     fn icc_data_model_is_not_inferred_from_channel_count() {
