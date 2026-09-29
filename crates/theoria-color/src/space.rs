@@ -291,6 +291,35 @@ mod tests {
     }
 
     #[test]
+    fn each_rgb_profile_declares_its_encoding_counterpart() {
+        for (source, destination, curve) in [
+            (
+                ColorSpace::from(Srgb),
+                ColorSpace::from(LinearSrgb),
+                TransferCurve::SRGB_DECODE,
+            ),
+            (
+                ColorSpace::from(LinearSrgb),
+                ColorSpace::from(Srgb),
+                TransferCurve::SRGB_ENCODE,
+            ),
+            (
+                ColorSpace::from(DisplayP3),
+                ColorSpace::from(LinearDisplayP3),
+                TransferCurve::SRGB_DECODE,
+            ),
+            (
+                ColorSpace::from(LinearDisplayP3),
+                ColorSpace::from(DisplayP3),
+                TransferCurve::SRGB_ENCODE,
+            ),
+        ] {
+            let expected = Transfer::new([TransferStage::curves(vec![curve; 3]).unwrap()]).unwrap();
+            assert_eq!(source.direct_to(&destination).unwrap(), Some(expected));
+        }
+    }
+
+    #[test]
     fn matching_pcs_uses_an_empty_transfer() {
         for pcs in [Pcs::XyzD50, Pcs::LabD50] {
             assert!(pcs.transfer_to(pcs).is_empty());

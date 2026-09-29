@@ -17,21 +17,6 @@ macro_rules! named_space {
     };
 }
 
-fn rgb_direct_to(
-    counterpart: ColorSpace,
-    counterpart_curve: TransferCurve,
-    destination: &ColorSpace,
-) -> Result<Option<Transfer>, SpaceConnectionError> {
-    if counterpart != *destination {
-        return Ok(None);
-    }
-    Ok(Some(Transfer::new([TransferStage::curves([
-        counterpart_curve.clone(),
-        counterpart_curve.clone(),
-        counterpart_curve,
-    ])?])?))
-}
-
 pub(crate) fn rgb_to_xyz_d65_transfer(
     matrix: [[f64; 3]; 3],
     curve: TransferCurve,

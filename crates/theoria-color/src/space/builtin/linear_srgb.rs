@@ -1,9 +1,10 @@
 use super::{
     ColorProfile, ColorSpace, Pcs, SpaceConnectionError, Srgb, Transfer, TransferCurve,
-    TypedColorSpace, pcs_to_rgb_transfer, rgb_direct_to, rgb_to_pcs_transfer,
-    rgb_to_xyz_d65_transfer, xyz_d65_to_rgb_transfer,
+    TypedColorSpace, pcs_to_rgb_transfer, rgb_to_pcs_transfer, rgb_to_xyz_d65_transfer,
+    xyz_d65_to_rgb_transfer,
 };
 use crate::model::Rgb;
+use crate::transfer::TransferStage;
 
 named_space!(LinearSrgb, Rgb);
 
@@ -41,6 +42,12 @@ impl ColorProfile for LinearSrgbProfile {
         &self,
         destination: &ColorSpace,
     ) -> Result<Option<Transfer>, SpaceConnectionError> {
-        rgb_direct_to(Srgb.into(), TransferCurve::SRGB_ENCODE, destination)
+        if *destination != ColorSpace::from(Srgb) {
+            return Ok(None);
+        }
+        Ok(Some(Transfer::new([TransferStage::curves(vec![
+            TransferCurve::SRGB_ENCODE;
+            3
+        ])?])?))
     }
 }
