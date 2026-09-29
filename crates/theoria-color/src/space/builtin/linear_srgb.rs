@@ -45,10 +45,6 @@ impl ColorProfile for LinearSrgbProfile {
                 TransferCurve::SRGB_ENCODE;
                 3
             ])?])?))
-        } else if *destination == ColorSpace::from(XyzD65) {
-            Ok(Some(LinearSrgb::to_xyz_d65_transfer()?))
-        } else if *destination == ColorSpace::from(XyzD50) {
-            Ok(Some(self.space_to_pcs_transfer()?))
         } else {
             Ok(None)
         }

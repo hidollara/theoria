@@ -1,9 +1,6 @@
 use std::sync::LazyLock;
 
-use super::{
-    ColorProfile, ColorSpace, DisplayP3, LinearDisplayP3, LinearSrgb, Pcs, SpaceConnectionError,
-    Srgb, TypedColorSpace, XyzD50,
-};
+use super::{ColorProfile, Pcs, SpaceConnectionError, TypedColorSpace, XyzD50};
 use crate::model::Xyz;
 use crate::transfer::{Transfer, TransferCurve, TransferError, TransferMatrix, TransferStage};
 
@@ -113,24 +110,5 @@ impl ColorProfile for XyzD65Profile {
 
     fn pcs_to_space_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
         Ok(XyzD50::to_xyz_d65_transfer())
-    }
-
-    fn direct_transfer_to(
-        &self,
-        destination: &ColorSpace,
-    ) -> Result<Option<Transfer>, SpaceConnectionError> {
-        if *destination == ColorSpace::from(Srgb) {
-            Ok(Some(XyzD65::to_srgb_transfer()?))
-        } else if *destination == ColorSpace::from(LinearSrgb) {
-            Ok(Some(XyzD65::to_linear_srgb_transfer()?))
-        } else if *destination == ColorSpace::from(DisplayP3) {
-            Ok(Some(XyzD65::to_display_p3_transfer()?))
-        } else if *destination == ColorSpace::from(LinearDisplayP3) {
-            Ok(Some(XyzD65::to_linear_display_p3_transfer()?))
-        } else if *destination == ColorSpace::from(XyzD50) {
-            Ok(Some(XyzD65::to_xyz_d50_transfer()))
-        } else {
-            Ok(None)
-        }
     }
 }

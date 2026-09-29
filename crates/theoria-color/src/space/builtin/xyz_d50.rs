@@ -126,8 +126,6 @@ impl ColorProfile for XyzD50Profile {
     ) -> Result<Option<Transfer>, SpaceConnectionError> {
         if *destination == ColorSpace::from(super::LabD50) {
             Ok(Some(XyzD50::to_lab_transfer()))
-        } else if *destination == ColorSpace::from(super::XyzD65) {
-            Ok(Some(XyzD50::to_xyz_d65_transfer()))
         } else {
             Ok(None)
         }

@@ -54,10 +54,6 @@ impl ColorProfile for SrgbProfile {
                 TransferCurve::SRGB_DECODE;
                 3
             ])?])?))
-        } else if *destination == ColorSpace::from(XyzD65) {
-            Ok(Some(Srgb::to_xyz_d65_transfer()?))
-        } else if *destination == ColorSpace::from(XyzD50) {
-            Ok(Some(self.space_to_pcs_transfer()?))
         } else {
             Ok(None)
         }

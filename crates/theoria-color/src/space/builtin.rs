@@ -88,53 +88,37 @@ mod tests {
         let d65 = ColorSpace::from(XyzD65);
         assert_eq!(d65.space_to_pcs().unwrap(), XyzD65::to_xyz_d50_transfer());
         assert_eq!(d65.pcs_to_space().unwrap(), XyzD50::to_xyz_d65_transfer());
+        assert!(d50.direct_to(&d65).unwrap().is_none());
+        assert!(d65.direct_to(&d50).unwrap().is_none());
         assert_eq!(
-            d50.direct_to(&d65).unwrap(),
-            Some(XyzD50::to_xyz_d65_transfer())
+            d50.transfer_to(&d65).unwrap(),
+            XyzD50::to_xyz_d65_transfer()
         );
         assert_eq!(
-            d65.direct_to(&d50).unwrap(),
-            Some(XyzD65::to_xyz_d50_transfer())
+            d65.transfer_to(&d50).unwrap(),
+            XyzD65::to_xyz_d50_transfer()
         );
     }
 
     #[test]
-    fn rgb_profiles_link_directly_to_xyz_d65_and_xyz_d50() {
+    fn rgb_profiles_reach_xyz_through_pcs() {
         let d50 = ColorSpace::from(XyzD50);
         let d65 = ColorSpace::from(XyzD65);
-        for (rgb, to_d65, from_d65) in [
-            (
-                ColorSpace::from(Srgb),
-                Srgb::to_xyz_d65_transfer().unwrap(),
-                XyzD65::to_srgb_transfer().unwrap(),
-            ),
-            (
-                ColorSpace::from(LinearSrgb),
-                LinearSrgb::to_xyz_d65_transfer().unwrap(),
-                XyzD65::to_linear_srgb_transfer().unwrap(),
-            ),
-            (
-                ColorSpace::from(DisplayP3),
-                DisplayP3::to_xyz_d65_transfer().unwrap(),
-                XyzD65::to_display_p3_transfer().unwrap(),
-            ),
-            (
-                ColorSpace::from(LinearDisplayP3),
-                LinearDisplayP3::to_xyz_d65_transfer().unwrap(),
-                XyzD65::to_linear_display_p3_transfer().unwrap(),
-            ),
+        for rgb in [
+            ColorSpace::from(Srgb),
+            ColorSpace::from(LinearSrgb),
+            ColorSpace::from(DisplayP3),
+            ColorSpace::from(LinearDisplayP3),
         ] {
-            assert_eq!(rgb.direct_to(&d65).unwrap(), Some(to_d65));
-            assert_eq!(
-                rgb.direct_to(&d50).unwrap(),
-                Some(rgb.space_to_pcs().unwrap())
-            );
-            assert_eq!(d65.direct_to(&rgb).unwrap(), Some(from_d65));
+            assert!(rgb.direct_to(&d65).unwrap().is_none());
+            assert!(rgb.direct_to(&d50).unwrap().is_none());
+            assert!(d65.direct_to(&rgb).unwrap().is_none());
+            assert_eq!(rgb.transfer_to(&d50).unwrap(), rgb.space_to_pcs().unwrap());
             let sample = [0.2, 0.4, 0.6];
             let xyz = rgb.transfer_to(&d65).unwrap().evaluate(&sample).unwrap();
             let restored = d65.transfer_to(&rgb).unwrap().evaluate(&xyz).unwrap();
             for (actual, expected) in restored.into_iter().zip(sample) {
-                assert!((actual - expected).abs() < 1e-7, "{actual} != {expected}");
+                assert!((actual - expected).abs() < 1e-6, "{actual} != {expected}");
             }
         }
     }
