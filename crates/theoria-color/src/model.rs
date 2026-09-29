@@ -1,8 +1,10 @@
 mod lab;
+mod oklab;
 mod rgb;
 mod xyz;
 
 pub use lab::Lab;
+pub use oklab::Oklab;
 pub use rgb::Rgb;
 pub use xyz::Xyz;
 
@@ -30,6 +32,7 @@ pub enum ColorModel {
     Rgb,
     Cmyk,
     Lab,
+    Oklab,
     Xyz,
     Ycbcr,
     Gray,
@@ -46,6 +49,7 @@ impl ColorModel {
         match self {
             Self::Rgb
             | Self::Lab
+            | Self::Oklab
             | Self::Xyz
             | Self::Ycbcr
             | Self::Luv

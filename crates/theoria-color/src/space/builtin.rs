@@ -48,6 +48,7 @@ mod display_p3;
 mod lab_d50;
 mod linear_display_p3;
 mod linear_srgb;
+mod oklab;
 mod prophoto_rgb;
 mod rec2020;
 mod srgb;
@@ -59,6 +60,7 @@ pub use display_p3::DisplayP3;
 pub use lab_d50::LabD50;
 pub use linear_display_p3::LinearDisplayP3;
 pub use linear_srgb::LinearSrgb;
+pub use oklab::OklabD65;
 pub use prophoto_rgb::ProPhotoRgb;
 pub use rec2020::Rec2020;
 pub use srgb::Srgb;
@@ -82,6 +84,7 @@ mod tests {
         assert_eq!(ColorSpace::from(A98Rgb), ColorSpace::from(A98Rgb));
         assert_eq!(ColorSpace::from(ProPhotoRgb), ColorSpace::from(ProPhotoRgb));
         assert_eq!(ColorSpace::from(Rec2020), ColorSpace::from(Rec2020));
+        assert_eq!(ColorSpace::from(OklabD65), ColorSpace::from(OklabD65));
         assert_eq!(
             ColorSpace::from(LinearDisplayP3),
             ColorSpace::from(LinearDisplayP3)
@@ -164,6 +167,24 @@ mod tests {
                 .unwrap();
             let restored = xyz
                 .transfer_to(&prophoto)
+                .unwrap()
+                .evaluate(&converted)
+                .unwrap();
+            for (actual, expected) in restored.into_iter().zip(sample) {
+                assert!((actual - expected).abs() < 1e-6, "{actual} != {expected}");
+            }
+        }
+    }
+
+    #[test]
+    fn oklab_round_trips_through_xyz_d65() {
+        let oklab = ColorSpace::from(OklabD65);
+        let xyz = ColorSpace::from(XyzD65);
+        assert_eq!(oklab.connection_space(), ConnectionSpace::XyzD65);
+        for sample in [[0.5, 0.1, -0.1], [1.0, 0.0, 0.0], [0.2, -0.2, 0.15]] {
+            let converted = oklab.transfer_to(&xyz).unwrap().evaluate(&sample).unwrap();
+            let restored = xyz
+                .transfer_to(&oklab)
                 .unwrap()
                 .evaluate(&converted)
                 .unwrap();

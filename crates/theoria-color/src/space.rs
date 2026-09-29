@@ -12,8 +12,8 @@ use super::transfer::{Transfer, TransferError};
 mod builtin;
 
 pub use builtin::{
-    A98Rgb, DisplayP3, LabD50, LinearDisplayP3, LinearSrgb, ProPhotoRgb, Rec2020, Srgb, XyzD50,
-    XyzD65,
+    A98Rgb, DisplayP3, LabD50, LinearDisplayP3, LinearSrgb, OklabD65, ProPhotoRgb, Rec2020, Srgb,
+    XyzD50, XyzD65,
 };
 
 /// Associates a statically typed color space with its coordinate model.

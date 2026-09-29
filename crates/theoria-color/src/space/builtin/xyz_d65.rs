@@ -111,6 +111,44 @@ impl XyzD65 {
         )
     }
 
+    pub(crate) fn transfer_to_oklab() -> Result<Transfer, TransferError> {
+        Transfer::new([
+            TransferStage::Matrix(TransferMatrix::new(
+                3,
+                3,
+                [
+                    0.819022437996703,
+                    0.3619062600528904,
+                    -0.1288737815209879,
+                    0.0329836539323885,
+                    0.9292868615863434,
+                    0.0361446663506424,
+                    0.0481771893596242,
+                    0.2642395317527308,
+                    0.6335478284694309,
+                ],
+                [0.0; 3],
+            )?),
+            TransferStage::curves(vec![TransferCurve::signed_power(1.0 / 3.0)?; 3])?,
+            TransferStage::Matrix(TransferMatrix::new(
+                3,
+                3,
+                [
+                    0.210454268309314,
+                    0.7936177747023054,
+                    -0.0040720430116193,
+                    1.9779985324311684,
+                    -2.42859224204858,
+                    0.450593709617411,
+                    0.0259040424655478,
+                    0.7827717124575296,
+                    -0.8086757549230774,
+                ],
+                [0.0; 3],
+            )?),
+        ])
+    }
+
     fn transfer_to_rgb(
         matrix: [[f64; 3]; 3],
         curve: Option<TransferCurve>,

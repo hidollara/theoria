@@ -472,6 +472,7 @@ mod tests {
             ColorSpace::from(theoria_color::A98Rgb),
             ColorSpace::from(theoria_color::ProPhotoRgb),
             ColorSpace::from(theoria_color::Rec2020),
+            ColorSpace::from(theoria_color::OklabD65),
         ] {
             validate(&space.transfer_to(LinearSrgb).unwrap().wgsl(52).unwrap());
             validate(
