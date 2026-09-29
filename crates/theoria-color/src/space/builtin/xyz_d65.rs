@@ -46,6 +46,40 @@ impl XyzD65 {
         [-14852.0 / 17905.0, 63121.0 / 35810.0, 423.0 / 17905.0],
         [11844.0 / 330415.0, -50337.0 / 660830.0, 316169.0 / 330415.0],
     ];
+    const TO_A98_RGB: [[f64; 3]; 3] = [
+        [
+            1829569.0 / 896150.0,
+            -506331.0 / 896150.0,
+            -308931.0 / 896150.0,
+        ],
+        [
+            -851781.0 / 878810.0,
+            1648619.0 / 878810.0,
+            36519.0 / 878810.0,
+        ],
+        [
+            16779.0 / 1248040.0,
+            -147721.0 / 1248040.0,
+            1266979.0 / 1248040.0,
+        ],
+    ];
+    const TO_REC2020: [[f64; 3]; 3] = [
+        [
+            30757411.0 / 17917100.0,
+            -6372589.0 / 17917100.0,
+            -4539589.0 / 17917100.0,
+        ],
+        [
+            -19765991.0 / 29648200.0,
+            47925759.0 / 29648200.0,
+            467509.0 / 29648200.0,
+        ],
+        [
+            792561.0 / 44930125.0,
+            -1921689.0 / 44930125.0,
+            42328811.0 / 44930125.0,
+        ],
+    ];
 
     pub(crate) fn transfer_to_srgb() -> Result<Transfer, TransferError> {
         Self::transfer_to_rgb(Self::TO_SRGB, Some(TransferCurve::SRGB_ENCODE))
@@ -61,6 +95,20 @@ impl XyzD65 {
 
     pub(crate) fn transfer_to_linear_display_p3() -> Result<Transfer, TransferError> {
         Self::transfer_to_rgb(Self::TO_DISPLAY_P3, None)
+    }
+
+    pub(crate) fn transfer_to_a98_rgb() -> Result<Transfer, TransferError> {
+        Self::transfer_to_rgb(
+            Self::TO_A98_RGB,
+            Some(TransferCurve::signed_power(256.0 / 563.0)?),
+        )
+    }
+
+    pub(crate) fn transfer_to_rec2020() -> Result<Transfer, TransferError> {
+        Self::transfer_to_rgb(
+            Self::TO_REC2020,
+            Some(TransferCurve::signed_power(1.0 / 2.4)?),
+        )
     }
 
     fn transfer_to_rgb(

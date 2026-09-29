@@ -467,6 +467,24 @@ mod tests {
     }
 
     #[test]
+    fn extended_rgb_spaces_generate_valid_wgsl() {
+        for space in [
+            ColorSpace::from(theoria_color::A98Rgb),
+            ColorSpace::from(theoria_color::ProPhotoRgb),
+            ColorSpace::from(theoria_color::Rec2020),
+        ] {
+            validate(&space.transfer_to(LinearSrgb).unwrap().wgsl(52).unwrap());
+            validate(
+                &ColorSpace::from(LinearSrgb)
+                    .transfer_to(space)
+                    .unwrap()
+                    .wgsl(53)
+                    .unwrap(),
+            );
+        }
+    }
+
+    #[test]
     fn curves_and_matrix_generate_valid_wgsl() {
         let transfer = Transfer::new([
             TransferStage::curves([

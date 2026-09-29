@@ -520,6 +520,35 @@ impl TransferCurve {
         Ok(Self(CurveKind::Gamma(exponent)))
     }
 
+    /// An extended-range power curve that preserves the sign of its input.
+    pub fn signed_power(exponent: f64) -> Result<Self, TransferError> {
+        if !exponent.is_finite() || exponent <= 0.0 {
+            return Err(TransferError::InvalidCurve);
+        }
+        Self::piecewise([
+            CurveSegment::exclusive(
+                0.0,
+                CurveSegmentKind::PowerAffine {
+                    scale: -1.0,
+                    offset: 0.0,
+                    exponent,
+                    output_scale: -1.0,
+                    output_offset: 0.0,
+                },
+            ),
+            CurveSegment::new(
+                f64::INFINITY,
+                CurveSegmentKind::PowerAffine {
+                    scale: 1.0,
+                    offset: 0.0,
+                    exponent,
+                    output_scale: 1.0,
+                    output_offset: 0.0,
+                },
+            ),
+        ])
+    }
+
     pub fn sampled(values: impl Into<Arc<[f64]>>) -> Result<Self, TransferError> {
         let values = values.into();
         if values.len() < 2

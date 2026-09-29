@@ -43,18 +43,24 @@ macro_rules! builtin_space {
     };
 }
 
+mod a98_rgb;
 mod display_p3;
 mod lab_d50;
 mod linear_display_p3;
 mod linear_srgb;
+mod prophoto_rgb;
+mod rec2020;
 mod srgb;
 mod xyz_d50;
 mod xyz_d65;
 
+pub use a98_rgb::A98Rgb;
 pub use display_p3::DisplayP3;
 pub use lab_d50::LabD50;
 pub use linear_display_p3::LinearDisplayP3;
 pub use linear_srgb::LinearSrgb;
+pub use prophoto_rgb::ProPhotoRgb;
+pub use rec2020::Rec2020;
 pub use srgb::Srgb;
 pub use xyz_d50::XyzD50;
 pub use xyz_d65::XyzD65;
@@ -73,6 +79,9 @@ mod tests {
         assert_eq!(ColorSpace::from(Srgb), ColorSpace::from(Srgb));
         assert_eq!(ColorSpace::from(LinearSrgb), ColorSpace::from(LinearSrgb));
         assert_eq!(ColorSpace::from(DisplayP3), ColorSpace::from(DisplayP3));
+        assert_eq!(ColorSpace::from(A98Rgb), ColorSpace::from(A98Rgb));
+        assert_eq!(ColorSpace::from(ProPhotoRgb), ColorSpace::from(ProPhotoRgb));
+        assert_eq!(ColorSpace::from(Rec2020), ColorSpace::from(Rec2020));
         assert_eq!(
             ColorSpace::from(LinearDisplayP3),
             ColorSpace::from(LinearDisplayP3)
@@ -111,6 +120,8 @@ mod tests {
             ColorSpace::from(LinearSrgb),
             ColorSpace::from(DisplayP3),
             ColorSpace::from(LinearDisplayP3),
+            ColorSpace::from(A98Rgb),
+            ColorSpace::from(Rec2020),
         ] {
             assert!(rgb.direct_to(&d65).unwrap().is_none());
             assert!(rgb.direct_to(&d50).unwrap().is_none());
@@ -134,6 +145,28 @@ mod tests {
             let sample = [0.2, 0.4, 0.6];
             let xyz = rgb.transfer_to(&d65).unwrap().evaluate(&sample).unwrap();
             let restored = d65.transfer_to(&rgb).unwrap().evaluate(&xyz).unwrap();
+            for (actual, expected) in restored.into_iter().zip(sample) {
+                assert!((actual - expected).abs() < 1e-6, "{actual} != {expected}");
+            }
+        }
+    }
+
+    #[test]
+    fn prophoto_connects_through_xyz_d50() {
+        let prophoto = ColorSpace::from(ProPhotoRgb);
+        let xyz = ColorSpace::from(XyzD50);
+        assert_eq!(prophoto.connection_space(), ConnectionSpace::XyzD50);
+        for sample in [[0.2, 0.4, 0.6], [-0.1, 0.5, 1.2]] {
+            let converted = prophoto
+                .transfer_to(&xyz)
+                .unwrap()
+                .evaluate(&sample)
+                .unwrap();
+            let restored = xyz
+                .transfer_to(&prophoto)
+                .unwrap()
+                .evaluate(&converted)
+                .unwrap();
             for (actual, expected) in restored.into_iter().zip(sample) {
                 assert!((actual - expected).abs() < 1e-6, "{actual} != {expected}");
             }
@@ -165,5 +198,8 @@ mod tests {
         assert_rgb_space::<LinearSrgb>();
         assert_rgb_space::<DisplayP3>();
         assert_rgb_space::<LinearDisplayP3>();
+        assert_rgb_space::<A98Rgb>();
+        assert_rgb_space::<ProPhotoRgb>();
+        assert_rgb_space::<Rec2020>();
     }
 }

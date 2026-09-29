@@ -62,6 +62,15 @@ fn sampled_curves_interpolate_and_clamp_the_icc_domain() {
 }
 
 #[test]
+fn signed_power_curves_preserve_extended_negative_values() {
+    let curve = TransferCurve::signed_power(2.4).unwrap();
+    for input in [-1.5_f64, -0.5, 0.0, 0.5, 1.5] {
+        let expected = input.signum() * input.abs().powf(2.4);
+        assert!((curve.evaluate(input) - expected).abs() < 1e-12);
+    }
+}
+
+#[test]
 fn multidimensional_clut_uses_icc_channel_order_and_interpolates() {
     let clut = TransferClut::new([2, 2], 1, [0.0, 0.4, 0.6, 1.0]).unwrap();
     let transfer = Transfer::new([TransferStage::Clut(clut)]).unwrap();

@@ -44,6 +44,28 @@ impl XyzD50 {
         )?)])
     }
 
+    pub(crate) fn transfer_to_prophoto_rgb() -> Result<Transfer, TransferError> {
+        Transfer::new([
+            TransferStage::Matrix(TransferMatrix::new(
+                3,
+                3,
+                [
+                    1.3457868816471583,
+                    -0.25557208737979464,
+                    -0.05110186497554526,
+                    -0.5446307051249019,
+                    1.5082477428451468,
+                    0.02052744743642139,
+                    0.0,
+                    0.0,
+                    1.2119675456389452,
+                ],
+                [0.0; 3],
+            )?),
+            TransferStage::curves(vec![super::ProPhotoRgb::encode_curve()?; 3])?,
+        ])
+    }
+
     pub(crate) fn transfer_to_lab_d50() -> Transfer {
         static TRANSFER: LazyLock<Transfer> = LazyLock::new(|| {
             XyzD50::build_transfer_to_lab_d50()
