@@ -46,23 +46,6 @@ fn rgb_matrix(matrix: [[f64; 3]; 3]) -> Result<TransferStage, TransferError> {
     )?))
 }
 
-pub(crate) fn rgb_to_pcs_transfer(transfer: Transfer) -> Result<Transfer, TransferError> {
-    transfer.then(&adaptation(XyzD65::TO_XYZ_D50)?)
-}
-
-pub(crate) fn pcs_to_rgb_transfer(xyz_d65_to_rgb: Transfer) -> Result<Transfer, TransferError> {
-    adaptation(XyzD65::FROM_XYZ_D50)?.then(&xyz_d65_to_rgb)
-}
-
-pub(crate) fn adaptation(matrix: [[f64; 3]; 3]) -> Result<Transfer, TransferError> {
-    Transfer::new([TransferStage::Matrix(TransferMatrix::new(
-        3,
-        3,
-        matrix.into_iter().flatten().collect::<Vec<_>>(),
-        [0.0; 3],
-    )?)])
-}
-
 macro_rules! builtin_space {
     ($space:ty, $definition:ident) => {
         struct $definition;
@@ -128,6 +111,16 @@ mod tests {
         assert_eq!(ColorSpace::from(LabD50), ColorSpace::from(LabD50));
         assert_eq!(ColorSpace::from(XyzD50), ColorSpace::from(XyzD50));
         assert_eq!(ColorSpace::from(XyzD65), ColorSpace::from(XyzD65));
+    }
+
+    #[test]
+    fn xyz_d65_profile_uses_its_named_adaptation_transfers() {
+        let space = ColorSpace::from(XyzD65);
+        assert_eq!(space.space_to_pcs().unwrap(), XyzD65::to_xyz_d50_transfer());
+        assert_eq!(
+            space.pcs_to_space().unwrap(),
+            XyzD65::from_xyz_d50_transfer()
+        );
     }
 
     #[test]
