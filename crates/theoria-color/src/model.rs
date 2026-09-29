@@ -1,14 +1,10 @@
-mod cmyk;
 mod lab;
 mod rgb;
 mod xyz;
-mod ycbcr;
 
-pub use cmyk::Cmyk;
 pub use lab::Lab;
 pub use rgb::Rgb;
 pub use xyz::Xyz;
-pub use ycbcr::Ycbcr;
 
 /// An authored coordinate representation accepted by a color model.
 ///
@@ -73,7 +69,7 @@ mod tests {
     #[test]
     fn models_accept_whole_coordinate_representations() {
         accepts::<Rgb, [u8; 3]>();
-        accepts::<Cmyk, [f32; 4]>();
+        accepts::<Lab, [f32; 3]>();
         assert_eq!(Rgb::ERASED, ColorModel::Rgb);
     }
 }
