@@ -5,7 +5,7 @@ use crate::{
         LinearGradient, MeshGradient, Opacity, RadialGradient,
     },
     canvas_renderer::WorkingColor,
-    color::{DisplayP3, LinearSrgb, Srgb},
+    color::{DisplayP3, HslSrgb, LinearSrgb, Srgb},
     geometry::Point,
 };
 
@@ -127,6 +127,47 @@ fn nonlinear_gradient_interpolation_is_resolved_before_gpu_interpolation() {
 
     assert!(triangles.len() > 1);
     assert!((midpoint.unwrap() - 0.214_041_14).abs() < 0.000_001);
+}
+
+#[test]
+fn hsl_gradient_interpolates_hue_in_its_selected_space() {
+    let gradient = LinearGradient::new(
+        Point::new(0.0, 0.0),
+        Point::new(10.0, 0.0),
+        [
+            GradientStop::new(
+                0.0,
+                Color::new(HslSrgb, [0.0_f32, 100.0, 50.0], Opacity::<f32>::ONE),
+            )
+            .unwrap(),
+            GradientStop::new(
+                1.0,
+                Color::new(HslSrgb, [240.0_f32, 100.0, 50.0], Opacity::<f32>::ONE),
+            )
+            .unwrap(),
+        ],
+        HslSrgb,
+    )
+    .unwrap();
+    let triangles = paint_triangle(
+        [
+            Point::new(0.0, 0.0),
+            Point::new(10.0, 0.0),
+            Point::new(0.0, 10.0),
+        ],
+        &ColorField::LinearGradient(gradient),
+    );
+    let midpoint = triangles.iter().find_map(|triangle| {
+        triangle
+            .points
+            .iter()
+            .position(|point| *point == Point::new(5.0, 0.0))
+            .map(|index| triangle.colors[index].components())
+    });
+    let green = midpoint.expect("sampled gradient includes its midpoint");
+    assert!(green[0].abs() < 1e-4);
+    assert!((green[1] - 1.0).abs() < 1e-4);
+    assert!(green[2].abs() < 1e-4);
 }
 
 #[test]

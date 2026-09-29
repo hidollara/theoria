@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     canvas::{Color, ColorError, ColorValue},
-    color::{ColorSpace, LinearDisplayP3, LinearSrgb, Transfer},
+    color::{ColorModel, ColorSpace, LinearDisplayP3, LinearSrgb, Transfer},
 };
 
 /// Renderer-owned conversions prepared before commands are recorded.
@@ -21,11 +21,30 @@ pub(crate) struct PreparedInterpolation {
     to_working: Transfer,
     identity: bool,
     linear_builtin: bool,
+    model: ColorModel,
 }
 
 impl PreparedInterpolation {
     pub(crate) fn is_linear_builtin(&self) -> bool {
         self.linear_builtin
+    }
+
+    fn hue_index(&self) -> Option<usize> {
+        match self.model {
+            ColorModel::Hsl | ColorModel::Hwb => Some(0),
+            ColorModel::Lch | ColorModel::Oklch => Some(2),
+            _ => None,
+        }
+    }
+
+    fn hue_is_powerless(&self, coordinates: [f32; 3]) -> bool {
+        match self.model {
+            ColorModel::Hsl => coordinates[1] <= 0.0,
+            ColorModel::Hwb => coordinates[1] + coordinates[2] >= 100.0,
+            ColorModel::Lch => coordinates[1] <= 0.0015,
+            ColorModel::Oklch => coordinates[1] <= 0.000004,
+            _ => false,
+        }
     }
 
     fn convert(&self, rgb: [f32; 3], to_interpolation: bool) -> [f32; 3] {
@@ -77,6 +96,7 @@ impl PreparedColors {
             identity: space == working,
             linear_builtin: *space == ColorSpace::from(LinearSrgb)
                 || *space == ColorSpace::from(LinearDisplayP3),
+            model: space.model(),
         };
         self.interpolations.insert(space.clone(), plan);
         Ok(())
@@ -170,6 +190,9 @@ pub(super) fn interpolate_premultiplied_rgba(
     amount: f32,
     interpolation: &PreparedInterpolation,
 ) -> [f32; 4] {
+    if let Some(hue_index) = interpolation.hue_index() {
+        return interpolate_polar(first, second, amount, interpolation, hue_index);
+    }
     let first = convert_premultiplied(first, |rgb| interpolation.convert(rgb, true));
     let second = convert_premultiplied(second, |rgb| interpolation.convert(rgb, true));
     let mixed = std::array::from_fn(|index| first[index] + (second[index] - first[index]) * amount);
@@ -181,6 +204,9 @@ pub(super) fn mix_premultiplied_rgba(
     weights: [f32; 3],
     interpolation: &PreparedInterpolation,
 ) -> [f32; 4] {
+    if let Some(hue_index) = interpolation.hue_index() {
+        return mix_polar(colors, weights, interpolation, hue_index);
+    }
     let colors =
         colors.map(|color| convert_premultiplied(color, |rgb| interpolation.convert(rgb, true)));
     let mixed = std::array::from_fn(|component| {
@@ -189,6 +215,127 @@ pub(super) fn mix_premultiplied_rgba(
             + colors[2][component] * weights[2]
     });
     convert_premultiplied(mixed, |rgb| interpolation.convert(rgb, false))
+}
+
+fn polar_coordinates(value: [f32; 4], interpolation: &PreparedInterpolation) -> [f32; 3] {
+    if value[3] == 0.0 {
+        [0.0; 3]
+    } else {
+        let mut coordinates = interpolation.convert(
+            [
+                value[0] / value[3],
+                value[1] / value[3],
+                value[2] / value[3],
+            ],
+            true,
+        );
+        let hue_index = interpolation
+            .hue_index()
+            .expect("polar interpolation has a hue");
+        if (360.0 - coordinates[hue_index]).abs() <= 360.0 * f32::EPSILON * 8.0 {
+            coordinates[hue_index] = 0.0;
+        }
+        coordinates
+    }
+}
+
+fn lower_polar(
+    coordinates: [f32; 3],
+    alpha: f32,
+    interpolation: &PreparedInterpolation,
+) -> [f32; 4] {
+    if alpha == 0.0 {
+        return [0.0; 4];
+    }
+    let converted = interpolation.convert(coordinates, false);
+    [
+        converted[0] * alpha,
+        converted[1] * alpha,
+        converted[2] * alpha,
+        alpha,
+    ]
+}
+
+fn interpolate_polar(
+    first: [f32; 4],
+    second: [f32; 4],
+    amount: f32,
+    interpolation: &PreparedInterpolation,
+    hue_index: usize,
+) -> [f32; 4] {
+    let mut first_coordinates = polar_coordinates(first, interpolation);
+    let mut second_coordinates = polar_coordinates(second, interpolation);
+    match (
+        interpolation.hue_is_powerless(first_coordinates),
+        interpolation.hue_is_powerless(second_coordinates),
+    ) {
+        (true, false) => first_coordinates[hue_index] = second_coordinates[hue_index],
+        (false, true) => second_coordinates[hue_index] = first_coordinates[hue_index],
+        _ => {}
+    }
+    let alpha = first[3] + (second[3] - first[3]) * amount;
+    let mut mixed = [0.0; 3];
+    for index in 0..3 {
+        mixed[index] = if index == hue_index {
+            // The Canvas default is numeric interpolation; selecting a CSS
+            // hue arc is a separate policy, not a property of the color space.
+            first_coordinates[index]
+                + (second_coordinates[index] - first_coordinates[index]) * amount
+        } else if alpha == 0.0 {
+            0.0
+        } else {
+            (first_coordinates[index] * first[3] * (1.0 - amount)
+                + second_coordinates[index] * second[3] * amount)
+                / alpha
+        };
+    }
+    lower_polar(mixed, alpha, interpolation)
+}
+
+fn mix_polar(
+    colors: [[f32; 4]; 3],
+    weights: [f32; 3],
+    interpolation: &PreparedInterpolation,
+    hue_index: usize,
+) -> [f32; 4] {
+    let mut coordinates = colors.map(|color| polar_coordinates(color, interpolation));
+    if let Some(hue) = coordinates
+        .iter()
+        .find(|coordinates| !interpolation.hue_is_powerless(**coordinates))
+        .map(|coordinates| coordinates[hue_index])
+    {
+        for coordinate in &mut coordinates {
+            if interpolation.hue_is_powerless(*coordinate) {
+                coordinate[hue_index] = hue;
+            }
+        }
+    }
+    let alpha = colors
+        .iter()
+        .zip(weights)
+        .map(|(color, weight)| color[3] * weight)
+        .sum();
+    let mut mixed = [0.0; 3];
+    for index in 0..3 {
+        mixed[index] = if index == hue_index {
+            coordinates
+                .iter()
+                .zip(weights)
+                .map(|(value, weight)| value[index] * weight)
+                .sum()
+        } else if alpha == 0.0 {
+            0.0
+        } else {
+            coordinates
+                .iter()
+                .zip(colors)
+                .zip(weights)
+                .map(|((value, color), weight)| value[index] * color[3] * weight)
+                .sum::<f32>()
+                / alpha
+        };
+    }
+    lower_polar(mixed, alpha, interpolation)
 }
 
 pub(crate) fn convert_premultiplied_space(
@@ -234,7 +381,7 @@ fn convert_premultiplied(
 mod tests {
     use super::*;
     use crate::canvas::Opacity;
-    use crate::color::{IccRenderingIntent, Srgb};
+    use crate::color::{HslSrgb, IccRenderingIntent, LchD50, OklchD65, Srgb};
 
     #[test]
     fn a_solid_color_is_lowered_once_per_render() {
@@ -352,5 +499,116 @@ mod tests {
             assert!((actual - expected as f32).abs() < 0.000_01);
         }
         assert_eq!(actual[3], 1.0);
+    }
+
+    #[test]
+    fn polar_hue_is_not_premultiplied_by_alpha() {
+        let space = ColorSpace::from(HslSrgb);
+        let working = ColorSpace::from(LinearSrgb);
+        let encode = space.transfer_to(&working).unwrap();
+        let first = encode.evaluate(&[60.0, 100.0, 50.0]).unwrap();
+        let second = encode.evaluate(&[240.0, 100.0, 50.0]).unwrap();
+        let premultiply = |value: Vec<f64>, alpha: f32| {
+            [
+                value[0] as f32 * alpha,
+                value[1] as f32 * alpha,
+                value[2] as f32 * alpha,
+                alpha,
+            ]
+        };
+        let mut prepared = PreparedColors::default();
+        prepared.prepare_interpolation(&space).unwrap();
+        let actual = interpolate_premultiplied_rgba(
+            premultiply(first, 0.25),
+            premultiply(second, 1.0),
+            0.5,
+            prepared.interpolation(&space),
+        );
+        let straight = [
+            actual[0] / actual[3],
+            actual[1] / actual[3],
+            actual[2] / actual[3],
+        ];
+        let hsl = working
+            .transfer_to(&space)
+            .unwrap()
+            .evaluate(&straight.map(f64::from))
+            .unwrap();
+        assert!((actual[3] - 0.625).abs() < 1e-6);
+        assert!((hsl[0] - 150.0).abs() < 1e-4, "hue {}", hsl[0]);
+        assert!((hsl[1] - 100.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn powerless_hue_uses_the_other_endpoint() {
+        let space = ColorSpace::from(HslSrgb);
+        let working = ColorSpace::from(LinearSrgb);
+        let encode = space.transfer_to(&working).unwrap();
+        let gray = encode.evaluate(&[0.0, 0.0, 50.0]).unwrap();
+        let blue = encode.evaluate(&[240.0, 100.0, 50.0]).unwrap();
+        let mut prepared = PreparedColors::default();
+        prepared.prepare_interpolation(&space).unwrap();
+        let actual = interpolate_premultiplied_rgba(
+            [gray[0] as f32, gray[1] as f32, gray[2] as f32, 1.0],
+            [blue[0] as f32, blue[1] as f32, blue[2] as f32, 1.0],
+            0.5,
+            prepared.interpolation(&space),
+        );
+        let hsl = working
+            .transfer_to(&space)
+            .unwrap()
+            .evaluate(
+                &actual[..3]
+                    .iter()
+                    .copied()
+                    .map(f64::from)
+                    .collect::<Vec<_>>(),
+            )
+            .unwrap();
+        assert!((hsl[0] - 240.0).abs() < 1e-4);
+        assert!((hsl[1] - 50.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn nearly_full_turn_hue_is_canonicalized_after_rgb_round_trip() {
+        let space = ColorSpace::from(HslSrgb);
+        let working = ColorSpace::from(LinearSrgb);
+        let encode = space.transfer_to(&working).unwrap();
+        let red = encode.evaluate(&[0.0, 100.0, 50.0]).unwrap();
+        let blue = encode.evaluate(&[240.0, 100.0, 50.0]).unwrap();
+        let mut prepared = PreparedColors::default();
+        prepared.prepare_interpolation(&space).unwrap();
+        let actual = interpolate_premultiplied_rgba(
+            [red[0] as f32, red[1] as f32, red[2] as f32, 1.0],
+            [blue[0] as f32, blue[1] as f32, blue[2] as f32, 1.0],
+            0.5,
+            prepared.interpolation(&space),
+        );
+        let hsl = working
+            .transfer_to(&space)
+            .unwrap()
+            .evaluate(
+                &actual[..3]
+                    .iter()
+                    .copied()
+                    .map(f64::from)
+                    .collect::<Vec<_>>(),
+            )
+            .unwrap();
+        assert!((hsl[0] - 120.0).abs() < 1e-4, "hue {}", hsl[0]);
+    }
+
+    #[test]
+    fn all_polar_spaces_use_the_polar_interpolation_path() {
+        let mut prepared = PreparedColors::default();
+        for (space, hue_index) in [
+            (ColorSpace::from(HslSrgb), 0),
+            (ColorSpace::from(crate::color::HwbSrgb), 0),
+            (ColorSpace::from(LchD50), 2),
+            (ColorSpace::from(OklchD65), 2),
+        ] {
+            prepared.prepare_interpolation(&space).unwrap();
+            assert_eq!(prepared.interpolation(&space).hue_index(), Some(hue_index));
+        }
     }
 }
