@@ -8,7 +8,7 @@ use crate::transfer::{Transfer, TransferCurve, TransferError, TransferMatrix, Tr
 named_space!(LinearDisplayP3, Rgb);
 
 impl LinearDisplayP3 {
-    pub(crate) fn to_xyz_d65_transfer() -> Result<Transfer, TransferError> {
+    pub(crate) fn transfer_to_xyz_d65() -> Result<Transfer, TransferError> {
         Transfer::new([TransferStage::Matrix(TransferMatrix::new(
             3,
             3,
@@ -33,11 +33,11 @@ impl ColorProfile for LinearDisplayP3Profile {
     }
 
     fn transfer_to_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
-        Ok(LinearDisplayP3::to_xyz_d65_transfer()?)
+        Ok(LinearDisplayP3::transfer_to_xyz_d65()?)
     }
 
     fn transfer_from_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
-        Ok(XyzD65::to_linear_display_p3_transfer()?)
+        Ok(XyzD65::transfer_to_linear_display_p3()?)
     }
 
     fn direct_transfer_to(

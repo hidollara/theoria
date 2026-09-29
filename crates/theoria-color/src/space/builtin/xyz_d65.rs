@@ -47,23 +47,23 @@ impl XyzD65 {
         [11844.0 / 330415.0, -50337.0 / 660830.0, 316169.0 / 330415.0],
     ];
 
-    pub(crate) fn to_srgb_transfer() -> Result<Transfer, TransferError> {
-        Self::to_rgb_transfer(Self::TO_SRGB, Some(TransferCurve::SRGB_ENCODE))
+    pub(crate) fn transfer_to_srgb() -> Result<Transfer, TransferError> {
+        Self::transfer_to_rgb(Self::TO_SRGB, Some(TransferCurve::SRGB_ENCODE))
     }
 
-    pub(crate) fn to_linear_srgb_transfer() -> Result<Transfer, TransferError> {
-        Self::to_rgb_transfer(Self::TO_SRGB, None)
+    pub(crate) fn transfer_to_linear_srgb() -> Result<Transfer, TransferError> {
+        Self::transfer_to_rgb(Self::TO_SRGB, None)
     }
 
-    pub(crate) fn to_display_p3_transfer() -> Result<Transfer, TransferError> {
-        Self::to_rgb_transfer(Self::TO_DISPLAY_P3, Some(TransferCurve::SRGB_ENCODE))
+    pub(crate) fn transfer_to_display_p3() -> Result<Transfer, TransferError> {
+        Self::transfer_to_rgb(Self::TO_DISPLAY_P3, Some(TransferCurve::SRGB_ENCODE))
     }
 
-    pub(crate) fn to_linear_display_p3_transfer() -> Result<Transfer, TransferError> {
-        Self::to_rgb_transfer(Self::TO_DISPLAY_P3, None)
+    pub(crate) fn transfer_to_linear_display_p3() -> Result<Transfer, TransferError> {
+        Self::transfer_to_rgb(Self::TO_DISPLAY_P3, None)
     }
 
-    fn to_rgb_transfer(
+    fn transfer_to_rgb(
         matrix: [[f64; 3]; 3],
         curve: Option<TransferCurve>,
     ) -> Result<Transfer, TransferError> {
@@ -78,14 +78,15 @@ impl XyzD65 {
             None => Transfer::new([matrix]),
         }
     }
-    pub(crate) fn to_xyz_d50_transfer() -> Transfer {
+
+    pub(crate) fn transfer_to_xyz_d50() -> Transfer {
         static TRANSFER: LazyLock<Transfer> = LazyLock::new(|| {
-            XyzD65::build_to_xyz_d50_transfer().expect("built-in D65 to D50 adaptation is valid")
+            XyzD65::build_transfer_to_xyz_d50().expect("built-in D65 to D50 adaptation is valid")
         });
         TRANSFER.clone()
     }
 
-    fn build_to_xyz_d50_transfer() -> Result<Transfer, TransferError> {
+    fn build_transfer_to_xyz_d50() -> Result<Transfer, TransferError> {
         Transfer::new([TransferStage::Matrix(TransferMatrix::new(
             3,
             3,

@@ -257,9 +257,9 @@ impl IccProfileData {
     fn absolute_adjustment(&self, scale: [f64; 3]) -> Result<Transfer, IccProfileError> {
         let adjustment = Transfer::new([diagonal(scale, [0.0; 3])?])?;
         if self.pcs == Pcs::LabD50 {
-            Ok(LabD50::to_xyz_transfer()
+            Ok(LabD50::transfer_to_xyz_d50()
                 .then(&adjustment)?
-                .then(&XyzD50::to_lab_transfer())?)
+                .then(&XyzD50::transfer_to_lab_d50())?)
         } else {
             Ok(adjustment)
         }
@@ -1105,7 +1105,9 @@ mod tests {
             .unwrap()
             .evaluate(&[1.0])
             .unwrap();
-        let xyz = LabD50::to_xyz_transfer().evaluate(&absolute_lab).unwrap();
+        let xyz = LabD50::transfer_to_xyz_d50()
+            .evaluate(&absolute_lab)
+            .unwrap();
         for (actual, expected) in xyz.into_iter().zip([0.75, 0.8, 0.6]) {
             assert!((actual - expected).abs() < 1e-8);
         }

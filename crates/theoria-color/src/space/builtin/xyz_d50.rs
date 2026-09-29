@@ -28,14 +28,14 @@ impl XyzD50 {
         ],
     ];
 
-    pub(crate) fn to_xyz_d65_transfer() -> Transfer {
+    pub(crate) fn transfer_to_xyz_d65() -> Transfer {
         static TRANSFER: LazyLock<Transfer> = LazyLock::new(|| {
-            XyzD50::build_to_xyz_d65_transfer().expect("built-in D50 to D65 adaptation is valid")
+            XyzD50::build_transfer_to_xyz_d65().expect("built-in D50 to D65 adaptation is valid")
         });
         TRANSFER.clone()
     }
 
-    fn build_to_xyz_d65_transfer() -> Result<Transfer, TransferError> {
+    fn build_transfer_to_xyz_d65() -> Result<Transfer, TransferError> {
         Transfer::new([TransferStage::Matrix(TransferMatrix::new(
             3,
             3,
@@ -44,14 +44,15 @@ impl XyzD50 {
         )?)])
     }
 
-    pub(crate) fn to_lab_transfer() -> Transfer {
+    pub(crate) fn transfer_to_lab_d50() -> Transfer {
         static TRANSFER: LazyLock<Transfer> = LazyLock::new(|| {
-            XyzD50::build_to_lab_transfer().expect("built-in XYZ D50 to Lab D50 transfer is valid")
+            XyzD50::build_transfer_to_lab_d50()
+                .expect("built-in XYZ D50 to Lab D50 transfer is valid")
         });
         TRANSFER.clone()
     }
 
-    fn build_to_lab_transfer() -> Result<Transfer, TransferError> {
+    fn build_transfer_to_lab_d50() -> Result<Transfer, TransferError> {
         const DELTA: f64 = 6.0 / 29.0;
         const EPSILON: f64 = DELTA * DELTA * DELTA;
         const LINEAR_SCALE: f64 = 3.0 * DELTA * DELTA;
@@ -125,7 +126,7 @@ impl ColorProfile for XyzD50Profile {
         destination: &ColorSpace,
     ) -> Result<Option<Transfer>, SpaceConnectionError> {
         if *destination == ColorSpace::from(super::LabD50) {
-            Ok(Some(XyzD50::to_lab_transfer()))
+            Ok(Some(XyzD50::transfer_to_lab_d50()))
         } else {
             Ok(None)
         }

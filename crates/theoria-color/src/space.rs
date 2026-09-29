@@ -40,14 +40,14 @@ impl ConnectionSpace {
             return Transfer::IDENTITY;
         }
         let to_d50 = match self {
-            Self::XyzD65 => XyzD65::to_xyz_d50_transfer(),
+            Self::XyzD65 => XyzD65::transfer_to_xyz_d50(),
             Self::XyzD50 => Transfer::IDENTITY,
-            Self::LabD50 => LabD50::to_xyz_transfer(),
+            Self::LabD50 => LabD50::transfer_to_xyz_d50(),
         };
         let from_d50 = match destination {
-            Self::XyzD65 => XyzD50::to_xyz_d65_transfer(),
+            Self::XyzD65 => XyzD50::transfer_to_xyz_d65(),
             Self::XyzD50 => Transfer::IDENTITY,
-            Self::LabD50 => XyzD50::to_lab_transfer(),
+            Self::LabD50 => XyzD50::transfer_to_lab_d50(),
         };
         to_d50
             .then(&from_d50)
@@ -353,8 +353,8 @@ mod tests {
 
     #[test]
     fn d65_and_lab_connection_spaces_bridge_through_xyz_d50() {
-        let expected = XyzD65::to_xyz_d50_transfer()
-            .then(&XyzD50::to_lab_transfer())
+        let expected = XyzD65::transfer_to_xyz_d50()
+            .then(&XyzD50::transfer_to_lab_d50())
             .unwrap();
         assert_eq!(
             ConnectionSpace::XyzD65.transfer_to(ConnectionSpace::LabD50),
@@ -386,14 +386,20 @@ mod tests {
         let lab = ColorSpace::from(LabD50);
         assert_eq!(
             xyz.direct_to(&lab).unwrap(),
-            Some(XyzD50::to_lab_transfer())
+            Some(XyzD50::transfer_to_lab_d50())
         );
         assert_eq!(
             lab.direct_to(&xyz).unwrap(),
-            Some(LabD50::to_xyz_transfer())
+            Some(LabD50::transfer_to_xyz_d50())
         );
-        assert_eq!(xyz.transfer_to(&lab).unwrap(), XyzD50::to_lab_transfer());
-        assert_eq!(lab.transfer_to(&xyz).unwrap(), LabD50::to_xyz_transfer());
+        assert_eq!(
+            xyz.transfer_to(&lab).unwrap(),
+            XyzD50::transfer_to_lab_d50()
+        );
+        assert_eq!(
+            lab.transfer_to(&xyz).unwrap(),
+            LabD50::transfer_to_xyz_d50()
+        );
     }
 
     #[test]

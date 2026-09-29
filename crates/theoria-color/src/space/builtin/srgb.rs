@@ -15,7 +15,7 @@ impl Srgb {
         [7918.0 / 409605.0, 87881.0 / 737289.0, 1001167.0 / 1053270.0],
     ];
 
-    pub(crate) fn to_xyz_d65_transfer() -> Result<Transfer, TransferError> {
+    pub(crate) fn transfer_to_xyz_d65() -> Result<Transfer, TransferError> {
         Transfer::new([
             TransferStage::curves(vec![TransferCurve::SRGB_DECODE; 3])?,
             TransferStage::Matrix(TransferMatrix::new(
@@ -40,11 +40,11 @@ impl ColorProfile for SrgbProfile {
     }
 
     fn transfer_to_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
-        Ok(Srgb::to_xyz_d65_transfer()?)
+        Ok(Srgb::transfer_to_xyz_d65()?)
     }
 
     fn transfer_from_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
-        Ok(XyzD65::to_srgb_transfer()?)
+        Ok(XyzD65::transfer_to_srgb()?)
     }
 
     fn direct_transfer_to(

@@ -94,11 +94,11 @@ mod tests {
         assert!(d65.direct_to(&d50).unwrap().is_none());
         assert_eq!(
             d50.transfer_to(&d65).unwrap(),
-            XyzD50::to_xyz_d65_transfer()
+            XyzD50::transfer_to_xyz_d65()
         );
         assert_eq!(
             d65.transfer_to(&d50).unwrap(),
-            XyzD65::to_xyz_d50_transfer()
+            XyzD65::transfer_to_xyz_d50()
         );
     }
 
@@ -128,7 +128,7 @@ mod tests {
                 rgb.transfer_to(&d50).unwrap(),
                 rgb.transfer_to_connection_space()
                     .unwrap()
-                    .then(&XyzD65::to_xyz_d50_transfer())
+                    .then(&XyzD65::transfer_to_xyz_d50())
                     .unwrap()
             );
             let sample = [0.2, 0.4, 0.6];

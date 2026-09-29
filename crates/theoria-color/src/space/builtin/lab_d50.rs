@@ -12,14 +12,15 @@ named_space!(LabD50, Lab);
 builtin_space!(LabD50, LabD50Profile);
 
 impl LabD50 {
-    pub(crate) fn to_xyz_transfer() -> Transfer {
+    pub(crate) fn transfer_to_xyz_d50() -> Transfer {
         static TRANSFER: LazyLock<Transfer> = LazyLock::new(|| {
-            LabD50::build_to_xyz_transfer().expect("built-in Lab D50 to XYZ D50 transfer is valid")
+            LabD50::build_transfer_to_xyz_d50()
+                .expect("built-in Lab D50 to XYZ D50 transfer is valid")
         });
         TRANSFER.clone()
     }
 
-    fn build_to_xyz_transfer() -> Result<Transfer, TransferError> {
+    fn build_transfer_to_xyz_d50() -> Result<Transfer, TransferError> {
         const DELTA: f64 = 6.0 / 29.0;
         const LINEAR_SCALE: f64 = 3.0 * DELTA * DELTA;
 
@@ -103,7 +104,7 @@ impl ColorProfile for LabD50Profile {
         destination: &ColorSpace,
     ) -> Result<Option<Transfer>, SpaceConnectionError> {
         if *destination == ColorSpace::from(super::XyzD50) {
-            Ok(Some(LabD50::to_xyz_transfer()))
+            Ok(Some(LabD50::transfer_to_xyz_d50()))
         } else {
             Ok(None)
         }

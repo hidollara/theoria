@@ -23,7 +23,7 @@ impl DisplayP3 {
         [0.0, 32229.0 / 714400.0, 5220557.0 / 5000800.0],
     ];
 
-    pub(crate) fn to_xyz_d65_transfer() -> Result<Transfer, TransferError> {
+    pub(crate) fn transfer_to_xyz_d65() -> Result<Transfer, TransferError> {
         Transfer::new([
             TransferStage::curves(vec![TransferCurve::SRGB_DECODE; 3])?,
             TransferStage::Matrix(TransferMatrix::new(
@@ -48,11 +48,11 @@ impl ColorProfile for DisplayP3Profile {
     }
 
     fn transfer_to_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
-        Ok(DisplayP3::to_xyz_d65_transfer()?)
+        Ok(DisplayP3::transfer_to_xyz_d65()?)
     }
 
     fn transfer_from_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
-        Ok(XyzD65::to_display_p3_transfer()?)
+        Ok(XyzD65::transfer_to_display_p3()?)
     }
 
     fn direct_transfer_to(
