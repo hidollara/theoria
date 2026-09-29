@@ -330,19 +330,6 @@ mod tests {
                 vec![0.5, 1.0, 1.5]
             );
         }
-        let shader = profile
-            .color_space(IccRenderingIntent::RelativeColorimetric)
-            .space_to_pcs()
-            .unwrap()
-            .wgsl(7)
-            .unwrap();
-        let module = naga::front::wgsl::parse_str(&shader).unwrap();
-        naga::valid::Validator::new(
-            naga::valid::ValidationFlags::all(),
-            naga::valid::Capabilities::all(),
-        )
-        .validate(&module)
-        .unwrap();
     }
 
     #[test]
@@ -399,14 +386,6 @@ mod tests {
         curve_set.extend_from_slice(&curve);
         let transfer = parse_mpe(&mpe_tag(1, 1, &[curve_set])).unwrap().unwrap();
         assert_eq!(transfer.evaluate(&[1.5]).unwrap(), vec![1.5]);
-        let shader = transfer.wgsl(8).unwrap();
-        let module = naga::front::wgsl::parse_str(&shader).unwrap();
-        naga::valid::Validator::new(
-            naga::valid::ValidationFlags::all(),
-            naga::valid::Capabilities::all(),
-        )
-        .validate(&module)
-        .unwrap();
 
         let mut clut = Vec::new();
         clut.extend_from_slice(b"clut");

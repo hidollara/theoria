@@ -4,10 +4,17 @@ use std::{env, fs, path::PathBuf};
 mod composition_shader;
 #[path = "src/rgb_shader.rs"]
 mod rgb_shader;
+#[path = "src/transfer_wgsl.rs"]
+#[allow(dead_code)] // Build-time validation only uses the inline lowering path.
+mod transfer_wgsl;
 
 fn main() {
     let output_dir = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR is set"));
-    for source_file in ["src/canvas/composition_shader.rs", "src/rgb_shader.rs"] {
+    for source_file in [
+        "src/canvas/composition_shader.rs",
+        "src/rgb_shader.rs",
+        "src/transfer_wgsl.rs",
+    ] {
         println!("cargo:rerun-if-changed={source_file}");
     }
     for (source_file, output_prefix) in [

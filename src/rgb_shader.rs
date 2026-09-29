@@ -3,6 +3,8 @@
 
 use theoria_color::{ColorSpace, DisplayP3, LinearDisplayP3, LinearSrgb, Srgb};
 
+use crate::transfer_wgsl::TransferWgslExt;
+
 const MARKER: &str = "// @theoria-rgb-conversions";
 
 #[allow(dead_code)]

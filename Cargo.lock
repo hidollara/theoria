@@ -1355,7 +1355,6 @@ name = "theoria-color"
 version = "0.1.0"
 dependencies = [
  "moxcms",
- "naga",
 ]
 
 [[package]]

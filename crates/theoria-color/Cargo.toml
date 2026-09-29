@@ -6,6 +6,3 @@ description = "Color profiles, coordinates, and ICC transforms for Theoria"
 
 [dependencies]
 moxcms = { version = "0.8.1", default-features = false }
-
-[dev-dependencies]
-naga = { version = "30.0.0", features = ["wgsl-in", "spv-out"] }

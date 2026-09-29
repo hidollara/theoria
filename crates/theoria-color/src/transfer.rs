@@ -3,9 +3,6 @@ use std::{error::Error, fmt, sync::Arc};
 mod evaluate;
 #[cfg(test)]
 mod tests;
-mod wgsl;
-
-pub use wgsl::TransferShader;
 
 /// A directed sequence of color-coordinate operations.
 ///
@@ -101,7 +98,7 @@ impl TransferStage {
         Ok(Self::Curves(curves))
     }
 
-    fn input_channels(&self) -> usize {
+    pub fn input_channels(&self) -> usize {
         match self {
             Self::Curves(curves) => curves.len(),
             Self::Matrix(matrix) => matrix.input_channels,
@@ -111,7 +108,7 @@ impl TransferStage {
         }
     }
 
-    fn output_channels(&self) -> usize {
+    pub fn output_channels(&self) -> usize {
         match self {
             Self::Curves(curves) => curves.len(),
             Self::Matrix(matrix) => matrix.output_channels,
@@ -161,6 +158,22 @@ impl TransferMatrix {
             coefficients,
             offsets,
         })
+    }
+
+    pub const fn input_channels(&self) -> usize {
+        self.input_channels
+    }
+
+    pub const fn output_channels(&self) -> usize {
+        self.output_channels
+    }
+
+    pub fn coefficients(&self) -> &[f64] {
+        &self.coefficients
+    }
+
+    pub fn offsets(&self) -> &[f64] {
+        &self.offsets
     }
 }
 
@@ -227,6 +240,21 @@ impl TransferClut {
 #[derive(Clone, Debug, PartialEq)]
 pub struct TransferCurve(CurveKind);
 
+/// A borrowed description of a validated transfer curve.
+#[derive(Clone, Copy, Debug)]
+pub enum TransferCurveKind<'a> {
+    Identity,
+    Gamma(f64),
+    Sampled(&'a [f64]),
+    IccParametric {
+        function: u16,
+        parameters: &'a [f64],
+    },
+    Mpe(&'a [MpeSegment]),
+    SrgbDecode,
+    SrgbEncode,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 enum CurveKind {
     Identity,
@@ -242,9 +270,9 @@ enum CurveKind {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(super) struct MpeSegment {
-    pub upper: f64,
-    pub kind: MpeSegmentKind,
+pub struct MpeSegment {
+    pub(super) upper: f64,
+    pub(super) kind: MpeSegmentKind,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -253,10 +281,69 @@ pub(super) enum MpeSegmentKind {
     Sampled { lower: f64, samples: Vec<f64> },
 }
 
+/// A borrowed description of a validated ICC multi-process curve segment.
+#[derive(Clone, Copy, Debug)]
+pub enum MpeSegmentView<'a> {
+    Formula {
+        function: u16,
+        parameters: &'a [f64],
+    },
+    Sampled {
+        lower: f64,
+        samples: &'a [f64],
+    },
+}
+
+impl MpeSegment {
+    pub const fn upper(&self) -> f64 {
+        self.upper
+    }
+
+    pub fn view(&self) -> MpeSegmentView<'_> {
+        match &self.kind {
+            MpeSegmentKind::Formula {
+                function,
+                parameters,
+            } => MpeSegmentView::Formula {
+                function: *function,
+                parameters,
+            },
+            MpeSegmentKind::Sampled { lower, samples } => MpeSegmentView::Sampled {
+                lower: *lower,
+                samples,
+            },
+        }
+    }
+}
+
 impl TransferCurve {
     pub const IDENTITY: Self = Self(CurveKind::Identity);
     pub const SRGB_DECODE: Self = Self(CurveKind::SrgbDecode);
     pub const SRGB_ENCODE: Self = Self(CurveKind::SrgbEncode);
+    pub const SRGB_DECODE_THRESHOLD: f64 = SRGB_DECODE_THRESHOLD;
+    pub const SRGB_ENCODE_THRESHOLD: f64 = SRGB_ENCODE_THRESHOLD;
+    pub const SRGB_LINEAR_SCALE: f64 = SRGB_LINEAR_SCALE;
+    pub const SRGB_POWER_SCALE: f64 = SRGB_POWER_SCALE;
+    pub const SRGB_POWER_OFFSET: f64 = SRGB_POWER_OFFSET;
+    pub const SRGB_GAMMA: f64 = SRGB_GAMMA;
+
+    pub fn kind(&self) -> TransferCurveKind<'_> {
+        match &self.0 {
+            CurveKind::Identity => TransferCurveKind::Identity,
+            CurveKind::Gamma(exponent) => TransferCurveKind::Gamma(*exponent),
+            CurveKind::Sampled(values) => TransferCurveKind::Sampled(values),
+            CurveKind::IccParametric {
+                function,
+                parameters,
+            } => TransferCurveKind::IccParametric {
+                function: *function,
+                parameters,
+            },
+            CurveKind::Mpe(segments) => TransferCurveKind::Mpe(segments),
+            CurveKind::SrgbDecode => TransferCurveKind::SrgbDecode,
+            CurveKind::SrgbEncode => TransferCurveKind::SrgbEncode,
+        }
+    }
 
     pub(super) fn mpe(segments: Vec<MpeSegment>) -> Result<Self, TransferError> {
         if segments.is_empty()
@@ -357,8 +444,6 @@ pub enum TransferError {
     InvalidClutShape,
     InvalidCurve,
     NonFiniteValue,
-    NotRepresentableInF32,
-    ShaderTableTooLarge,
 }
 
 impl fmt::Display for TransferError {
@@ -374,12 +459,6 @@ impl fmt::Display for TransferError {
             Self::InvalidClutShape => formatter.write_str("invalid CLUT dimensions or samples"),
             Self::InvalidCurve => formatter.write_str("invalid transfer curve"),
             Self::NonFiniteValue => formatter.write_str("transfer data and values must be finite"),
-            Self::NotRepresentableInF32 => {
-                formatter.write_str("transfer data cannot be represented by a f32 shader")
-            }
-            Self::ShaderTableTooLarge => {
-                formatter.write_str("sample table requires GPU storage rather than inline WGSL")
-            }
         }
     }
 }

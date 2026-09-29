@@ -5,6 +5,7 @@ use std::{
 };
 
 use crate::color::{ColorSpace, Rgb, TypedColorSpace};
+use crate::transfer_wgsl::TransferWgslExt;
 
 use super::composition_shader::{self, Binding};
 

@@ -1,6 +1,7 @@
 //! Lowers an ICC image transfer for the shared raster-sampling shader contract.
 
 use crate::color::{ColorSpace, IccProfile, IccRenderingIntent};
+use crate::transfer_wgsl::TransferWgslExt;
 
 pub(crate) struct IccImageShader {
     pub(crate) source: String,

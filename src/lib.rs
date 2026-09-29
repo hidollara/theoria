@@ -17,6 +17,7 @@ mod rgb_shader;
 pub mod surface;
 mod tessellation;
 pub mod text;
+mod transfer_wgsl;
 pub mod transform;
 pub mod vulkan;
 pub mod webgpu;

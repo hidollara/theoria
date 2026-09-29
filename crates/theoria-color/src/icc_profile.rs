@@ -948,15 +948,6 @@ mod tests {
         let gray = backward.evaluate(&xyz).unwrap();
         assert!((gray[0] - 0.5).abs() < 0.002, "gray={gray:?}, xyz={xyz:?}");
         assert!(forward.then(&backward).is_ok());
-        let shader = forward.wgsl_with_storage(22, 1, 4).unwrap();
-        let module = naga::front::wgsl::parse_str(shader.source())
-            .unwrap_or_else(|error| panic!("{}", error.emit_to_string(shader.source())));
-        naga::valid::Validator::new(
-            naga::valid::ValidationFlags::all(),
-            naga::valid::Capabilities::all(),
-        )
-        .validate(&module)
-        .unwrap();
     }
 
     #[test]
@@ -1040,20 +1031,6 @@ mod tests {
             .evaluate(&absolute_lab)
             .unwrap();
         assert!((restored[0] - 1.0).abs() < 0.001);
-        let shader = profile
-            .inner
-            .space_to_pcs(IccRenderingIntent::AbsoluteColorimetric)
-            .unwrap()
-            .wgsl(41)
-            .unwrap();
-        let module = naga::front::wgsl::parse_str(&shader)
-            .unwrap_or_else(|error| panic!("{}", error.emit_to_string(&shader)));
-        naga::valid::Validator::new(
-            naga::valid::ValidationFlags::all(),
-            naga::valid::Capabilities::all(),
-        )
-        .validate(&module)
-        .unwrap();
     }
 
     #[test]
@@ -1289,7 +1266,7 @@ mod tests {
     }
 
     #[test]
-    fn four_channel_clut_lowers_to_cpu_and_shader() {
+    fn four_channel_clut_evaluates_on_cpu() {
         let mut raw = ParsedProfile::new_srgb();
         raw.color_space = DataColorSpace::Cmyk;
         let mut grid_points = [0; 16];
@@ -1331,15 +1308,5 @@ mod tests {
         for (actual, expected) in result.into_iter().zip([0.8, 0.2, 0.6]) {
             assert!((actual - expected * xyz_scale).abs() < 1e-8);
         }
-        let shader = transfer.wgsl_with_storage(22, 1, 4).unwrap();
-        assert_eq!(shader.table_values().len(), 48);
-        let module = naga::front::wgsl::parse_str(shader.source())
-            .unwrap_or_else(|error| panic!("{}", error.emit_to_string(shader.source())));
-        naga::valid::Validator::new(
-            naga::valid::ValidationFlags::all(),
-            naga::valid::Capabilities::all(),
-        )
-        .validate(&module)
-        .unwrap();
     }
 }
