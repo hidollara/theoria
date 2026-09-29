@@ -26,6 +26,9 @@ impl Transfer {
                     .collect(),
                 TransferStage::Matrix(matrix) => matrix.evaluate(&values),
                 TransferStage::Clut(clut) => clut.evaluate(&values),
+                TransferStage::ColorFunction(function) => function
+                    .evaluate([values[0], values[1], values[2]])
+                    .to_vec(),
                 TransferStage::Clamp(_) => values
                     .into_iter()
                     .map(|value| value.clamp(0.0, 1.0))

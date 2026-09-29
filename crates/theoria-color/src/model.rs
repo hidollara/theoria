@@ -1,10 +1,18 @@
+mod hsl;
+mod hwb;
 mod lab;
+mod lch;
 mod oklab;
+mod oklch;
 mod rgb;
 mod xyz;
 
+pub use hsl::Hsl;
+pub use hwb::Hwb;
 pub use lab::Lab;
+pub use lch::Lch;
 pub use oklab::Oklab;
+pub use oklch::Oklch;
 pub use rgb::Rgb;
 pub use xyz::Xyz;
 
@@ -32,7 +40,11 @@ pub enum ColorModel {
     Rgb,
     Cmyk,
     Lab,
+    Lch,
     Oklab,
+    Oklch,
+    Hsl,
+    Hwb,
     Xyz,
     Ycbcr,
     Gray,
@@ -49,7 +61,11 @@ impl ColorModel {
         match self {
             Self::Rgb
             | Self::Lab
+            | Self::Lch
             | Self::Oklab
+            | Self::Oklch
+            | Self::Hsl
+            | Self::Hwb
             | Self::Xyz
             | Self::Ycbcr
             | Self::Luv

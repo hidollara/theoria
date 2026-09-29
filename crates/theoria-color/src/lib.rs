@@ -13,13 +13,15 @@ mod space;
 mod transfer;
 
 pub use icc_profile::{IccProfile, IccProfileError, IccRenderingIntent};
-pub use model::{ColorCoordinates, ColorModel, Lab, Oklab, Rgb, TypedColorModel, Xyz};
+pub use model::{
+    ColorCoordinates, ColorModel, Hsl, Hwb, Lab, Lch, Oklab, Oklch, Rgb, TypedColorModel, Xyz,
+};
 pub use space::{
-    A98Rgb, ColorProfile, ColorSpace, ConnectionSpace, DisplayP3, LabD50, LinearDisplayP3,
-    LinearSrgb, OklabD65, ProPhotoRgb, Rec2020, SpaceConnectionError, Srgb, TypedColorSpace,
-    XyzD50, XyzD65,
+    A98Rgb, ColorProfile, ColorSpace, ConnectionSpace, DisplayP3, HslSrgb, HwbSrgb, LabD50, LchD50,
+    LinearDisplayP3, LinearSrgb, OklabD65, OklchD65, ProPhotoRgb, Rec2020, SpaceConnectionError,
+    Srgb, TypedColorSpace, XyzD50, XyzD65,
 };
 pub use transfer::{
-    CurveSegment, CurveSegmentKind, Transfer, TransferClut, TransferCurve, TransferCurveKind,
-    TransferError, TransferMatrix, TransferStage,
+    ColorFunction, CurveSegment, CurveSegmentKind, Transfer, TransferClut, TransferCurve,
+    TransferCurveKind, TransferError, TransferMatrix, TransferStage,
 };

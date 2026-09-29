@@ -1,7 +1,8 @@
 use std::{error::Error, fmt};
 
 use theoria_color::{
-    CurveSegmentKind, Transfer, TransferClut, TransferCurve, TransferCurveKind, TransferStage,
+    ColorFunction, CurveSegmentKind, Transfer, TransferClut, TransferCurve, TransferCurveKind,
+    TransferStage,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -93,6 +94,13 @@ fn lower_wgsl(
             input_name = output_name;
             continue;
         }
+        if let TransferStage::ColorFunction(function) = stage {
+            let name = format!("{prefix}_function_{stage_index}");
+            helpers.push_str(&color_function_wgsl(*function, &name));
+            body.push_str(&format!("    let {output_name} = {name}({input_name});\n"));
+            input_name = output_name;
+            continue;
+        }
         let mut expressions = Vec::with_capacity(stage.output_channels());
         match stage {
             TransferStage::Curves(curves) => {
@@ -126,6 +134,7 @@ fn lower_wgsl(
                 }
             }
             TransferStage::Clut(_) => unreachable!("CLUT stages are handled above"),
+            TransferStage::ColorFunction(_) => unreachable!("color functions are handled above"),
         }
         body.push_str(&format!(
             "    let {output_name} = array<f32, {}>({});\n",
@@ -424,6 +433,125 @@ impl CurveWgslExt for TransferCurve {
     }
 }
 
+fn color_function_wgsl(function: ColorFunction, name: &str) -> String {
+    const RGB_HUE: &str = r#"
+fn $NAME_hue(value: array<f32, 3>) -> f32 {
+    let r = value[0];
+    let g = value[1];
+    let b = value[2];
+    let high = max(r, max(g, b));
+    let low = min(r, min(g, b));
+    let delta = high - low;
+    if (delta == 0.0) { return 0.0; }
+    var sector: f32;
+    if (high == r) {
+        sector = (g - b) / delta;
+    } else if (high == g) {
+        sector = (b - r) / delta + 2.0;
+    } else {
+        sector = (r - g) / delta + 4.0;
+    }
+    let angle = sector * 60.0;
+    return angle - 360.0 * floor(angle / 360.0);
+}
+"#;
+    const HSL_TO_RGB: &str = r#"
+fn $NAME_hsl_to_rgb(hue: f32, sat: f32, light: f32) -> array<f32, 3> {
+    let s = sat / 100.0;
+    let l = light / 100.0;
+    let a = s * min(l, 1.0 - l);
+    let offsets = array<f32, 3>(0.0, 8.0, 4.0);
+    var result: array<f32, 3>;
+    for (var i: u32 = 0u; i < 3u; i = i + 1u) {
+        let angle = offsets[i] + hue / 30.0;
+        let k = angle - 12.0 * floor(angle / 12.0);
+        result[i] = l - a * max(-1.0, min(min(k - 3.0, 9.0 - k), 1.0));
+    }
+    return result;
+}
+"#;
+    let source = match function {
+        ColorFunction::RgbToHsl => format!(
+            "{RGB_HUE}{}",
+            r#"
+fn $NAME(value: array<f32, 3>) -> array<f32, 3> {
+    let high = max(value[0], max(value[1], value[2]));
+    let low = min(value[0], min(value[1], value[2]));
+    let light = (low + high) / 2.0;
+    let delta = high - low;
+    var sat = 0.0;
+    if (delta != 0.0 && light != 0.0 && light != 1.0) {
+        sat = (high - light) / min(light, 1.0 - light);
+    }
+    var hue = $NAME_hue(value);
+    if (sat < 0.0) {
+        hue = hue + 180.0;
+        sat = -sat;
+    }
+    hue = hue - 360.0 * floor(hue / 360.0);
+    return array<f32, 3>(hue, sat * 100.0, light * 100.0);
+}
+"#
+        ),
+        ColorFunction::HslToRgb => format!(
+            "{HSL_TO_RGB}{}",
+            r#"
+fn $NAME(value: array<f32, 3>) -> array<f32, 3> {
+    return $NAME_hsl_to_rgb(value[0], value[1], value[2]);
+}
+"#
+        ),
+        ColorFunction::RgbToHwb => format!(
+            "{RGB_HUE}{}",
+            r#"
+fn $NAME(value: array<f32, 3>) -> array<f32, 3> {
+    let white = min(value[0], min(value[1], value[2]));
+    let black = 1.0 - max(value[0], max(value[1], value[2]));
+    return array<f32, 3>($NAME_hue(value), white * 100.0, black * 100.0);
+}
+"#
+        ),
+        ColorFunction::HwbToRgb => format!(
+            "{HSL_TO_RGB}{}",
+            r#"
+fn $NAME(value: array<f32, 3>) -> array<f32, 3> {
+    let white = value[1] / 100.0;
+    let black = value[2] / 100.0;
+    if (white + black >= 1.0) {
+        let gray = white / (white + black);
+        return array<f32, 3>(gray, gray, gray);
+    }
+    let base = $NAME_hsl_to_rgb(value[0], 100.0, 50.0);
+    let range = 1.0 - white - black;
+    return array<f32, 3>(base[0] * range + white, base[1] * range + white, base[2] * range + white);
+}
+"#
+        ),
+        ColorFunction::CartesianToPolar => String::from(
+            r#"
+fn $NAME(value: array<f32, 3>) -> array<f32, 3> {
+    let chroma = sqrt(value[1] * value[1] + value[2] * value[2]);
+    var hue = 0.0;
+    if (chroma != 0.0) {
+        let angle = atan2(value[2], value[1]) * 57.29577951308232;
+        hue = angle - 360.0 * floor(angle / 360.0);
+    }
+    return array<f32, 3>(value[0], chroma, hue);
+}
+"#,
+        ),
+        ColorFunction::PolarToCartesian => String::from(
+            r#"
+fn $NAME(value: array<f32, 3>) -> array<f32, 3> {
+    let angle = value[2] * 0.017453292519943295;
+    return array<f32, 3>(value[0], value[1] * cos(angle), value[1] * sin(angle));
+}
+"#,
+        ),
+    };
+    source.replace("$NAME", name)
+}
+
 fn wgsl_literal(value: f64) -> Result<String, TransferWgslError> {
     let rounded = value as f32;
     if !rounded.is_finite() {
@@ -467,12 +595,16 @@ mod tests {
     }
 
     #[test]
-    fn extended_rgb_spaces_generate_valid_wgsl() {
+    fn css_spaces_generate_valid_wgsl() {
         for space in [
             ColorSpace::from(theoria_color::A98Rgb),
             ColorSpace::from(theoria_color::ProPhotoRgb),
             ColorSpace::from(theoria_color::Rec2020),
             ColorSpace::from(theoria_color::OklabD65),
+            ColorSpace::from(theoria_color::HslSrgb),
+            ColorSpace::from(theoria_color::HwbSrgb),
+            ColorSpace::from(theoria_color::LchD50),
+            ColorSpace::from(theoria_color::OklchD65),
         ] {
             validate(&space.transfer_to(LinearSrgb).unwrap().wgsl(52).unwrap());
             validate(
@@ -482,6 +614,21 @@ mod tests {
                     .wgsl(53)
                     .unwrap(),
             );
+        }
+    }
+
+    #[test]
+    fn cylindrical_color_functions_generate_valid_wgsl() {
+        for function in [
+            ColorFunction::RgbToHsl,
+            ColorFunction::HslToRgb,
+            ColorFunction::RgbToHwb,
+            ColorFunction::HwbToRgb,
+            ColorFunction::CartesianToPolar,
+            ColorFunction::PolarToCartesian,
+        ] {
+            let transfer = Transfer::new([TransferStage::ColorFunction(function)]).unwrap();
+            validate(&transfer.wgsl(54).unwrap());
         }
     }
 

@@ -45,10 +45,14 @@ macro_rules! builtin_space {
 
 mod a98_rgb;
 mod display_p3;
+mod hsl_srgb;
+mod hwb_srgb;
 mod lab_d50;
+mod lch_d50;
 mod linear_display_p3;
 mod linear_srgb;
 mod oklab;
+mod oklch_d65;
 mod prophoto_rgb;
 mod rec2020;
 mod srgb;
@@ -57,10 +61,14 @@ mod xyz_d65;
 
 pub use a98_rgb::A98Rgb;
 pub use display_p3::DisplayP3;
+pub use hsl_srgb::HslSrgb;
+pub use hwb_srgb::HwbSrgb;
 pub use lab_d50::LabD50;
+pub use lch_d50::LchD50;
 pub use linear_display_p3::LinearDisplayP3;
 pub use linear_srgb::LinearSrgb;
 pub use oklab::OklabD65;
+pub use oklch_d65::OklchD65;
 pub use prophoto_rgb::ProPhotoRgb;
 pub use rec2020::Rec2020;
 pub use srgb::Srgb;
@@ -85,6 +93,10 @@ mod tests {
         assert_eq!(ColorSpace::from(ProPhotoRgb), ColorSpace::from(ProPhotoRgb));
         assert_eq!(ColorSpace::from(Rec2020), ColorSpace::from(Rec2020));
         assert_eq!(ColorSpace::from(OklabD65), ColorSpace::from(OklabD65));
+        assert_eq!(ColorSpace::from(HslSrgb), ColorSpace::from(HslSrgb));
+        assert_eq!(ColorSpace::from(HwbSrgb), ColorSpace::from(HwbSrgb));
+        assert_eq!(ColorSpace::from(LchD50), ColorSpace::from(LchD50));
+        assert_eq!(ColorSpace::from(OklchD65), ColorSpace::from(OklchD65));
         assert_eq!(
             ColorSpace::from(LinearDisplayP3),
             ColorSpace::from(LinearDisplayP3)
@@ -190,6 +202,63 @@ mod tests {
                 .unwrap();
             for (actual, expected) in restored.into_iter().zip(sample) {
                 assert!((actual - expected).abs() < 1e-6, "{actual} != {expected}");
+            }
+        }
+    }
+
+    #[test]
+    fn css_polar_spaces_convert_and_round_trip() {
+        let srgb = ColorSpace::from(Srgb);
+        for (space, red) in [
+            (ColorSpace::from(HslSrgb), [0.0, 100.0, 50.0]),
+            (ColorSpace::from(HwbSrgb), [0.0, 0.0, 0.0]),
+        ] {
+            let converted = space.transfer_to(&srgb).unwrap().evaluate(&red).unwrap();
+            for (actual, expected) in converted.iter().zip([1.0, 0.0, 0.0]) {
+                assert!((actual - expected).abs() < 1e-6, "{actual} != {expected}");
+            }
+            let restored = srgb
+                .transfer_to(&space)
+                .unwrap()
+                .evaluate(&converted)
+                .unwrap();
+            for (index, (actual, expected)) in restored.iter().zip(red).enumerate() {
+                let difference = if index == 0 {
+                    (actual - expected + 180.0).rem_euclid(360.0) - 180.0
+                } else {
+                    actual - expected
+                };
+                assert!(difference.abs() < 1e-5, "{actual} != {expected}");
+            }
+        }
+
+        for (space, cartesian, polar) in [
+            (
+                ColorSpace::from(LchD50),
+                ColorSpace::from(LabD50),
+                [50.0, 40.0, 90.0],
+            ),
+            (
+                ColorSpace::from(OklchD65),
+                ColorSpace::from(OklabD65),
+                [0.5, 0.2, 90.0],
+            ),
+        ] {
+            let converted = space
+                .transfer_to(&cartesian)
+                .unwrap()
+                .evaluate(&polar)
+                .unwrap();
+            assert!((converted[0] - polar[0]).abs() < 1e-6);
+            assert!(converted[1].abs() < 1e-6);
+            assert!((converted[2] - polar[1]).abs() < 1e-6);
+            let restored = cartesian
+                .transfer_to(&space)
+                .unwrap()
+                .evaluate(&converted)
+                .unwrap();
+            for (actual, expected) in restored.iter().zip(polar) {
+                assert!((actual - expected).abs() < 1e-5, "{actual} != {expected}");
             }
         }
     }

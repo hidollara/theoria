@@ -1,8 +1,11 @@
 use std::{error::Error, fmt, sync::Arc};
 
 mod evaluate;
+mod function;
 #[cfg(test)]
 mod tests;
+
+pub use function::ColorFunction;
 
 /// A directed sequence of color-coordinate operations.
 ///
@@ -109,6 +112,7 @@ pub enum TransferStage {
     Curves(Arc<[TransferCurve]>),
     Matrix(TransferMatrix),
     Clut(TransferClut),
+    ColorFunction(ColorFunction),
     /// Restricts each channel to the inclusive `[0, 1]` interval.
     Clamp(usize),
 }
@@ -127,6 +131,7 @@ impl TransferStage {
             Self::Curves(curves) => curves.len(),
             Self::Matrix(matrix) => matrix.input_channels,
             Self::Clut(clut) => clut.grid.len(),
+            Self::ColorFunction(_) => 3,
             Self::Clamp(channels) => *channels,
         }
     }
@@ -136,6 +141,7 @@ impl TransferStage {
             Self::Curves(curves) => curves.len(),
             Self::Matrix(matrix) => matrix.output_channels,
             Self::Clut(clut) => clut.output_channels,
+            Self::ColorFunction(_) => 3,
             Self::Clamp(channels) => *channels,
         }
     }
