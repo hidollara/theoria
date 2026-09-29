@@ -1,9 +1,6 @@
-use super::{
-    ColorProfile, ColorSpace, Pcs, SpaceConnectionError, Transfer, TransferCurve, TypedColorSpace,
-    XyzD50, XyzD65, rgb_to_xyz_d65_transfer, xyz_d65_to_rgb_transfer,
-};
+use super::{ColorProfile, ColorSpace, Pcs, SpaceConnectionError, TypedColorSpace, XyzD50, XyzD65};
 use crate::model::Rgb;
-use crate::transfer::TransferStage;
+use crate::transfer::{Transfer, TransferCurve, TransferError, TransferMatrix, TransferStage};
 
 named_space!(DisplayP3, Rgb);
 
@@ -23,15 +20,18 @@ impl DisplayP3 {
         ],
         [0.0, 32229.0 / 714400.0, 5220557.0 / 5000800.0],
     ];
-    pub(crate) const FROM_XYZ_D65: [[f64; 3]; 3] = [
-        [
-            446124.0 / 178915.0,
-            -333277.0 / 357830.0,
-            -72051.0 / 178915.0,
-        ],
-        [-14852.0 / 17905.0, 63121.0 / 35810.0, 423.0 / 17905.0],
-        [11844.0 / 330415.0, -50337.0 / 660830.0, 316169.0 / 330415.0],
-    ];
+
+    pub(crate) fn to_xyz_d65_transfer() -> Result<Transfer, TransferError> {
+        Transfer::new([
+            TransferStage::curves(vec![TransferCurve::SRGB_DECODE; 3])?,
+            TransferStage::Matrix(TransferMatrix::new(
+                3,
+                3,
+                Self::TO_XYZ_D65.into_iter().flatten().collect::<Vec<_>>(),
+                [0.0; 3],
+            )?),
+        ])
+    }
 }
 
 builtin_space!(DisplayP3, DisplayP3Profile);
@@ -46,29 +46,28 @@ impl ColorProfile for DisplayP3Profile {
     }
 
     fn space_to_pcs_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
-        Ok(
-            rgb_to_xyz_d65_transfer(DisplayP3::TO_XYZ_D65, TransferCurve::SRGB_DECODE)?
-                .then(&XyzD65::to_xyz_d50_transfer())?,
-        )
+        Ok(DisplayP3::to_xyz_d65_transfer()?.then(&XyzD65::to_xyz_d50_transfer())?)
     }
 
     fn pcs_to_space_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
-        Ok(XyzD50::to_xyz_d65_transfer().then(&xyz_d65_to_rgb_transfer(
-            DisplayP3::FROM_XYZ_D65,
-            TransferCurve::SRGB_ENCODE,
-        )?)?)
+        Ok(XyzD50::to_xyz_d65_transfer().then(&XyzD65::to_display_p3_transfer()?)?)
     }
 
     fn direct_transfer_to(
         &self,
         destination: &ColorSpace,
     ) -> Result<Option<Transfer>, SpaceConnectionError> {
-        if *destination != ColorSpace::from(super::LinearDisplayP3) {
-            return Ok(None);
+        if *destination == ColorSpace::from(super::LinearDisplayP3) {
+            Ok(Some(Transfer::new([TransferStage::curves(vec![
+                TransferCurve::SRGB_DECODE;
+                3
+            ])?])?))
+        } else if *destination == ColorSpace::from(XyzD65) {
+            Ok(Some(DisplayP3::to_xyz_d65_transfer()?))
+        } else if *destination == ColorSpace::from(XyzD50) {
+            Ok(Some(self.space_to_pcs_transfer()?))
+        } else {
+            Ok(None)
         }
-        Ok(Some(Transfer::new([TransferStage::curves(vec![
-            TransferCurve::SRGB_DECODE;
-            3
-        ])?])?))
     }
 }

@@ -1,10 +1,8 @@
+use super::{ColorProfile, ColorSpace, Pcs, SpaceConnectionError, TypedColorSpace};
 #[cfg(test)]
 use crate::icc_profile::IccRenderingIntent;
 #[cfg(test)]
 use crate::model::Rgb;
-use crate::transfer::{Transfer, TransferCurve, TransferError, TransferMatrix, TransferStage};
-
-use super::{ColorProfile, ColorSpace, Pcs, SpaceConnectionError, TypedColorSpace};
 
 macro_rules! named_space {
     ($name:ident, $model:ty) => {
@@ -15,35 +13,6 @@ macro_rules! named_space {
             type Model = $model;
         }
     };
-}
-
-pub(crate) fn rgb_to_xyz_d65_transfer(
-    matrix: [[f64; 3]; 3],
-    curve: TransferCurve,
-) -> Result<Transfer, TransferError> {
-    Transfer::new([
-        TransferStage::curves([curve.clone(), curve.clone(), curve])?,
-        rgb_matrix(matrix)?,
-    ])
-}
-
-pub(crate) fn xyz_d65_to_rgb_transfer(
-    matrix: [[f64; 3]; 3],
-    curve: TransferCurve,
-) -> Result<Transfer, TransferError> {
-    Transfer::new([
-        rgb_matrix(matrix)?,
-        TransferStage::curves([curve.clone(), curve.clone(), curve])?,
-    ])
-}
-
-fn rgb_matrix(matrix: [[f64; 3]; 3]) -> Result<TransferStage, TransferError> {
-    Ok(TransferStage::Matrix(TransferMatrix::new(
-        3,
-        3,
-        matrix.into_iter().flatten().collect::<Vec<_>>(),
-        [0.0; 3],
-    )?))
 }
 
 macro_rules! builtin_space {
@@ -127,6 +96,47 @@ mod tests {
             d65.direct_to(&d50).unwrap(),
             Some(XyzD65::to_xyz_d50_transfer())
         );
+    }
+
+    #[test]
+    fn rgb_profiles_link_directly_to_xyz_d65_and_xyz_d50() {
+        let d50 = ColorSpace::from(XyzD50);
+        let d65 = ColorSpace::from(XyzD65);
+        for (rgb, to_d65, from_d65) in [
+            (
+                ColorSpace::from(Srgb),
+                Srgb::to_xyz_d65_transfer().unwrap(),
+                XyzD65::to_srgb_transfer().unwrap(),
+            ),
+            (
+                ColorSpace::from(LinearSrgb),
+                LinearSrgb::to_xyz_d65_transfer().unwrap(),
+                XyzD65::to_linear_srgb_transfer().unwrap(),
+            ),
+            (
+                ColorSpace::from(DisplayP3),
+                DisplayP3::to_xyz_d65_transfer().unwrap(),
+                XyzD65::to_display_p3_transfer().unwrap(),
+            ),
+            (
+                ColorSpace::from(LinearDisplayP3),
+                LinearDisplayP3::to_xyz_d65_transfer().unwrap(),
+                XyzD65::to_linear_display_p3_transfer().unwrap(),
+            ),
+        ] {
+            assert_eq!(rgb.direct_to(&d65).unwrap(), Some(to_d65));
+            assert_eq!(
+                rgb.direct_to(&d50).unwrap(),
+                Some(rgb.space_to_pcs().unwrap())
+            );
+            assert_eq!(d65.direct_to(&rgb).unwrap(), Some(from_d65));
+            let sample = [0.2, 0.4, 0.6];
+            let xyz = rgb.transfer_to(&d65).unwrap().evaluate(&sample).unwrap();
+            let restored = d65.transfer_to(&rgb).unwrap().evaluate(&xyz).unwrap();
+            for (actual, expected) in restored.into_iter().zip(sample) {
+                assert!((actual - expected).abs() < 1e-7, "{actual} != {expected}");
+            }
+        }
     }
 
     #[test]

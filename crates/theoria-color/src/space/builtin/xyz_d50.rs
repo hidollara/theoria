@@ -1,7 +1,8 @@
 use std::sync::LazyLock;
 
-use super::{ColorProfile, ColorSpace, Pcs, SpaceConnectionError, Transfer, TypedColorSpace};
+use super::{ColorProfile, ColorSpace, Pcs, SpaceConnectionError, TypedColorSpace};
 use crate::model::Xyz;
+use crate::transfer::Transfer;
 use crate::transfer::{
     CurveSegment, CurveSegmentKind, ICC_PCS_D50_XYZ, TransferCurve, TransferError, TransferMatrix,
     TransferStage,
