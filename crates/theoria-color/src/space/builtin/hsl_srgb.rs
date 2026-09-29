@@ -13,8 +13,16 @@ impl HslSrgb {
 builtin_space!(HslSrgb, HslSrgbProfile);
 
 impl ColorProfile for HslSrgbProfile {
-    fn model(&self) -> crate::model::ColorModel {
-        crate::model::ColorModel::Hsl
+    fn channels(&self) -> usize {
+        3
+    }
+
+    fn polar_hue_index(&self) -> Option<usize> {
+        Some(0)
+    }
+
+    fn hue_is_powerless(&self, coordinates: &[f64]) -> bool {
+        coordinates[1] <= 0.0
     }
 
     fn connection_space(&self) -> ConnectionSpace {

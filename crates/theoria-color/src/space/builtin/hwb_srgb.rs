@@ -13,8 +13,16 @@ impl HwbSrgb {
 builtin_space!(HwbSrgb, HwbSrgbProfile);
 
 impl ColorProfile for HwbSrgbProfile {
-    fn model(&self) -> crate::model::ColorModel {
-        crate::model::ColorModel::Hwb
+    fn channels(&self) -> usize {
+        3
+    }
+
+    fn polar_hue_index(&self) -> Option<usize> {
+        Some(0)
+    }
+
+    fn hue_is_powerless(&self, coordinates: &[f64]) -> bool {
+        coordinates[1] + coordinates[2] >= 100.0
     }
 
     fn connection_space(&self) -> ConnectionSpace {

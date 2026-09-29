@@ -6,7 +6,7 @@ use std::{
 };
 
 use super::icc_profile::IccProfileError;
-use super::model::{ColorModel, TypedColorModel};
+use super::model::TypedColorModel;
 use super::transfer::{Transfer, TransferError};
 
 mod builtin;
@@ -19,8 +19,8 @@ pub use builtin::{
 /// Associates a statically typed color space with its coordinate model.
 ///
 /// This constrains authored coordinates at compile time and supplies their
-/// runtime color space for rendering. The runtime space's model must match
-/// `Model`, and conversion must return the same space on repeated calls.
+/// runtime color space for rendering. Conversion must return the same space on
+/// repeated calls.
 pub trait TypedColorSpace: Into<ColorSpace> + 'static {
     type Model: TypedColorModel;
 }
@@ -60,12 +60,11 @@ impl ConnectionSpace {
 
 /// A shared runtime color space with a profile-defined connection space.
 ///
-/// Its selected profile supplies the coordinate model and directed connection
+/// Its selected profile supplies the channel count and directed connection
 /// transforms. Built-in D65 spaces can connect without a D50 adaptation.
 /// Two spaces selected from the same ICC data with different intents are
 /// distinct, even though their input coordinates are the same. The colors
-/// reached in the ICC PCS are determined by those conversions, not merely by
-/// the coordinate model.
+/// reached in the ICC PCS are determined by those conversions.
 ///
 /// This handle does not itself validate the range of an individual coordinate
 /// value or guarantee that the profile supports both directions for the
@@ -80,18 +79,36 @@ impl ColorSpace {
     /// Owns a selected profile as a new color space.
     /// Named spaces use their canonical `Into<ColorSpace>` conversion instead.
     pub fn new(profile: impl ColorProfile + 'static) -> Self {
-        assert!(profile.model().channels() > 0, "color model needs channels");
+        assert!(profile.channels() > 0, "color space needs channels");
+        if let Some(index) = profile.polar_hue_index() {
+            assert!(
+                index < profile.channels(),
+                "hue index must be a color channel"
+            );
+        }
         Self {
             profile: Arc::new(profile),
         }
     }
 
     pub fn channels(&self) -> usize {
-        self.model().channels()
+        self.profile.channels()
     }
 
-    pub fn model(&self) -> ColorModel {
-        self.profile.model()
+    /// Returns the hue channel for a cylindrical coordinate system, if any.
+    pub fn polar_hue_index(&self) -> Option<usize> {
+        self.profile.polar_hue_index()
+    }
+
+    /// Whether hue is undefined at these coordinates in this space.
+    /// The slice must contain exactly [`Self::channels`] values.
+    pub fn hue_is_powerless(&self, coordinates: &[f64]) -> bool {
+        assert_eq!(
+            coordinates.len(),
+            self.channels(),
+            "coordinate count must match the space"
+        );
+        self.profile.hue_is_powerless(coordinates)
     }
 
     pub fn connection_space(&self) -> ConnectionSpace {
@@ -202,19 +219,29 @@ impl fmt::Debug for ColorSpace {
     }
 }
 
-/// A coordinate model and the conversions for one selected interpretation.
+/// The channel count and conversions for one selected interpretation.
 ///
 /// An [`IccProfile`](super::icc_profile::IccProfile) can define multiple
 /// implementations of this trait by selecting different rendering intents.
 /// The two connection-space directions are independent, and a direct link is optional.
 /// Definitions are `Send + Sync` so their handles can be shared by renderers.
-/// `model` and `connection_space` must remain stable for the lifetime of
+/// `channels`, `connection_space`, and hue metadata must remain stable for the lifetime of
 /// the profile so its [`ColorSpace`] handle has stable identity.
 pub trait ColorProfile: Send + Sync {
-    fn model(&self) -> ColorModel;
+    fn channels(&self) -> usize;
     fn connection_space(&self) -> ConnectionSpace;
     fn transfer_to_connection_space(&self) -> Result<Transfer, SpaceConnectionError>;
     fn transfer_from_connection_space(&self) -> Result<Transfer, SpaceConnectionError>;
+
+    /// Index of the hue channel when the coordinates are cylindrical.
+    fn polar_hue_index(&self) -> Option<usize> {
+        None
+    }
+
+    /// Whether hue is undefined for a coordinate in this space.
+    fn hue_is_powerless(&self, _coordinates: &[f64]) -> bool {
+        false
+    }
 
     /// A one-way conversion to a particular destination space, if available.
     ///
@@ -289,7 +316,7 @@ mod tests {
             .unwrap()
             .color_space(IccRenderingIntent::RelativeColorimetric);
         assert_eq!(canonical, another_reference);
-        assert_eq!(canonical.model(), ColorModel::Rgb);
+        assert_eq!(canonical.channels(), 3);
         assert_ne!(canonical, custom);
         let handles = HashSet::from([canonical.clone(), another_reference, custom]);
         assert_eq!(handles.len(), 2);
@@ -516,8 +543,8 @@ mod tests {
         struct LinkedSpace(Option<ColorSpace>);
 
         impl ColorProfile for LinkedSpace {
-            fn model(&self) -> ColorModel {
-                ColorModel::Rgb
+            fn channels(&self) -> usize {
+                3
             }
 
             fn connection_space(&self) -> ConnectionSpace {
@@ -557,8 +584,8 @@ mod tests {
         struct InvalidLink;
 
         impl ColorProfile for InvalidLink {
-            fn model(&self) -> ColorModel {
-                ColorModel::Rgb
+            fn channels(&self) -> usize {
+                3
             }
 
             fn connection_space(&self) -> ConnectionSpace {
@@ -592,8 +619,8 @@ mod tests {
         struct InvalidPcs;
 
         impl ColorProfile for InvalidPcs {
-            fn model(&self) -> ColorModel {
-                ColorModel::Cmyk
+            fn channels(&self) -> usize {
+                4
             }
 
             fn connection_space(&self) -> ConnectionSpace {

@@ -1,22 +1,28 @@
 use std::{cell::RefCell, rc::Rc};
 
 use crate::{
-    color::{
-        ColorModel, ColorProfile, ColorSpace, ConnectionSpace, SpaceConnectionError, Transfer,
-    },
+    color::{ColorProfile, ColorSpace, ConnectionSpace, SpaceConnectionError, Transfer},
     component::{ComponentInstance, MountContext},
     event::{DispatchQueue, DynDispatch, EventSink, SubmissionOutcome},
     reactive::ReactiveError,
 };
 
-/// A separate runtime space with the same conversions and coordinate model.
+/// A separate runtime space with the same conversions and coordinate geometry.
 /// This exercises space identity without manufacturing another standard space.
 pub(crate) fn distinct_color_space(space: impl Into<ColorSpace>) -> ColorSpace {
     struct Distinct(ColorSpace);
 
     impl ColorProfile for Distinct {
-        fn model(&self) -> ColorModel {
-            self.0.model()
+        fn channels(&self) -> usize {
+            self.0.channels()
+        }
+
+        fn polar_hue_index(&self) -> Option<usize> {
+            self.0.polar_hue_index()
+        }
+
+        fn hue_is_powerless(&self, coordinates: &[f64]) -> bool {
+            self.0.hue_is_powerless(coordinates)
         }
 
         fn connection_space(&self) -> ConnectionSpace {

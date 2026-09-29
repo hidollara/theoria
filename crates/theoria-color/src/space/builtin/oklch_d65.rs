@@ -17,8 +17,16 @@ impl OklchD65 {
 builtin_space!(OklchD65, OklchD65Profile);
 
 impl ColorProfile for OklchD65Profile {
-    fn model(&self) -> crate::model::ColorModel {
-        crate::model::ColorModel::Oklch
+    fn channels(&self) -> usize {
+        3
+    }
+
+    fn polar_hue_index(&self) -> Option<usize> {
+        Some(2)
+    }
+
+    fn hue_is_powerless(&self, coordinates: &[f64]) -> bool {
+        coordinates[1] <= 0.000004
     }
 
     fn connection_space(&self) -> ConnectionSpace {

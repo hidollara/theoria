@@ -22,63 +22,12 @@ pub use xyz::Xyz;
 /// them when their values are constructed.
 pub trait ColorCoordinates<M: TypedColorModel>: 'static {}
 
-/// Defines the structure and ordering of a color profile's coordinates.
+/// Marks a coordinate model for statically typed color spaces.
 ///
-/// A model assigns no physical color meaning by itself. Primaries, transfer
-/// functions, white points, matrices, and lookup tables belong to a profile.
-pub trait TypedColorModel: Sized + 'static {
-    const ERASED: ColorModel;
-}
-
-/// The coordinate model retained after a typed color space is erased.
-///
-/// `Channels` preserves the arity of an ICC n-colour or application-defined
-/// model without incorrectly treating its coordinates as RGB or another named
-/// model of the same size.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum ColorModel {
-    Rgb,
-    Cmyk,
-    Lab,
-    Lch,
-    Oklab,
-    Oklch,
-    Hsl,
-    Hwb,
-    Xyz,
-    Ycbcr,
-    Gray,
-    Luv,
-    Yxy,
-    Hsv,
-    Hls,
-    Cmy,
-    Channels(usize),
-}
-
-impl ColorModel {
-    pub const fn channels(self) -> usize {
-        match self {
-            Self::Rgb
-            | Self::Lab
-            | Self::Lch
-            | Self::Oklab
-            | Self::Oklch
-            | Self::Hsl
-            | Self::Hwb
-            | Self::Xyz
-            | Self::Ycbcr
-            | Self::Luv
-            | Self::Yxy
-            | Self::Hsv
-            | Self::Hls
-            | Self::Cmy => 3,
-            Self::Cmyk => 4,
-            Self::Gray => 1,
-            Self::Channels(channels) => channels,
-        }
-    }
-}
+/// The model groups compatible coordinate representations; a profile defines
+/// their colorimetric interpretation. Its exact role remains independent of
+/// the runtime metadata exposed by [`crate::space::ColorSpace`].
+pub trait TypedColorModel: Sized + 'static {}
 
 #[cfg(test)]
 mod tests {
@@ -90,6 +39,5 @@ mod tests {
     fn models_accept_whole_coordinate_representations() {
         accepts::<Rgb, [u8; 3]>();
         accepts::<Lab, [f32; 3]>();
-        assert_eq!(Rgb::ERASED, ColorModel::Rgb);
     }
 }

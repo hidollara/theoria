@@ -15,8 +15,16 @@ impl LchD50 {
 builtin_space!(LchD50, LchD50Profile);
 
 impl ColorProfile for LchD50Profile {
-    fn model(&self) -> crate::model::ColorModel {
-        crate::model::ColorModel::Lch
+    fn channels(&self) -> usize {
+        3
+    }
+
+    fn polar_hue_index(&self) -> Option<usize> {
+        Some(2)
+    }
+
+    fn hue_is_powerless(&self, coordinates: &[f64]) -> bool {
+        coordinates[1] <= 0.0015
     }
 
     fn connection_space(&self) -> ConnectionSpace {

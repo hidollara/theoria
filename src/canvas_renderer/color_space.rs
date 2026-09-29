@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     canvas::{Color, ColorError, ColorValue},
-    color::{ColorModel, ColorSpace, LinearDisplayP3, LinearSrgb, Transfer},
+    color::{ColorSpace, LinearDisplayP3, LinearSrgb, Transfer},
 };
 
 /// Renderer-owned conversions prepared before commands are recorded.
@@ -21,7 +21,7 @@ pub(crate) struct PreparedInterpolation {
     to_working: Transfer,
     identity: bool,
     linear_builtin: bool,
-    model: ColorModel,
+    interpolation_space: ColorSpace,
 }
 
 impl PreparedInterpolation {
@@ -30,21 +30,12 @@ impl PreparedInterpolation {
     }
 
     fn hue_index(&self) -> Option<usize> {
-        match self.model {
-            ColorModel::Hsl | ColorModel::Hwb => Some(0),
-            ColorModel::Lch | ColorModel::Oklch => Some(2),
-            _ => None,
-        }
+        self.interpolation_space.polar_hue_index()
     }
 
     fn hue_is_powerless(&self, coordinates: [f32; 3]) -> bool {
-        match self.model {
-            ColorModel::Hsl => coordinates[1] <= 0.0,
-            ColorModel::Hwb => coordinates[1] + coordinates[2] >= 100.0,
-            ColorModel::Lch => coordinates[1] <= 0.0015,
-            ColorModel::Oklch => coordinates[1] <= 0.000004,
-            _ => false,
-        }
+        self.interpolation_space
+            .hue_is_powerless(&coordinates.map(f64::from))
     }
 
     fn convert(&self, rgb: [f32; 3], to_interpolation: bool) -> [f32; 3] {
@@ -96,7 +87,7 @@ impl PreparedColors {
             identity: space == working,
             linear_builtin: *space == ColorSpace::from(LinearSrgb)
                 || *space == ColorSpace::from(LinearDisplayP3),
-            model: space.model(),
+            interpolation_space: space.clone(),
         };
         self.interpolations.insert(space.clone(), plan);
         Ok(())

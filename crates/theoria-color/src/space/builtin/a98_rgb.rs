@@ -30,8 +30,8 @@ impl A98Rgb {
 builtin_space!(A98Rgb, A98RgbProfile);
 
 impl ColorProfile for A98RgbProfile {
-    fn model(&self) -> crate::model::ColorModel {
-        crate::model::ColorModel::Rgb
+    fn channels(&self) -> usize {
+        3
     }
 
     fn connection_space(&self) -> ConnectionSpace {

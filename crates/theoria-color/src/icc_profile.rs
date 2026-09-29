@@ -10,7 +10,6 @@ use moxcms::{
 };
 
 use super::icc_mpe::MpeTags;
-use super::model::ColorModel;
 use super::space::{
     ColorProfile, ColorSpace, ConnectionSpace, LabD50, SpaceConnectionError, XyzD50,
 };
@@ -152,11 +151,7 @@ impl IccProfile {
 
 impl IccProfileData {
     fn device_channels(&self) -> usize {
-        self.device_model().channels()
-    }
-
-    fn device_model(&self) -> ColorModel {
-        color_model(self.parsed.color_space)
+        icc_channels(self.parsed.color_space)
     }
 
     fn space_to_pcs(&self, intent: IccRenderingIntent) -> Result<Transfer, IccProfileError> {
@@ -291,33 +286,32 @@ impl IccRenderingIntent {
     }
 }
 
-fn color_model(space: DataColorSpace) -> ColorModel {
+fn icc_channels(space: DataColorSpace) -> usize {
     match space {
-        DataColorSpace::Xyz => ColorModel::Xyz,
-        DataColorSpace::Lab => ColorModel::Lab,
-        DataColorSpace::Luv => ColorModel::Luv,
-        DataColorSpace::YCbr => ColorModel::Ycbcr,
-        DataColorSpace::Yxy => ColorModel::Yxy,
-        DataColorSpace::Rgb => ColorModel::Rgb,
-        DataColorSpace::Gray => ColorModel::Gray,
-        DataColorSpace::Hsv => ColorModel::Hsv,
-        DataColorSpace::Hls => ColorModel::Hls,
-        DataColorSpace::Cmyk => ColorModel::Cmyk,
-        DataColorSpace::Cmy => ColorModel::Cmy,
-        DataColorSpace::Color2 => ColorModel::Channels(2),
-        DataColorSpace::Color3 => ColorModel::Channels(3),
-        DataColorSpace::Color4 => ColorModel::Channels(4),
-        DataColorSpace::Color5 => ColorModel::Channels(5),
-        DataColorSpace::Color6 => ColorModel::Channels(6),
-        DataColorSpace::Color7 => ColorModel::Channels(7),
-        DataColorSpace::Color8 => ColorModel::Channels(8),
-        DataColorSpace::Color9 => ColorModel::Channels(9),
-        DataColorSpace::Color10 => ColorModel::Channels(10),
-        DataColorSpace::Color11 => ColorModel::Channels(11),
-        DataColorSpace::Color12 => ColorModel::Channels(12),
-        DataColorSpace::Color13 => ColorModel::Channels(13),
-        DataColorSpace::Color14 => ColorModel::Channels(14),
-        DataColorSpace::Color15 => ColorModel::Channels(15),
+        DataColorSpace::Gray => 1,
+        DataColorSpace::Color2 => 2,
+        DataColorSpace::Cmyk | DataColorSpace::Color4 => 4,
+        DataColorSpace::Color5 => 5,
+        DataColorSpace::Color6 => 6,
+        DataColorSpace::Color7 => 7,
+        DataColorSpace::Color8 => 8,
+        DataColorSpace::Color9 => 9,
+        DataColorSpace::Color10 => 10,
+        DataColorSpace::Color11 => 11,
+        DataColorSpace::Color12 => 12,
+        DataColorSpace::Color13 => 13,
+        DataColorSpace::Color14 => 14,
+        DataColorSpace::Color15 => 15,
+        DataColorSpace::Xyz
+        | DataColorSpace::Lab
+        | DataColorSpace::Luv
+        | DataColorSpace::YCbr
+        | DataColorSpace::Yxy
+        | DataColorSpace::Rgb
+        | DataColorSpace::Hsv
+        | DataColorSpace::Hls
+        | DataColorSpace::Cmy
+        | DataColorSpace::Color3 => 3,
     }
 }
 
@@ -727,8 +721,8 @@ impl Error for IccProfileError {
 }
 
 impl ColorProfile for IccColorProfile {
-    fn model(&self) -> ColorModel {
-        self.data.device_model()
+    fn channels(&self) -> usize {
+        self.data.device_channels()
     }
 
     fn connection_space(&self) -> ConnectionSpace {
@@ -787,11 +781,12 @@ mod tests {
     }
 
     #[test]
-    fn icc_data_model_is_not_inferred_from_channel_count() {
-        assert_eq!(color_model(DataColorSpace::Rgb), ColorModel::Rgb);
-        assert_eq!(color_model(DataColorSpace::Xyz), ColorModel::Xyz);
-        assert_eq!(color_model(DataColorSpace::Color3), ColorModel::Channels(3));
-        assert_eq!(color_model(DataColorSpace::Cmyk).channels(), 4);
+    fn icc_channel_counts_follow_the_declared_data_space() {
+        assert_eq!(icc_channels(DataColorSpace::Rgb), 3);
+        assert_eq!(icc_channels(DataColorSpace::Xyz), 3);
+        assert_eq!(icc_channels(DataColorSpace::Color3), 3);
+        assert_eq!(icc_channels(DataColorSpace::Cmyk), 4);
+        assert_eq!(icc_channels(DataColorSpace::Color15), 15);
     }
 
     #[test]

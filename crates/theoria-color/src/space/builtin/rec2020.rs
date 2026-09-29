@@ -30,8 +30,8 @@ impl Rec2020 {
 builtin_space!(Rec2020, Rec2020Profile);
 
 impl ColorProfile for Rec2020Profile {
-    fn model(&self) -> crate::model::ColorModel {
-        crate::model::ColorModel::Rgb
+    fn channels(&self) -> usize {
+        3
     }
 
     fn connection_space(&self) -> ConnectionSpace {

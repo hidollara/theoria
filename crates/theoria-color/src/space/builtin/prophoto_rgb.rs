@@ -75,8 +75,8 @@ impl ProPhotoRgb {
 builtin_space!(ProPhotoRgb, ProPhotoRgbProfile);
 
 impl ColorProfile for ProPhotoRgbProfile {
-    fn model(&self) -> crate::model::ColorModel {
-        crate::model::ColorModel::Rgb
+    fn channels(&self) -> usize {
+        3
     }
 
     fn connection_space(&self) -> ConnectionSpace {

@@ -83,8 +83,8 @@ impl LabD50 {
 }
 
 impl ColorProfile for LabD50Profile {
-    fn model(&self) -> crate::model::ColorModel {
-        crate::model::ColorModel::Lab
+    fn channels(&self) -> usize {
+        3
     }
 
     fn connection_space(&self) -> ConnectionSpace {

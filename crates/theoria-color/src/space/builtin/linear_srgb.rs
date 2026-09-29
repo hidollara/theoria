@@ -20,8 +20,8 @@ impl LinearSrgb {
 builtin_space!(LinearSrgb, LinearSrgbProfile);
 
 impl ColorProfile for LinearSrgbProfile {
-    fn model(&self) -> crate::model::ColorModel {
-        crate::model::ColorModel::Rgb
+    fn channels(&self) -> usize {
+        3
     }
 
     fn connection_space(&self) -> ConnectionSpace {

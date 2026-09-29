@@ -25,9 +25,9 @@ macro_rules! builtin_space {
                     std::sync::LazyLock::new(|| {
                         let space = $crate::space::ColorSpace::new($definition);
                         assert_eq!(
-                            space.model(),
-                            <<$space as $crate::space::TypedColorSpace>::Model as $crate::model::TypedColorModel>::ERASED,
-                            "typed and runtime color models differ"
+                            space.channels(),
+                            3,
+                            "built-in spaces have three coordinates"
                         );
                         space
                     });
@@ -261,6 +261,41 @@ mod tests {
                 assert!((actual - expected).abs() < 1e-5, "{actual} != {expected}");
             }
         }
+    }
+
+    #[test]
+    fn polar_geometry_is_supplied_by_the_space() {
+        for (space, hue_index, neutral, chromatic) in [
+            (
+                ColorSpace::from(HslSrgb),
+                0,
+                [0.0, 0.0, 50.0],
+                [120.0, 100.0, 50.0],
+            ),
+            (
+                ColorSpace::from(HwbSrgb),
+                0,
+                [0.0, 100.0, 0.0],
+                [120.0, 0.0, 0.0],
+            ),
+            (
+                ColorSpace::from(LchD50),
+                2,
+                [50.0, 0.001, 0.0],
+                [50.0, 40.0, 120.0],
+            ),
+            (
+                ColorSpace::from(OklchD65),
+                2,
+                [0.5, 0.000001, 0.0],
+                [0.5, 0.2, 120.0],
+            ),
+        ] {
+            assert_eq!(space.polar_hue_index(), Some(hue_index));
+            assert!(space.hue_is_powerless(&neutral));
+            assert!(!space.hue_is_powerless(&chromatic));
+        }
+        assert_eq!(ColorSpace::from(Srgb).polar_hue_index(), None);
     }
 
     #[test]
