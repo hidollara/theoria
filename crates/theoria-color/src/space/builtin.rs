@@ -18,14 +18,10 @@ macro_rules! named_space {
 }
 
 fn rgb_direct_to(
-    source: ColorSpace,
     counterpart: ColorSpace,
     counterpart_curve: TransferCurve,
     destination: &ColorSpace,
 ) -> Result<Option<Transfer>, SpaceConnectionError> {
-    if source == *destination {
-        return Ok(Some(Transfer::IDENTITY));
-    }
     if counterpart != *destination {
         return Ok(None);
     }

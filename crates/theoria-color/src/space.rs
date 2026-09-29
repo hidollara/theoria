@@ -101,6 +101,9 @@ impl ColorSpace {
         &self,
         destination: &ColorSpace,
     ) -> Result<Option<Transfer>, SpaceConnectionError> {
+        if self == destination {
+            return Ok(Some(Transfer::IDENTITY));
+        }
         self.profile
             .direct_transfer_to(destination)?
             .map(|transfer| {
@@ -197,6 +200,7 @@ pub trait ColorProfile: Send + Sync {
 
     /// A one-way conversion to a particular destination space, if available.
     ///
+    /// `ColorSpace::direct_to` handles the identity link before calling this hook.
     /// The destination's selected profile is part of a link's meaning. A link
     /// must not stand in for another merely because its coordinate models match.
     fn direct_transfer_to(
@@ -297,6 +301,20 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn every_space_has_a_direct_identity_link_to_itself() {
+        let profile =
+            IccProfile::from_bytes(&moxcms::ColorProfile::new_srgb().encode().unwrap()).unwrap();
+        let spaces = [
+            ColorSpace::from(Srgb),
+            profile.color_space(IccRenderingIntent::RelativeColorimetric),
+        ];
+        for space in spaces {
+            assert_eq!(space.direct_to(&space).unwrap(), Some(Transfer::IDENTITY));
+            assert_eq!(space.transfer_to(&space).unwrap(), Transfer::IDENTITY);
+        }
     }
 
     #[test]

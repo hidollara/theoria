@@ -41,11 +41,6 @@ impl ColorProfile for LinearSrgbProfile {
         &self,
         destination: &ColorSpace,
     ) -> Result<Option<Transfer>, SpaceConnectionError> {
-        rgb_direct_to(
-            LinearSrgb.into(),
-            Srgb.into(),
-            TransferCurve::SRGB_ENCODE,
-            destination,
-        )
+        rgb_direct_to(Srgb.into(), TransferCurve::SRGB_ENCODE, destination)
     }
 }

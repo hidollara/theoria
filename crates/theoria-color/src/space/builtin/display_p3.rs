@@ -64,7 +64,6 @@ impl ColorProfile for DisplayP3Profile {
         destination: &ColorSpace,
     ) -> Result<Option<Transfer>, SpaceConnectionError> {
         rgb_direct_to(
-            DisplayP3.into(),
             super::LinearDisplayP3.into(),
             TransferCurve::SRGB_DECODE,
             destination,
