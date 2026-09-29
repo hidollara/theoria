@@ -1,6 +1,6 @@
 use super::{
-    CurveSegment, CurveSegmentKind, ICC_PCS_D50_XYZ, Transfer, TransferClut, TransferCurve,
-    TransferCurveKind, TransferError, TransferMatrix, TransferStage,
+    CurveSegment, CurveSegmentKind, Transfer, TransferClut, TransferCurve, TransferCurveKind,
+    TransferError, TransferMatrix, TransferStage,
 };
 
 impl Transfer {
@@ -28,8 +28,6 @@ impl Transfer {
                     .into_iter()
                     .map(|value| value.clamp(0.0, 1.0))
                     .collect(),
-                TransferStage::XyzD50ToLabD50 => xyz_d50_to_lab_d50(&values),
-                TransferStage::LabD50ToXyzD50 => lab_d50_to_xyz_d50(&values),
             };
         }
         if values.iter().any(|value| !value.is_finite()) {
@@ -151,49 +149,4 @@ impl TransferCurve {
                 .clamp(output[0], output[1]),
         }
     }
-}
-
-const LAB_DELTA: f64 = 6.0 / 29.0;
-const LAB_EPSILON: f64 = LAB_DELTA * LAB_DELTA * LAB_DELTA;
-
-fn lab_f(value: f64) -> f64 {
-    if value > LAB_EPSILON {
-        value.cbrt()
-    } else {
-        value / (3.0 * LAB_DELTA * LAB_DELTA) + 4.0 / 29.0
-    }
-}
-
-fn lab_f_inverse(value: f64) -> f64 {
-    if value > LAB_DELTA {
-        value * value * value
-    } else {
-        3.0 * LAB_DELTA * LAB_DELTA * (value - 4.0 / 29.0)
-    }
-}
-
-fn xyz_to_lab(xyz: [f64; 3], white: [f64; 3]) -> [f64; 3] {
-    let x = lab_f(xyz[0] / white[0]);
-    let y = lab_f(xyz[1] / white[1]);
-    let z = lab_f(xyz[2] / white[2]);
-    [116.0 * y - 16.0, 500.0 * (x - y), 200.0 * (y - z)]
-}
-
-fn lab_to_xyz(lab: [f64; 3], white: [f64; 3]) -> [f64; 3] {
-    let y = (lab[0] + 16.0) / 116.0;
-    let x = y + lab[1] / 500.0;
-    let z = y - lab[2] / 200.0;
-    [
-        white[0] * lab_f_inverse(x),
-        white[1] * lab_f_inverse(y),
-        white[2] * lab_f_inverse(z),
-    ]
-}
-
-pub(super) fn xyz_d50_to_lab_d50(xyz: &[f64]) -> Vec<f64> {
-    xyz_to_lab([xyz[0], xyz[1], xyz[2]], ICC_PCS_D50_XYZ).to_vec()
-}
-
-pub(super) fn lab_d50_to_xyz_d50(lab: &[f64]) -> Vec<f64> {
-    lab_to_xyz([lab[0], lab[1], lab[2]], ICC_PCS_D50_XYZ).to_vec()
 }

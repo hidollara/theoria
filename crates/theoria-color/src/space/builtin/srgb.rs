@@ -38,17 +38,17 @@ impl ColorProfile for SrgbProfile {
     }
 
     fn space_to_pcs_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
-        Ok(rgb_to_pcs_transfer(
-            rgb_to_xyz_d65_transfer(Srgb::TO_XYZ_D65, TransferCurve::SRGB_DECODE)?,
-            self.pcs(),
-        )?)
+        Ok(rgb_to_pcs_transfer(rgb_to_xyz_d65_transfer(
+            Srgb::TO_XYZ_D65,
+            TransferCurve::SRGB_DECODE,
+        )?)?)
     }
 
     fn pcs_to_space_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
-        Ok(pcs_to_rgb_transfer(
-            self.pcs(),
-            xyz_d65_to_rgb_transfer(Srgb::FROM_XYZ_D65, TransferCurve::SRGB_ENCODE)?,
-        )?)
+        Ok(pcs_to_rgb_transfer(xyz_d65_to_rgb_transfer(
+            Srgb::FROM_XYZ_D65,
+            TransferCurve::SRGB_ENCODE,
+        )?)?)
     }
 
     fn direct_transfer_to(

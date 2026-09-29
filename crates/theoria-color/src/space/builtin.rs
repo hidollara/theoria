@@ -74,27 +74,12 @@ fn rgb_matrix(matrix: [[f64; 3]; 3]) -> Result<TransferStage, TransferError> {
     )?))
 }
 
-pub(crate) fn rgb_to_pcs_transfer(
-    mut transfer: Transfer,
-    to: Pcs,
-) -> Result<Transfer, TransferError> {
-    transfer = transfer.then(&adaptation(XyzD65::TO_XYZ_D50)?)?;
-    if to == Pcs::LabD50 {
-        transfer = transfer.then(&Transfer::new(3, [TransferStage::XyzD50ToLabD50])?)?;
-    }
-    Ok(transfer)
+pub(crate) fn rgb_to_pcs_transfer(transfer: Transfer) -> Result<Transfer, TransferError> {
+    transfer.then(&adaptation(XyzD65::TO_XYZ_D50)?)
 }
 
-pub(crate) fn pcs_to_rgb_transfer(
-    from: Pcs,
-    xyz_d65_to_rgb: Transfer,
-) -> Result<Transfer, TransferError> {
-    let mut transfer = Transfer::new(3, Vec::<TransferStage>::new())?;
-    if from == Pcs::LabD50 {
-        transfer = transfer.then(&Transfer::new(3, [TransferStage::LabD50ToXyzD50])?)?;
-    }
-    transfer = transfer.then(&adaptation(XyzD65::FROM_XYZ_D50)?)?;
-    transfer.then(&xyz_d65_to_rgb)
+pub(crate) fn pcs_to_rgb_transfer(xyz_d65_to_rgb: Transfer) -> Result<Transfer, TransferError> {
+    adaptation(XyzD65::FROM_XYZ_D50)?.then(&xyz_d65_to_rgb)
 }
 
 pub(crate) fn adaptation(matrix: [[f64; 3]; 3]) -> Result<Transfer, TransferError> {

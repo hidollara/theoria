@@ -11,7 +11,7 @@ use moxcms::{
 
 use super::icc_mpe::MpeTags;
 use super::model::ColorModel;
-use super::space::{ColorProfile, ColorSpace, Pcs, SpaceConnectionError};
+use super::space::{ColorProfile, ColorSpace, LabD50, Pcs, SpaceConnectionError, XyzD50};
 use super::transfer::{
     CurveSegment, CurveSegmentKind, ICC_PCS_D50_XYZ, Transfer, TransferClut, TransferCurve,
     TransferError, TransferMatrix, TransferStage,
@@ -237,15 +237,14 @@ impl IccProfileData {
     }
 
     fn absolute_adjustment(&self, scale: [f64; 3]) -> Result<Transfer, IccProfileError> {
-        let mut stages = Vec::new();
+        let adjustment = Transfer::new(3, [diagonal(scale, [0.0; 3])?])?;
         if self.pcs == Pcs::LabD50 {
-            stages.push(TransferStage::LabD50ToXyzD50);
+            Ok(LabD50::to_xyz_transfer()?
+                .then(&adjustment)?
+                .then(&XyzD50::to_lab_transfer()?)?)
+        } else {
+            Ok(adjustment)
         }
-        stages.push(diagonal(scale, [0.0; 3])?);
-        if self.pcs == Pcs::LabD50 {
-            stages.push(TransferStage::XyzD50ToLabD50);
-        }
-        Ok(Transfer::new(3, stages)?)
     }
 
     fn absolute_to_pcs(&self) -> Result<Transfer, IccProfileError> {
@@ -1100,7 +1099,7 @@ mod tests {
             .unwrap()
             .evaluate(&[1.0])
             .unwrap();
-        let xyz = Transfer::new(3, [TransferStage::LabD50ToXyzD50])
+        let xyz = LabD50::to_xyz_transfer()
             .unwrap()
             .evaluate(&absolute_lab)
             .unwrap();

@@ -81,12 +81,8 @@ pub enum TransferStage {
     Curves(Arc<[TransferCurve]>),
     Matrix(TransferMatrix),
     Clut(TransferClut),
-    /// Restricts encoded channels to the ICC curve/CLUT domain.
+    /// Restricts each channel to the inclusive `[0, 1]` interval.
     Clamp(usize),
-    /// Converts between actual ICC D50 PCS coordinates (not LUT encodings).
-    XyzD50ToLabD50,
-    /// Converts between actual ICC D50 PCS coordinates (not LUT encodings).
-    LabD50ToXyzD50,
 }
 
 impl TransferStage {
@@ -104,7 +100,6 @@ impl TransferStage {
             Self::Matrix(matrix) => matrix.input_channels,
             Self::Clut(clut) => clut.grid.len(),
             Self::Clamp(channels) => *channels,
-            Self::XyzD50ToLabD50 | Self::LabD50ToXyzD50 => 3,
         }
     }
 
@@ -114,7 +109,6 @@ impl TransferStage {
             Self::Matrix(matrix) => matrix.output_channels,
             Self::Clut(clut) => clut.output_channels,
             Self::Clamp(channels) => *channels,
-            Self::XyzD50ToLabD50 | Self::LabD50ToXyzD50 => 3,
         }
     }
 }

@@ -1,19 +1,29 @@
-use super::evaluate::{lab_d50_to_xyz_d50, xyz_d50_to_lab_d50};
 use super::*;
+use crate::space::{ColorSpace, LabD50, XyzD50};
 
 #[test]
 fn d50_pcs_white_black_and_negative_roundtrip() {
-    let white = xyz_d50_to_lab_d50(&ICC_PCS_D50_XYZ);
+    let xyz = ColorSpace::from(XyzD50);
+    let lab = ColorSpace::from(LabD50);
+    let to_lab = xyz.transfer_to(&lab).unwrap();
+    let to_xyz = lab.transfer_to(&xyz).unwrap();
+    assert_eq!(to_lab.stages().len(), 3);
+    assert!(matches!(to_lab.stages()[0], TransferStage::Matrix(_)));
+    assert!(matches!(to_lab.stages()[1], TransferStage::Curves(_)));
+    assert!(matches!(to_lab.stages()[2], TransferStage::Matrix(_)));
+    let white = to_lab.evaluate(&ICC_PCS_D50_XYZ).unwrap();
     assert!((white[0] - 100.0).abs() < 1e-12);
     assert!(white[1].abs() < 1e-12);
     assert!(white[2].abs() < 1e-12);
     assert!(
-        xyz_d50_to_lab_d50(&[0.0; 3])
+        to_lab
+            .evaluate(&[0.0; 3])
+            .unwrap()
             .iter()
             .all(|value| value.abs() < 1e-12)
     );
     for xyz in [[0.1, 0.2, 0.4], [-0.01, 0.02, 0.03], ICC_PCS_D50_XYZ] {
-        let restored = lab_d50_to_xyz_d50(&xyz_d50_to_lab_d50(&xyz));
+        let restored = to_xyz.evaluate(&to_lab.evaluate(&xyz).unwrap()).unwrap();
         for (actual, expected) in restored.into_iter().zip(xyz) {
             assert!((actual - expected).abs() < 1e-12);
         }

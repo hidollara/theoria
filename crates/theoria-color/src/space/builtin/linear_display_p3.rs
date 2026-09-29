@@ -24,17 +24,17 @@ impl ColorProfile for LinearDisplayP3Profile {
     }
 
     fn space_to_pcs_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
-        Ok(rgb_to_pcs_transfer(
-            rgb_to_xyz_d65_transfer(LinearDisplayP3::TO_XYZ_D65, TransferCurve::IDENTITY)?,
-            self.pcs(),
-        )?)
+        Ok(rgb_to_pcs_transfer(rgb_to_xyz_d65_transfer(
+            LinearDisplayP3::TO_XYZ_D65,
+            TransferCurve::IDENTITY,
+        )?)?)
     }
 
     fn pcs_to_space_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
-        Ok(pcs_to_rgb_transfer(
-            self.pcs(),
-            xyz_d65_to_rgb_transfer(LinearDisplayP3::FROM_XYZ_D65, TransferCurve::IDENTITY)?,
-        )?)
+        Ok(pcs_to_rgb_transfer(xyz_d65_to_rgb_transfer(
+            LinearDisplayP3::FROM_XYZ_D65,
+            TransferCurve::IDENTITY,
+        )?)?)
     }
 
     fn direct_transfer_to(

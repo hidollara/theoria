@@ -7,7 +7,7 @@ use std::{
 
 use super::icc_profile::IccProfileError;
 use super::model::{ColorModel, TypedColorModel};
-use super::transfer::{Transfer, TransferError, TransferStage};
+use super::transfer::{Transfer, TransferError};
 
 mod builtin;
 
@@ -115,11 +115,11 @@ impl ColorSpace {
         let mut transform = self.space_to_pcs()?;
         if self.pcs() != destination.pcs() {
             let bridge = match (self.pcs(), destination.pcs()) {
-                (Pcs::XyzD50, Pcs::LabD50) => TransferStage::XyzD50ToLabD50,
-                (Pcs::LabD50, Pcs::XyzD50) => TransferStage::LabD50ToXyzD50,
+                (Pcs::XyzD50, Pcs::LabD50) => XyzD50::to_lab_transfer()?,
+                (Pcs::LabD50, Pcs::XyzD50) => LabD50::to_xyz_transfer()?,
                 _ => unreachable!("different PCS representations"),
             };
-            transform = transform.then(&Transfer::new(3, [bridge])?)?;
+            transform = transform.then(&bridge)?;
         }
         let destination_transform = destination.pcs_to_space()?;
         Ok(transform.then(&destination_transform)?)
@@ -266,6 +266,28 @@ mod tests {
         for actual in transform.evaluate(&[0.5; 3]).unwrap() {
             assert!((actual - expected).abs() < 1e-12);
         }
+    }
+
+    #[test]
+    fn xyz_and_lab_spaces_provide_direct_transfers() {
+        let xyz = ColorSpace::from(XyzD50);
+        let lab = ColorSpace::from(LabD50);
+        assert_eq!(
+            xyz.direct_to(&lab).unwrap(),
+            Some(XyzD50::to_lab_transfer().unwrap())
+        );
+        assert_eq!(
+            lab.direct_to(&xyz).unwrap(),
+            Some(LabD50::to_xyz_transfer().unwrap())
+        );
+        assert_eq!(
+            xyz.transfer_to(&lab).unwrap(),
+            XyzD50::to_lab_transfer().unwrap()
+        );
+        assert_eq!(
+            lab.transfer_to(&xyz).unwrap(),
+            LabD50::to_xyz_transfer().unwrap()
+        );
     }
 
     #[test]

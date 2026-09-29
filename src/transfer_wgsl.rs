@@ -89,20 +89,6 @@ fn lower_wgsl(
             input_name = output_name;
             continue;
         }
-        if matches!(
-            stage,
-            TransferStage::XyzD50ToLabD50 | TransferStage::LabD50ToXyzD50
-        ) {
-            let name = format!("{prefix}_pcs_{stage_index}");
-            helpers.push_str(&match stage {
-                TransferStage::XyzD50ToLabD50 => xyz_d50_to_lab_d50_wgsl(&name),
-                TransferStage::LabD50ToXyzD50 => lab_d50_to_xyz_d50_wgsl(&name),
-                _ => unreachable!(),
-            });
-            body.push_str(&format!("    let {output_name} = {name}({input_name});\n"));
-            input_name = output_name;
-            continue;
-        }
         let mut expressions = Vec::with_capacity(stage.output_channels());
         match stage {
             TransferStage::Curves(curves) => {
@@ -136,9 +122,6 @@ fn lower_wgsl(
                 }
             }
             TransferStage::Clut(_) => unreachable!("CLUT stages are handled above"),
-            TransferStage::XyzD50ToLabD50 | TransferStage::LabD50ToXyzD50 => {
-                unreachable!("PCS stages are handled above")
-            }
         }
         body.push_str(&format!(
             "    let {output_name} = array<f32, {}>({});\n",
@@ -445,41 +428,12 @@ fn wgsl_literal(value: f64) -> Result<String, TransferWgslError> {
     Ok(format!("{rounded:?}"))
 }
 
-fn xyz_d50_to_lab_d50_wgsl(name: &str) -> String {
-    format!(
-        "fn {name}_f(value: f32) -> f32 {{\n\
-             if value > 0.00885645168 {{ return pow(value, 1.0 / 3.0); }}\n\
-             return value / 0.12841854935 + 0.13793103448;\n\
-         }}\n\
-         fn {name}(value: array<f32, 3>) -> array<f32, 3> {{\n\
-             let x = {name}_f(value[0] / 0.9642);\n\
-             let y = {name}_f(value[1]);\n\
-             let z = {name}_f(value[2] / 0.8249);\n\
-             return array<f32, 3>(116.0 * y - 16.0, 500.0 * (x - y), 200.0 * (y - z));\n\
-         }}\n"
-    )
-}
-
-fn lab_d50_to_xyz_d50_wgsl(name: &str) -> String {
-    format!(
-        "fn {name}_inverse(value: f32) -> f32 {{\n\
-             if value > 0.20689655172 {{ return value * value * value; }}\n\
-             return 0.12841854935 * (value - 0.13793103448);\n\
-         }}\n\
-         fn {name}(value: array<f32, 3>) -> array<f32, 3> {{\n\
-             let y = (value[0] + 16.0) / 116.0;\n\
-             let x = y + value[1] / 500.0;\n\
-             let z = y - value[2] / 200.0;\n\
-             return array<f32, 3>(0.9642 * {name}_inverse(x), {name}_inverse(y), 0.8249 * {name}_inverse(z));\n\
-         }}\n"
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use theoria_color::{
-        ColorSpace, CurveSegment, IccProfile, IccRenderingIntent, LinearSrgb, Srgb, TransferMatrix,
+        ColorSpace, CurveSegment, IccProfile, IccRenderingIntent, LabD50, LinearSrgb, Srgb,
+        TransferMatrix, XyzD50,
     };
 
     fn validate(source: &str) {
@@ -495,15 +449,17 @@ mod tests {
 
     #[test]
     fn pcs_stages_generate_valid_wgsl() {
-        let transfer = Transfer::new(
-            3,
-            [TransferStage::XyzD50ToLabD50, TransferStage::LabD50ToXyzD50],
-        )
-        .unwrap();
+        let xyz = ColorSpace::from(XyzD50);
+        let lab = ColorSpace::from(LabD50);
+        let transfer = xyz
+            .transfer_to(&lab)
+            .unwrap()
+            .then(&lab.transfer_to(&xyz).unwrap())
+            .unwrap();
         let source = transfer.wgsl(51).unwrap();
         validate(&source);
-        assert!(source.contains("theoria_transfer_51_pcs_0"));
-        assert!(source.contains("theoria_transfer_51_pcs_1"));
+        assert!(source.contains("pow("));
+        assert!(source.contains("theoria_transfer_51"));
     }
 
     #[test]
