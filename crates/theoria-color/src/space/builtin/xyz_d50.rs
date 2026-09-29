@@ -11,6 +11,38 @@ named_space!(XyzD50, Xyz);
 builtin_space!(XyzD50, XyzD50Profile);
 
 impl XyzD50 {
+    // Linear Bradford adaptation from the CSS Color 4 conversion sample.
+    // https://www.w3.org/TR/css-color-4/#color-conversion-code
+    const TO_XYZ_D65: [[f64; 3]; 3] = [
+        [0.955473421488075, -0.02309845494876471, 0.06325924320057072],
+        [
+            -0.0283697093338637,
+            1.0099953980813041,
+            0.021041441191917323,
+        ],
+        [
+            0.012314014864481998,
+            -0.020507649298898964,
+            1.330365926242124,
+        ],
+    ];
+
+    pub(crate) fn to_xyz_d65_transfer() -> Transfer {
+        static TRANSFER: LazyLock<Transfer> = LazyLock::new(|| {
+            XyzD50::build_to_xyz_d65_transfer().expect("built-in D50 to D65 adaptation is valid")
+        });
+        TRANSFER.clone()
+    }
+
+    fn build_to_xyz_d65_transfer() -> Result<Transfer, TransferError> {
+        Transfer::new([TransferStage::Matrix(TransferMatrix::new(
+            3,
+            3,
+            Self::TO_XYZ_D65.into_iter().flatten().collect::<Vec<_>>(),
+            [0.0; 3],
+        )?)])
+    }
+
     pub(crate) fn to_lab_transfer() -> Transfer {
         static TRANSFER: LazyLock<Transfer> = LazyLock::new(|| {
             XyzD50::build_to_lab_transfer().expect("built-in XYZ D50 to Lab D50 transfer is valid")
@@ -93,6 +125,8 @@ impl ColorProfile for XyzD50Profile {
     ) -> Result<Option<Transfer>, SpaceConnectionError> {
         if *destination == ColorSpace::from(super::LabD50) {
             Ok(Some(XyzD50::to_lab_transfer()))
+        } else if *destination == ColorSpace::from(super::XyzD65) {
+            Ok(Some(XyzD50::to_xyz_d65_transfer()))
         } else {
             Ok(None)
         }

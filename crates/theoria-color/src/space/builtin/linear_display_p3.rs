@@ -1,6 +1,6 @@
 use super::{
     ColorProfile, ColorSpace, DisplayP3, Pcs, SpaceConnectionError, Transfer, TransferCurve,
-    TypedColorSpace, XyzD65, rgb_to_xyz_d65_transfer, xyz_d65_to_rgb_transfer,
+    TypedColorSpace, XyzD50, XyzD65, rgb_to_xyz_d65_transfer, xyz_d65_to_rgb_transfer,
 };
 use crate::model::Rgb;
 use crate::transfer::TransferStage;
@@ -31,12 +31,10 @@ impl ColorProfile for LinearDisplayP3Profile {
     }
 
     fn pcs_to_space_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
-        Ok(
-            XyzD65::from_xyz_d50_transfer().then(&xyz_d65_to_rgb_transfer(
-                LinearDisplayP3::FROM_XYZ_D65,
-                TransferCurve::IDENTITY,
-            )?)?,
-        )
+        Ok(XyzD50::to_xyz_d65_transfer().then(&xyz_d65_to_rgb_transfer(
+            LinearDisplayP3::FROM_XYZ_D65,
+            TransferCurve::IDENTITY,
+        )?)?)
     }
 
     fn direct_transfer_to(

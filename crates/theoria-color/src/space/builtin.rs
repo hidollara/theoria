@@ -114,12 +114,18 @@ mod tests {
     }
 
     #[test]
-    fn xyz_d65_profile_uses_its_named_adaptation_transfers() {
-        let space = ColorSpace::from(XyzD65);
-        assert_eq!(space.space_to_pcs().unwrap(), XyzD65::to_xyz_d50_transfer());
+    fn xyz_d50_and_d65_profiles_use_their_named_adaptation_transfers() {
+        let d50 = ColorSpace::from(XyzD50);
+        let d65 = ColorSpace::from(XyzD65);
+        assert_eq!(d65.space_to_pcs().unwrap(), XyzD65::to_xyz_d50_transfer());
+        assert_eq!(d65.pcs_to_space().unwrap(), XyzD50::to_xyz_d65_transfer());
         assert_eq!(
-            space.pcs_to_space().unwrap(),
-            XyzD65::from_xyz_d50_transfer()
+            d50.direct_to(&d65).unwrap(),
+            Some(XyzD50::to_xyz_d65_transfer())
+        );
+        assert_eq!(
+            d65.direct_to(&d50).unwrap(),
+            Some(XyzD65::to_xyz_d50_transfer())
         );
     }
 

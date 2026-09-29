@@ -1,6 +1,8 @@
 use std::sync::LazyLock;
 
-use super::{ColorProfile, Pcs, SpaceConnectionError, Transfer, TypedColorSpace};
+use super::{
+    ColorProfile, ColorSpace, Pcs, SpaceConnectionError, Transfer, TypedColorSpace, XyzD50,
+};
 use crate::model::Xyz;
 use crate::transfer::{TransferError, TransferMatrix, TransferStage};
 
@@ -10,7 +12,7 @@ builtin_space!(XyzD65, XyzD65Profile);
 impl XyzD65 {
     // Linear Bradford adaptation from the CSS Color 4 conversion sample.
     // https://www.w3.org/TR/css-color-4/#color-conversion-code
-    pub(crate) const TO_XYZ_D50: [[f64; 3]; 3] = [
+    const TO_XYZ_D50: [[f64; 3]; 3] = [
         [
             1.0479297925449969,
             0.022946870601609652,
@@ -27,42 +29,21 @@ impl XyzD65 {
             0.7518742814281371,
         ],
     ];
-    pub(crate) const FROM_XYZ_D50: [[f64; 3]; 3] = [
-        [0.955473421488075, -0.02309845494876471, 0.06325924320057072],
-        [
-            -0.0283697093338637,
-            1.0099953980813041,
-            0.021041441191917323,
-        ],
-        [
-            0.012314014864481998,
-            -0.020507649298898964,
-            1.330365926242124,
-        ],
-    ];
-
     pub(crate) fn to_xyz_d50_transfer() -> Transfer {
         static TRANSFER: LazyLock<Transfer> = LazyLock::new(|| {
-            adaptation(XyzD65::TO_XYZ_D50).expect("built-in D65 to D50 adaptation is valid")
+            XyzD65::build_to_xyz_d50_transfer().expect("built-in D65 to D50 adaptation is valid")
         });
         TRANSFER.clone()
     }
 
-    pub(crate) fn from_xyz_d50_transfer() -> Transfer {
-        static TRANSFER: LazyLock<Transfer> = LazyLock::new(|| {
-            adaptation(XyzD65::FROM_XYZ_D50).expect("built-in D50 to D65 adaptation is valid")
-        });
-        TRANSFER.clone()
+    fn build_to_xyz_d50_transfer() -> Result<Transfer, TransferError> {
+        Transfer::new([TransferStage::Matrix(TransferMatrix::new(
+            3,
+            3,
+            Self::TO_XYZ_D50.into_iter().flatten().collect::<Vec<_>>(),
+            [0.0; 3],
+        )?)])
     }
-}
-
-fn adaptation(matrix: [[f64; 3]; 3]) -> Result<Transfer, TransferError> {
-    Transfer::new([TransferStage::Matrix(TransferMatrix::new(
-        3,
-        3,
-        matrix.into_iter().flatten().collect::<Vec<_>>(),
-        [0.0; 3],
-    )?)])
 }
 
 impl ColorProfile for XyzD65Profile {
@@ -79,6 +60,17 @@ impl ColorProfile for XyzD65Profile {
     }
 
     fn pcs_to_space_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
-        Ok(XyzD65::from_xyz_d50_transfer())
+        Ok(XyzD50::to_xyz_d65_transfer())
+    }
+
+    fn direct_transfer_to(
+        &self,
+        destination: &ColorSpace,
+    ) -> Result<Option<Transfer>, SpaceConnectionError> {
+        if *destination == ColorSpace::from(XyzD50) {
+            Ok(Some(XyzD65::to_xyz_d50_transfer()))
+        } else {
+            Ok(None)
+        }
     }
 }
