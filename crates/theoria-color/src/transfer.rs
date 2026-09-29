@@ -12,14 +12,20 @@ mod tests;
 /// same stages can be evaluated on the CPU or lowered by a renderer.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Transfer {
-    stages: Arc<[TransferStage]>,
+    stages: Option<Arc<[TransferStage]>>,
 }
 
 impl Transfer {
+    /// The identity for any positive channel count.
+    pub const IDENTITY: Self = Self { stages: None };
+
     /// Validates the stage sequence. With no stages, this is an identity for
     /// any positive channel count; endpoints are checked when it is connected.
     pub fn new(stages: impl Into<Arc<[TransferStage]>>) -> Result<Self, TransferError> {
         let stages = stages.into();
+        if stages.is_empty() {
+            return Ok(Self::IDENTITY);
+        }
         for stage in stages.iter() {
             if stage.input_channels() == 0 || stage.output_channels() == 0 {
                 return Err(TransferError::EmptyChannels);
@@ -33,21 +39,23 @@ impl Transfer {
                 });
             }
         }
-        Ok(Self { stages })
+        Ok(Self {
+            stages: Some(stages),
+        })
     }
 
     /// Returns `None` for an empty, channel-polymorphic identity.
     pub fn input_channels(&self) -> Option<usize> {
-        self.stages.first().map(TransferStage::input_channels)
+        self.stages().first().map(TransferStage::input_channels)
     }
 
     /// Returns `None` for an empty, channel-polymorphic identity.
     pub fn output_channels(&self) -> Option<usize> {
-        self.stages.last().map(TransferStage::output_channels)
+        self.stages().last().map(TransferStage::output_channels)
     }
 
     pub fn is_empty(&self) -> bool {
-        self.stages.is_empty()
+        self.stages.is_none()
     }
 
     /// Checks this transfer against endpoints whose channel counts are known.
@@ -65,7 +73,7 @@ impl Transfer {
     }
 
     pub fn stages(&self) -> &[TransferStage] {
-        &self.stages
+        self.stages.as_deref().unwrap_or(&[])
     }
 
     /// Connects two directed transfers when their adjacent channel counts match.
@@ -85,9 +93,9 @@ impl Transfer {
             return Ok(self.clone());
         }
         Self::new(
-            self.stages
+            self.stages()
                 .iter()
-                .chain(next.stages.iter())
+                .chain(next.stages().iter())
                 .cloned()
                 .collect::<Vec<_>>(),
         )

@@ -17,7 +17,7 @@ impl Transfer {
             return Err(TransferError::NonFiniteValue);
         }
         let mut values = input.to_vec();
-        for stage in self.stages.iter() {
+        for stage in self.stages() {
             values = match stage {
                 TransferStage::Curves(curves) => values
                     .into_iter()

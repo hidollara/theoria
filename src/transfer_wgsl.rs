@@ -514,7 +514,7 @@ mod tests {
 
     #[test]
     fn empty_transfer_needs_no_shader_function_or_table() {
-        let identity = Transfer::new([]).unwrap();
+        let identity = Transfer::IDENTITY;
         assert!(identity.wgsl(7).unwrap().is_empty());
         let shader = identity.wgsl_with_storage(7, 0, 0).unwrap();
         assert!(shader.source().is_empty());

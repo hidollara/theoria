@@ -90,7 +90,7 @@ impl ColorProfile for LabD50Profile {
     }
 
     fn space_to_pcs_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
-        Ok(Transfer::new([])?)
+        Ok(Transfer::IDENTITY)
     }
 
     fn pcs_to_space_transfer(&self) -> Result<Transfer, SpaceConnectionError> {

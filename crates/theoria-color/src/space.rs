@@ -2,7 +2,7 @@ use std::{
     error::Error,
     fmt,
     hash::{Hash, Hasher},
-    sync::{Arc, LazyLock},
+    sync::Arc,
 };
 
 use super::icc_profile::IccProfileError;
@@ -35,10 +35,8 @@ pub enum Pcs {
 
 impl Pcs {
     fn transfer_to(self, destination: Self) -> Transfer {
-        static IDENTITY: LazyLock<Transfer> =
-            LazyLock::new(|| Transfer::new([]).expect("an empty PCS transfer is a valid identity"));
         match (self, destination) {
-            (Self::XyzD50, Self::XyzD50) | (Self::LabD50, Self::LabD50) => IDENTITY.clone(),
+            (Self::XyzD50, Self::XyzD50) | (Self::LabD50, Self::LabD50) => Transfer::IDENTITY,
             (Self::XyzD50, Self::LabD50) => XyzD50::to_lab_transfer(),
             (Self::LabD50, Self::XyzD50) => LabD50::to_xyz_transfer(),
         }
@@ -442,7 +440,7 @@ mod tests {
                 destination: &ColorSpace,
             ) -> Result<Option<Transfer>, SpaceConnectionError> {
                 if self.0.as_ref() == Some(destination) {
-                    return Ok(Some(Transfer::new([])?));
+                    return Ok(Some(Transfer::IDENTITY));
                 }
                 Ok(None)
             }
@@ -506,7 +504,7 @@ mod tests {
             }
 
             fn space_to_pcs_transfer(&self) -> Result<Transfer, SpaceConnectionError> {
-                Ok(Transfer::new([])?)
+                Ok(Transfer::IDENTITY)
             }
 
             fn pcs_to_space_transfer(&self) -> Result<Transfer, SpaceConnectionError> {

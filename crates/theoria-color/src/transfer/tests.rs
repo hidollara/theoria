@@ -174,7 +174,8 @@ fn transfer_composition_rejects_mismatched_channel_counts() {
 
 #[test]
 fn empty_transfer_is_a_channel_polymorphic_identity() {
-    let identity = Transfer::new([]).unwrap();
+    let identity = Transfer::IDENTITY;
+    assert_eq!(Transfer::new([]).unwrap(), identity);
     assert_eq!(identity.input_channels(), None);
     assert_eq!(identity.output_channels(), None);
     assert!(identity.supports_channels(2, 2));

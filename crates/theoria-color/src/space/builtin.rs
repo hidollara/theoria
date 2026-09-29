@@ -24,7 +24,7 @@ fn rgb_direct_to(
     destination: &ColorSpace,
 ) -> Result<Option<Transfer>, SpaceConnectionError> {
     if source == *destination {
-        return Ok(Some(Transfer::new([])?));
+        return Ok(Some(Transfer::IDENTITY));
     }
     if counterpart != *destination {
         return Ok(None);

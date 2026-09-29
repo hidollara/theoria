@@ -1131,7 +1131,7 @@ mod tests {
         let mut raw = ParsedProfile::new_srgb();
         raw.media_white_point = None;
         let mut profile = IccProfile::from_parsed(raw, Pcs::XyzD50);
-        Arc::get_mut(&mut profile.inner).unwrap().mpe.to_pcs[3] = Some(Transfer::new([]).unwrap());
+        Arc::get_mut(&mut profile.inner).unwrap().mpe.to_pcs[3] = Some(Transfer::IDENTITY);
         let actual = profile
             .inner
             .space_to_pcs(IccRenderingIntent::AbsoluteColorimetric)
