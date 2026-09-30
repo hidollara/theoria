@@ -1,4 +1,4 @@
-use super::{ColorProfile, ConnectionSpace, SpaceConnectionError, Srgb, TypedColorSpace, XyzD65};
+use super::{ColorProfile, ConnectionSpace, SpaceConnectionError, Srgb, TypedColorSpace};
 use crate::model::Hsl;
 use crate::transfer::{ColorFunction, Transfer, TransferError, TransferStage};
 
@@ -35,9 +35,9 @@ impl ColorProfile for HslSrgbProfile {
 
     fn transfer_from_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
         Ok(
-            XyzD65::transfer_to_srgb()?.then(&Transfer::new([TransferStage::ColorFunction(
-                ColorFunction::RgbToHsl,
-            )])?)?,
+            Srgb::transfer_from_xyz_d65()?.then(&Transfer::new([
+                TransferStage::ColorFunction(ColorFunction::RgbToHsl),
+            ])?)?,
         )
     }
 }

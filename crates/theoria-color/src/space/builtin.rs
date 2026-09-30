@@ -3,6 +3,7 @@ use super::{ColorProfile, ColorSpace, ConnectionSpace, SpaceConnectionError, Typ
 use crate::icc_profile::IccRenderingIntent;
 #[cfg(test)]
 use crate::model::Rgb;
+use crate::transfer::{Transfer, TransferCurve, TransferError, TransferMatrix, TransferStage};
 
 macro_rules! named_space {
     ($name:ident, $model:ty) => {
@@ -74,6 +75,22 @@ pub use rec2020::Rec2020;
 pub use srgb::Srgb;
 pub use xyz_d50::XyzD50;
 pub use xyz_d65::XyzD65;
+
+fn rgb_from_xyz(
+    matrix: [[f64; 3]; 3],
+    curve: Option<TransferCurve>,
+) -> Result<Transfer, TransferError> {
+    let matrix = TransferStage::Matrix(TransferMatrix::new(
+        3,
+        3,
+        matrix.into_iter().flatten().collect::<Vec<_>>(),
+        [0.0; 3],
+    )?);
+    match curve {
+        Some(curve) => Transfer::new([matrix, TransferStage::curves(vec![curve; 3])?]),
+        None => Transfer::new([matrix]),
+    }
+}
 
 #[cfg(test)]
 mod tests {

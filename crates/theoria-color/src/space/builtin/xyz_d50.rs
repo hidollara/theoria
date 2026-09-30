@@ -1,6 +1,6 @@
 use std::sync::LazyLock;
 
-use super::{ColorProfile, ColorSpace, ConnectionSpace, SpaceConnectionError, TypedColorSpace};
+use super::{ColorProfile, ConnectionSpace, SpaceConnectionError, TypedColorSpace};
 use crate::model::Xyz;
 use crate::transfer::Transfer;
 use crate::transfer::{
@@ -42,28 +42,6 @@ impl XyzD50 {
             Self::TO_XYZ_D65.into_iter().flatten().collect::<Vec<_>>(),
             [0.0; 3],
         )?)])
-    }
-
-    pub(crate) fn transfer_to_prophoto_rgb() -> Result<Transfer, TransferError> {
-        Transfer::new([
-            TransferStage::Matrix(TransferMatrix::new(
-                3,
-                3,
-                [
-                    1.3457868816471583,
-                    -0.25557208737979464,
-                    -0.05110186497554526,
-                    -0.5446307051249019,
-                    1.5082477428451468,
-                    0.02052744743642139,
-                    0.0,
-                    0.0,
-                    1.2119675456389452,
-                ],
-                [0.0; 3],
-            )?),
-            TransferStage::curves(vec![super::ProPhotoRgb::encode_curve()?; 3])?,
-        ])
     }
 
     pub(crate) fn transfer_to_lab_d50() -> Transfer {
@@ -140,17 +118,6 @@ impl ColorProfile for XyzD50Profile {
     }
 
     fn transfer_from_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
-        self.transfer_to_connection_space()
-    }
-
-    fn direct_transfer_to(
-        &self,
-        destination: &ColorSpace,
-    ) -> Result<Option<Transfer>, SpaceConnectionError> {
-        if *destination == ColorSpace::from(super::LabD50) {
-            Ok(Some(XyzD50::transfer_to_lab_d50()))
-        } else {
-            Ok(None)
-        }
+        Ok(Transfer::IDENTITY)
     }
 }

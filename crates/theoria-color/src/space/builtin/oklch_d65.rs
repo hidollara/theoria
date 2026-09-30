@@ -1,6 +1,4 @@
-use super::{
-    ColorProfile, ConnectionSpace, OklabD65, SpaceConnectionError, TypedColorSpace, XyzD65,
-};
+use super::{ColorProfile, ConnectionSpace, OklabD65, SpaceConnectionError, TypedColorSpace};
 use crate::model::Oklch;
 use crate::transfer::{ColorFunction, Transfer, TransferError, TransferStage};
 
@@ -38,10 +36,8 @@ impl ColorProfile for OklchD65Profile {
     }
 
     fn transfer_from_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
-        Ok(
-            XyzD65::transfer_to_oklab()?.then(&Transfer::new([TransferStage::ColorFunction(
-                ColorFunction::CartesianToPolar,
-            )])?)?,
-        )
+        Ok(OklabD65::transfer_from_xyz_d65()?.then(&Transfer::new([
+            TransferStage::ColorFunction(ColorFunction::CartesianToPolar),
+        ])?)?)
     }
 }

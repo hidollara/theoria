@@ -1,6 +1,5 @@
 use super::{
     ColorProfile, ColorSpace, ConnectionSpace, DisplayP3, SpaceConnectionError, TypedColorSpace,
-    XyzD65,
 };
 use crate::model::Rgb;
 use crate::transfer::{Transfer, TransferCurve, TransferError, TransferMatrix, TransferStage};
@@ -8,6 +7,16 @@ use crate::transfer::{Transfer, TransferCurve, TransferError, TransferMatrix, Tr
 named_space!(LinearDisplayP3, Rgb);
 
 impl LinearDisplayP3 {
+    const FROM_XYZ_D65: [[f64; 3]; 3] = [
+        [
+            446124.0 / 178915.0,
+            -333277.0 / 357830.0,
+            -72051.0 / 178915.0,
+        ],
+        [-14852.0 / 17905.0, 63121.0 / 35810.0, 423.0 / 17905.0],
+        [11844.0 / 330415.0, -50337.0 / 660830.0, 316169.0 / 330415.0],
+    ];
+
     pub(crate) fn transfer_to_xyz_d65() -> Result<Transfer, TransferError> {
         Transfer::new([TransferStage::Matrix(TransferMatrix::new(
             3,
@@ -18,6 +27,10 @@ impl LinearDisplayP3 {
                 .collect::<Vec<_>>(),
             [0.0; 3],
         )?)])
+    }
+
+    pub(crate) fn transfer_from_xyz_d65() -> Result<Transfer, TransferError> {
+        super::rgb_from_xyz(Self::FROM_XYZ_D65, None)
     }
 }
 
@@ -37,7 +50,7 @@ impl ColorProfile for LinearDisplayP3Profile {
     }
 
     fn transfer_from_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
-        Ok(XyzD65::transfer_to_linear_display_p3()?)
+        Ok(LinearDisplayP3::transfer_from_xyz_d65()?)
     }
 
     fn direct_transfer_to(

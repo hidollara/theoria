@@ -411,17 +411,11 @@ mod tests {
     }
 
     #[test]
-    fn xyz_and_lab_spaces_provide_direct_transfers() {
+    fn xyz_and_lab_spaces_convert_through_connection_spaces() {
         let xyz = ColorSpace::from(XyzD50);
         let lab = ColorSpace::from(LabD50);
-        assert_eq!(
-            xyz.direct_to(&lab).unwrap(),
-            Some(XyzD50::transfer_to_lab_d50())
-        );
-        assert_eq!(
-            lab.direct_to(&xyz).unwrap(),
-            Some(LabD50::transfer_to_xyz_d50())
-        );
+        assert!(xyz.direct_to(&lab).unwrap().is_none());
+        assert!(lab.direct_to(&xyz).unwrap().is_none());
         assert_eq!(
             xyz.transfer_to(&lab).unwrap(),
             XyzD50::transfer_to_lab_d50()

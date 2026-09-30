@@ -1,4 +1,4 @@
-use super::{ColorProfile, ConnectionSpace, SpaceConnectionError, TypedColorSpace, XyzD50};
+use super::{ColorProfile, ConnectionSpace, SpaceConnectionError, TypedColorSpace};
 use crate::model::Rgb;
 use crate::transfer::{
     CurveSegment, CurveSegmentKind, Transfer, TransferCurve, TransferError, TransferMatrix,
@@ -70,6 +70,28 @@ impl ProPhotoRgb {
         )?);
         Transfer::new([decode, matrix])
     }
+
+    pub(crate) fn transfer_from_xyz_d50() -> Result<Transfer, TransferError> {
+        Transfer::new([
+            TransferStage::Matrix(TransferMatrix::new(
+                3,
+                3,
+                [
+                    1.3457868816471583,
+                    -0.25557208737979464,
+                    -0.05110186497554526,
+                    -0.5446307051249019,
+                    1.5082477428451468,
+                    0.02052744743642139,
+                    0.0,
+                    0.0,
+                    1.2119675456389452,
+                ],
+                [0.0; 3],
+            )?),
+            TransferStage::curves(vec![Self::encode_curve()?; 3])?,
+        ])
+    }
 }
 
 builtin_space!(ProPhotoRgb, ProPhotoRgbProfile);
@@ -88,6 +110,6 @@ impl ColorProfile for ProPhotoRgbProfile {
     }
 
     fn transfer_from_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
-        Ok(XyzD50::transfer_to_prophoto_rgb()?)
+        Ok(ProPhotoRgb::transfer_from_xyz_d50()?)
     }
 }
