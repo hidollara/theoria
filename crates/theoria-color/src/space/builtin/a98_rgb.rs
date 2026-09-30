@@ -5,7 +5,25 @@ use crate::transfer::{Transfer, TransferCurve, TransferError, TransferMatrix, Tr
 named_space!(A98Rgb, Rgb);
 
 impl A98Rgb {
-    const FROM_XYZ_D65: [[f64; 3]; 3] = [
+    const LINEAR_RGB_TO_XYZ_D65: [[f64; 3]; 3] = [
+        [
+            573536.0 / 994567.0,
+            263643.0 / 1420810.0,
+            187206.0 / 994567.0,
+        ],
+        [
+            591459.0 / 1989134.0,
+            6239551.0 / 9945670.0,
+            374412.0 / 4972835.0,
+        ],
+        [
+            53769.0 / 1989134.0,
+            351524.0 / 4972835.0,
+            4929758.0 / 4972835.0,
+        ],
+    ];
+
+    const XYZ_D65_TO_LINEAR_RGB: [[f64; 3]; 3] = [
         [
             1829569.0 / 896150.0,
             -506331.0 / 896150.0,
@@ -24,33 +42,15 @@ impl A98Rgb {
     ];
 
     pub(crate) fn transfer_to_xyz_d65() -> Result<Transfer, TransferError> {
-        let decode = TransferStage::curves(vec![TransferCurve::signed_power(563.0 / 256.0)?; 3])?;
-        let matrix = TransferStage::Matrix(TransferMatrix::new(
-            [
-                [
-                    573536.0 / 994567.0,
-                    263643.0 / 1420810.0,
-                    187206.0 / 994567.0,
-                ],
-                [
-                    591459.0 / 1989134.0,
-                    6239551.0 / 9945670.0,
-                    374412.0 / 4972835.0,
-                ],
-                [
-                    53769.0 / 1989134.0,
-                    351524.0 / 4972835.0,
-                    4929758.0 / 4972835.0,
-                ],
-            ],
-            [0.0; 3],
-        )?);
-        Transfer::new([decode, matrix])
+        Transfer::new([
+            TransferStage::curves(vec![TransferCurve::signed_power(563.0 / 256.0)?; 3])?,
+            TransferStage::Matrix(TransferMatrix::new(Self::LINEAR_RGB_TO_XYZ_D65, [0.0; 3])?),
+        ])
     }
 
     pub(crate) fn transfer_from_xyz_d65() -> Result<Transfer, TransferError> {
         Transfer::new([
-            TransferStage::Matrix(TransferMatrix::new(Self::FROM_XYZ_D65, [0.0; 3])?),
+            TransferStage::Matrix(TransferMatrix::new(Self::XYZ_D65_TO_LINEAR_RGB, [0.0; 3])?),
             TransferStage::curves(vec![TransferCurve::signed_power(256.0 / 563.0)?; 3])?,
         ])
     }

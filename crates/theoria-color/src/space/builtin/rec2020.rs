@@ -5,7 +5,21 @@ use crate::transfer::{Transfer, TransferCurve, TransferError, TransferMatrix, Tr
 named_space!(Rec2020, Rgb);
 
 impl Rec2020 {
-    const FROM_XYZ_D65: [[f64; 3]; 3] = [
+    const LINEAR_RGB_TO_XYZ_D65: [[f64; 3]; 3] = [
+        [
+            63426534.0 / 99577255.0,
+            20160776.0 / 139408157.0,
+            47086771.0 / 278816314.0,
+        ],
+        [
+            26158966.0 / 99577255.0,
+            472592308.0 / 697040785.0,
+            8267143.0 / 139408157.0,
+        ],
+        [0.0, 19567812.0 / 697040785.0, 295819943.0 / 278816314.0],
+    ];
+
+    const XYZ_D65_TO_LINEAR_RGB: [[f64; 3]; 3] = [
         [
             30757411.0 / 17917100.0,
             -6372589.0 / 17917100.0,
@@ -25,28 +39,14 @@ impl Rec2020 {
 
     pub(crate) fn transfer_to_xyz_d65() -> Result<Transfer, TransferError> {
         let decode = TransferStage::curves(vec![TransferCurve::signed_power(2.4)?; 3])?;
-        let matrix = TransferStage::Matrix(TransferMatrix::new(
-            [
-                [
-                    63426534.0 / 99577255.0,
-                    20160776.0 / 139408157.0,
-                    47086771.0 / 278816314.0,
-                ],
-                [
-                    26158966.0 / 99577255.0,
-                    472592308.0 / 697040785.0,
-                    8267143.0 / 139408157.0,
-                ],
-                [0.0, 19567812.0 / 697040785.0, 295819943.0 / 278816314.0],
-            ],
-            [0.0; 3],
-        )?);
+        let matrix =
+            TransferStage::Matrix(TransferMatrix::new(Self::LINEAR_RGB_TO_XYZ_D65, [0.0; 3])?);
         Transfer::new([decode, matrix])
     }
 
     pub(crate) fn transfer_from_xyz_d65() -> Result<Transfer, TransferError> {
         Transfer::new([
-            TransferStage::Matrix(TransferMatrix::new(Self::FROM_XYZ_D65, [0.0; 3])?),
+            TransferStage::Matrix(TransferMatrix::new(Self::XYZ_D65_TO_LINEAR_RGB, [0.0; 3])?),
             TransferStage::curves(vec![TransferCurve::signed_power(1.0 / 2.4)?; 3])?,
         ])
     }

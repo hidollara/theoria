@@ -12,6 +12,19 @@ named_space!(LabD50, Lab);
 builtin_space!(LabD50, LabD50Profile);
 
 impl LabD50 {
+    // Maps Lab coordinates to f(X/Xn), f(Y/Yn), f(Z/Zn).
+    const LAB_TO_F_XYZ: [[f64; 3]; 3] = [
+        [1.0 / 116.0, 1.0 / 500.0, 0.0],
+        [1.0 / 116.0, 0.0, 0.0],
+        [1.0 / 116.0, 0.0, -1.0 / 200.0],
+    ];
+
+    const NORMALIZED_XYZ_TO_XYZ_D50: [[f64; 3]; 3] = [
+        [ICC_PCS_D50_XYZ[0], 0.0, 0.0],
+        [0.0, ICC_PCS_D50_XYZ[1], 0.0],
+        [0.0, 0.0, ICC_PCS_D50_XYZ[2]],
+    ];
+
     pub(crate) fn transfer_to_xyz_d50() -> Transfer {
         static TRANSFER: LazyLock<Transfer> = LazyLock::new(|| {
             LabD50::build_transfer_to_xyz_d50()
@@ -45,21 +58,10 @@ impl LabD50 {
         ])?;
         let y_offset = 16.0 / 116.0;
         Transfer::new([
-            TransferStage::Matrix(TransferMatrix::new(
-                [
-                    [1.0 / 116.0, 1.0 / 500.0, 0.0],
-                    [1.0 / 116.0, 0.0, 0.0],
-                    [1.0 / 116.0, 0.0, -1.0 / 200.0],
-                ],
-                [y_offset; 3],
-            )?),
+            TransferStage::Matrix(TransferMatrix::new(Self::LAB_TO_F_XYZ, [y_offset; 3])?),
             TransferStage::curves(vec![curve; 3])?,
             TransferStage::Matrix(TransferMatrix::new(
-                [
-                    [ICC_PCS_D50_XYZ[0], 0.0, 0.0],
-                    [0.0, ICC_PCS_D50_XYZ[1], 0.0],
-                    [0.0, 0.0, ICC_PCS_D50_XYZ[2]],
-                ],
+                Self::NORMALIZED_XYZ_TO_XYZ_D50,
                 [0.0; 3],
             )?),
         ])

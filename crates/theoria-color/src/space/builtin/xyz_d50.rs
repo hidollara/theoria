@@ -12,6 +12,19 @@ named_space!(XyzD50, Xyz);
 builtin_space!(XyzD50, XyzD50Profile);
 
 impl XyzD50 {
+    const XYZ_D50_TO_NORMALIZED_XYZ: [[f64; 3]; 3] = [
+        [1.0 / ICC_PCS_D50_XYZ[0], 0.0, 0.0],
+        [0.0, 1.0 / ICC_PCS_D50_XYZ[1], 0.0],
+        [0.0, 0.0, 1.0 / ICC_PCS_D50_XYZ[2]],
+    ];
+
+    // Maps f(X/Xn), f(Y/Yn), f(Z/Zn) to Lab coordinates.
+    const F_XYZ_TO_LAB: [[f64; 3]; 3] = [
+        [0.0, 116.0, 0.0],
+        [500.0, -500.0, 0.0],
+        [0.0, 200.0, -200.0],
+    ];
+
     // Linear Bradford adaptation from the CSS Color 4 conversion sample.
     // https://www.w3.org/TR/css-color-4/#color-conversion-code
     const TO_XYZ_D65: [[f64; 3]; 3] = [
@@ -76,22 +89,11 @@ impl XyzD50 {
         ])?;
         Transfer::new([
             TransferStage::Matrix(TransferMatrix::new(
-                [
-                    [1.0 / ICC_PCS_D50_XYZ[0], 0.0, 0.0],
-                    [0.0, 1.0 / ICC_PCS_D50_XYZ[1], 0.0],
-                    [0.0, 0.0, 1.0 / ICC_PCS_D50_XYZ[2]],
-                ],
+                Self::XYZ_D50_TO_NORMALIZED_XYZ,
                 [0.0; 3],
             )?),
             TransferStage::curves(vec![curve; 3])?,
-            TransferStage::Matrix(TransferMatrix::new(
-                [
-                    [0.0, 116.0, 0.0],
-                    [500.0, -500.0, 0.0],
-                    [0.0, 200.0, -200.0],
-                ],
-                [-16.0, 0.0, 0.0],
-            )?),
+            TransferStage::Matrix(TransferMatrix::new(Self::F_XYZ_TO_LAB, [-16.0, 0.0, 0.0])?),
         ])
     }
 }
