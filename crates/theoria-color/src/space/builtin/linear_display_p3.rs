@@ -7,6 +7,21 @@ use crate::transfer::{Transfer, TransferCurve, TransferError, TransferMatrix, Tr
 named_space!(LinearDisplayP3, Rgb);
 
 impl LinearDisplayP3 {
+    // Exact rational matrix from CSS Color 4's color-conversion sample code.
+    const TO_XYZ_D65: [[f64; 3]; 3] = [
+        [
+            608311.0 / 1250200.0,
+            189793.0 / 714400.0,
+            198249.0 / 1000160.0,
+        ],
+        [
+            35783.0 / 156275.0,
+            247089.0 / 357200.0,
+            198249.0 / 2500400.0,
+        ],
+        [0.0, 32229.0 / 714400.0, 5220557.0 / 5000800.0],
+    ];
+
     const FROM_XYZ_D65: [[f64; 3]; 3] = [
         [
             446124.0 / 178915.0,
@@ -21,10 +36,7 @@ impl LinearDisplayP3 {
         Transfer::new([TransferStage::Matrix(TransferMatrix::new(
             3,
             3,
-            DisplayP3::TO_XYZ_D65
-                .into_iter()
-                .flatten()
-                .collect::<Vec<_>>(),
+            Self::TO_XYZ_D65.into_iter().flatten().collect::<Vec<_>>(),
             [0.0; 3],
         )?)])
     }

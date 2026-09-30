@@ -5,10 +5,17 @@ use crate::transfer::{ColorFunction, Transfer, TransferError, TransferStage};
 named_space!(LchD50, Lch);
 
 impl LchD50 {
-    pub(crate) fn transfer_to_lab_d50() -> Result<Transfer, TransferError> {
+    pub(crate) fn transfer_to_xyz_d50() -> Result<Transfer, TransferError> {
         Transfer::new([TransferStage::ColorFunction(
             ColorFunction::PolarToCartesian,
-        )])
+        )])?
+        .then(&LabD50::transfer_to_xyz_d50())
+    }
+
+    pub(crate) fn transfer_from_xyz_d50() -> Result<Transfer, TransferError> {
+        XyzD50::transfer_to_lab_d50().then(&Transfer::new([TransferStage::ColorFunction(
+            ColorFunction::CartesianToPolar,
+        )])?)
     }
 }
 
@@ -32,14 +39,10 @@ impl ColorProfile for LchD50Profile {
     }
 
     fn transfer_to_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
-        Ok(LchD50::transfer_to_lab_d50()?.then(&LabD50::transfer_to_xyz_d50())?)
+        Ok(LchD50::transfer_to_xyz_d50()?)
     }
 
     fn transfer_from_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
-        Ok(
-            XyzD50::transfer_to_lab_d50().then(&Transfer::new([TransferStage::ColorFunction(
-                ColorFunction::CartesianToPolar,
-            )])?)?,
-        )
+        Ok(LchD50::transfer_from_xyz_d50()?)
     }
 }

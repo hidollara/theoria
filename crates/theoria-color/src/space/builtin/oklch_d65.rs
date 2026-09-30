@@ -5,10 +5,17 @@ use crate::transfer::{ColorFunction, Transfer, TransferError, TransferStage};
 named_space!(OklchD65, Oklch);
 
 impl OklchD65 {
-    pub(crate) fn transfer_to_oklab_d65() -> Result<Transfer, TransferError> {
+    pub(crate) fn transfer_to_xyz_d65() -> Result<Transfer, TransferError> {
         Transfer::new([TransferStage::ColorFunction(
             ColorFunction::PolarToCartesian,
-        )])
+        )])?
+        .then(&OklabD65::transfer_to_xyz_d65()?)
+    }
+
+    pub(crate) fn transfer_from_xyz_d65() -> Result<Transfer, TransferError> {
+        OklabD65::transfer_from_xyz_d65()?.then(&Transfer::new([TransferStage::ColorFunction(
+            ColorFunction::CartesianToPolar,
+        )])?)
     }
 }
 
@@ -32,12 +39,10 @@ impl ColorProfile for OklchD65Profile {
     }
 
     fn transfer_to_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
-        Ok(OklchD65::transfer_to_oklab_d65()?.then(&OklabD65::transfer_to_xyz_d65()?)?)
+        Ok(OklchD65::transfer_to_xyz_d65()?)
     }
 
     fn transfer_from_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
-        Ok(OklabD65::transfer_from_xyz_d65()?.then(&Transfer::new([
-            TransferStage::ColorFunction(ColorFunction::CartesianToPolar),
-        ])?)?)
+        Ok(OklchD65::transfer_from_xyz_d65()?)
     }
 }

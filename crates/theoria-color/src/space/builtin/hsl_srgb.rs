@@ -5,8 +5,15 @@ use crate::transfer::{ColorFunction, Transfer, TransferError, TransferStage};
 named_space!(HslSrgb, Hsl);
 
 impl HslSrgb {
-    pub(crate) fn transfer_to_srgb() -> Result<Transfer, TransferError> {
-        Transfer::new([TransferStage::ColorFunction(ColorFunction::HslToRgb)])
+    pub(crate) fn transfer_to_xyz_d65() -> Result<Transfer, TransferError> {
+        Transfer::new([TransferStage::ColorFunction(ColorFunction::HslToRgb)])?
+            .then(&Srgb::transfer_to_xyz_d65()?)
+    }
+
+    pub(crate) fn transfer_from_xyz_d65() -> Result<Transfer, TransferError> {
+        Srgb::transfer_from_xyz_d65()?.then(&Transfer::new([TransferStage::ColorFunction(
+            ColorFunction::RgbToHsl,
+        )])?)
     }
 }
 
@@ -30,14 +37,10 @@ impl ColorProfile for HslSrgbProfile {
     }
 
     fn transfer_to_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
-        Ok(HslSrgb::transfer_to_srgb()?.then(&Srgb::transfer_to_xyz_d65()?)?)
+        Ok(HslSrgb::transfer_to_xyz_d65()?)
     }
 
     fn transfer_from_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
-        Ok(
-            Srgb::transfer_from_xyz_d65()?.then(&Transfer::new([
-                TransferStage::ColorFunction(ColorFunction::RgbToHsl),
-            ])?)?,
-        )
+        Ok(HslSrgb::transfer_from_xyz_d65()?)
     }
 }
