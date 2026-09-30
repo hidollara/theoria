@@ -26,18 +26,22 @@ impl A98Rgb {
     pub(crate) fn transfer_to_xyz_d65() -> Result<Transfer, TransferError> {
         let decode = TransferStage::curves(vec![TransferCurve::signed_power(563.0 / 256.0)?; 3])?;
         let matrix = TransferStage::Matrix(TransferMatrix::new(
-            3,
-            3,
             [
-                573536.0 / 994567.0,
-                263643.0 / 1420810.0,
-                187206.0 / 994567.0,
-                591459.0 / 1989134.0,
-                6239551.0 / 9945670.0,
-                374412.0 / 4972835.0,
-                53769.0 / 1989134.0,
-                351524.0 / 4972835.0,
-                4929758.0 / 4972835.0,
+                [
+                    573536.0 / 994567.0,
+                    263643.0 / 1420810.0,
+                    187206.0 / 994567.0,
+                ],
+                [
+                    591459.0 / 1989134.0,
+                    6239551.0 / 9945670.0,
+                    374412.0 / 4972835.0,
+                ],
+                [
+                    53769.0 / 1989134.0,
+                    351524.0 / 4972835.0,
+                    4929758.0 / 4972835.0,
+                ],
             ],
             [0.0; 3],
         )?);
@@ -45,10 +49,10 @@ impl A98Rgb {
     }
 
     pub(crate) fn transfer_from_xyz_d65() -> Result<Transfer, TransferError> {
-        super::rgb_from_xyz(
-            Self::FROM_XYZ_D65,
-            Some(TransferCurve::signed_power(256.0 / 563.0)?),
-        )
+        Transfer::new([
+            TransferStage::Matrix(TransferMatrix::new(Self::FROM_XYZ_D65, [0.0; 3])?),
+            TransferStage::curves(vec![TransferCurve::signed_power(256.0 / 563.0)?; 3])?,
+        ])
     }
 }
 

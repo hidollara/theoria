@@ -37,9 +37,7 @@ impl XyzD50 {
 
     fn build_transfer_to_xyz_d65() -> Result<Transfer, TransferError> {
         Transfer::new([TransferStage::Matrix(TransferMatrix::new(
-            3,
-            3,
-            Self::TO_XYZ_D65.into_iter().flatten().collect::<Vec<_>>(),
+            Self::TO_XYZ_D65,
             [0.0; 3],
         )?)])
     }
@@ -78,26 +76,20 @@ impl XyzD50 {
         ])?;
         Transfer::new([
             TransferStage::Matrix(TransferMatrix::new(
-                3,
-                3,
                 [
-                    1.0 / ICC_PCS_D50_XYZ[0],
-                    0.0,
-                    0.0,
-                    0.0,
-                    1.0 / ICC_PCS_D50_XYZ[1],
-                    0.0,
-                    0.0,
-                    0.0,
-                    1.0 / ICC_PCS_D50_XYZ[2],
+                    [1.0 / ICC_PCS_D50_XYZ[0], 0.0, 0.0],
+                    [0.0, 1.0 / ICC_PCS_D50_XYZ[1], 0.0],
+                    [0.0, 0.0, 1.0 / ICC_PCS_D50_XYZ[2]],
                 ],
                 [0.0; 3],
             )?),
             TransferStage::curves(vec![curve; 3])?,
             TransferStage::Matrix(TransferMatrix::new(
-                3,
-                3,
-                [0.0, 116.0, 0.0, 500.0, -500.0, 0.0, 0.0, 200.0, -200.0],
+                [
+                    [0.0, 116.0, 0.0],
+                    [500.0, -500.0, 0.0],
+                    [0.0, 200.0, -200.0],
+                ],
                 [-16.0, 0.0, 0.0],
             )?),
         ])

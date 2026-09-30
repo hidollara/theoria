@@ -36,9 +36,7 @@ impl XyzD65 {
 
     fn build_transfer_to_xyz_d50() -> Result<Transfer, TransferError> {
         Transfer::new([TransferStage::Matrix(TransferMatrix::new(
-            3,
-            3,
-            Self::TO_XYZ_D50.into_iter().flatten().collect::<Vec<_>>(),
+            Self::TO_XYZ_D50,
             [0.0; 3],
         )?)])
     }

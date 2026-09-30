@@ -409,12 +409,7 @@ fn curves(values: &[ToneReprCurve], channels: usize) -> Result<TransferStage, Ic
 }
 
 fn matrix(value: &moxcms::Matrix3d, bias: [f64; 3]) -> Result<TransferStage, IccProfileError> {
-    Ok(TransferStage::Matrix(TransferMatrix::new(
-        3,
-        3,
-        value.v.into_iter().flatten().collect::<Vec<_>>(),
-        bias,
-    )?))
+    Ok(TransferStage::Matrix(TransferMatrix::new(value.v, bias)?))
 }
 
 fn normalized_values(store: &LutStore) -> Vec<f64> {
@@ -586,9 +581,11 @@ fn pcs_encoding(pcs: Pcs, tag: &LutWarehouse) -> Result<TransferStage, IccProfil
 
 fn diagonal(scale: [f64; 3], offsets: [f64; 3]) -> Result<TransferStage, IccProfileError> {
     Ok(TransferStage::Matrix(TransferMatrix::new(
-        3,
-        3,
-        [scale[0], 0.0, 0.0, 0.0, scale[1], 0.0, 0.0, 0.0, scale[2]],
+        [
+            [scale[0], 0.0, 0.0],
+            [0.0, scale[1], 0.0],
+            [0.0, 0.0, scale[2]],
+        ],
         offsets,
     )?))
 }
@@ -650,7 +647,10 @@ fn gray_trc_to_pcs(profile: &ParsedProfile, pcs: Pcs) -> Result<Transfer, IccPro
     };
     Ok(Transfer::new([
         TransferStage::curves([curve(trc)?])?,
-        TransferStage::Matrix(TransferMatrix::new(1, 3, coefficients, [0.0; 3])?),
+        TransferStage::Matrix(TransferMatrix::new(
+            coefficients.map(|coefficient| [coefficient]),
+            [0.0; 3],
+        )?),
     ])?)
 }
 
@@ -664,7 +664,7 @@ fn gray_trc_from_pcs(profile: &ParsedProfile, pcs: Pcs) -> Result<Transfer, IccP
         Pcs::LabD50 => [0.01, 0.0, 0.0],
     };
     Ok(Transfer::new([
-        TransferStage::Matrix(TransferMatrix::new(3, 1, coefficients, [0.0])?),
+        TransferStage::Matrix(TransferMatrix::new([coefficients], [0.0])?),
         TransferStage::curves([inverse_curve(trc)?])?,
     ])?)
 }

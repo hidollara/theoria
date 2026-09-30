@@ -101,7 +101,7 @@ fn parse_matrix(
     let values = (0..total)
         .map(|index| f32_at(data, 12 + 4 * index))
         .collect::<Result<Vec<_>, _>>()?;
-    TransferMatrix::new(
+    TransferMatrix::from_flat(
         inputs,
         outputs,
         values[..coefficients].to_vec(),

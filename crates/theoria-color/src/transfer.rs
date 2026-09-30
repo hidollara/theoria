@@ -157,7 +157,28 @@ pub struct TransferMatrix {
 }
 
 impl TransferMatrix {
-    pub fn new(
+    /// Constructs a matrix whose dimensions are checked by the array types.
+    pub fn new<const INPUTS: usize, const OUTPUTS: usize>(
+        coefficients: [[f64; INPUTS]; OUTPUTS],
+        offsets: [f64; OUTPUTS],
+    ) -> Result<Self, TransferError> {
+        if INPUTS == 0 || OUTPUTS == 0 {
+            return Err(TransferError::EmptyChannels);
+        }
+        Self::from_parts(
+            INPUTS,
+            OUTPUTS,
+            coefficients
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>()
+                .into(),
+            offsets.into(),
+        )
+    }
+
+    /// Constructs a matrix from runtime dimensions and row-major coefficients.
+    pub fn from_flat(
         input_channels: usize,
         output_channels: usize,
         coefficients: impl Into<Arc<[f64]>>,
@@ -173,6 +194,15 @@ impl TransferMatrix {
         {
             return Err(TransferError::InvalidMatrixShape);
         }
+        Self::from_parts(input_channels, output_channels, coefficients, offsets)
+    }
+
+    fn from_parts(
+        input_channels: usize,
+        output_channels: usize,
+        coefficients: Arc<[f64]>,
+        offsets: Arc<[f64]>,
+    ) -> Result<Self, TransferError> {
         if coefficients
             .iter()
             .chain(offsets.iter())

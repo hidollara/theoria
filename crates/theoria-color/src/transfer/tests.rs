@@ -40,7 +40,7 @@ fn directed_stages_evaluate_in_order_and_change_channel_count() {
         ])
         .unwrap(),
         TransferStage::Matrix(
-            TransferMatrix::new(3, 2, [1.0, 0.5, 0.0, 0.0, 0.0, 1.0], [0.1, 0.0]).unwrap(),
+            TransferMatrix::new([[1.0, 0.5, 0.0], [0.0, 0.0, 1.0]], [0.1, 0.0]).unwrap(),
         ),
     ])
     .unwrap();
@@ -158,13 +158,40 @@ fn invalid_transfer_data_is_rejected_before_evaluation() {
     assert!(TransferCurve::gamma(0.0).is_err());
     assert!(TransferCurve::sampled([0.0]).is_err());
     assert!(TransferCurve::sampled([0.0, f64::NAN]).is_err());
-    assert!(TransferMatrix::new(3, 2, [0.0; 3], [0.0; 2]).is_err());
+    assert!(TransferMatrix::from_flat(3, 2, [0.0; 3], [0.0; 2]).is_err());
+    assert_eq!(
+        TransferMatrix::new::<0, 1>([[]], [0.0]),
+        Err(TransferError::EmptyChannels)
+    );
+    assert_eq!(
+        TransferMatrix::new([[f64::NAN]], [0.0]),
+        Err(TransferError::NonFiniteValue)
+    );
+    assert_eq!(
+        TransferMatrix::new([[1.0]], [f64::INFINITY]),
+        Err(TransferError::NonFiniteValue)
+    );
     assert!(
         Transfer::new([
             TransferStage::curves([TransferCurve::IDENTITY]).unwrap(),
             TransferStage::Clamp(2),
         ])
         .is_err()
+    );
+}
+
+#[test]
+fn static_and_dynamic_matrix_constructors_agree() {
+    let rows = [[1.0, 0.5, 0.0], [0.0, 0.0, 1.0]];
+    let offsets = [0.1, 0.0];
+    assert_eq!(
+        TransferMatrix::new(rows, offsets),
+        TransferMatrix::from_flat(
+            3,
+            2,
+            rows.into_iter().flatten().collect::<Vec<_>>(),
+            offsets
+        )
     );
 }
 

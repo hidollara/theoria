@@ -27,15 +27,16 @@ impl LinearSrgb {
 
     pub(crate) fn transfer_to_xyz_d65() -> Result<Transfer, TransferError> {
         Transfer::new([TransferStage::Matrix(TransferMatrix::new(
-            3,
-            3,
-            Self::TO_XYZ_D65.into_iter().flatten().collect::<Vec<_>>(),
+            Self::TO_XYZ_D65,
             [0.0; 3],
         )?)])
     }
 
     pub(crate) fn transfer_from_xyz_d65() -> Result<Transfer, TransferError> {
-        super::rgb_from_xyz(Self::FROM_XYZ_D65, None)
+        Transfer::new([TransferStage::Matrix(TransferMatrix::new(
+            Self::FROM_XYZ_D65,
+            [0.0; 3],
+        )?)])
     }
 }
 
