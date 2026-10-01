@@ -56,8 +56,8 @@ impl Transfer {
     pub fn matrix_from_flat(
         input_channels: usize,
         output_channels: usize,
-        coefficients: impl Into<Arc<[f64]>>,
-        offsets: impl Into<Arc<[f64]>>,
+        coefficients: impl Into<Box<[f64]>>,
+        offsets: impl Into<Box<[f64]>>,
     ) -> Result<Self, TransferError> {
         Ok(Self::single(TransferStage::Matrix(
             TransferMatrix::from_flat(input_channels, output_channels, coefficients, offsets)?,
@@ -65,7 +65,7 @@ impl Transfer {
     }
 
     pub fn clut(
-        grid: impl Into<Arc<[u8]>>,
+        grid: impl Into<Box<[u8]>>,
         output_channels: usize,
         values: impl Into<Arc<[f64]>>,
     ) -> Result<Self, TransferError> {
@@ -178,8 +178,8 @@ impl TransferStage {
 pub struct TransferMatrix {
     input_channels: usize,
     output_channels: usize,
-    coefficients: Arc<[f64]>,
-    offsets: Arc<[f64]>,
+    coefficients: Box<[f64]>,
+    offsets: Box<[f64]>,
 }
 
 impl TransferMatrix {
@@ -207,8 +207,8 @@ impl TransferMatrix {
     pub fn from_flat(
         input_channels: usize,
         output_channels: usize,
-        coefficients: impl Into<Arc<[f64]>>,
-        offsets: impl Into<Arc<[f64]>>,
+        coefficients: impl Into<Box<[f64]>>,
+        offsets: impl Into<Box<[f64]>>,
     ) -> Result<Self, TransferError> {
         let coefficients = coefficients.into();
         let offsets = offsets.into();
@@ -226,8 +226,8 @@ impl TransferMatrix {
     fn from_parts(
         input_channels: usize,
         output_channels: usize,
-        coefficients: Arc<[f64]>,
-        offsets: Arc<[f64]>,
+        coefficients: Box<[f64]>,
+        offsets: Box<[f64]>,
     ) -> Result<Self, TransferError> {
         if coefficients
             .iter()
@@ -270,14 +270,14 @@ impl TransferMatrix {
 /// extend beyond the normalized range.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TransferClut {
-    grid: Arc<[u8]>,
+    grid: Box<[u8]>,
     output_channels: usize,
     values: Arc<[f64]>,
 }
 
 impl TransferClut {
     pub fn new(
-        grid: impl Into<Arc<[u8]>>,
+        grid: impl Into<Box<[u8]>>,
         output_channels: usize,
         values: impl Into<Arc<[f64]>>,
     ) -> Result<Self, TransferError> {
