@@ -157,7 +157,7 @@ impl TransferStage {
             Self::Curves(curves) => curves.len(),
             Self::Matrix(matrix) => matrix.input_channels,
             Self::Clut(clut) => clut.grid.len(),
-            Self::ColorFunction(_) => 3,
+            Self::ColorFunction(function) => function.input_channels(),
             Self::Clamp(channels) => *channels,
         }
     }
@@ -167,7 +167,7 @@ impl TransferStage {
             Self::Curves(curves) => curves.len(),
             Self::Matrix(matrix) => matrix.output_channels,
             Self::Clut(clut) => clut.output_channels,
-            Self::ColorFunction(_) => 3,
+            Self::ColorFunction(function) => function.output_channels(),
             Self::Clamp(channels) => *channels,
         }
     }

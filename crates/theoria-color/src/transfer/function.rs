@@ -11,6 +11,25 @@ pub enum ColorFunction {
 }
 
 impl ColorFunction {
+    pub const fn input_channels(self) -> usize {
+        self.channel_counts().0
+    }
+
+    pub const fn output_channels(self) -> usize {
+        self.channel_counts().1
+    }
+
+    const fn channel_counts(self) -> (usize, usize) {
+        match self {
+            Self::RgbToHsl
+            | Self::HslToRgb
+            | Self::RgbToHwb
+            | Self::HwbToRgb
+            | Self::CartesianToPolar
+            | Self::PolarToCartesian => (3, 3),
+        }
+    }
+
     pub(super) fn evaluate(self, [first, second, third]: [f64; 3]) -> [f64; 3] {
         match self {
             Self::RgbToHsl => rgb_to_hsl([first, second, third]),

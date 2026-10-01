@@ -52,6 +52,23 @@ fn directed_stages_evaluate_in_order_and_change_channel_count() {
 }
 
 #[test]
+fn color_functions_define_their_transfer_channels() {
+    for function in [
+        ColorFunction::RgbToHsl,
+        ColorFunction::HslToRgb,
+        ColorFunction::RgbToHwb,
+        ColorFunction::HwbToRgb,
+        ColorFunction::CartesianToPolar,
+        ColorFunction::PolarToCartesian,
+    ] {
+        let transfer = Transfer::color_function(function);
+        assert_eq!(transfer.input_channels(), Some(function.input_channels()));
+        assert_eq!(transfer.output_channels(), Some(function.output_channels()));
+        assert!(transfer.supports_channels(3, 3));
+    }
+}
+
+#[test]
 fn sampled_curves_interpolate_and_clamp_the_icc_domain() {
     let curve = TransferCurve::sampled([0.0, 0.25, 1.0]).unwrap();
     assert_eq!(curve.evaluate(-1.0), 0.0);
