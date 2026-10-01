@@ -44,6 +44,7 @@ fn directed_stages_evaluate_in_order_and_change_channel_count() {
     .unwrap();
     assert_eq!(transfer.input_channels(), Some(3));
     assert_eq!(transfer.output_channels(), Some(2));
+    assert_eq!(transfer.clone().stages(), transfer.stages());
     assert_eq!(
         transfer.evaluate(&[0.5, 0.25, 0.75]).unwrap(),
         vec![0.475, 0.75]
@@ -88,6 +89,7 @@ fn piecewise_curves_preserve_inclusive_and_exclusive_boundaries() {
     assert_eq!(curve.evaluate(0.5), 1.0);
     let curve = TransferCurve::clamped(curve, [0.0, 1.0], [0.0, 0.75]).unwrap();
     assert_eq!(curve.evaluate(2.0), 0.75);
+    assert_eq!(curve.clone().evaluate(2.0), 0.75);
     assert!(
         TransferCurve::piecewise([CurveSegment::new(0.5, CurveSegmentKind::Constant(0.0),)])
             .is_err()

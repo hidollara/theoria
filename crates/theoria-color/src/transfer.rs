@@ -39,7 +39,7 @@ impl Transfer {
         Ok(Self { stages })
     }
 
-    pub fn curves(curves: impl Into<Arc<[TransferCurve]>>) -> Result<Self, TransferError> {
+    pub fn curves(curves: impl Into<Box<[TransferCurve]>>) -> Result<Self, TransferError> {
         Ok(Self::single(TransferStage::curves(curves)?))
     }
 
@@ -135,7 +135,7 @@ impl Transfer {
 /// matrices may change it.
 #[derive(Clone, Debug, PartialEq)]
 pub enum TransferStage {
-    Curves(Arc<[TransferCurve]>),
+    Curves(Box<[TransferCurve]>),
     Matrix(TransferMatrix),
     Clut(TransferClut),
     ColorFunction(ColorFunction),
@@ -144,7 +144,7 @@ pub enum TransferStage {
 }
 
 impl TransferStage {
-    pub fn curves(curves: impl Into<Arc<[TransferCurve]>>) -> Result<Self, TransferError> {
+    pub fn curves(curves: impl Into<Box<[TransferCurve]>>) -> Result<Self, TransferError> {
         let curves = curves.into();
         if curves.is_empty() {
             return Err(TransferError::EmptyChannels);
@@ -354,14 +354,14 @@ enum CurveKind {
 #[derive(Clone, Debug, PartialEq)]
 enum CurveSegments {
     Static(&'static [CurveSegment]),
-    Shared(Arc<[CurveSegment]>),
+    Owned(Box<[CurveSegment]>),
 }
 
 impl AsRef<[CurveSegment]> for CurveSegments {
     fn as_ref(&self) -> &[CurveSegment] {
         match self {
             Self::Static(segments) => segments,
-            Self::Shared(segments) => segments,
+            Self::Owned(segments) => segments,
         }
     }
 }
@@ -492,7 +492,7 @@ impl TransferCurve {
         )
     }
 
-    pub fn piecewise(segments: impl Into<Arc<[CurveSegment]>>) -> Result<Self, TransferError> {
+    pub fn piecewise(segments: impl Into<Box<[CurveSegment]>>) -> Result<Self, TransferError> {
         let segments = segments.into();
         if segments.is_empty() {
             return Err(TransferError::InvalidCurve);
@@ -557,7 +557,7 @@ impl TransferCurve {
             }
             previous = segment.upper;
         }
-        Ok(Self(CurveKind::Piecewise(CurveSegments::Shared(segments))))
+        Ok(Self(CurveKind::Piecewise(CurveSegments::Owned(segments))))
     }
 
     /// Restricts a curve's input and output to inclusive numerical bounds.
