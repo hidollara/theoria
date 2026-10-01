@@ -14,8 +14,7 @@ use super::space::{
     ColorProfile, ColorSpace, ConnectionSpace, LabD50, SpaceConnectionError, XyzD50,
 };
 use super::transfer::{
-    CurveSegment, CurveSegmentKind, ICC_PCS_D50_XYZ, Transfer, TransferClut, TransferCurve,
-    TransferError, TransferMatrix, TransferStage,
+    CurveSegment, CurveSegmentKind, ICC_PCS_D50_XYZ, Transfer, TransferCurve, TransferError,
 };
 
 /// The two PCS encodings permitted by the supported ICC profiles.
@@ -171,12 +170,12 @@ impl IccProfileData {
         .as_ref()
         .or(self.parsed.lut_a_to_b_perceptual.as_ref());
         let transfer = if let Some(tag) = tag {
-            let mut stages = match tag {
+            let mut transfers = match tag {
                 LutWarehouse::Lut(lut) => legacy_lut(lut, self.pcs)?,
                 LutWarehouse::Multidimensional(lut) => multidimensional_lut_to_pcs(lut)?,
             };
-            stages.push(pcs_decoding(self.pcs, tag)?);
-            Transfer::new(stages)?
+            transfers.push(pcs_decoding(self.pcs, tag)?);
+            Transfer::new(transfers)?
         } else if self.parsed.color_space == DataColorSpace::Gray {
             gray_trc_to_pcs(&self.parsed, self.pcs)?
         } else if self.parsed.color_space == DataColorSpace::Rgb && self.pcs == Pcs::XyzD50 {
@@ -204,12 +203,12 @@ impl IccProfileData {
         .as_ref()
         .or(self.parsed.lut_b_to_a_perceptual.as_ref());
         let transfer = if let Some(tag) = tag {
-            let mut stages = vec![pcs_encoding(self.pcs, tag)?, TransferStage::Clamp(3)];
-            stages.extend(match tag {
+            let mut transfers = vec![pcs_encoding(self.pcs, tag)?, Transfer::clamp(3)?];
+            transfers.extend(match tag {
                 LutWarehouse::Lut(lut) => legacy_lut_from_pcs(lut, self.pcs)?,
                 LutWarehouse::Multidimensional(lut) => multidimensional_lut_from_pcs(lut)?,
             });
-            Transfer::new(stages)?
+            Transfer::new(transfers)?
         } else if self.parsed.color_space == DataColorSpace::Gray {
             gray_trc_from_pcs(&self.parsed, self.pcs)?
         } else if self.parsed.color_space == DataColorSpace::Rgb && self.pcs == Pcs::XyzD50 {
@@ -250,7 +249,7 @@ impl IccProfileData {
     }
 
     fn absolute_adjustment(&self, scale: [f64; 3]) -> Result<Transfer, IccProfileError> {
-        let adjustment = Transfer::new([diagonal(scale, [0.0; 3])?])?;
+        let adjustment = diagonal(scale, [0.0; 3])?;
         if self.pcs == Pcs::LabD50 {
             Ok(LabD50::transfer_to_xyz_d50()
                 .then(&adjustment)?
@@ -399,17 +398,17 @@ fn inverse_curve(value: &ToneReprCurve) -> Result<TransferCurve, IccProfileError
     }
 }
 
-fn curves(values: &[ToneReprCurve], channels: usize) -> Result<TransferStage, IccProfileError> {
+fn curves(values: &[ToneReprCurve], channels: usize) -> Result<Transfer, IccProfileError> {
     if values.len() != channels {
         return Err(IccProfileError::MalformedTransfer);
     }
-    Ok(TransferStage::curves(
+    Ok(Transfer::curves(
         values.iter().map(curve).collect::<Result<Vec<_>, _>>()?,
     )?)
 }
 
-fn matrix(value: &moxcms::Matrix3d, bias: [f64; 3]) -> Result<TransferStage, IccProfileError> {
-    Ok(TransferStage::Matrix(TransferMatrix::new(value.v, bias)?))
+fn matrix(value: &moxcms::Matrix3d, bias: [f64; 3]) -> Result<Transfer, IccProfileError> {
+    Ok(Transfer::matrix(value.v, bias)?)
 }
 
 fn normalized_values(store: &LutStore) -> Vec<f64> {
@@ -425,24 +424,24 @@ fn normalized_values(store: &LutStore) -> Vec<f64> {
     }
 }
 
-fn clut(grid: &[u8], outputs: usize, store: &LutStore) -> Result<TransferStage, IccProfileError> {
-    Ok(TransferStage::Clut(TransferClut::new(
+fn clut(grid: &[u8], outputs: usize, store: &LutStore) -> Result<Transfer, IccProfileError> {
+    Ok(Transfer::clut(
         grid.to_vec(),
         outputs,
         normalized_values(store),
-    )?))
+    )?)
 }
 
 fn table_curves(
     store: &LutStore,
     channels: usize,
     entries: usize,
-) -> Result<TransferStage, IccProfileError> {
+) -> Result<Transfer, IccProfileError> {
     let values = normalized_values(store);
     if entries < 2 || values.len() != channels * entries {
         return Err(IccProfileError::MalformedTransfer);
     }
-    Ok(TransferStage::curves(
+    Ok(Transfer::curves(
         values
             .chunks_exact(entries)
             .map(|samples| TransferCurve::sampled(samples.to_vec()))
@@ -450,7 +449,7 @@ fn table_curves(
     )?)
 }
 
-fn legacy_lut(lut: &LutDataType, pcs: Pcs) -> Result<Vec<TransferStage>, IccProfileError> {
+fn legacy_lut(lut: &LutDataType, pcs: Pcs) -> Result<Vec<Transfer>, IccProfileError> {
     // ICC does not define an 8-bit PCSXYZ encoding for lut8Type.
     if lut.lut_type == LutType::Lut8 && pcs == Pcs::XyzD50 {
         return Err(IccProfileError::MalformedTransfer);
@@ -476,7 +475,7 @@ fn legacy_lut(lut: &LutDataType, pcs: Pcs) -> Result<Vec<TransferStage>, IccProf
     ])
 }
 
-fn legacy_lut_from_pcs(lut: &LutDataType, pcs: Pcs) -> Result<Vec<TransferStage>, IccProfileError> {
+fn legacy_lut_from_pcs(lut: &LutDataType, pcs: Pcs) -> Result<Vec<Transfer>, IccProfileError> {
     let mut stages = Vec::new();
     // The legacy LUT matrix is only meaningful for a three-channel PCSXYZ
     // input; conforming tags use identity in all other cases.
@@ -499,7 +498,7 @@ fn validate_multidimensional_lut(lut: &LutMultidimensionalType) -> Result<(), Ic
 
 fn multidimensional_lut_to_pcs(
     lut: &LutMultidimensionalType,
-) -> Result<Vec<TransferStage>, IccProfileError> {
+) -> Result<Vec<Transfer>, IccProfileError> {
     validate_multidimensional_lut(lut)?;
     let inputs = usize::from(lut.num_input_channels);
     let outputs = usize::from(lut.num_output_channels);
@@ -516,7 +515,7 @@ fn multidimensional_lut_to_pcs(
     if !lut.m_curves.is_empty() {
         stages.push(curves(&lut.m_curves, 3)?);
         stages.push(matrix(&lut.matrix, lut.bias.v)?);
-        stages.push(TransferStage::Clamp(3));
+        stages.push(Transfer::clamp(3)?);
     }
     stages.push(curves(&lut.b_curves, 3)?);
     Ok(stages)
@@ -524,7 +523,7 @@ fn multidimensional_lut_to_pcs(
 
 fn multidimensional_lut_from_pcs(
     lut: &LutMultidimensionalType,
-) -> Result<Vec<TransferStage>, IccProfileError> {
+) -> Result<Vec<Transfer>, IccProfileError> {
     validate_multidimensional_lut(lut)?;
     let inputs = usize::from(lut.num_input_channels);
     let outputs = usize::from(lut.num_output_channels);
@@ -534,7 +533,7 @@ fn multidimensional_lut_from_pcs(
     let mut stages = vec![curves(&lut.b_curves, 3)?];
     if !lut.m_curves.is_empty() {
         stages.push(matrix(&lut.matrix, lut.bias.v)?);
-        stages.push(TransferStage::Clamp(3));
+        stages.push(Transfer::clamp(3)?);
         stages.push(curves(&lut.m_curves, 3)?);
     }
     if let Some(table) = &lut.clut {
@@ -546,7 +545,7 @@ fn multidimensional_lut_from_pcs(
     Ok(stages)
 }
 
-fn pcs_decoding(pcs: Pcs, tag: &LutWarehouse) -> Result<TransferStage, IccProfileError> {
+fn pcs_decoding(pcs: Pcs, tag: &LutWarehouse) -> Result<Transfer, IccProfileError> {
     let legacy_lab = matches!(tag, LutWarehouse::Lut(lut) if lut.lut_type == LutType::Lut16);
     let (scale, offsets) = match pcs {
         Pcs::XyzD50 => ([65535.0 / 32768.0; 3], [0.0; 3]),
@@ -559,7 +558,7 @@ fn pcs_decoding(pcs: Pcs, tag: &LutWarehouse) -> Result<TransferStage, IccProfil
     diagonal(scale, offsets)
 }
 
-fn pcs_encoding(pcs: Pcs, tag: &LutWarehouse) -> Result<TransferStage, IccProfileError> {
+fn pcs_encoding(pcs: Pcs, tag: &LutWarehouse) -> Result<Transfer, IccProfileError> {
     let legacy_lab = matches!(tag, LutWarehouse::Lut(lut) if lut.lut_type == LutType::Lut16);
     let (scale, offsets) = match pcs {
         Pcs::XyzD50 => ([32768.0 / 65535.0; 3], [0.0; 3]),
@@ -579,15 +578,15 @@ fn pcs_encoding(pcs: Pcs, tag: &LutWarehouse) -> Result<TransferStage, IccProfil
     diagonal(scale, offsets)
 }
 
-fn diagonal(scale: [f64; 3], offsets: [f64; 3]) -> Result<TransferStage, IccProfileError> {
-    Ok(TransferStage::Matrix(TransferMatrix::new(
+fn diagonal(scale: [f64; 3], offsets: [f64; 3]) -> Result<Transfer, IccProfileError> {
+    Ok(Transfer::matrix(
         [
             [scale[0], 0.0, 0.0],
             [0.0, scale[1], 0.0],
             [0.0, 0.0, scale[2]],
         ],
         offsets,
-    )?))
+    )?)
 }
 
 fn rgb_trcs(profile: &ParsedProfile) -> Result<[&ToneReprCurve; 3], IccProfileError> {
@@ -611,7 +610,7 @@ fn rgb_matrix_trc_to_pcs(profile: &ParsedProfile) -> Result<Transfer, IccProfile
     let trcs = rgb_trcs(profile)?;
     let matrix_value = profile.rgb_to_xyz_matrix();
     Ok(Transfer::new([
-        TransferStage::curves(
+        Transfer::curves(
             trcs.iter()
                 .map(|value| curve(value))
                 .collect::<Result<Vec<_>, _>>()?,
@@ -628,7 +627,7 @@ fn rgb_matrix_trc_from_pcs(profile: &ParsedProfile) -> Result<Transfer, IccProfi
     }
     Ok(Transfer::new([
         matrix(&matrix_value.inverse(), [0.0; 3])?,
-        TransferStage::curves(
+        Transfer::curves(
             trcs.iter()
                 .map(|value| inverse_curve(value))
                 .collect::<Result<Vec<_>, _>>()?,
@@ -646,11 +645,8 @@ fn gray_trc_to_pcs(profile: &ParsedProfile, pcs: Pcs) -> Result<Transfer, IccPro
         Pcs::LabD50 => [100.0, 0.0, 0.0],
     };
     Ok(Transfer::new([
-        TransferStage::curves([curve(trc)?])?,
-        TransferStage::Matrix(TransferMatrix::new(
-            coefficients.map(|coefficient| [coefficient]),
-            [0.0; 3],
-        )?),
+        Transfer::curves([curve(trc)?])?,
+        Transfer::matrix(coefficients.map(|coefficient| [coefficient]), [0.0; 3])?,
     ])?)
 }
 
@@ -664,8 +660,8 @@ fn gray_trc_from_pcs(profile: &ParsedProfile, pcs: Pcs) -> Result<Transfer, IccP
         Pcs::LabD50 => [0.01, 0.0, 0.0],
     };
     Ok(Transfer::new([
-        TransferStage::Matrix(TransferMatrix::new([coefficients], [0.0])?),
-        TransferStage::curves([inverse_curve(trc)?])?,
+        Transfer::matrix([coefficients], [0.0])?,
+        Transfer::curves([inverse_curve(trc)?])?,
     ])?)
 }
 
@@ -1332,7 +1328,7 @@ mod tests {
             lut_type: LutType::Lut16,
         };
         let tag = LutWarehouse::Lut(lut);
-        let decoded = Transfer::new([pcs_decoding(Pcs::LabD50, &tag).unwrap()]).unwrap();
+        let decoded = pcs_decoding(Pcs::LabD50, &tag).unwrap();
         let lab = decoded
             .evaluate(&[65280.0 / 65535.0, 32768.0 / 65535.0, 32768.0 / 65535.0])
             .unwrap();

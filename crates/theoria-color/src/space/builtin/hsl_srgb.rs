@@ -3,17 +3,17 @@ use super::{
     TypedColorSpace,
 };
 use crate::model::Hsl;
-use crate::transfer::{ColorFunction, Transfer, TransferError, TransferStage};
+use crate::transfer::{ColorFunction, Transfer, TransferError};
 
 named_space!(HslSrgb, Hsl);
 
 impl HslSrgb {
     pub(crate) fn transfer_to_srgb() -> Result<Transfer, TransferError> {
-        Transfer::new([TransferStage::ColorFunction(ColorFunction::HslToRgb)])
+        Ok(Transfer::color_function(ColorFunction::HslToRgb))
     }
 
     pub(crate) fn transfer_from_srgb() -> Result<Transfer, TransferError> {
-        Transfer::new([TransferStage::ColorFunction(ColorFunction::RgbToHsl)])
+        Ok(Transfer::color_function(ColorFunction::RgbToHsl))
     }
 
     pub(crate) fn transfer_to_xyz_d65() -> Result<Transfer, TransferError> {

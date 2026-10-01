@@ -2,7 +2,7 @@ use super::{
     ColorProfile, ColorSpace, ConnectionSpace, DisplayP3, SpaceConnectionError, TypedColorSpace,
 };
 use crate::model::Rgb;
-use crate::transfer::{Transfer, TransferCurve, TransferError, TransferMatrix, TransferStage};
+use crate::transfer::{Transfer, TransferCurve, TransferError};
 
 named_space!(LinearDisplayP3, Rgb);
 
@@ -33,17 +33,11 @@ impl LinearDisplayP3 {
     ];
 
     pub(crate) fn transfer_to_xyz_d65() -> Result<Transfer, TransferError> {
-        Transfer::new([TransferStage::Matrix(TransferMatrix::new(
-            Self::TO_XYZ_D65,
-            [0.0; 3],
-        )?)])
+        Transfer::matrix(Self::TO_XYZ_D65, [0.0; 3])
     }
 
     pub(crate) fn transfer_from_xyz_d65() -> Result<Transfer, TransferError> {
-        Transfer::new([TransferStage::Matrix(TransferMatrix::new(
-            Self::FROM_XYZ_D65,
-            [0.0; 3],
-        )?)])
+        Transfer::matrix(Self::FROM_XYZ_D65, [0.0; 3])
     }
 }
 
@@ -71,10 +65,7 @@ impl ColorProfile for LinearDisplayP3Profile {
         destination: &ColorSpace,
     ) -> Result<Option<Transfer>, SpaceConnectionError> {
         if *destination == ColorSpace::from(DisplayP3) {
-            Ok(Some(Transfer::new([TransferStage::curves(vec![
-                TransferCurve::SRGB_ENCODE;
-                3
-            ])?])?))
+            Ok(Some(Transfer::curves(vec![TransferCurve::SRGB_ENCODE; 3])?))
         } else {
             Ok(None)
         }

@@ -564,8 +564,7 @@ fn wgsl_literal(value: f64) -> Result<String, TransferWgslError> {
 mod tests {
     use super::*;
     use theoria_color::{
-        ColorSpace, CurveSegment, IccProfile, IccRenderingIntent, LabD50, LinearSrgb, Srgb,
-        TransferMatrix, XyzD50,
+        ColorSpace, CurveSegment, IccProfile, IccRenderingIntent, LabD50, LinearSrgb, Srgb, XyzD50,
     };
 
     fn validate(source: &str) {
@@ -627,7 +626,7 @@ mod tests {
             ColorFunction::CartesianToPolar,
             ColorFunction::PolarToCartesian,
         ] {
-            let transfer = Transfer::new([TransferStage::ColorFunction(function)]).unwrap();
+            let transfer = Transfer::color_function(function);
             validate(&transfer.wgsl(54).unwrap());
         }
     }
@@ -635,7 +634,7 @@ mod tests {
     #[test]
     fn curves_and_matrix_generate_valid_wgsl() {
         let transfer = Transfer::new([
-            TransferStage::curves([
+            Transfer::curves([
                 TransferCurve::IDENTITY,
                 TransferCurve::gamma(2.0).unwrap(),
                 TransferCurve::sampled([0.0, 0.3, 1.0]).unwrap(),
@@ -660,17 +659,15 @@ mod tests {
                 .unwrap(),
             ])
             .unwrap(),
-            TransferStage::Matrix(
-                TransferMatrix::new(
-                    [
-                        [1.0, 0.0, 0.0, 0.0],
-                        [0.0, 1.0, 0.0, 0.0],
-                        [0.0, 0.0, 1.0, 0.0],
-                    ],
-                    [0.0; 3],
-                )
-                .unwrap(),
-            ),
+            Transfer::matrix(
+                [
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                ],
+                [0.0; 3],
+            )
+            .unwrap(),
         ])
         .unwrap();
         let source = transfer.wgsl(7).unwrap();
@@ -691,7 +688,7 @@ mod tests {
 
     #[test]
     fn logarithmic_and_exponential_segments_generate_valid_wgsl() {
-        let transfer = Transfer::new([TransferStage::curves([
+        let transfer = Transfer::curves([
             TransferCurve::piecewise([CurveSegment::new(
                 f64::INFINITY,
                 CurveSegmentKind::Logarithmic {
@@ -715,7 +712,6 @@ mod tests {
             )])
             .unwrap(),
         ])
-        .unwrap()])
         .unwrap();
         validate(&transfer.wgsl(13).unwrap());
     }
@@ -734,12 +730,10 @@ mod tests {
 
     #[test]
     fn clut_uses_storage_when_inline_table_is_too_large() {
-        let clut = TransferClut::new([2, 2, 2, 2], 3, vec![0.5; 48]).unwrap();
-        let transfer = Transfer::new([TransferStage::Clut(clut)]).unwrap();
+        let transfer = Transfer::clut([2, 2, 2, 2], 3, vec![0.5; 48]).unwrap();
         validate(&transfer.wgsl(11).unwrap());
 
-        let large = TransferClut::new([17, 17, 17], 1, vec![0.0; 4913]).unwrap();
-        let transfer = Transfer::new([TransferStage::Clut(large)]).unwrap();
+        let transfer = Transfer::clut([17, 17, 17], 1, vec![0.0; 4913]).unwrap();
         assert_eq!(
             transfer.wgsl(12),
             Err(TransferWgslError::ShaderTableTooLarge)
@@ -785,7 +779,7 @@ mod tests {
     fn storage_shader_packs_curves_into_one_binding() {
         let first = TransferCurve::sampled([0.0, 0.5, 1.0]).unwrap();
         let second = TransferCurve::sampled([0.0, 1.0]).unwrap();
-        let transfer = Transfer::new([TransferStage::curves([first, second]).unwrap()]).unwrap();
+        let transfer = Transfer::curves([first, second]).unwrap();
         let shader = transfer.wgsl_with_storage(8, 0, 1).unwrap();
         assert_eq!(shader.table_values(), &[0.0, 0.5, 1.0, 0.0, 1.0]);
         assert_eq!(shader.source().matches("@binding(1)").count(), 1);

@@ -1,9 +1,6 @@
 use super::{ColorProfile, ConnectionSpace, SpaceConnectionError, TypedColorSpace};
 use crate::model::Rgb;
-use crate::transfer::{
-    CurveSegment, CurveSegmentKind, Transfer, TransferCurve, TransferError, TransferMatrix,
-    TransferStage,
-};
+use crate::transfer::{CurveSegment, CurveSegmentKind, Transfer, TransferCurve, TransferError};
 
 named_space!(ProPhotoRgb, Rgb);
 
@@ -67,16 +64,15 @@ impl ProPhotoRgb {
     }
 
     pub(crate) fn transfer_to_xyz_d50() -> Result<Transfer, TransferError> {
-        let decode = TransferStage::curves(vec![Self::decode_curve()?; 3])?;
-        let matrix =
-            TransferStage::Matrix(TransferMatrix::new(Self::LINEAR_RGB_TO_XYZ_D50, [0.0; 3])?);
+        let decode = Transfer::curves(vec![Self::decode_curve()?; 3])?;
+        let matrix = Transfer::matrix(Self::LINEAR_RGB_TO_XYZ_D50, [0.0; 3])?;
         Transfer::new([decode, matrix])
     }
 
     pub(crate) fn transfer_from_xyz_d50() -> Result<Transfer, TransferError> {
         Transfer::new([
-            TransferStage::Matrix(TransferMatrix::new(Self::XYZ_D50_TO_LINEAR_RGB, [0.0; 3])?),
-            TransferStage::curves(vec![Self::encode_curve()?; 3])?,
+            Transfer::matrix(Self::XYZ_D50_TO_LINEAR_RGB, [0.0; 3])?,
+            Transfer::curves(vec![Self::encode_curve()?; 3])?,
         ])
     }
 }

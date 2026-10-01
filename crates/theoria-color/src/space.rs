@@ -359,7 +359,7 @@ mod tests {
                 TransferCurve::SRGB_ENCODE,
             ),
         ] {
-            let expected = Transfer::new([TransferStage::curves(vec![curve; 3]).unwrap()]).unwrap();
+            let expected = Transfer::curves(vec![curve; 3]).unwrap();
             assert_eq!(source.direct_to(&destination).unwrap(), Some(expected));
         }
     }
@@ -598,7 +598,7 @@ mod tests {
                 &self,
                 _: &ColorSpace,
             ) -> Result<Option<Transfer>, SpaceConnectionError> {
-                Ok(Some(Transfer::new([TransferStage::Clamp(4)])?))
+                Ok(Some(Transfer::clamp(4)?))
             }
         }
 

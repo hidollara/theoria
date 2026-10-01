@@ -6,8 +6,7 @@ use super::{
 use crate::model::Lab;
 use crate::transfer::Transfer;
 use crate::transfer::{
-    CurveSegment, CurveSegmentKind, ICC_PCS_D50_XYZ, TransferCurve, TransferError, TransferMatrix,
-    TransferStage,
+    CurveSegment, CurveSegmentKind, ICC_PCS_D50_XYZ, TransferCurve, TransferError,
 };
 
 named_space!(LabD50, Lab);
@@ -60,12 +59,9 @@ impl LabD50 {
         ])?;
         let y_offset = 16.0 / 116.0;
         Transfer::new([
-            TransferStage::Matrix(TransferMatrix::new(Self::LAB_TO_F_XYZ, [y_offset; 3])?),
-            TransferStage::curves(vec![curve; 3])?,
-            TransferStage::Matrix(TransferMatrix::new(
-                Self::NORMALIZED_XYZ_TO_XYZ_D50,
-                [0.0; 3],
-            )?),
+            Transfer::matrix(Self::LAB_TO_F_XYZ, [y_offset; 3])?,
+            Transfer::curves(vec![curve; 3])?,
+            Transfer::matrix(Self::NORMALIZED_XYZ_TO_XYZ_D50, [0.0; 3])?,
         ])
     }
 }

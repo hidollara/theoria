@@ -3,17 +3,17 @@ use super::{
     TypedColorSpace,
 };
 use crate::model::Hwb;
-use crate::transfer::{ColorFunction, Transfer, TransferError, TransferStage};
+use crate::transfer::{ColorFunction, Transfer, TransferError};
 
 named_space!(HwbSrgb, Hwb);
 
 impl HwbSrgb {
     pub(crate) fn transfer_to_srgb() -> Result<Transfer, TransferError> {
-        Transfer::new([TransferStage::ColorFunction(ColorFunction::HwbToRgb)])
+        Ok(Transfer::color_function(ColorFunction::HwbToRgb))
     }
 
     pub(crate) fn transfer_from_srgb() -> Result<Transfer, TransferError> {
-        Transfer::new([TransferStage::ColorFunction(ColorFunction::RgbToHwb)])
+        Ok(Transfer::color_function(ColorFunction::RgbToHwb))
     }
 
     pub(crate) fn transfer_to_xyz_d65() -> Result<Transfer, TransferError> {

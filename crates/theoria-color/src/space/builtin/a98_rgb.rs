@@ -1,6 +1,6 @@
 use super::{ColorProfile, ConnectionSpace, SpaceConnectionError, TypedColorSpace};
 use crate::model::Rgb;
-use crate::transfer::{Transfer, TransferCurve, TransferError, TransferMatrix, TransferStage};
+use crate::transfer::{Transfer, TransferCurve, TransferError};
 
 named_space!(A98Rgb, Rgb);
 
@@ -43,15 +43,15 @@ impl A98Rgb {
 
     pub(crate) fn transfer_to_xyz_d65() -> Result<Transfer, TransferError> {
         Transfer::new([
-            TransferStage::curves(vec![TransferCurve::signed_power(563.0 / 256.0)?; 3])?,
-            TransferStage::Matrix(TransferMatrix::new(Self::LINEAR_RGB_TO_XYZ_D65, [0.0; 3])?),
+            Transfer::curves(vec![TransferCurve::signed_power(563.0 / 256.0)?; 3])?,
+            Transfer::matrix(Self::LINEAR_RGB_TO_XYZ_D65, [0.0; 3])?,
         ])
     }
 
     pub(crate) fn transfer_from_xyz_d65() -> Result<Transfer, TransferError> {
         Transfer::new([
-            TransferStage::Matrix(TransferMatrix::new(Self::XYZ_D65_TO_LINEAR_RGB, [0.0; 3])?),
-            TransferStage::curves(vec![TransferCurve::signed_power(256.0 / 563.0)?; 3])?,
+            Transfer::matrix(Self::XYZ_D65_TO_LINEAR_RGB, [0.0; 3])?,
+            Transfer::curves(vec![TransferCurve::signed_power(256.0 / 563.0)?; 3])?,
         ])
     }
 }

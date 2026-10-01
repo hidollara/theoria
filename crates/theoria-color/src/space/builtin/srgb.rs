@@ -3,13 +3,13 @@ use super::{
     TypedColorSpace,
 };
 use crate::model::Rgb;
-use crate::transfer::{Transfer, TransferCurve, TransferError, TransferStage};
+use crate::transfer::{Transfer, TransferCurve, TransferError};
 
 named_space!(Srgb, Rgb);
 
 impl Srgb {
     pub(crate) fn transfer_to_linear_srgb() -> Result<Transfer, TransferError> {
-        Transfer::new([TransferStage::curves(vec![TransferCurve::SRGB_DECODE; 3])?])
+        Transfer::curves(vec![TransferCurve::SRGB_DECODE; 3])
     }
 
     pub(crate) fn transfer_to_xyz_d65() -> Result<Transfer, TransferError> {

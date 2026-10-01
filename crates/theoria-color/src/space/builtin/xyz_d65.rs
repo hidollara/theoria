@@ -2,7 +2,7 @@ use std::sync::LazyLock;
 
 use super::{ColorProfile, ConnectionSpace, SpaceConnectionError, TypedColorSpace};
 use crate::model::Xyz;
-use crate::transfer::{Transfer, TransferError, TransferMatrix, TransferStage};
+use crate::transfer::{Transfer, TransferError};
 
 named_space!(XyzD65, Xyz);
 builtin_space!(XyzD65, XyzD65Profile);
@@ -35,10 +35,7 @@ impl XyzD65 {
     }
 
     fn build_transfer_to_xyz_d50() -> Result<Transfer, TransferError> {
-        Transfer::new([TransferStage::Matrix(TransferMatrix::new(
-            Self::TO_XYZ_D50,
-            [0.0; 3],
-        )?)])
+        Transfer::matrix(Self::TO_XYZ_D50, [0.0; 3])
     }
 }
 

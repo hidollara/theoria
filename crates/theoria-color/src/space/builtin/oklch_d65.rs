@@ -2,21 +2,17 @@ use super::{
     ColorProfile, ColorSpace, ConnectionSpace, OklabD65, SpaceConnectionError, TypedColorSpace,
 };
 use crate::model::Oklch;
-use crate::transfer::{ColorFunction, Transfer, TransferError, TransferStage};
+use crate::transfer::{ColorFunction, Transfer, TransferError};
 
 named_space!(OklchD65, Oklch);
 
 impl OklchD65 {
     pub(crate) fn transfer_to_oklab_d65() -> Result<Transfer, TransferError> {
-        Transfer::new([TransferStage::ColorFunction(
-            ColorFunction::PolarToCartesian,
-        )])
+        Ok(Transfer::color_function(ColorFunction::PolarToCartesian))
     }
 
     pub(crate) fn transfer_from_oklab_d65() -> Result<Transfer, TransferError> {
-        Transfer::new([TransferStage::ColorFunction(
-            ColorFunction::CartesianToPolar,
-        )])
+        Ok(Transfer::color_function(ColorFunction::CartesianToPolar))
     }
 
     pub(crate) fn transfer_to_xyz_d65() -> Result<Transfer, TransferError> {

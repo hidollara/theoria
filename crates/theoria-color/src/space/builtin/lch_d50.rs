@@ -3,21 +3,17 @@ use super::{
     XyzD50,
 };
 use crate::model::Lch;
-use crate::transfer::{ColorFunction, Transfer, TransferError, TransferStage};
+use crate::transfer::{ColorFunction, Transfer, TransferError};
 
 named_space!(LchD50, Lch);
 
 impl LchD50 {
     pub(crate) fn transfer_to_lab_d50() -> Result<Transfer, TransferError> {
-        Transfer::new([TransferStage::ColorFunction(
-            ColorFunction::PolarToCartesian,
-        )])
+        Ok(Transfer::color_function(ColorFunction::PolarToCartesian))
     }
 
     pub(crate) fn transfer_from_lab_d50() -> Result<Transfer, TransferError> {
-        Transfer::new([TransferStage::ColorFunction(
-            ColorFunction::CartesianToPolar,
-        )])
+        Ok(Transfer::color_function(ColorFunction::CartesianToPolar))
     }
 
     pub(crate) fn transfer_to_xyz_d50() -> Result<Transfer, TransferError> {

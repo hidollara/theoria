@@ -1,7 +1,4 @@
-use super::transfer::{
-    CurveSegment, CurveSegmentKind, Transfer, TransferClut, TransferCurve, TransferMatrix,
-    TransferStage,
-};
+use super::transfer::{CurveSegment, CurveSegmentKind, Transfer, TransferCurve};
 
 #[derive(Clone, Debug, Default)]
 pub(super) struct MpeTags {
@@ -57,7 +54,7 @@ fn parse_mpe(data: &[u8]) -> Result<Option<Transfer>, MpeParseError> {
         return Err(MpeParseError);
     }
     section(data, 16, count.checked_mul(8).ok_or(MpeParseError)?)?;
-    let mut stages = Vec::with_capacity(count);
+    let mut transfers = Vec::with_capacity(count);
     let mut channels = inputs;
     for index in 0..count {
         let entry = 16 + index * 8;
@@ -69,7 +66,7 @@ fn parse_mpe(data: &[u8]) -> Result<Option<Transfer>, MpeParseError> {
         if stage_inputs != channels || stage_outputs == 0 {
             return Err(MpeParseError);
         }
-        let stage = match section(element, 0, 4)? {
+        let transfer = match section(element, 0, 4)? {
             b"cvst" => Some(parse_curve_set(element, stage_inputs, stage_outputs)?),
             b"matf" => Some(parse_matrix(element, stage_inputs, stage_outputs)?),
             b"clut" => Some(parse_clut(element, stage_inputs, stage_outputs)?),
@@ -79,39 +76,36 @@ fn parse_mpe(data: &[u8]) -> Result<Option<Transfer>, MpeParseError> {
             }
             _ => return Ok(None),
         };
-        if let Some(stage) = stage {
-            stages.push(stage);
+        if let Some(transfer) = transfer {
+            transfers.push(transfer);
         }
         channels = stage_outputs;
     }
     if channels != outputs {
         return Err(MpeParseError);
     }
-    Transfer::new(stages).map(Some).map_err(|_| MpeParseError)
+    Transfer::new(transfers)
+        .map(Some)
+        .map_err(|_| MpeParseError)
 }
 
-fn parse_matrix(
-    data: &[u8],
-    inputs: usize,
-    outputs: usize,
-) -> Result<TransferStage, MpeParseError> {
+fn parse_matrix(data: &[u8], inputs: usize, outputs: usize) -> Result<Transfer, MpeParseError> {
     let coefficients = inputs.checked_mul(outputs).ok_or(MpeParseError)?;
     let total = coefficients.checked_add(outputs).ok_or(MpeParseError)?;
     section(data, 12, total.checked_mul(4).ok_or(MpeParseError)?)?;
     let values = (0..total)
         .map(|index| f32_at(data, 12 + 4 * index))
         .collect::<Result<Vec<_>, _>>()?;
-    TransferMatrix::from_flat(
+    Transfer::matrix_from_flat(
         inputs,
         outputs,
         values[..coefficients].to_vec(),
         values[coefficients..].to_vec(),
     )
-    .map(TransferStage::Matrix)
     .map_err(|_| MpeParseError)
 }
 
-fn parse_clut(data: &[u8], inputs: usize, outputs: usize) -> Result<TransferStage, MpeParseError> {
+fn parse_clut(data: &[u8], inputs: usize, outputs: usize) -> Result<Transfer, MpeParseError> {
     if inputs > 16 {
         return Err(MpeParseError);
     }
@@ -126,16 +120,10 @@ fn parse_clut(data: &[u8], inputs: usize, outputs: usize) -> Result<TransferStag
     let values = (0..entries)
         .map(|index| f32_at(data, 28 + 4 * index))
         .collect::<Result<Vec<_>, _>>()?;
-    TransferClut::new(grid, outputs, values)
-        .map(TransferStage::Clut)
-        .map_err(|_| MpeParseError)
+    Transfer::clut(grid, outputs, values).map_err(|_| MpeParseError)
 }
 
-fn parse_curve_set(
-    data: &[u8],
-    inputs: usize,
-    outputs: usize,
-) -> Result<TransferStage, MpeParseError> {
+fn parse_curve_set(data: &[u8], inputs: usize, outputs: usize) -> Result<Transfer, MpeParseError> {
     if inputs != outputs {
         return Err(MpeParseError);
     }
@@ -148,7 +136,7 @@ fn parse_curve_set(
             parse_curve(section(data, offset, size)?)
         })
         .collect::<Result<Vec<_>, _>>()?;
-    TransferStage::curves(curves).map_err(|_| MpeParseError)
+    Transfer::curves(curves).map_err(|_| MpeParseError)
 }
 
 fn parse_curve(data: &[u8]) -> Result<TransferCurve, MpeParseError> {

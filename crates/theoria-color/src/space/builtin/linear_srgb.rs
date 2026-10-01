@@ -3,13 +3,13 @@ use super::{
     TypedColorSpace,
 };
 use crate::model::Rgb;
-use crate::transfer::{Transfer, TransferCurve, TransferError, TransferMatrix, TransferStage};
+use crate::transfer::{Transfer, TransferCurve, TransferError};
 
 named_space!(LinearSrgb, Rgb);
 
 impl LinearSrgb {
     pub(crate) fn transfer_to_srgb() -> Result<Transfer, TransferError> {
-        Transfer::new([TransferStage::curves(vec![TransferCurve::SRGB_ENCODE; 3])?])
+        Transfer::curves(vec![TransferCurve::SRGB_ENCODE; 3])
     }
 
     // Exact rational matrix from CSS Color 4's color-conversion sample code.
@@ -31,17 +31,11 @@ impl LinearSrgb {
     ];
 
     pub(crate) fn transfer_to_xyz_d65() -> Result<Transfer, TransferError> {
-        Transfer::new([TransferStage::Matrix(TransferMatrix::new(
-            Self::TO_XYZ_D65,
-            [0.0; 3],
-        )?)])
+        Transfer::matrix(Self::TO_XYZ_D65, [0.0; 3])
     }
 
     pub(crate) fn transfer_from_xyz_d65() -> Result<Transfer, TransferError> {
-        Transfer::new([TransferStage::Matrix(TransferMatrix::new(
-            Self::FROM_XYZ_D65,
-            [0.0; 3],
-        )?)])
+        Transfer::matrix(Self::FROM_XYZ_D65, [0.0; 3])
     }
 }
 

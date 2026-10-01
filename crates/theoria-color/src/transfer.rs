@@ -15,36 +15,82 @@ pub use function::ColorFunction;
 /// same stages can be evaluated on the CPU or lowered by a renderer.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Transfer {
-    stages: Option<Arc<[TransferStage]>>,
+    stages: Vec<TransferStage>,
 }
 
 impl Transfer {
     /// The identity for any positive channel count.
-    pub const IDENTITY: Self = Self { stages: None };
+    pub const IDENTITY: Self = Self { stages: Vec::new() };
 
-    /// Validates the stage sequence. With no stages, this is an identity for
-    /// any positive channel count; endpoints are checked when it is connected.
-    pub fn new(stages: impl Into<Arc<[TransferStage]>>) -> Result<Self, TransferError> {
-        let stages = stages.into();
-        if stages.is_empty() {
-            return Ok(Self::IDENTITY);
-        }
-        for stage in stages.iter() {
-            if stage.input_channels() == 0 || stage.output_channels() == 0 {
-                return Err(TransferError::EmptyChannels);
+    /// Composes validated transfers in order. An empty sequence is the identity.
+    pub fn new(transfers: impl IntoIterator<Item = Self>) -> Result<Self, TransferError> {
+        let mut stages: Vec<TransferStage> = Vec::new();
+        for mut transfer in transfers {
+            if let (Some(previous), Some(next)) = (stages.last(), transfer.stages.first()) {
+                if previous.output_channels() != next.input_channels() {
+                    return Err(TransferError::ChannelMismatch {
+                        expected: previous.output_channels(),
+                        actual: next.input_channels(),
+                    });
+                }
             }
+            stages.append(&mut transfer.stages);
         }
-        for pair in stages.windows(2) {
-            if pair[0].output_channels() != pair[1].input_channels() {
-                return Err(TransferError::ChannelMismatch {
-                    expected: pair[0].output_channels(),
-                    actual: pair[1].input_channels(),
-                });
-            }
+        Ok(Self { stages })
+    }
+
+    pub fn curves(curves: impl Into<Arc<[TransferCurve]>>) -> Result<Self, TransferError> {
+        Ok(Self::single(TransferStage::curves(curves)?))
+    }
+
+    pub fn matrix<const INPUTS: usize, const OUTPUTS: usize>(
+        coefficients: [[f64; INPUTS]; OUTPUTS],
+        offsets: [f64; OUTPUTS],
+    ) -> Result<Self, TransferError> {
+        Ok(Self::single(TransferStage::Matrix(TransferMatrix::new(
+            coefficients,
+            offsets,
+        )?)))
+    }
+
+    pub fn matrix_from_flat(
+        input_channels: usize,
+        output_channels: usize,
+        coefficients: impl Into<Arc<[f64]>>,
+        offsets: impl Into<Arc<[f64]>>,
+    ) -> Result<Self, TransferError> {
+        Ok(Self::single(TransferStage::Matrix(
+            TransferMatrix::from_flat(input_channels, output_channels, coefficients, offsets)?,
+        )))
+    }
+
+    pub fn clut(
+        grid: impl Into<Arc<[u8]>>,
+        output_channels: usize,
+        values: impl Into<Arc<[f64]>>,
+    ) -> Result<Self, TransferError> {
+        Ok(Self::single(TransferStage::Clut(TransferClut::new(
+            grid,
+            output_channels,
+            values,
+        )?)))
+    }
+
+    pub fn color_function(function: ColorFunction) -> Self {
+        Self::single(TransferStage::ColorFunction(function))
+    }
+
+    pub fn clamp(channels: usize) -> Result<Self, TransferError> {
+        if channels == 0 {
+            return Err(TransferError::EmptyChannels);
         }
-        Ok(Self {
-            stages: Some(stages),
-        })
+        Ok(Self::single(TransferStage::Clamp(channels)))
+    }
+
+    fn single(stage: TransferStage) -> Self {
+        Self {
+            stages: vec![stage],
+        }
     }
 
     /// Returns `None` for an empty, channel-polymorphic identity.
@@ -58,7 +104,7 @@ impl Transfer {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.stages.is_none()
+        self.stages.is_empty()
     }
 
     /// Checks this transfer against endpoints whose channel counts are known.
@@ -76,32 +122,12 @@ impl Transfer {
     }
 
     pub fn stages(&self) -> &[TransferStage] {
-        self.stages.as_deref().unwrap_or(&[])
+        &self.stages
     }
 
     /// Connects two directed transfers when their adjacent channel counts match.
     pub fn then(&self, next: &Self) -> Result<Self, TransferError> {
-        if let (Some(output), Some(input)) = (self.output_channels(), next.input_channels()) {
-            if output != input {
-                return Err(TransferError::ChannelMismatch {
-                    expected: output,
-                    actual: input,
-                });
-            }
-        }
-        if self.is_empty() {
-            return Ok(next.clone());
-        }
-        if next.is_empty() {
-            return Ok(self.clone());
-        }
-        Self::new(
-            self.stages()
-                .iter()
-                .chain(next.stages().iter())
-                .cloned()
-                .collect::<Vec<_>>(),
-        )
+        Self::new([self.clone(), next.clone()])
     }
 }
 

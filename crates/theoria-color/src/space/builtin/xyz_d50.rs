@@ -4,8 +4,7 @@ use super::{ColorProfile, ConnectionSpace, SpaceConnectionError, TypedColorSpace
 use crate::model::Xyz;
 use crate::transfer::Transfer;
 use crate::transfer::{
-    CurveSegment, CurveSegmentKind, ICC_PCS_D50_XYZ, TransferCurve, TransferError, TransferMatrix,
-    TransferStage,
+    CurveSegment, CurveSegmentKind, ICC_PCS_D50_XYZ, TransferCurve, TransferError,
 };
 
 named_space!(XyzD50, Xyz);
@@ -49,10 +48,7 @@ impl XyzD50 {
     }
 
     fn build_transfer_to_xyz_d65() -> Result<Transfer, TransferError> {
-        Transfer::new([TransferStage::Matrix(TransferMatrix::new(
-            Self::TO_XYZ_D65,
-            [0.0; 3],
-        )?)])
+        Transfer::matrix(Self::TO_XYZ_D65, [0.0; 3])
     }
 
     pub(crate) fn transfer_to_lab_d50() -> Transfer {
@@ -88,12 +84,9 @@ impl XyzD50 {
             ),
         ])?;
         Transfer::new([
-            TransferStage::Matrix(TransferMatrix::new(
-                Self::XYZ_D50_TO_NORMALIZED_XYZ,
-                [0.0; 3],
-            )?),
-            TransferStage::curves(vec![curve; 3])?,
-            TransferStage::Matrix(TransferMatrix::new(Self::F_XYZ_TO_LAB, [-16.0, 0.0, 0.0])?),
+            Transfer::matrix(Self::XYZ_D50_TO_NORMALIZED_XYZ, [0.0; 3])?,
+            Transfer::curves(vec![curve; 3])?,
+            Transfer::matrix(Self::F_XYZ_TO_LAB, [-16.0, 0.0, 0.0])?,
         ])
     }
 }

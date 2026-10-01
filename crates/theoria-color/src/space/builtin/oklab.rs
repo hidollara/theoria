@@ -2,7 +2,7 @@ use super::{
     ColorProfile, ColorSpace, ConnectionSpace, OklchD65, SpaceConnectionError, TypedColorSpace,
 };
 use crate::model::Oklab as OklabModel;
-use crate::transfer::{Transfer, TransferCurve, TransferError, TransferMatrix, TransferStage};
+use crate::transfer::{Transfer, TransferCurve, TransferError};
 
 named_space!(OklabD65, OklabModel);
 
@@ -33,17 +33,17 @@ impl OklabD65 {
 
     pub(crate) fn transfer_from_xyz_d65() -> Result<Transfer, TransferError> {
         Transfer::new([
-            TransferStage::Matrix(TransferMatrix::new(Self::XYZ_D65_TO_LMS, [0.0; 3])?),
-            TransferStage::curves(vec![TransferCurve::signed_power(1.0 / 3.0)?; 3])?,
-            TransferStage::Matrix(TransferMatrix::new(Self::CBRT_LMS_TO_OKLAB, [0.0; 3])?),
+            Transfer::matrix(Self::XYZ_D65_TO_LMS, [0.0; 3])?,
+            Transfer::curves(vec![TransferCurve::signed_power(1.0 / 3.0)?; 3])?,
+            Transfer::matrix(Self::CBRT_LMS_TO_OKLAB, [0.0; 3])?,
         ])
     }
 
     pub(crate) fn transfer_to_xyz_d65() -> Result<Transfer, TransferError> {
         Transfer::new([
-            TransferStage::Matrix(TransferMatrix::new(Self::OKLAB_TO_CBRT_LMS, [0.0; 3])?),
-            TransferStage::curves(vec![TransferCurve::signed_power(3.0)?; 3])?,
-            TransferStage::Matrix(TransferMatrix::new(Self::LMS_TO_XYZ_D65, [0.0; 3])?),
+            Transfer::matrix(Self::OKLAB_TO_CBRT_LMS, [0.0; 3])?,
+            Transfer::curves(vec![TransferCurve::signed_power(3.0)?; 3])?,
+            Transfer::matrix(Self::LMS_TO_XYZ_D65, [0.0; 3])?,
         ])
     }
 }
