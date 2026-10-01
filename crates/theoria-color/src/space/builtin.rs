@@ -78,6 +78,7 @@ pub use xyz_d65::XyzD65;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::transfer::TransferStage;
     use std::collections::HashSet;
 
     fn assert_rgb_space<S: TypedColorSpace<Model = Rgb>>() {}
@@ -260,6 +261,36 @@ mod tests {
             for (actual, expected) in restored.iter().zip(polar) {
                 assert!((actual - expected).abs() < 1e-5, "{actual} != {expected}");
             }
+        }
+    }
+
+    #[test]
+    fn related_builtin_spaces_use_direct_color_functions() {
+        for (source, destination, stages) in [
+            (ColorSpace::from(HslSrgb), ColorSpace::from(Srgb), 1),
+            (ColorSpace::from(Srgb), ColorSpace::from(HslSrgb), 1),
+            (ColorSpace::from(HwbSrgb), ColorSpace::from(Srgb), 1),
+            (ColorSpace::from(Srgb), ColorSpace::from(HwbSrgb), 1),
+            (ColorSpace::from(HslSrgb), ColorSpace::from(LinearSrgb), 2),
+            (ColorSpace::from(LinearSrgb), ColorSpace::from(HslSrgb), 2),
+            (ColorSpace::from(HwbSrgb), ColorSpace::from(LinearSrgb), 2),
+            (ColorSpace::from(LinearSrgb), ColorSpace::from(HwbSrgb), 2),
+            (ColorSpace::from(HslSrgb), ColorSpace::from(HwbSrgb), 2),
+            (ColorSpace::from(HwbSrgb), ColorSpace::from(HslSrgb), 2),
+            (ColorSpace::from(LchD50), ColorSpace::from(LabD50), 1),
+            (ColorSpace::from(LabD50), ColorSpace::from(LchD50), 1),
+            (ColorSpace::from(OklchD65), ColorSpace::from(OklabD65), 1),
+            (ColorSpace::from(OklabD65), ColorSpace::from(OklchD65), 1),
+        ] {
+            let direct = source.direct_to(&destination).unwrap().unwrap();
+            assert_eq!(direct.stages().len(), stages);
+            assert!(
+                direct
+                    .stages()
+                    .iter()
+                    .all(|stage| !matches!(stage, TransferStage::Matrix(_)))
+            );
+            assert_eq!(source.transfer_to(&destination).unwrap(), direct);
         }
     }
 

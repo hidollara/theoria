@@ -1,5 +1,6 @@
 use super::{
-    ColorProfile, ColorSpace, ConnectionSpace, LinearSrgb, SpaceConnectionError, TypedColorSpace,
+    ColorProfile, ColorSpace, ConnectionSpace, HslSrgb, HwbSrgb, LinearSrgb, SpaceConnectionError,
+    TypedColorSpace,
 };
 use crate::model::Rgb;
 use crate::transfer::{Transfer, TransferCurve, TransferError, TransferStage};
@@ -7,15 +8,16 @@ use crate::transfer::{Transfer, TransferCurve, TransferError, TransferStage};
 named_space!(Srgb, Rgb);
 
 impl Srgb {
+    pub(crate) fn transfer_to_linear_srgb() -> Result<Transfer, TransferError> {
+        Transfer::new([TransferStage::curves(vec![TransferCurve::SRGB_DECODE; 3])?])
+    }
+
     pub(crate) fn transfer_to_xyz_d65() -> Result<Transfer, TransferError> {
-        Transfer::new([TransferStage::curves(vec![TransferCurve::SRGB_DECODE; 3])?])?
-            .then(&LinearSrgb::transfer_to_xyz_d65()?)
+        Self::transfer_to_linear_srgb()?.then(&LinearSrgb::transfer_to_xyz_d65()?)
     }
 
     pub(crate) fn transfer_from_xyz_d65() -> Result<Transfer, TransferError> {
-        LinearSrgb::transfer_from_xyz_d65()?.then(&Transfer::new([TransferStage::curves(
-            vec![TransferCurve::SRGB_ENCODE; 3],
-        )?])?)
+        LinearSrgb::transfer_from_xyz_d65()?.then(&LinearSrgb::transfer_to_srgb()?)
     }
 }
 
@@ -43,10 +45,11 @@ impl ColorProfile for SrgbProfile {
         destination: &ColorSpace,
     ) -> Result<Option<Transfer>, SpaceConnectionError> {
         if *destination == ColorSpace::from(super::LinearSrgb) {
-            Ok(Some(Transfer::new([TransferStage::curves(vec![
-                TransferCurve::SRGB_DECODE;
-                3
-            ])?])?))
+            Ok(Some(Srgb::transfer_to_linear_srgb()?))
+        } else if *destination == ColorSpace::from(HslSrgb) {
+            Ok(Some(HslSrgb::transfer_from_srgb()?))
+        } else if *destination == ColorSpace::from(HwbSrgb) {
+            Ok(Some(HwbSrgb::transfer_from_srgb()?))
         } else {
             Ok(None)
         }

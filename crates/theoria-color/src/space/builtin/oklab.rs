@@ -1,4 +1,6 @@
-use super::{ColorProfile, ConnectionSpace, SpaceConnectionError, TypedColorSpace};
+use super::{
+    ColorProfile, ColorSpace, ConnectionSpace, OklchD65, SpaceConnectionError, TypedColorSpace,
+};
 use crate::model::Oklab as OklabModel;
 use crate::transfer::{Transfer, TransferCurve, TransferError, TransferMatrix, TransferStage};
 
@@ -63,5 +65,16 @@ impl ColorProfile for OklabD65Profile {
 
     fn transfer_from_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
         Ok(OklabD65::transfer_from_xyz_d65()?)
+    }
+
+    fn direct_transfer_to(
+        &self,
+        destination: &ColorSpace,
+    ) -> Result<Option<Transfer>, SpaceConnectionError> {
+        if *destination == ColorSpace::from(OklchD65) {
+            Ok(Some(OklchD65::transfer_from_oklab_d65()?))
+        } else {
+            Ok(None)
+        }
     }
 }

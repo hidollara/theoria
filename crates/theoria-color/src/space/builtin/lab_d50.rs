@@ -1,6 +1,8 @@
 use std::sync::LazyLock;
 
-use super::{ColorProfile, ConnectionSpace, SpaceConnectionError, TypedColorSpace};
+use super::{
+    ColorProfile, ColorSpace, ConnectionSpace, LchD50, SpaceConnectionError, TypedColorSpace,
+};
 use crate::model::Lab;
 use crate::transfer::Transfer;
 use crate::transfer::{
@@ -83,5 +85,16 @@ impl ColorProfile for LabD50Profile {
 
     fn transfer_from_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
         Ok(Transfer::IDENTITY)
+    }
+
+    fn direct_transfer_to(
+        &self,
+        destination: &ColorSpace,
+    ) -> Result<Option<Transfer>, SpaceConnectionError> {
+        if *destination == ColorSpace::from(LchD50) {
+            Ok(Some(LchD50::transfer_from_lab_d50()?))
+        } else {
+            Ok(None)
+        }
     }
 }

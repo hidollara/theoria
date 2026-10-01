@@ -1,5 +1,6 @@
 use super::{
-    ColorProfile, ColorSpace, ConnectionSpace, SpaceConnectionError, Srgb, TypedColorSpace,
+    ColorProfile, ColorSpace, ConnectionSpace, HslSrgb, HwbSrgb, SpaceConnectionError, Srgb,
+    TypedColorSpace,
 };
 use crate::model::Rgb;
 use crate::transfer::{Transfer, TransferCurve, TransferError, TransferMatrix, TransferStage};
@@ -7,6 +8,10 @@ use crate::transfer::{Transfer, TransferCurve, TransferError, TransferMatrix, Tr
 named_space!(LinearSrgb, Rgb);
 
 impl LinearSrgb {
+    pub(crate) fn transfer_to_srgb() -> Result<Transfer, TransferError> {
+        Transfer::new([TransferStage::curves(vec![TransferCurve::SRGB_ENCODE; 3])?])
+    }
+
     // Exact rational matrix from CSS Color 4's color-conversion sample code.
     const TO_XYZ_D65: [[f64; 3]; 3] = [
         [506752.0 / 1228815.0, 87881.0 / 245763.0, 12673.0 / 70218.0],
@@ -64,10 +69,15 @@ impl ColorProfile for LinearSrgbProfile {
         destination: &ColorSpace,
     ) -> Result<Option<Transfer>, SpaceConnectionError> {
         if *destination == ColorSpace::from(Srgb) {
-            Ok(Some(Transfer::new([TransferStage::curves(vec![
-                TransferCurve::SRGB_ENCODE;
-                3
-            ])?])?))
+            Ok(Some(LinearSrgb::transfer_to_srgb()?))
+        } else if *destination == ColorSpace::from(HslSrgb) {
+            Ok(Some(
+                LinearSrgb::transfer_to_srgb()?.then(&HslSrgb::transfer_from_srgb()?)?,
+            ))
+        } else if *destination == ColorSpace::from(HwbSrgb) {
+            Ok(Some(
+                LinearSrgb::transfer_to_srgb()?.then(&HwbSrgb::transfer_from_srgb()?)?,
+            ))
         } else {
             Ok(None)
         }
