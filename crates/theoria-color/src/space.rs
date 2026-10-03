@@ -598,7 +598,10 @@ mod tests {
                 &self,
                 _: &ColorSpace,
             ) -> Result<Option<Transfer>, SpaceConnectionError> {
-                Ok(Some(Transfer::clamp(4)?))
+                Ok(Some(Transfer::curves(vec![
+                    TransferCurve::clamp(0.0, 1.0)?;
+                    4
+                ])?))
             }
         }
 

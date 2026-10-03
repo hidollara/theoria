@@ -128,11 +128,6 @@ fn lower_wgsl(
                     expressions.push(expression);
                 }
             }
-            TransferStage::Clamp(channels) => {
-                for channel in 0..*channels {
-                    expressions.push(format!("clamp({input_name}[{channel}], 0.0, 1.0)"));
-                }
-            }
             TransferStage::Clut(_) => unreachable!("CLUT stages are handled above"),
             TransferStage::ColorFunction(_) => unreachable!("color functions are handled above"),
         }
@@ -412,22 +407,20 @@ impl CurveWgslExt for TransferCurve {
                 helpers.push_str(&format!("fn {name}(value: f32) -> f32 {{\n{body}}}\n"));
                 Ok(format!("{name}({source})"))
             }
-            TransferCurveKind::Clamped {
-                curve,
-                input,
-                output,
-            } => {
-                let input = format!(
-                    "clamp({source}, {}, {})",
-                    wgsl_literal(input[0])?,
-                    wgsl_literal(input[1])?
-                );
-                let expression = curve.wgsl_expression(&input, name, helpers, tables)?;
-                Ok(format!(
-                    "clamp({expression}, {}, {})",
-                    wgsl_literal(output[0])?,
-                    wgsl_literal(output[1])?
-                ))
+            TransferCurveKind::Clamp { min, max } => {
+                if min == f64::NEG_INFINITY && max == f64::INFINITY {
+                    Ok(source.to_owned())
+                } else if min == f64::NEG_INFINITY {
+                    Ok(format!("min({source}, {})", wgsl_literal(max)?))
+                } else if max == f64::INFINITY {
+                    Ok(format!("max({source}, {})", wgsl_literal(min)?))
+                } else {
+                    Ok(format!(
+                        "clamp({source}, {}, {})",
+                        wgsl_literal(min)?,
+                        wgsl_literal(max)?
+                    ))
+                }
             }
         }
     }
@@ -636,27 +629,36 @@ mod tests {
         let transfer = Transfer::new([
             Transfer::curves([
                 TransferCurve::IDENTITY,
+                TransferCurve::IDENTITY,
+                TransferCurve::IDENTITY,
+                TransferCurve::clamp(0.0, 1.0).unwrap(),
+            ])
+            .unwrap(),
+            Transfer::curves([
+                TransferCurve::IDENTITY,
                 TransferCurve::gamma(2.0).unwrap(),
                 TransferCurve::sampled([0.0, 0.3, 1.0]).unwrap(),
-                TransferCurve::clamped(
-                    TransferCurve::piecewise([
-                        CurveSegment::exclusive(0.5, CurveSegmentKind::Constant(0.0)),
-                        CurveSegment::new(
-                            f64::INFINITY,
-                            CurveSegmentKind::PowerAffine {
-                                scale: 1.0,
-                                offset: 0.0,
-                                exponent: 2.0,
-                                output_scale: 1.0,
-                                output_offset: 0.0,
-                            },
-                        ),
-                    ])
-                    .unwrap(),
-                    [0.0, 1.0],
-                    [0.0, 1.0],
-                )
+                TransferCurve::piecewise([
+                    CurveSegment::exclusive(0.5, CurveSegmentKind::Constant(0.0)),
+                    CurveSegment::new(
+                        f64::INFINITY,
+                        CurveSegmentKind::PowerAffine {
+                            scale: 1.0,
+                            offset: 0.0,
+                            exponent: 2.0,
+                            output_scale: 1.0,
+                            output_offset: 0.0,
+                        },
+                    ),
+                ])
                 .unwrap(),
+            ])
+            .unwrap(),
+            Transfer::curves([
+                TransferCurve::IDENTITY,
+                TransferCurve::IDENTITY,
+                TransferCurve::IDENTITY,
+                TransferCurve::clamp(0.0, 1.0).unwrap(),
             ])
             .unwrap(),
             Transfer::matrix(
@@ -673,8 +675,19 @@ mod tests {
         let source = transfer.wgsl(7).unwrap();
         validate(&source);
         assert!(source.contains("fn theoria_transfer_7("));
-        assert!(source.contains("theoria_transfer_7_curve_0_2_table"));
+        assert!(source.contains("theoria_transfer_7_curve_1_2_table"));
         assert!(source.contains("if value < 0.5"));
+    }
+
+    #[test]
+    fn one_sided_and_unbounded_clamp_curves_generate_valid_wgsl() {
+        let transfer = Transfer::curves([
+            TransferCurve::clamp(0.0, f64::INFINITY).unwrap(),
+            TransferCurve::clamp(f64::NEG_INFINITY, 1.0).unwrap(),
+            TransferCurve::clamp(f64::NEG_INFINITY, f64::INFINITY).unwrap(),
+        ])
+        .unwrap();
+        validate(&transfer.wgsl(55).unwrap());
     }
 
     #[test]

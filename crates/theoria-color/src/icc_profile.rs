@@ -203,7 +203,10 @@ impl IccProfileData {
         .as_ref()
         .or(self.parsed.lut_b_to_a_perceptual.as_ref());
         let transfer = if let Some(tag) = tag {
-            let mut transfers = vec![pcs_encoding(self.pcs, tag)?, Transfer::clamp(3)?];
+            let mut transfers = vec![
+                pcs_encoding(self.pcs, tag)?,
+                Transfer::curves(vec![TransferCurve::clamp(0.0, 1.0)?; 3])?,
+            ];
             transfers.extend(match tag {
                 LutWarehouse::Lut(lut) => legacy_lut_from_pcs(lut, self.pcs)?,
                 LutWarehouse::Multidimensional(lut) => multidimensional_lut_from_pcs(lut)?,
@@ -314,19 +317,19 @@ fn icc_channels(space: DataColorSpace) -> usize {
     }
 }
 
-fn curve(curve: &ToneReprCurve) -> Result<TransferCurve, IccProfileError> {
+fn curve_sequence(curve: &ToneReprCurve) -> Result<Vec<TransferCurve>, IccProfileError> {
     Ok(match curve {
-        ToneReprCurve::Lut(values) if values.is_empty() => TransferCurve::IDENTITY,
+        ToneReprCurve::Lut(values) if values.is_empty() => vec![TransferCurve::IDENTITY],
         ToneReprCurve::Lut(values) if values.len() == 1 => {
-            TransferCurve::gamma(f64::from(values[0]) / 256.0)?
+            vec![TransferCurve::gamma(f64::from(values[0]) / 256.0)?]
         }
-        ToneReprCurve::Lut(values) => TransferCurve::sampled(
+        ToneReprCurve::Lut(values) => vec![TransferCurve::sampled(
             values
                 .iter()
                 .map(|value| f64::from(*value) / 65535.0)
                 .collect::<Vec<_>>(),
-        )?,
-        ToneReprCurve::Parametric(values) => parametric_curve(
+        )?],
+        ToneReprCurve::Parametric(values) => parametric_curve_sequence(
             &values
                 .iter()
                 .map(|value| f64::from(*value))
@@ -335,7 +338,7 @@ fn curve(curve: &ToneReprCurve) -> Result<TransferCurve, IccProfileError> {
     })
 }
 
-fn parametric_curve(parameters: &[f64]) -> Result<TransferCurve, IccProfileError> {
+fn parametric_curve_sequence(parameters: &[f64]) -> Result<Vec<TransferCurve>, IccProfileError> {
     let function = match parameters.len() {
         1 => 0,
         3 => 1,
@@ -354,7 +357,7 @@ fn parametric_curve(parameters: &[f64]) -> Result<TransferCurve, IccProfileError
         return Err(TransferError::InvalidCurve.into());
     }
     if function == 0 {
-        return Ok(TransferCurve::gamma(p[0])?);
+        return Ok(vec![TransferCurve::gamma(p[0])?]);
     }
     let output_offset = if function == 2 {
         p[3]
@@ -385,26 +388,63 @@ fn parametric_curve(parameters: &[f64]) -> Result<TransferCurve, IccProfileError
         CurveSegment::exclusive(breakpoint, low),
         CurveSegment::new(f64::INFINITY, high),
     ])?;
-    Ok(TransferCurve::clamped(curve, [0.0, 1.0], [0.0, 1.0])?)
+    Ok(vec![
+        TransferCurve::clamp(0.0, 1.0)?,
+        curve,
+        TransferCurve::clamp(0.0, 1.0)?,
+    ])
 }
 
-fn inverse_curve(value: &ToneReprCurve) -> Result<TransferCurve, IccProfileError> {
+fn inverse_curve_sequence(value: &ToneReprCurve) -> Result<Vec<TransferCurve>, IccProfileError> {
     match value {
-        ToneReprCurve::Lut(values) if values.is_empty() => Ok(TransferCurve::IDENTITY),
+        ToneReprCurve::Lut(values) if values.is_empty() => Ok(vec![TransferCurve::IDENTITY]),
         ToneReprCurve::Lut(values) if values.len() == 1 => {
-            Ok(TransferCurve::gamma(256.0 / f64::from(values[0]))?)
+            Ok(vec![TransferCurve::gamma(256.0 / f64::from(values[0]))?])
         }
-        _ => curve(&value.inverse().map_err(IccProfileError::Parse)?),
+        _ => curve_sequence(&value.inverse().map_err(IccProfileError::Parse)?),
     }
+}
+
+/// Places each channel's curve sequence in parallel stages, passing completed
+/// channels through unchanged while other channels finish their sequences.
+fn curve_transfer(
+    sequences: impl IntoIterator<Item = Vec<TransferCurve>>,
+) -> Result<Transfer, IccProfileError> {
+    let mut sequences = sequences
+        .into_iter()
+        .map(Vec::into_iter)
+        .collect::<Vec<_>>();
+    let depth = sequences
+        .iter()
+        .map(|sequence| sequence.len())
+        .max()
+        .unwrap_or(0);
+    if depth == 0 {
+        return Err(TransferError::EmptyChannels.into());
+    }
+    let transfers = (0..depth)
+        .map(|_| {
+            Transfer::curves(
+                sequences
+                    .iter_mut()
+                    .map(|sequence| sequence.next().unwrap_or(TransferCurve::IDENTITY))
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Transfer::new(transfers)?)
 }
 
 fn curves(values: &[ToneReprCurve], channels: usize) -> Result<Transfer, IccProfileError> {
     if values.len() != channels {
         return Err(IccProfileError::MalformedTransfer);
     }
-    Ok(Transfer::curves(
-        values.iter().map(curve).collect::<Result<Vec<_>, _>>()?,
-    )?)
+    curve_transfer(
+        values
+            .iter()
+            .map(curve_sequence)
+            .collect::<Result<Vec<_>, _>>()?,
+    )
 }
 
 fn matrix(value: &moxcms::Matrix3d, bias: [f64; 3]) -> Result<Transfer, IccProfileError> {
@@ -515,7 +555,7 @@ fn multidimensional_lut_to_pcs(
     if !lut.m_curves.is_empty() {
         stages.push(curves(&lut.m_curves, 3)?);
         stages.push(matrix(&lut.matrix, lut.bias.v)?);
-        stages.push(Transfer::clamp(3)?);
+        stages.push(Transfer::curves(vec![TransferCurve::clamp(0.0, 1.0)?; 3])?);
     }
     stages.push(curves(&lut.b_curves, 3)?);
     Ok(stages)
@@ -533,7 +573,7 @@ fn multidimensional_lut_from_pcs(
     let mut stages = vec![curves(&lut.b_curves, 3)?];
     if !lut.m_curves.is_empty() {
         stages.push(matrix(&lut.matrix, lut.bias.v)?);
-        stages.push(Transfer::clamp(3)?);
+        stages.push(Transfer::curves(vec![TransferCurve::clamp(0.0, 1.0)?; 3])?);
         stages.push(curves(&lut.m_curves, 3)?);
     }
     if let Some(table) = &lut.clut {
@@ -610,9 +650,9 @@ fn rgb_matrix_trc_to_pcs(profile: &ParsedProfile) -> Result<Transfer, IccProfile
     let trcs = rgb_trcs(profile)?;
     let matrix_value = profile.rgb_to_xyz_matrix();
     Ok(Transfer::new([
-        Transfer::curves(
+        curve_transfer(
             trcs.iter()
-                .map(|value| curve(value))
+                .map(|value| curve_sequence(value))
                 .collect::<Result<Vec<_>, _>>()?,
         )?,
         matrix(&matrix_value, [0.0; 3])?,
@@ -627,9 +667,9 @@ fn rgb_matrix_trc_from_pcs(profile: &ParsedProfile) -> Result<Transfer, IccProfi
     }
     Ok(Transfer::new([
         matrix(&matrix_value.inverse(), [0.0; 3])?,
-        Transfer::curves(
+        curve_transfer(
             trcs.iter()
-                .map(|value| inverse_curve(value))
+                .map(|value| inverse_curve_sequence(value))
                 .collect::<Result<Vec<_>, _>>()?,
         )?,
     ])?)
@@ -645,7 +685,7 @@ fn gray_trc_to_pcs(profile: &ParsedProfile, pcs: Pcs) -> Result<Transfer, IccPro
         Pcs::LabD50 => [100.0, 0.0, 0.0],
     };
     Ok(Transfer::new([
-        Transfer::curves([curve(trc)?])?,
+        curve_transfer([curve_sequence(trc)?])?,
         Transfer::matrix(coefficients.map(|coefficient| [coefficient]), [0.0; 3])?,
     ])?)
 }
@@ -661,7 +701,7 @@ fn gray_trc_from_pcs(profile: &ParsedProfile, pcs: Pcs) -> Result<Transfer, IccP
     };
     Ok(Transfer::new([
         Transfer::matrix([coefficients], [0.0])?,
-        Transfer::curves([inverse_curve(trc)?])?,
+        curve_transfer([inverse_curve_sequence(trc)?])?,
     ])?)
 }
 
@@ -740,18 +780,27 @@ mod tests {
 
     #[test]
     fn parametric_trc_is_lowered_without_icc_function_numbers() {
-        assert_eq!(parametric_curve(&[2.0]).unwrap().evaluate(0.5), 0.25);
-        let type_one = parametric_curve(&[2.0, 2.0, -0.5]).unwrap();
-        assert_eq!(type_one.evaluate(0.2), 0.0);
-        assert_eq!(type_one.evaluate(0.5), 0.25);
-        let type_two = parametric_curve(&[2.0, 2.0, -0.5, 0.1]).unwrap();
-        assert_eq!(type_two.evaluate(0.2), 0.1);
-        assert_eq!(type_two.evaluate(0.5), 0.35);
-        let type_three = parametric_curve(&[2.0, 1.0, 0.0, 0.5, 0.3]).unwrap();
-        assert_eq!(type_three.evaluate(0.2), 0.1);
-        assert_eq!(type_three.evaluate(0.3), 0.09);
+        let parametric_transfer =
+            |parameters: &[f64]| curve_transfer([parametric_curve_sequence(parameters)?]);
+        assert_eq!(
+            parametric_transfer(&[2.0])
+                .unwrap()
+                .evaluate(&[0.5])
+                .unwrap(),
+            vec![0.25]
+        );
+        let type_one = parametric_transfer(&[2.0, 2.0, -0.5]).unwrap();
+        assert_eq!(type_one.evaluate(&[0.2]).unwrap(), vec![0.0]);
+        assert_eq!(type_one.evaluate(&[0.5]).unwrap(), vec![0.25]);
+        let type_two = parametric_transfer(&[2.0, 2.0, -0.5, 0.1]).unwrap();
+        assert_eq!(type_two.evaluate(&[0.2]).unwrap(), vec![0.1]);
+        assert_eq!(type_two.evaluate(&[0.5]).unwrap(), vec![0.35]);
+        assert_eq!(type_two.evaluate(&[1.5]).unwrap(), vec![1.0]);
+        let type_three = parametric_transfer(&[2.0, 1.0, 0.0, 0.5, 0.3]).unwrap();
+        assert_eq!(type_three.evaluate(&[0.2]).unwrap(), vec![0.1]);
+        assert_eq!(type_three.evaluate(&[0.3]).unwrap(), vec![0.09]);
 
-        let curve = parametric_curve(&[
+        let curve = parametric_transfer(&[
             2.4,
             1.0 / 1.055,
             0.055 / 1.055,
@@ -763,17 +812,47 @@ mod tests {
         .unwrap();
         for input in [0.0, 0.02, 0.04, 0.05, 0.25, 0.5, 1.0] {
             assert!(
-                (curve.evaluate(input) - TransferCurve::SRGB_DECODE.evaluate(input)).abs() < 1e-12
+                (curve.evaluate(&[input]).unwrap()[0] - TransferCurve::SRGB_DECODE.evaluate(input))
+                    .abs()
+                    < 1e-12
             );
         }
-        assert_eq!(curve.evaluate(-0.5), 0.0);
-        assert_eq!(curve.evaluate(1.5), 1.0);
-        assert!(parametric_curve(&[1.0; 6]).is_err());
+        assert_eq!(curve.evaluate(&[-0.5]).unwrap(), vec![0.0]);
+        assert_eq!(curve.evaluate(&[1.5]).unwrap(), vec![1.0]);
+        assert!(parametric_transfer(&[1.0; 6]).is_err());
 
         // Type 4 may be discontinuous: the breakpoint belongs to the high branch.
-        let discontinuous = parametric_curve(&[1.0, 1.0, 0.0, 0.0, 0.5, 0.0, 0.25]).unwrap();
-        assert_eq!(discontinuous.evaluate(0.5), 0.5);
-        assert_eq!(discontinuous.evaluate(0.5 - f64::EPSILON), 0.25);
+        let discontinuous = parametric_transfer(&[1.0, 1.0, 0.0, 0.0, 0.5, 0.0, 0.25]).unwrap();
+        assert_eq!(discontinuous.evaluate(&[0.5]).unwrap(), vec![0.5]);
+        assert_eq!(
+            discontinuous.evaluate(&[0.5 - f64::EPSILON]).unwrap(),
+            vec![0.25]
+        );
+    }
+
+    #[test]
+    fn parametric_limits_preserve_other_channels_curve_domains() {
+        let transfer = curves(
+            &[
+                ToneReprCurve::Parametric(vec![1.0, 1.0, 0.0, 0.5, 0.5]),
+                ToneReprCurve::Lut(Vec::new()),
+                ToneReprCurve::Lut(vec![512]),
+            ],
+            3,
+        )
+        .unwrap();
+        assert_eq!(
+            transfer.evaluate(&[-0.5, 1.5, -0.5]).unwrap(),
+            vec![0.0, 1.5, 0.0]
+        );
+        assert_eq!(
+            transfer.evaluate(&[1.5, -0.5, 1.5]).unwrap(),
+            vec![1.0, -0.5, 1.0]
+        );
+        assert_eq!(
+            transfer.evaluate(&[0.25, 1.5, 0.5]).unwrap(),
+            vec![0.125, 1.5, 0.25]
+        );
     }
 
     #[test]

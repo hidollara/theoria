@@ -104,12 +104,59 @@ fn piecewise_curves_preserve_inclusive_and_exclusive_boundaries() {
     .unwrap();
     assert_eq!(curve.evaluate(0.499), 0.0);
     assert_eq!(curve.evaluate(0.5), 1.0);
-    let curve = TransferCurve::clamped(curve, [0.0, 1.0], [0.0, 0.75]).unwrap();
-    assert_eq!(curve.evaluate(2.0), 0.75);
-    assert_eq!(curve.clone().evaluate(2.0), 0.75);
     assert!(
         TransferCurve::piecewise([CurveSegment::new(0.5, CurveSegmentKind::Constant(0.0),)])
             .is_err()
+    );
+}
+
+#[test]
+fn clamp_curves_can_limit_input_and_output_independently() {
+    let curve = Transfer::curves([TransferCurve::piecewise([CurveSegment::new(
+        f64::INFINITY,
+        CurveSegmentKind::Linear {
+            scale: 2.0,
+            offset: 0.25,
+        },
+    )])
+    .unwrap()])
+    .unwrap();
+    let input_clamp = Transfer::curves([TransferCurve::clamp(0.0, 1.0).unwrap()]).unwrap();
+    let output_clamp = Transfer::curves([TransferCurve::clamp(0.0, 0.75).unwrap()]).unwrap();
+    let input_only = input_clamp.then(&curve).unwrap();
+    let output_only = curve.then(&output_clamp).unwrap();
+    let both = input_only.then(&output_clamp).unwrap();
+    assert_eq!(input_only.evaluate(&[-0.5]).unwrap(), vec![0.25]);
+    assert_eq!(input_only.evaluate(&[2.0]).unwrap(), vec![2.25]);
+    assert_eq!(output_only.evaluate(&[-0.5]).unwrap(), vec![0.0]);
+    assert_eq!(output_only.evaluate(&[2.0]).unwrap(), vec![0.75]);
+    assert_eq!(both.evaluate(&[-0.5]).unwrap(), vec![0.25]);
+    assert_eq!(both.evaluate(&[2.0]).unwrap(), vec![0.75]);
+
+    let per_channel = Transfer::curves([
+        TransferCurve::clamp(-2.0, 2.0).unwrap(),
+        TransferCurve::IDENTITY,
+        TransferCurve::clamp(1.0, 1.0).unwrap(),
+    ])
+    .unwrap();
+    assert_eq!(
+        per_channel.evaluate(&[-3.0, 3.0, 0.0]).unwrap(),
+        vec![-2.0, 3.0, 1.0]
+    );
+
+    let one_sided = Transfer::curves([
+        TransferCurve::clamp(0.0, f64::INFINITY).unwrap(),
+        TransferCurve::clamp(f64::NEG_INFINITY, 1.0).unwrap(),
+        TransferCurve::clamp(f64::NEG_INFINITY, f64::INFINITY).unwrap(),
+    ])
+    .unwrap();
+    assert_eq!(
+        one_sided.evaluate(&[-2.0, 2.0, -3.0]).unwrap(),
+        vec![0.0, 1.0, -3.0]
+    );
+    assert_eq!(
+        one_sided.evaluate(&[2.0, -2.0, 3.0]).unwrap(),
+        vec![2.0, -2.0, 3.0]
     );
 }
 
@@ -174,6 +221,9 @@ fn invalid_transfer_data_is_rejected_before_evaluation() {
     assert!(TransferCurve::gamma(0.0).is_err());
     assert!(TransferCurve::sampled([0.0]).is_err());
     assert!(TransferCurve::sampled([0.0, f64::NAN]).is_err());
+    assert!(TransferCurve::clamp(1.0, 0.0).is_err());
+    assert!(TransferCurve::clamp(f64::NAN, 1.0).is_err());
+    assert!(TransferCurve::clamp(0.0, f64::NAN).is_err());
     assert!(TransferMatrix::from_flat(3, 2, [0.0; 3], [0.0; 2]).is_err());
     assert_eq!(
         TransferMatrix::new::<0, 1>([[]], [0.0]),
@@ -195,11 +245,11 @@ fn invalid_transfer_data_is_rejected_before_evaluation() {
         Transfer::clut([2, 2], 1, [0.0; 3]),
         Err(TransferError::InvalidClutShape)
     );
-    assert_eq!(Transfer::clamp(0), Err(TransferError::EmptyChannels));
+    assert_eq!(Transfer::curves([]), Err(TransferError::EmptyChannels));
     assert!(
         Transfer::new([
             Transfer::curves([TransferCurve::IDENTITY]).unwrap(),
-            Transfer::clamp(2).unwrap(),
+            Transfer::curves(vec![TransferCurve::clamp(0.0, 1.0).unwrap(); 2]).unwrap(),
         ])
         .is_err()
     );
@@ -222,8 +272,8 @@ fn static_and_dynamic_matrix_constructors_agree() {
 
 #[test]
 fn transfer_composition_rejects_mismatched_channel_counts() {
-    let first = Transfer::clamp(2).unwrap();
-    let second = Transfer::clamp(3).unwrap();
+    let first = Transfer::curves(vec![TransferCurve::clamp(0.0, 1.0).unwrap(); 2]).unwrap();
+    let second = Transfer::curves(vec![TransferCurve::clamp(0.0, 1.0).unwrap(); 3]).unwrap();
     assert_eq!(
         first.then(&second),
         Err(TransferError::ChannelMismatch {
@@ -255,7 +305,8 @@ fn empty_transfer_is_a_channel_polymorphic_identity() {
     );
 
     for channels in [2, 3] {
-        let transfer = Transfer::clamp(channels).unwrap();
+        let transfer =
+            Transfer::curves(vec![TransferCurve::clamp(0.0, 1.0).unwrap(); channels]).unwrap();
         assert_eq!(identity.then(&transfer).unwrap(), transfer);
         assert_eq!(transfer.then(&identity).unwrap(), transfer);
     }

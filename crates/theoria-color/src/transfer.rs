@@ -80,13 +80,6 @@ impl Transfer {
         Self::single(TransferStage::ColorFunction(function))
     }
 
-    pub fn clamp(channels: usize) -> Result<Self, TransferError> {
-        if channels == 0 {
-            return Err(TransferError::EmptyChannels);
-        }
-        Ok(Self::single(TransferStage::Clamp(channels)))
-    }
-
     fn single(stage: TransferStage) -> Self {
         Self {
             stages: vec![stage],
@@ -139,8 +132,6 @@ pub enum TransferStage {
     Matrix(TransferMatrix),
     Clut(TransferClut),
     ColorFunction(ColorFunction),
-    /// Restricts each channel to the inclusive `[0, 1]` interval.
-    Clamp(usize),
 }
 
 impl TransferStage {
@@ -158,7 +149,6 @@ impl TransferStage {
             Self::Matrix(matrix) => matrix.input_channels,
             Self::Clut(clut) => clut.grid.len(),
             Self::ColorFunction(function) => function.input_channels(),
-            Self::Clamp(channels) => *channels,
         }
     }
 
@@ -168,7 +158,6 @@ impl TransferStage {
             Self::Matrix(matrix) => matrix.output_channels,
             Self::Clut(clut) => clut.output_channels,
             Self::ColorFunction(function) => function.output_channels(),
-            Self::Clamp(channels) => *channels,
         }
     }
 }
@@ -331,11 +320,7 @@ pub enum TransferCurveKind<'a> {
     Gamma(f64),
     Sampled(&'a [f64]),
     Piecewise(&'a [CurveSegment]),
-    Clamped {
-        curve: &'a TransferCurve,
-        input: [f64; 2],
-        output: [f64; 2],
-    },
+    Clamp { min: f64, max: f64 },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -344,11 +329,7 @@ enum CurveKind {
     Gamma(f64),
     Sampled(Arc<[f64]>),
     Piecewise(CurveSegments),
-    Clamped {
-        curve: Box<TransferCurve>,
-        input: [f64; 2],
-        output: [f64; 2],
-    },
+    Clamp { min: f64, max: f64 },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -461,14 +442,9 @@ impl TransferCurve {
             CurveKind::Gamma(exponent) => TransferCurveKind::Gamma(*exponent),
             CurveKind::Sampled(values) => TransferCurveKind::Sampled(values),
             CurveKind::Piecewise(segments) => TransferCurveKind::Piecewise(segments.as_ref()),
-            CurveKind::Clamped {
-                curve,
-                input,
-                output,
-            } => TransferCurveKind::Clamped {
-                curve,
-                input: *input,
-                output: *output,
+            CurveKind::Clamp { min, max } => TransferCurveKind::Clamp {
+                min: *min,
+                max: *max,
             },
         }
     }
@@ -560,19 +536,13 @@ impl TransferCurve {
         Ok(Self(CurveKind::Piecewise(CurveSegments::Owned(segments))))
     }
 
-    /// Restricts a curve's input and output to inclusive numerical bounds.
-    pub fn clamped(curve: Self, input: [f64; 2], output: [f64; 2]) -> Result<Self, TransferError> {
-        if [input, output]
-            .iter()
-            .any(|[min, max]| !min.is_finite() || !max.is_finite() || min > max)
-        {
+    /// Restricts one channel to inclusive numerical bounds. A negative-infinite
+    /// lower bound or positive-infinite upper bound leaves that side unrestricted.
+    pub fn clamp(min: f64, max: f64) -> Result<Self, TransferError> {
+        if min.is_nan() || max.is_nan() || min > max {
             return Err(TransferError::InvalidCurve);
         }
-        Ok(Self(CurveKind::Clamped {
-            curve: Box::new(curve),
-            input,
-            output,
-        }))
+        Ok(Self(CurveKind::Clamp { min, max }))
     }
 
     pub fn gamma(exponent: f64) -> Result<Self, TransferError> {

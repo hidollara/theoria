@@ -29,10 +29,6 @@ impl Transfer {
                 TransferStage::ColorFunction(function) => function
                     .evaluate([values[0], values[1], values[2]])
                     .to_vec(),
-                TransferStage::Clamp(_) => values
-                    .into_iter()
-                    .map(|value| value.clamp(0.0, 1.0))
-                    .collect(),
             };
         }
         if values.iter().any(|value| !value.is_finite()) {
@@ -145,13 +141,7 @@ impl TransferCurve {
                 })
                 .unwrap_or_else(|| segments.last().unwrap())
                 .evaluate(value),
-            TransferCurveKind::Clamped {
-                curve,
-                input,
-                output,
-            } => curve
-                .evaluate(value.clamp(input[0], input[1]))
-                .clamp(output[0], output[1]),
+            TransferCurveKind::Clamp { min, max } => value.clamp(min, max),
         }
     }
 }
