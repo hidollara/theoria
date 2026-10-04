@@ -1,6 +1,6 @@
-use super::calculation::{input, number, transfer};
 use super::{ColorSpace, ConnectionSpace, LabD50, SpaceConnectionError, TypedColorSpace};
 use crate::model::Lch;
+use crate::transfer::calculation::{input, number, transfer};
 use crate::transfer::{CalculatorBinary as B, CalculatorUnary as U, Transfer, TransferError};
 
 builtin_space!(LchD50);

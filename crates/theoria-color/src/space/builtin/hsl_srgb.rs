@@ -1,8 +1,8 @@
-use super::calculation::{Expression, input, number, transfer};
 use super::{
     ColorSpace, ConnectionSpace, HwbSrgb, LinearSrgb, SpaceConnectionError, Srgb, TypedColorSpace,
 };
 use crate::model::Hls;
+use crate::transfer::calculation::{Expression, input, number, transfer};
 use crate::transfer::{Transfer, TransferError};
 
 // The named HSL space exposes canonical HLS-ordered coordinates.

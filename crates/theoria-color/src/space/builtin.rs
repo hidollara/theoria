@@ -75,7 +75,6 @@ macro_rules! builtin_space {
 }
 
 mod a98_rgb;
-mod calculation;
 mod display_p3;
 mod hsl_srgb;
 mod hwb_srgb;

@@ -1,5 +1,6 @@
 use std::{error::Error, fmt, sync::Arc};
 
+pub(crate) mod calculation;
 mod calculator;
 mod evaluate;
 #[cfg(test)]

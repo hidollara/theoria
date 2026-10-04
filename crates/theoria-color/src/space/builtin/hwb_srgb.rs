@@ -1,8 +1,8 @@
-use super::calculation::{input, number, transfer};
 use super::{
     ColorSpace, ConnectionSpace, HslSrgb, LinearSrgb, SpaceConnectionError, Srgb, TypedColorSpace,
 };
 use crate::model::Hwb;
+use crate::transfer::calculation::{input, number, transfer};
 use crate::transfer::{Transfer, TransferError};
 
 builtin_space!(HwbSrgb);
