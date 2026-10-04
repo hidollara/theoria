@@ -40,14 +40,6 @@ impl<S: TypedColorSpace> ColorProfile for TypedProfile<S> {
     ) -> Result<Option<Transfer>, SpaceConnectionError> {
         S::direct_transfer_to(destination)
     }
-
-    fn polar_hue_index(&self) -> Option<usize> {
-        S::polar_hue_index()
-    }
-
-    fn hue_is_powerless(&self, coordinates: &[f64]) -> bool {
-        S::hue_is_powerless(coordinates)
-    }
 }
 
 macro_rules! builtin_space {
@@ -130,13 +122,6 @@ mod tests {
             assert_eq!(space, definition.into());
             assert_eq!(space.model(), S::Model::MODEL);
             assert_eq!(space.connection_space(), S::connection_space());
-            assert_eq!(space.polar_hue_index(), S::polar_hue_index());
-            for coordinates in [[0.0; 3], [0.5, 0.4, 120.0]] {
-                assert_eq!(
-                    space.hue_is_powerless(&coordinates),
-                    S::hue_is_powerless(&coordinates)
-                );
-            }
             assert_eq!(
                 space.transfer_to_connection_space().unwrap(),
                 S::transfer_to_connection_space().unwrap()
@@ -457,38 +442,19 @@ mod tests {
     }
 
     #[test]
-    fn polar_geometry_is_supplied_by_the_space() {
-        for (space, hue_index, neutral, chromatic) in [
-            (
-                ColorSpace::from(HslSrgb),
-                0,
-                [0.0, 50.0, 0.0],
-                [120.0, 50.0, 100.0],
-            ),
-            (
-                ColorSpace::from(HwbSrgb),
-                0,
-                [0.0, 100.0, 0.0],
-                [120.0, 0.0, 0.0],
-            ),
-            (
-                ColorSpace::from(LchD50),
-                2,
-                [50.0, 0.001, 0.0],
-                [50.0, 40.0, 120.0],
-            ),
-            (
-                ColorSpace::from(OklchD65),
-                2,
-                [0.5, 0.000001, 0.0],
-                [0.5, 0.2, 120.0],
-            ),
+    fn periodic_channel_is_supplied_by_the_model() {
+        for (space, index) in [
+            (ColorSpace::from(HslSrgb), 0),
+            (ColorSpace::from(HwbSrgb), 0),
+            (ColorSpace::from(LchD50), 2),
+            (ColorSpace::from(OklchD65), 2),
         ] {
-            assert_eq!(space.polar_hue_index(), Some(hue_index));
-            assert!(space.hue_is_powerless(&neutral));
-            assert!(!space.hue_is_powerless(&chromatic));
+            assert_eq!(space.model().periodic_channel_index(), Some(index));
         }
-        assert_eq!(ColorSpace::from(Srgb).polar_hue_index(), None);
+        assert_eq!(
+            ColorSpace::from(Srgb).model().periodic_channel_index(),
+            None
+        );
     }
 
     #[test]

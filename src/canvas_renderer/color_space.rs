@@ -30,12 +30,7 @@ impl PreparedInterpolation {
     }
 
     fn hue_index(&self) -> Option<usize> {
-        self.interpolation_space.polar_hue_index()
-    }
-
-    fn hue_is_powerless(&self, coordinates: [f32; 3]) -> bool {
-        self.interpolation_space
-            .hue_is_powerless(&coordinates.map(f64::from))
+        self.interpolation_space.model().periodic_channel_index()
     }
 
     fn convert(&self, rgb: [f32; 3], to_interpolation: bool) -> [f32; 3] {
@@ -254,16 +249,8 @@ fn interpolate_polar(
     interpolation: &PreparedInterpolation,
     hue_index: usize,
 ) -> [f32; 4] {
-    let mut first_coordinates = polar_coordinates(first, interpolation);
-    let mut second_coordinates = polar_coordinates(second, interpolation);
-    match (
-        interpolation.hue_is_powerless(first_coordinates),
-        interpolation.hue_is_powerless(second_coordinates),
-    ) {
-        (true, false) => first_coordinates[hue_index] = second_coordinates[hue_index],
-        (false, true) => second_coordinates[hue_index] = first_coordinates[hue_index],
-        _ => {}
-    }
+    let first_coordinates = polar_coordinates(first, interpolation);
+    let second_coordinates = polar_coordinates(second, interpolation);
     let alpha = first[3] + (second[3] - first[3]) * amount;
     let mut mixed = [0.0; 3];
     for index in 0..3 {
@@ -289,18 +276,7 @@ fn mix_polar(
     interpolation: &PreparedInterpolation,
     hue_index: usize,
 ) -> [f32; 4] {
-    let mut coordinates = colors.map(|color| polar_coordinates(color, interpolation));
-    if let Some(hue) = coordinates
-        .iter()
-        .find(|coordinates| !interpolation.hue_is_powerless(**coordinates))
-        .map(|coordinates| coordinates[hue_index])
-    {
-        for coordinate in &mut coordinates {
-            if interpolation.hue_is_powerless(*coordinate) {
-                coordinate[hue_index] = hue;
-            }
-        }
-    }
+    let coordinates = colors.map(|color| polar_coordinates(color, interpolation));
     let alpha = colors
         .iter()
         .zip(weights)
@@ -531,7 +507,7 @@ mod tests {
     }
 
     #[test]
-    fn powerless_hue_uses_the_other_endpoint() {
+    fn achromatic_endpoint_does_not_replace_numeric_hue() {
         let space = ColorSpace::from(HslSrgb);
         let working = ColorSpace::from(LinearSrgb);
         let encode = space.transfer_to(&working).unwrap();
@@ -556,7 +532,7 @@ mod tests {
                     .collect::<Vec<_>>(),
             )
             .unwrap();
-        assert!((hls[0] - 240.0).abs() < 1e-4);
+        assert!((hls[0] - 120.0).abs() < 1e-4);
         assert!((hls[1] - 50.0).abs() < 1e-4);
     }
 

@@ -54,14 +54,6 @@ impl LchD50 {
 impl TypedColorSpace for LchD50 {
     type Model = Lch;
 
-    fn polar_hue_index() -> Option<usize> {
-        Some(2)
-    }
-
-    fn hue_is_powerless(coordinates: &[f64]) -> bool {
-        coordinates[1] <= 0.0015
-    }
-
     fn connection_space() -> ConnectionSpace {
         ConnectionSpace::XyzD50
     }

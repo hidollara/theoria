@@ -17,14 +17,6 @@ pub(crate) fn distinct_color_space(space: impl Into<ColorSpace>) -> ColorSpace {
             self.0.model()
         }
 
-        fn polar_hue_index(&self) -> Option<usize> {
-            self.0.polar_hue_index()
-        }
-
-        fn hue_is_powerless(&self, coordinates: &[f64]) -> bool {
-            self.0.hue_is_powerless(coordinates)
-        }
-
         fn connection_space(&self) -> ConnectionSpace {
             self.0.connection_space()
         }

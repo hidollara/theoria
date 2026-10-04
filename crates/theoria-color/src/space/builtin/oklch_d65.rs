@@ -26,14 +26,6 @@ impl OklchD65 {
 impl TypedColorSpace for OklchD65 {
     type Model = Lch;
 
-    fn polar_hue_index() -> Option<usize> {
-        Some(2)
-    }
-
-    fn hue_is_powerless(coordinates: &[f64]) -> bool {
-        coordinates[1] <= 0.000004
-    }
-
     fn connection_space() -> ConnectionSpace {
         ConnectionSpace::XyzD65
     }

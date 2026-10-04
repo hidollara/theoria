@@ -31,14 +31,6 @@ pub trait TypedColorSpace: Into<ColorSpace> + 'static {
     fn direct_transfer_to(_: &ColorSpace) -> Result<Option<Transfer>, SpaceConnectionError> {
         Ok(None)
     }
-
-    fn polar_hue_index() -> Option<usize> {
-        None
-    }
-
-    fn hue_is_powerless(_: &[f64]) -> bool {
-        false
-    }
 }
 
 /// The coordinate representation used to connect color spaces.
@@ -96,12 +88,6 @@ impl ColorSpace {
     /// Named spaces use their canonical `Into<ColorSpace>` conversion instead.
     pub fn new(profile: impl ColorProfile + 'static) -> Self {
         assert!(profile.channels() > 0, "color space needs channels");
-        if let Some(index) = profile.polar_hue_index() {
-            assert!(
-                index < profile.channels(),
-                "hue index must be a color channel"
-            );
-        }
         Self {
             profile: Arc::new(profile),
         }
@@ -114,22 +100,6 @@ impl ColorSpace {
 
     pub fn channels(&self) -> usize {
         self.profile.channels()
-    }
-
-    /// Returns the hue channel for a cylindrical coordinate system, if any.
-    pub fn polar_hue_index(&self) -> Option<usize> {
-        self.profile.polar_hue_index()
-    }
-
-    /// Whether hue is undefined at these coordinates in this space.
-    /// The slice must contain exactly [`Self::channels`] values.
-    pub fn hue_is_powerless(&self, coordinates: &[f64]) -> bool {
-        assert_eq!(
-            coordinates.len(),
-            self.channels(),
-            "coordinate count must match the space"
-        );
-        self.profile.hue_is_powerless(coordinates)
     }
 
     pub fn connection_space(&self) -> ConnectionSpace {
@@ -246,7 +216,7 @@ impl fmt::Debug for ColorSpace {
 /// implementations of this trait by selecting different rendering intents.
 /// The two connection-space directions are independent, and a direct link is optional.
 /// Definitions are `Send + Sync` so their handles can be shared by renderers.
-/// `model`, `channels`, `connection_space`, and hue metadata must remain stable for the lifetime of
+/// `model`, `channels`, and `connection_space` must remain stable for the lifetime of
 /// the profile so its [`ColorSpace`] handle has stable identity.
 pub trait ColorProfile: Send + Sync {
     /// The model of authored input coordinates, not the connection-space model.
@@ -258,16 +228,6 @@ pub trait ColorProfile: Send + Sync {
     fn connection_space(&self) -> ConnectionSpace;
     fn transfer_to_connection_space(&self) -> Result<Transfer, SpaceConnectionError>;
     fn transfer_from_connection_space(&self) -> Result<Transfer, SpaceConnectionError>;
-
-    /// Index of the hue channel when the coordinates are cylindrical.
-    fn polar_hue_index(&self) -> Option<usize> {
-        None
-    }
-
-    /// Whether hue is undefined for a coordinate in this space.
-    fn hue_is_powerless(&self, _coordinates: &[f64]) -> bool {
-        false
-    }
 
     /// A one-way conversion to a particular destination space, if available.
     ///

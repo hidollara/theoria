@@ -42,14 +42,6 @@ impl HwbSrgb {
 impl TypedColorSpace for HwbSrgb {
     type Model = Hwb;
 
-    fn polar_hue_index() -> Option<usize> {
-        Some(0)
-    }
-
-    fn hue_is_powerless(coordinates: &[f64]) -> bool {
-        coordinates[1] + coordinates[2] >= 100.0
-    }
-
     fn connection_space() -> ConnectionSpace {
         ConnectionSpace::XyzD65
     }

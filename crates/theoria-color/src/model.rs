@@ -24,6 +24,16 @@ pub enum ColorModel {
 }
 
 impl ColorModel {
+    /// Index of a periodic channel, independently of its units or meaning.
+    /// This does not prescribe normalization or an interpolation direction.
+    pub const fn periodic_channel_index(self) -> Option<usize> {
+        match self {
+            Self::Lch => Some(2),
+            Self::Hsv | Self::Hls | Self::Hwb => Some(0),
+            _ => None,
+        }
+    }
+
     pub const fn channels(self) -> usize {
         match self {
             Self::Gray => 1,

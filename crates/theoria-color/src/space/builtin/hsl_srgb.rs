@@ -92,14 +92,6 @@ impl HslSrgb {
 impl TypedColorSpace for HslSrgb {
     type Model = Hls;
 
-    fn polar_hue_index() -> Option<usize> {
-        Some(0)
-    }
-
-    fn hue_is_powerless(coordinates: &[f64]) -> bool {
-        coordinates[2] <= 0.0
-    }
-
     fn connection_space() -> ConnectionSpace {
         ConnectionSpace::XyzD65
     }
