@@ -1,10 +1,8 @@
-use super::{
-    ColorProfile, ColorSpace, ConnectionSpace, DisplayP3, SpaceConnectionError, TypedColorSpace,
-};
+use super::{ColorSpace, ConnectionSpace, DisplayP3, SpaceConnectionError, TypedColorSpace};
 use crate::model::Rgb;
 use crate::transfer::{Transfer, TransferError};
 
-named_space!(LinearDisplayP3, Rgb);
+builtin_space!(LinearDisplayP3);
 
 impl LinearDisplayP3 {
     // Exact rational matrix from CSS Color 4's color-conversion sample code.
@@ -41,27 +39,22 @@ impl LinearDisplayP3 {
     }
 }
 
-builtin_space!(LinearDisplayP3, LinearDisplayP3Profile);
+impl TypedColorSpace for LinearDisplayP3 {
+    type Model = Rgb;
 
-impl ColorProfile for LinearDisplayP3Profile {
-    fn model(&self) -> crate::model::ColorModel {
-        <Rgb as crate::model::TypedColorModel>::MODEL
-    }
-
-    fn connection_space(&self) -> ConnectionSpace {
+    fn connection_space() -> ConnectionSpace {
         ConnectionSpace::XyzD65
     }
 
-    fn transfer_to_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
+    fn transfer_to_connection_space() -> Result<Transfer, SpaceConnectionError> {
         Ok(LinearDisplayP3::transfer_to_xyz_d65()?)
     }
 
-    fn transfer_from_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
+    fn transfer_from_connection_space() -> Result<Transfer, SpaceConnectionError> {
         Ok(LinearDisplayP3::transfer_from_xyz_d65()?)
     }
 
     fn direct_transfer_to(
-        &self,
         destination: &ColorSpace,
     ) -> Result<Option<Transfer>, SpaceConnectionError> {
         if *destination == ColorSpace::from(DisplayP3) {

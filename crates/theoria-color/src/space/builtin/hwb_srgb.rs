@@ -1,12 +1,11 @@
 use super::calculation::{input, number, transfer};
 use super::{
-    ColorProfile, ColorSpace, ConnectionSpace, HslSrgb, LinearSrgb, SpaceConnectionError, Srgb,
-    TypedColorSpace,
+    ColorSpace, ConnectionSpace, HslSrgb, LinearSrgb, SpaceConnectionError, Srgb, TypedColorSpace,
 };
 use crate::model::Hwb;
 use crate::transfer::{Transfer, TransferError};
 
-named_space!(HwbSrgb, Hwb);
+builtin_space!(HwbSrgb);
 
 impl HwbSrgb {
     pub(crate) fn transfer_to_srgb() -> Result<Transfer, TransferError> {
@@ -40,35 +39,30 @@ impl HwbSrgb {
     }
 }
 
-builtin_space!(HwbSrgb, HwbSrgbProfile);
+impl TypedColorSpace for HwbSrgb {
+    type Model = Hwb;
 
-impl ColorProfile for HwbSrgbProfile {
-    fn model(&self) -> crate::model::ColorModel {
-        <Hwb as crate::model::TypedColorModel>::MODEL
-    }
-
-    fn polar_hue_index(&self) -> Option<usize> {
+    fn polar_hue_index() -> Option<usize> {
         Some(0)
     }
 
-    fn hue_is_powerless(&self, coordinates: &[f64]) -> bool {
+    fn hue_is_powerless(coordinates: &[f64]) -> bool {
         coordinates[1] + coordinates[2] >= 100.0
     }
 
-    fn connection_space(&self) -> ConnectionSpace {
+    fn connection_space() -> ConnectionSpace {
         ConnectionSpace::XyzD65
     }
 
-    fn transfer_to_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
+    fn transfer_to_connection_space() -> Result<Transfer, SpaceConnectionError> {
         Ok(HwbSrgb::transfer_to_xyz_d65()?)
     }
 
-    fn transfer_from_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
+    fn transfer_from_connection_space() -> Result<Transfer, SpaceConnectionError> {
         Ok(HwbSrgb::transfer_from_xyz_d65()?)
     }
 
     fn direct_transfer_to(
-        &self,
         destination: &ColorSpace,
     ) -> Result<Option<Transfer>, SpaceConnectionError> {
         if *destination == ColorSpace::from(Srgb) {

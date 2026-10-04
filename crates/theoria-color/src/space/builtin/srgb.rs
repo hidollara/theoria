@@ -1,13 +1,13 @@
 use std::sync::LazyLock;
 
 use super::{
-    ColorProfile, ColorSpace, ConnectionSpace, HslSrgb, HwbSrgb, LinearSrgb, SpaceConnectionError,
+    ColorSpace, ConnectionSpace, HslSrgb, HwbSrgb, LinearSrgb, SpaceConnectionError,
     TypedColorSpace,
 };
 use crate::model::Rgb;
 use crate::transfer::{CurveSegment, CurveSegmentKind, Transfer, TransferCurve, TransferError};
 
-named_space!(Srgb, Rgb);
+builtin_space!(Srgb);
 
 const SRGB_ENCODE_THRESHOLD: f64 = 0.003_130_8;
 const SRGB_DECODE_THRESHOLD: f64 = 0.04045;
@@ -114,27 +114,22 @@ impl Srgb {
     }
 }
 
-builtin_space!(Srgb, SrgbProfile);
+impl TypedColorSpace for Srgb {
+    type Model = Rgb;
 
-impl ColorProfile for SrgbProfile {
-    fn model(&self) -> crate::model::ColorModel {
-        <Rgb as crate::model::TypedColorModel>::MODEL
-    }
-
-    fn connection_space(&self) -> ConnectionSpace {
+    fn connection_space() -> ConnectionSpace {
         ConnectionSpace::XyzD65
     }
 
-    fn transfer_to_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
+    fn transfer_to_connection_space() -> Result<Transfer, SpaceConnectionError> {
         Ok(Srgb::transfer_to_xyz_d65()?)
     }
 
-    fn transfer_from_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
+    fn transfer_from_connection_space() -> Result<Transfer, SpaceConnectionError> {
         Ok(Srgb::transfer_from_xyz_d65()?)
     }
 
     fn direct_transfer_to(
-        &self,
         destination: &ColorSpace,
     ) -> Result<Option<Transfer>, SpaceConnectionError> {
         if *destination == ColorSpace::from(super::LinearSrgb) {

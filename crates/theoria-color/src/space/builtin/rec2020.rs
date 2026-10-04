@@ -1,8 +1,8 @@
-use super::{ColorProfile, ConnectionSpace, SpaceConnectionError, TypedColorSpace};
+use super::{ConnectionSpace, SpaceConnectionError, TypedColorSpace};
 use crate::model::Rgb;
 use crate::transfer::{Transfer, TransferCurve, TransferError};
 
-named_space!(Rec2020, Rgb);
+builtin_space!(Rec2020);
 
 impl Rec2020 {
     const LINEAR_RGB_TO_XYZ_D65: [[f64; 3]; 3] = [
@@ -51,22 +51,18 @@ impl Rec2020 {
     }
 }
 
-builtin_space!(Rec2020, Rec2020Profile);
+impl TypedColorSpace for Rec2020 {
+    type Model = Rgb;
 
-impl ColorProfile for Rec2020Profile {
-    fn model(&self) -> crate::model::ColorModel {
-        <Rgb as crate::model::TypedColorModel>::MODEL
-    }
-
-    fn connection_space(&self) -> ConnectionSpace {
+    fn connection_space() -> ConnectionSpace {
         ConnectionSpace::XyzD65
     }
 
-    fn transfer_to_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
+    fn transfer_to_connection_space() -> Result<Transfer, SpaceConnectionError> {
         Ok(Rec2020::transfer_to_xyz_d65()?)
     }
 
-    fn transfer_from_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
+    fn transfer_from_connection_space() -> Result<Transfer, SpaceConnectionError> {
         Ok(Rec2020::transfer_from_xyz_d65()?)
     }
 }

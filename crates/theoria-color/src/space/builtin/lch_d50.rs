@@ -1,11 +1,9 @@
 use super::calculation::{input, number, transfer};
-use super::{
-    ColorProfile, ColorSpace, ConnectionSpace, LabD50, SpaceConnectionError, TypedColorSpace,
-};
+use super::{ColorSpace, ConnectionSpace, LabD50, SpaceConnectionError, TypedColorSpace};
 use crate::model::Lch;
 use crate::transfer::{CalculatorBinary as B, CalculatorUnary as U, Transfer, TransferError};
 
-named_space!(LchD50, Lch);
+builtin_space!(LchD50);
 
 impl LchD50 {
     pub(crate) fn transfer_to_lab_d50() -> Result<Transfer, TransferError> {
@@ -53,35 +51,30 @@ impl LchD50 {
     }
 }
 
-builtin_space!(LchD50, LchD50Profile);
+impl TypedColorSpace for LchD50 {
+    type Model = Lch;
 
-impl ColorProfile for LchD50Profile {
-    fn model(&self) -> crate::model::ColorModel {
-        <Lch as crate::model::TypedColorModel>::MODEL
-    }
-
-    fn polar_hue_index(&self) -> Option<usize> {
+    fn polar_hue_index() -> Option<usize> {
         Some(2)
     }
 
-    fn hue_is_powerless(&self, coordinates: &[f64]) -> bool {
+    fn hue_is_powerless(coordinates: &[f64]) -> bool {
         coordinates[1] <= 0.0015
     }
 
-    fn connection_space(&self) -> ConnectionSpace {
+    fn connection_space() -> ConnectionSpace {
         ConnectionSpace::XyzD50
     }
 
-    fn transfer_to_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
+    fn transfer_to_connection_space() -> Result<Transfer, SpaceConnectionError> {
         Ok(LchD50::transfer_to_xyz_d50()?)
     }
 
-    fn transfer_from_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
+    fn transfer_from_connection_space() -> Result<Transfer, SpaceConnectionError> {
         Ok(LchD50::transfer_from_xyz_d50()?)
     }
 
     fn direct_transfer_to(
-        &self,
         destination: &ColorSpace,
     ) -> Result<Option<Transfer>, SpaceConnectionError> {
         if *destination == ColorSpace::from(LabD50) {

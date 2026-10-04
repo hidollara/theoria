@@ -1,11 +1,10 @@
 use super::{
-    ColorProfile, ColorSpace, ConnectionSpace, HslSrgb, HwbSrgb, SpaceConnectionError, Srgb,
-    TypedColorSpace,
+    ColorSpace, ConnectionSpace, HslSrgb, HwbSrgb, SpaceConnectionError, Srgb, TypedColorSpace,
 };
 use crate::model::Rgb;
 use crate::transfer::{Transfer, TransferError};
 
-named_space!(LinearSrgb, Rgb);
+builtin_space!(LinearSrgb);
 
 impl LinearSrgb {
     // Exact rational matrix from CSS Color 4's color-conversion sample code.
@@ -35,27 +34,22 @@ impl LinearSrgb {
     }
 }
 
-builtin_space!(LinearSrgb, LinearSrgbProfile);
+impl TypedColorSpace for LinearSrgb {
+    type Model = Rgb;
 
-impl ColorProfile for LinearSrgbProfile {
-    fn model(&self) -> crate::model::ColorModel {
-        <Rgb as crate::model::TypedColorModel>::MODEL
-    }
-
-    fn connection_space(&self) -> ConnectionSpace {
+    fn connection_space() -> ConnectionSpace {
         ConnectionSpace::XyzD65
     }
 
-    fn transfer_to_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
+    fn transfer_to_connection_space() -> Result<Transfer, SpaceConnectionError> {
         Ok(LinearSrgb::transfer_to_xyz_d65()?)
     }
 
-    fn transfer_from_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
+    fn transfer_from_connection_space() -> Result<Transfer, SpaceConnectionError> {
         Ok(LinearSrgb::transfer_from_xyz_d65()?)
     }
 
     fn direct_transfer_to(
-        &self,
         destination: &ColorSpace,
     ) -> Result<Option<Transfer>, SpaceConnectionError> {
         if *destination == ColorSpace::from(Srgb) {

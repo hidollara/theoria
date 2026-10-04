@@ -1,8 +1,8 @@
-use super::{ColorProfile, ConnectionSpace, SpaceConnectionError, TypedColorSpace};
+use super::{ConnectionSpace, SpaceConnectionError, TypedColorSpace};
 use crate::model::Rgb;
 use crate::transfer::{CurveSegment, CurveSegmentKind, Transfer, TransferCurve, TransferError};
 
-named_space!(ProPhotoRgb, Rgb);
+builtin_space!(ProPhotoRgb);
 
 impl ProPhotoRgb {
     const LINEAR_RGB_TO_XYZ_D50: [[f64; 3]; 3] = [
@@ -77,22 +77,18 @@ impl ProPhotoRgb {
     }
 }
 
-builtin_space!(ProPhotoRgb, ProPhotoRgbProfile);
+impl TypedColorSpace for ProPhotoRgb {
+    type Model = Rgb;
 
-impl ColorProfile for ProPhotoRgbProfile {
-    fn model(&self) -> crate::model::ColorModel {
-        <Rgb as crate::model::TypedColorModel>::MODEL
-    }
-
-    fn connection_space(&self) -> ConnectionSpace {
+    fn connection_space() -> ConnectionSpace {
         ConnectionSpace::XyzD50
     }
 
-    fn transfer_to_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
+    fn transfer_to_connection_space() -> Result<Transfer, SpaceConnectionError> {
         Ok(ProPhotoRgb::transfer_to_xyz_d50()?)
     }
 
-    fn transfer_from_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
+    fn transfer_from_connection_space() -> Result<Transfer, SpaceConnectionError> {
         Ok(ProPhotoRgb::transfer_from_xyz_d50()?)
     }
 }

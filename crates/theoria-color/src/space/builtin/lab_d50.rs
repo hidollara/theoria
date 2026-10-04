@@ -1,15 +1,12 @@
 use std::sync::LazyLock;
 
-use super::{
-    ColorProfile, ColorSpace, ConnectionSpace, LchD50, SpaceConnectionError, TypedColorSpace,
-};
+use super::{ColorSpace, ConnectionSpace, LchD50, SpaceConnectionError, TypedColorSpace};
 use crate::model::Lab;
 use crate::transfer::{
     CurveSegment, CurveSegmentKind, ICC_PCS_D50_XYZ, Transfer, TransferCurve, TransferError,
 };
 
-named_space!(LabD50, Lab);
-builtin_space!(LabD50, LabD50Profile);
+builtin_space!(LabD50);
 
 impl LabD50 {
     const XYZ_D50_TO_NORMALIZED_XYZ: [[f64; 3]; 3] = [
@@ -116,25 +113,22 @@ impl LabD50 {
     }
 }
 
-impl ColorProfile for LabD50Profile {
-    fn model(&self) -> crate::model::ColorModel {
-        <Lab as crate::model::TypedColorModel>::MODEL
-    }
+impl TypedColorSpace for LabD50 {
+    type Model = Lab;
 
-    fn connection_space(&self) -> ConnectionSpace {
+    fn connection_space() -> ConnectionSpace {
         ConnectionSpace::LabD50
     }
 
-    fn transfer_to_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
+    fn transfer_to_connection_space() -> Result<Transfer, SpaceConnectionError> {
         Ok(Transfer::IDENTITY)
     }
 
-    fn transfer_from_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
+    fn transfer_from_connection_space() -> Result<Transfer, SpaceConnectionError> {
         Ok(Transfer::IDENTITY)
     }
 
     fn direct_transfer_to(
-        &self,
         destination: &ColorSpace,
     ) -> Result<Option<Transfer>, SpaceConnectionError> {
         if *destination == ColorSpace::from(LchD50) {

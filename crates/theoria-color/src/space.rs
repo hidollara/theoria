@@ -16,13 +16,29 @@ pub use builtin::{
     OklchD65, ProPhotoRgb, Rec2020, Srgb, XyzD50, XyzD65,
 };
 
-/// Associates a statically typed color space with its coordinate model.
+/// Defines a statically typed color space's coordinate model and conversions.
 ///
 /// This constrains authored coordinates at compile time and supplies their
-/// runtime color space for rendering. Conversion must return the same space on
-/// repeated calls.
+/// runtime color space for rendering. `Into<ColorSpace>` must return the same
+/// space on repeated calls, with a profile matching these associated functions.
 pub trait TypedColorSpace: Into<ColorSpace> + 'static {
     type Model: TypedColorModel;
+
+    fn connection_space() -> ConnectionSpace;
+    fn transfer_to_connection_space() -> Result<Transfer, SpaceConnectionError>;
+    fn transfer_from_connection_space() -> Result<Transfer, SpaceConnectionError>;
+
+    fn direct_transfer_to(_: &ColorSpace) -> Result<Option<Transfer>, SpaceConnectionError> {
+        Ok(None)
+    }
+
+    fn polar_hue_index() -> Option<usize> {
+        None
+    }
+
+    fn hue_is_powerless(_: &[f64]) -> bool {
+        false
+    }
 }
 
 /// The coordinate representation used to connect color spaces.

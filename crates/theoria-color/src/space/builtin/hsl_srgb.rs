@@ -1,13 +1,12 @@
 use super::calculation::{Expression, input, number, transfer};
 use super::{
-    ColorProfile, ColorSpace, ConnectionSpace, HwbSrgb, LinearSrgb, SpaceConnectionError, Srgb,
-    TypedColorSpace,
+    ColorSpace, ConnectionSpace, HwbSrgb, LinearSrgb, SpaceConnectionError, Srgb, TypedColorSpace,
 };
 use crate::model::Hls;
 use crate::transfer::{Transfer, TransferError};
 
 // The named HSL space exposes canonical HLS-ordered coordinates.
-named_space!(HslSrgb, Hls);
+builtin_space!(HslSrgb);
 
 impl HslSrgb {
     pub(crate) fn transfer_to_srgb() -> Result<Transfer, TransferError> {
@@ -90,35 +89,30 @@ impl HslSrgb {
     }
 }
 
-builtin_space!(HslSrgb, HslSrgbProfile);
+impl TypedColorSpace for HslSrgb {
+    type Model = Hls;
 
-impl ColorProfile for HslSrgbProfile {
-    fn model(&self) -> crate::model::ColorModel {
-        <Hls as crate::model::TypedColorModel>::MODEL
-    }
-
-    fn polar_hue_index(&self) -> Option<usize> {
+    fn polar_hue_index() -> Option<usize> {
         Some(0)
     }
 
-    fn hue_is_powerless(&self, coordinates: &[f64]) -> bool {
+    fn hue_is_powerless(coordinates: &[f64]) -> bool {
         coordinates[2] <= 0.0
     }
 
-    fn connection_space(&self) -> ConnectionSpace {
+    fn connection_space() -> ConnectionSpace {
         ConnectionSpace::XyzD65
     }
 
-    fn transfer_to_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
+    fn transfer_to_connection_space() -> Result<Transfer, SpaceConnectionError> {
         Ok(HslSrgb::transfer_to_xyz_d65()?)
     }
 
-    fn transfer_from_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
+    fn transfer_from_connection_space() -> Result<Transfer, SpaceConnectionError> {
         Ok(HslSrgb::transfer_from_xyz_d65()?)
     }
 
     fn direct_transfer_to(
-        &self,
         destination: &ColorSpace,
     ) -> Result<Option<Transfer>, SpaceConnectionError> {
         if *destination == ColorSpace::from(Srgb) {

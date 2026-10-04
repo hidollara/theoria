@@ -1,11 +1,9 @@
 use super::LchD50;
-use super::{
-    ColorProfile, ColorSpace, ConnectionSpace, OklabD65, SpaceConnectionError, TypedColorSpace,
-};
+use super::{ColorSpace, ConnectionSpace, OklabD65, SpaceConnectionError, TypedColorSpace};
 use crate::model::Lch;
 use crate::transfer::{Transfer, TransferError};
 
-named_space!(OklchD65, Lch);
+builtin_space!(OklchD65);
 
 impl OklchD65 {
     pub(crate) fn transfer_to_oklab_d65() -> Result<Transfer, TransferError> {
@@ -25,35 +23,30 @@ impl OklchD65 {
     }
 }
 
-builtin_space!(OklchD65, OklchD65Profile);
+impl TypedColorSpace for OklchD65 {
+    type Model = Lch;
 
-impl ColorProfile for OklchD65Profile {
-    fn model(&self) -> crate::model::ColorModel {
-        <Lch as crate::model::TypedColorModel>::MODEL
-    }
-
-    fn polar_hue_index(&self) -> Option<usize> {
+    fn polar_hue_index() -> Option<usize> {
         Some(2)
     }
 
-    fn hue_is_powerless(&self, coordinates: &[f64]) -> bool {
+    fn hue_is_powerless(coordinates: &[f64]) -> bool {
         coordinates[1] <= 0.000004
     }
 
-    fn connection_space(&self) -> ConnectionSpace {
+    fn connection_space() -> ConnectionSpace {
         ConnectionSpace::XyzD65
     }
 
-    fn transfer_to_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
+    fn transfer_to_connection_space() -> Result<Transfer, SpaceConnectionError> {
         Ok(OklchD65::transfer_to_xyz_d65()?)
     }
 
-    fn transfer_from_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
+    fn transfer_from_connection_space() -> Result<Transfer, SpaceConnectionError> {
         Ok(OklchD65::transfer_from_xyz_d65()?)
     }
 
     fn direct_transfer_to(
-        &self,
         destination: &ColorSpace,
     ) -> Result<Option<Transfer>, SpaceConnectionError> {
         if *destination == ColorSpace::from(OklabD65) {

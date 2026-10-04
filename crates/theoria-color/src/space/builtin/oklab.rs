@@ -1,10 +1,8 @@
-use super::{
-    ColorProfile, ColorSpace, ConnectionSpace, OklchD65, SpaceConnectionError, TypedColorSpace,
-};
+use super::{ColorSpace, ConnectionSpace, OklchD65, SpaceConnectionError, TypedColorSpace};
 use crate::model::Lab;
 use crate::transfer::{Transfer, TransferCurve, TransferError};
 
-named_space!(OklabD65, Lab);
+builtin_space!(OklabD65);
 
 impl OklabD65 {
     const XYZ_D65_TO_LMS: [[f64; 3]; 3] = [
@@ -48,27 +46,22 @@ impl OklabD65 {
     }
 }
 
-builtin_space!(OklabD65, OklabD65Profile);
+impl TypedColorSpace for OklabD65 {
+    type Model = Lab;
 
-impl ColorProfile for OklabD65Profile {
-    fn model(&self) -> crate::model::ColorModel {
-        <Lab as crate::model::TypedColorModel>::MODEL
-    }
-
-    fn connection_space(&self) -> ConnectionSpace {
+    fn connection_space() -> ConnectionSpace {
         ConnectionSpace::XyzD65
     }
 
-    fn transfer_to_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
+    fn transfer_to_connection_space() -> Result<Transfer, SpaceConnectionError> {
         Ok(OklabD65::transfer_to_xyz_d65()?)
     }
 
-    fn transfer_from_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
+    fn transfer_from_connection_space() -> Result<Transfer, SpaceConnectionError> {
         Ok(OklabD65::transfer_from_xyz_d65()?)
     }
 
     fn direct_transfer_to(
-        &self,
         destination: &ColorSpace,
     ) -> Result<Option<Transfer>, SpaceConnectionError> {
         if *destination == ColorSpace::from(OklchD65) {

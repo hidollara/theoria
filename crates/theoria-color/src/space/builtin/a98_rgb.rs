@@ -1,8 +1,8 @@
-use super::{ColorProfile, ConnectionSpace, SpaceConnectionError, TypedColorSpace};
+use super::{ConnectionSpace, SpaceConnectionError, TypedColorSpace};
 use crate::model::Rgb;
 use crate::transfer::{Transfer, TransferCurve, TransferError};
 
-named_space!(A98Rgb, Rgb);
+builtin_space!(A98Rgb);
 
 impl A98Rgb {
     const LINEAR_RGB_TO_XYZ_D65: [[f64; 3]; 3] = [
@@ -56,22 +56,18 @@ impl A98Rgb {
     }
 }
 
-builtin_space!(A98Rgb, A98RgbProfile);
+impl TypedColorSpace for A98Rgb {
+    type Model = Rgb;
 
-impl ColorProfile for A98RgbProfile {
-    fn model(&self) -> crate::model::ColorModel {
-        <Rgb as crate::model::TypedColorModel>::MODEL
-    }
-
-    fn connection_space(&self) -> ConnectionSpace {
+    fn connection_space() -> ConnectionSpace {
         ConnectionSpace::XyzD65
     }
 
-    fn transfer_to_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
+    fn transfer_to_connection_space() -> Result<Transfer, SpaceConnectionError> {
         Ok(A98Rgb::transfer_to_xyz_d65()?)
     }
 
-    fn transfer_from_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
+    fn transfer_from_connection_space() -> Result<Transfer, SpaceConnectionError> {
         Ok(A98Rgb::transfer_from_xyz_d65()?)
     }
 }

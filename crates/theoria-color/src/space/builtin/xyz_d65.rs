@@ -1,11 +1,10 @@
 use std::sync::LazyLock;
 
-use super::{ColorProfile, ConnectionSpace, SpaceConnectionError, TypedColorSpace};
+use super::{ConnectionSpace, SpaceConnectionError, TypedColorSpace};
 use crate::model::Xyz;
 use crate::transfer::{Transfer, TransferError};
 
-named_space!(XyzD65, Xyz);
-builtin_space!(XyzD65, XyzD65Profile);
+builtin_space!(XyzD65);
 
 impl XyzD65 {
     // Linear Bradford adaptation from the CSS Color 4 conversion sample.
@@ -39,20 +38,18 @@ impl XyzD65 {
     }
 }
 
-impl ColorProfile for XyzD65Profile {
-    fn model(&self) -> crate::model::ColorModel {
-        <Xyz as crate::model::TypedColorModel>::MODEL
-    }
+impl TypedColorSpace for XyzD65 {
+    type Model = Xyz;
 
-    fn connection_space(&self) -> ConnectionSpace {
+    fn connection_space() -> ConnectionSpace {
         ConnectionSpace::XyzD65
     }
 
-    fn transfer_to_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
+    fn transfer_to_connection_space() -> Result<Transfer, SpaceConnectionError> {
         Ok(Transfer::IDENTITY)
     }
 
-    fn transfer_from_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
+    fn transfer_from_connection_space() -> Result<Transfer, SpaceConnectionError> {
         Ok(Transfer::IDENTITY)
     }
 }

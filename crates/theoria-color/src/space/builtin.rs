@@ -1,34 +1,68 @@
+use std::marker::PhantomData;
+
 use super::{ColorProfile, ColorSpace, ConnectionSpace, SpaceConnectionError, TypedColorSpace};
 #[cfg(test)]
 use crate::icc_profile::IccRenderingIntent;
 #[cfg(test)]
 use crate::model::Rgb;
+use crate::model::{ColorModel, TypedColorModel};
+use crate::transfer::Transfer;
 
-macro_rules! named_space {
-    ($name:ident, $model:ty) => {
-        #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-        pub struct $name;
+/// Adapts a type's definition to the runtime profile interface without state.
+struct TypedProfile<S>(PhantomData<fn() -> S>);
 
-        impl TypedColorSpace for $name {
-            type Model = $model;
-        }
-    };
+impl<S> TypedProfile<S> {
+    const fn new() -> Self {
+        Self(PhantomData)
+    }
+}
+
+impl<S: TypedColorSpace> ColorProfile for TypedProfile<S> {
+    fn model(&self) -> ColorModel {
+        S::Model::MODEL
+    }
+
+    fn connection_space(&self) -> ConnectionSpace {
+        S::connection_space()
+    }
+
+    fn transfer_to_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
+        S::transfer_to_connection_space()
+    }
+
+    fn transfer_from_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
+        S::transfer_from_connection_space()
+    }
+
+    fn direct_transfer_to(
+        &self,
+        destination: &ColorSpace,
+    ) -> Result<Option<Transfer>, SpaceConnectionError> {
+        S::direct_transfer_to(destination)
+    }
+
+    fn polar_hue_index(&self) -> Option<usize> {
+        S::polar_hue_index()
+    }
+
+    fn hue_is_powerless(&self, coordinates: &[f64]) -> bool {
+        S::hue_is_powerless(coordinates)
+    }
 }
 
 macro_rules! builtin_space {
-    ($space:ty, $definition:ident) => {
-        struct $definition;
+    ($space:ident) => {
+        #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+        pub struct $space;
 
         impl From<$space> for $crate::space::ColorSpace {
             fn from(_: $space) -> Self {
                 static SPACE: std::sync::LazyLock<$crate::space::ColorSpace> =
                     std::sync::LazyLock::new(|| {
-                        let space = $crate::space::ColorSpace::new($definition);
-                        assert_eq!(
-                            space.model(),
-                            <<$space as $crate::space::TypedColorSpace>::Model as $crate::model::TypedColorModel>::MODEL,
-                            "built-in typed and runtime coordinate models agree"
-                        );
+                        let space =
+                            $crate::space::ColorSpace::new($crate::space::builtin::TypedProfile::<
+                                $space,
+                            >::new());
                         assert_eq!(
                             space.channels(),
                             3,
@@ -88,6 +122,54 @@ mod tests {
     use std::collections::HashSet;
 
     fn assert_rgb_space<S: TypedColorSpace<Model = Rgb>>() {}
+
+    #[test]
+    fn typed_definitions_are_forwarded_to_canonical_runtime_spaces() {
+        fn check<S: TypedColorSpace + Copy>(definition: S) {
+            let space: ColorSpace = definition.into();
+            assert_eq!(space, definition.into());
+            assert_eq!(space.model(), S::Model::MODEL);
+            assert_eq!(space.connection_space(), S::connection_space());
+            assert_eq!(space.polar_hue_index(), S::polar_hue_index());
+            for coordinates in [[0.0; 3], [0.5, 0.4, 120.0]] {
+                assert_eq!(
+                    space.hue_is_powerless(&coordinates),
+                    S::hue_is_powerless(&coordinates)
+                );
+            }
+            assert_eq!(
+                space.transfer_to_connection_space().unwrap(),
+                S::transfer_to_connection_space().unwrap()
+            );
+            assert_eq!(
+                space.transfer_from_connection_space().unwrap(),
+                S::transfer_from_connection_space().unwrap()
+            );
+            for destination in [ColorSpace::from(Srgb), ColorSpace::from(LabD50)] {
+                if space != destination {
+                    assert_eq!(
+                        space.direct_to(&destination).unwrap(),
+                        S::direct_transfer_to(&destination).unwrap()
+                    );
+                }
+            }
+        }
+        check(Srgb);
+        check(LinearSrgb);
+        check(DisplayP3);
+        check(LinearDisplayP3);
+        check(A98Rgb);
+        check(ProPhotoRgb);
+        check(Rec2020);
+        check(XyzD50);
+        check(XyzD65);
+        check(LabD50);
+        check(LchD50);
+        check(OklabD65);
+        check(OklchD65);
+        check(HslSrgb);
+        check(HwbSrgb);
+    }
 
     #[test]
     fn builtin_spaces_have_canonical_identity() {
