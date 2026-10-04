@@ -9,7 +9,7 @@ named_space!(LinearSrgb, Rgb);
 
 impl LinearSrgb {
     pub(crate) fn transfer_to_srgb() -> Result<Transfer, TransferError> {
-        Transfer::curves(vec![TransferCurve::SRGB_ENCODE; 3])
+        Transfer::curves(vec![TransferCurve::srgb_encode(); 3])
     }
 
     // Exact rational matrix from CSS Color 4's color-conversion sample code.

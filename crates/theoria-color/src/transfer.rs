@@ -291,23 +291,8 @@ enum CurveKind {
     Identity,
     Gamma(f64),
     Sampled(Arc<[f64]>),
-    Piecewise(CurveSegments),
+    Piecewise(Box<[CurveSegment]>),
     Clamp { min: f64, max: f64 },
-}
-
-#[derive(Clone, Debug, PartialEq)]
-enum CurveSegments {
-    Static(&'static [CurveSegment]),
-    Owned(Box<[CurveSegment]>),
-}
-
-impl AsRef<[CurveSegment]> for CurveSegments {
-    fn as_ref(&self) -> &[CurveSegment] {
-        match self {
-            Self::Static(segments) => segments,
-            Self::Owned(segments) => segments,
-        }
-    }
 }
 
 /// One interval of a piecewise curve, with an explicit upper-boundary rule.
@@ -392,12 +377,16 @@ impl CurveSegment {
 
 impl TransferCurve {
     pub const IDENTITY: Self = Self(CurveKind::Identity);
-    pub const SRGB_DECODE: Self = Self(CurveKind::Piecewise(CurveSegments::Static(
-        &SRGB_DECODE_SEGMENTS,
-    )));
-    pub const SRGB_ENCODE: Self = Self(CurveKind::Piecewise(CurveSegments::Static(
-        &SRGB_ENCODE_SEGMENTS,
-    )));
+
+    /// Constructs the extended-range sRGB decoding curve as ordinary segments.
+    pub fn srgb_decode() -> Self {
+        Self(CurveKind::Piecewise(Box::new(SRGB_DECODE_SEGMENTS.clone())))
+    }
+
+    /// Constructs the extended-range sRGB encoding curve as ordinary segments.
+    pub fn srgb_encode() -> Self {
+        Self(CurveKind::Piecewise(Box::new(SRGB_ENCODE_SEGMENTS.clone())))
+    }
 
     pub fn kind(&self) -> TransferCurveKind<'_> {
         match &self.0 {
@@ -412,22 +401,22 @@ impl TransferCurve {
         }
     }
 
-    /// Whether this is the built-in sRGB decoding curve, rather than merely an
-    /// equivalent caller-defined curve. Backends may use this as an optimization hint.
+    /// Whether the segments match the sRGB decoding definition.
+    /// Equivalent caller-defined curves also qualify for backend optimization.
     pub fn is_srgb_decode(&self) -> bool {
         matches!(
             &self.0,
-            CurveKind::Piecewise(CurveSegments::Static(segments))
-                if std::ptr::eq(*segments, &SRGB_DECODE_SEGMENTS[..])
+            CurveKind::Piecewise(segments)
+                if segments.as_ref() == SRGB_DECODE_SEGMENTS.as_slice()
         )
     }
 
-    /// Whether this is the built-in sRGB encoding curve.
+    /// Whether the segments match the sRGB encoding definition.
     pub fn is_srgb_encode(&self) -> bool {
         matches!(
             &self.0,
-            CurveKind::Piecewise(CurveSegments::Static(segments))
-                if std::ptr::eq(*segments, &SRGB_ENCODE_SEGMENTS[..])
+            CurveKind::Piecewise(segments)
+                if segments.as_ref() == SRGB_ENCODE_SEGMENTS.as_slice()
         )
     }
 
@@ -496,7 +485,7 @@ impl TransferCurve {
             }
             previous = segment.upper;
         }
-        Ok(Self(CurveKind::Piecewise(CurveSegments::Owned(segments))))
+        Ok(Self(CurveKind::Piecewise(segments)))
     }
 
     /// Restricts one channel to inclusive numerical bounds. A negative-infinite

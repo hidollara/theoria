@@ -338,7 +338,10 @@ mod tests {
         let [TransferStage::Curves(curves)] = transform.stages() else {
             panic!("the direct encoding link must contain only its decode curves");
         };
-        assert_eq!(curves.as_ref(), &[TransferCurve::SRGB_DECODE; 3]);
+        assert_eq!(
+            curves.as_ref(),
+            vec![TransferCurve::srgb_decode(); 3].as_slice()
+        );
         let expected = 0.214_041_140_482_232_55;
         for actual in transform.evaluate(&[0.5; 3]).unwrap() {
             assert!((actual - expected).abs() < 1e-12);
@@ -351,22 +354,22 @@ mod tests {
             (
                 ColorSpace::from(Srgb),
                 ColorSpace::from(LinearSrgb),
-                TransferCurve::SRGB_DECODE,
+                TransferCurve::srgb_decode(),
             ),
             (
                 ColorSpace::from(LinearSrgb),
                 ColorSpace::from(Srgb),
-                TransferCurve::SRGB_ENCODE,
+                TransferCurve::srgb_encode(),
             ),
             (
                 ColorSpace::from(DisplayP3),
                 ColorSpace::from(LinearDisplayP3),
-                TransferCurve::SRGB_DECODE,
+                TransferCurve::srgb_decode(),
             ),
             (
                 ColorSpace::from(LinearDisplayP3),
                 ColorSpace::from(DisplayP3),
-                TransferCurve::SRGB_ENCODE,
+                TransferCurve::srgb_encode(),
             ),
         ] {
             let expected = Transfer::curves(vec![curve; 3]).unwrap();

@@ -9,7 +9,7 @@ named_space!(Srgb, Rgb);
 
 impl Srgb {
     pub(crate) fn transfer_to_linear_srgb() -> Result<Transfer, TransferError> {
-        Transfer::curves(vec![TransferCurve::SRGB_DECODE; 3])
+        Transfer::curves(vec![TransferCurve::srgb_decode(); 3])
     }
 
     pub(crate) fn transfer_to_xyz_d65() -> Result<Transfer, TransferError> {

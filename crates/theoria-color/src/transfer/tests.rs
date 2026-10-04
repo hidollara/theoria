@@ -192,12 +192,12 @@ fn piecewise_formulas_evaluate_without_icc_function_codes() {
 fn named_srgb_curves_use_the_same_piecewise_representation() {
     let decoded_half = ((0.5_f64 + 0.055) / 1.055).powf(2.4);
     let encoded_half = 1.055 * 0.5_f64.powf(1.0 / 2.4) - 0.055;
-    assert!((TransferCurve::SRGB_DECODE.evaluate(0.5) - decoded_half).abs() < 1e-12);
-    assert!((TransferCurve::SRGB_ENCODE.evaluate(0.5) - encoded_half).abs() < 1e-12);
+    assert!((TransferCurve::srgb_decode().evaluate(0.5) - decoded_half).abs() < 1e-12);
+    assert!((TransferCurve::srgb_encode().evaluate(0.5) - encoded_half).abs() < 1e-12);
 
     for (named, threshold, expected, is_decode) in [
-        (TransferCurve::SRGB_DECODE, 0.04045, 1.0 / 12.92, true),
-        (TransferCurve::SRGB_ENCODE, 0.003_130_8, 12.92, false),
+        (TransferCurve::srgb_decode(), 0.04045, 1.0 / 12.92, true),
+        (TransferCurve::srgb_encode(), 0.003_130_8, 12.92, false),
     ] {
         let TransferCurveKind::Piecewise(segments) = named.kind() else {
             panic!("a named sRGB curve must have a piecewise definition");
@@ -207,7 +207,13 @@ fn named_srgb_curves_use_the_same_piecewise_representation() {
         assert_eq!(named.is_srgb_decode(), is_decode);
         assert_eq!(named.is_srgb_encode(), !is_decode);
         assert_eq!(named.clone().is_srgb_decode(), is_decode);
-        assert!(!generic.is_srgb_decode() && !generic.is_srgb_encode());
+        assert_eq!(named, generic);
+        assert_eq!(generic.is_srgb_decode(), is_decode);
+        assert_eq!(generic.is_srgb_encode(), !is_decode);
+        let mut changed = segments.to_vec();
+        changed[0].kind = CurveSegmentKind::Constant(0.0);
+        let changed = TransferCurve::piecewise(changed).unwrap();
+        assert!(!changed.is_srgb_decode() && !changed.is_srgb_encode());
         for value in [-2.0, -1.0, -threshold, 0.0, threshold, 0.5, 1.0, 2.0] {
             assert!((named.evaluate(value) - generic.evaluate(value)).abs() < 1e-12);
             assert!((named.evaluate(-value) + named.evaluate(value)).abs() < 1e-12);

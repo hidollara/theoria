@@ -9,13 +9,13 @@ named_space!(DisplayP3, Rgb);
 
 impl DisplayP3 {
     pub(crate) fn transfer_to_xyz_d65() -> Result<Transfer, TransferError> {
-        Transfer::curves(vec![TransferCurve::SRGB_DECODE; 3])?
+        Transfer::curves(vec![TransferCurve::srgb_decode(); 3])?
             .then(&LinearDisplayP3::transfer_to_xyz_d65()?)
     }
 
     pub(crate) fn transfer_from_xyz_d65() -> Result<Transfer, TransferError> {
         LinearDisplayP3::transfer_from_xyz_d65()?
-            .then(&Transfer::curves(vec![TransferCurve::SRGB_ENCODE; 3])?)
+            .then(&Transfer::curves(vec![TransferCurve::srgb_encode(); 3])?)
     }
 }
 
@@ -43,7 +43,10 @@ impl ColorProfile for DisplayP3Profile {
         destination: &ColorSpace,
     ) -> Result<Option<Transfer>, SpaceConnectionError> {
         if *destination == ColorSpace::from(super::LinearDisplayP3) {
-            Ok(Some(Transfer::curves(vec![TransferCurve::SRGB_DECODE; 3])?))
+            Ok(Some(Transfer::curves(vec![
+                TransferCurve::srgb_decode();
+                3
+            ])?))
         } else {
             Ok(None)
         }

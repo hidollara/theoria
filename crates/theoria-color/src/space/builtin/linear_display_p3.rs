@@ -65,7 +65,10 @@ impl ColorProfile for LinearDisplayP3Profile {
         destination: &ColorSpace,
     ) -> Result<Option<Transfer>, SpaceConnectionError> {
         if *destination == ColorSpace::from(DisplayP3) {
-            Ok(Some(Transfer::curves(vec![TransferCurve::SRGB_ENCODE; 3])?))
+            Ok(Some(Transfer::curves(vec![
+                TransferCurve::srgb_encode();
+                3
+            ])?))
         } else {
             Ok(None)
         }
