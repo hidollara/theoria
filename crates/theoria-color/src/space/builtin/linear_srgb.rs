@@ -42,8 +42,8 @@ impl LinearSrgb {
 builtin_space!(LinearSrgb, LinearSrgbProfile);
 
 impl ColorProfile for LinearSrgbProfile {
-    fn channels(&self) -> usize {
-        3
+    fn model(&self) -> crate::model::ColorModel {
+        <Rgb as crate::model::TypedColorModel>::MODEL
     }
 
     fn connection_space(&self) -> ConnectionSpace {

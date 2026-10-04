@@ -40,8 +40,8 @@ impl XyzD65 {
 }
 
 impl ColorProfile for XyzD65Profile {
-    fn channels(&self) -> usize {
-        3
+    fn model(&self) -> crate::model::ColorModel {
+        <Xyz as crate::model::TypedColorModel>::MODEL
     }
 
     fn connection_space(&self) -> ConnectionSpace {

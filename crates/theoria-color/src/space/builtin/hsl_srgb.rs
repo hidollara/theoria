@@ -28,8 +28,8 @@ impl HslSrgb {
 builtin_space!(HslSrgb, HslSrgbProfile);
 
 impl ColorProfile for HslSrgbProfile {
-    fn channels(&self) -> usize {
-        3
+    fn model(&self) -> crate::model::ColorModel {
+        <Hsl as crate::model::TypedColorModel>::MODEL
     }
 
     fn polar_hue_index(&self) -> Option<usize> {

@@ -25,6 +25,11 @@ macro_rules! builtin_space {
                     std::sync::LazyLock::new(|| {
                         let space = $crate::space::ColorSpace::new($definition);
                         assert_eq!(
+                            space.model(),
+                            <<$space as $crate::space::TypedColorSpace>::Model as $crate::model::TypedColorModel>::MODEL,
+                            "built-in typed and runtime coordinate models agree"
+                        );
+                        assert_eq!(
                             space.channels(),
                             3,
                             "built-in spaces have three coordinates"

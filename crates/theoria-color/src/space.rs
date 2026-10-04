@@ -6,7 +6,7 @@ use std::{
 };
 
 use super::icc_profile::IccProfileError;
-use super::model::TypedColorModel;
+use super::model::{ColorModel, TypedColorModel};
 use super::transfer::{Transfer, TransferError};
 
 mod builtin;
@@ -89,6 +89,11 @@ impl ColorSpace {
         Self {
             profile: Arc::new(profile),
         }
+    }
+
+    /// The meaning and order of input coordinates, independently of storage.
+    pub fn model(&self) -> ColorModel {
+        self.profile.model()
     }
 
     pub fn channels(&self) -> usize {
@@ -225,10 +230,15 @@ impl fmt::Debug for ColorSpace {
 /// implementations of this trait by selecting different rendering intents.
 /// The two connection-space directions are independent, and a direct link is optional.
 /// Definitions are `Send + Sync` so their handles can be shared by renderers.
-/// `channels`, `connection_space`, and hue metadata must remain stable for the lifetime of
+/// `model`, `channels`, `connection_space`, and hue metadata must remain stable for the lifetime of
 /// the profile so its [`ColorSpace`] handle has stable identity.
 pub trait ColorProfile: Send + Sync {
-    fn channels(&self) -> usize;
+    /// The model of authored input coordinates, not the connection-space model.
+    fn model(&self) -> ColorModel;
+
+    fn channels(&self) -> usize {
+        self.model().channels()
+    }
     fn connection_space(&self) -> ConnectionSpace;
     fn transfer_to_connection_space(&self) -> Result<Transfer, SpaceConnectionError>;
     fn transfer_from_connection_space(&self) -> Result<Transfer, SpaceConnectionError>;
@@ -537,8 +547,8 @@ mod tests {
         struct LinkedSpace(Option<ColorSpace>);
 
         impl ColorProfile for LinkedSpace {
-            fn channels(&self) -> usize {
-                3
+            fn model(&self) -> ColorModel {
+                ColorModel::Rgb
             }
 
             fn connection_space(&self) -> ConnectionSpace {
@@ -578,8 +588,8 @@ mod tests {
         struct InvalidLink;
 
         impl ColorProfile for InvalidLink {
-            fn channels(&self) -> usize {
-                3
+            fn model(&self) -> ColorModel {
+                ColorModel::Rgb
             }
 
             fn connection_space(&self) -> ConnectionSpace {
@@ -616,8 +626,8 @@ mod tests {
         struct InvalidPcs;
 
         impl ColorProfile for InvalidPcs {
-            fn channels(&self) -> usize {
-                4
+            fn model(&self) -> ColorModel {
+                ColorModel::Other { channels: 4 }
             }
 
             fn connection_space(&self) -> ConnectionSpace {

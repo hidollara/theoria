@@ -24,8 +24,8 @@ impl Srgb {
 builtin_space!(Srgb, SrgbProfile);
 
 impl ColorProfile for SrgbProfile {
-    fn channels(&self) -> usize {
-        3
+    fn model(&self) -> crate::model::ColorModel {
+        <Rgb as crate::model::TypedColorModel>::MODEL
     }
 
     fn connection_space(&self) -> ConnectionSpace {

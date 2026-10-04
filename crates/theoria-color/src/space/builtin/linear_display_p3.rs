@@ -44,8 +44,8 @@ impl LinearDisplayP3 {
 builtin_space!(LinearDisplayP3, LinearDisplayP3Profile);
 
 impl ColorProfile for LinearDisplayP3Profile {
-    fn channels(&self) -> usize {
-        3
+    fn model(&self) -> crate::model::ColorModel {
+        <Rgb as crate::model::TypedColorModel>::MODEL
     }
 
     fn connection_space(&self) -> ConnectionSpace {

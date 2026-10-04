@@ -51,8 +51,8 @@ impl OklabD65 {
 builtin_space!(OklabD65, OklabD65Profile);
 
 impl ColorProfile for OklabD65Profile {
-    fn channels(&self) -> usize {
-        3
+    fn model(&self) -> crate::model::ColorModel {
+        <OklabModel as crate::model::TypedColorModel>::MODEL
     }
 
     fn connection_space(&self) -> ConnectionSpace {

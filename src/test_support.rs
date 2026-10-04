@@ -13,8 +13,8 @@ pub(crate) fn distinct_color_space(space: impl Into<ColorSpace>) -> ColorSpace {
     struct Distinct(ColorSpace);
 
     impl ColorProfile for Distinct {
-        fn channels(&self) -> usize {
-            self.0.channels()
+        fn model(&self) -> crate::color::ColorModel {
+            self.0.model()
         }
 
         fn polar_hue_index(&self) -> Option<usize> {

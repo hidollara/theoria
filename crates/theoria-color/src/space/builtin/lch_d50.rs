@@ -28,8 +28,8 @@ impl LchD50 {
 builtin_space!(LchD50, LchD50Profile);
 
 impl ColorProfile for LchD50Profile {
-    fn channels(&self) -> usize {
-        3
+    fn model(&self) -> crate::model::ColorModel {
+        <Lch as crate::model::TypedColorModel>::MODEL
     }
 
     fn polar_hue_index(&self) -> Option<usize> {

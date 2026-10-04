@@ -28,8 +28,8 @@ impl HwbSrgb {
 builtin_space!(HwbSrgb, HwbSrgbProfile);
 
 impl ColorProfile for HwbSrgbProfile {
-    fn channels(&self) -> usize {
-        3
+    fn model(&self) -> crate::model::ColorModel {
+        <Hwb as crate::model::TypedColorModel>::MODEL
     }
 
     fn polar_hue_index(&self) -> Option<usize> {
