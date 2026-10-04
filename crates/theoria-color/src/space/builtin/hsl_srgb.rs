@@ -2,18 +2,19 @@ use super::{
     ColorProfile, ColorSpace, ConnectionSpace, HwbSrgb, LinearSrgb, SpaceConnectionError, Srgb,
     TypedColorSpace,
 };
-use crate::model::Hsl;
+use crate::model::Hls;
 use crate::transfer::{ColorFunction, Transfer, TransferError};
 
-named_space!(HslSrgb, Hsl);
+// The named HSL space exposes canonical HLS-ordered coordinates.
+named_space!(HslSrgb, Hls);
 
 impl HslSrgb {
     pub(crate) fn transfer_to_srgb() -> Result<Transfer, TransferError> {
-        Ok(Transfer::color_function(ColorFunction::HslToRgb))
+        Ok(Transfer::color_function(ColorFunction::HlsToRgb))
     }
 
     pub(crate) fn transfer_from_srgb() -> Result<Transfer, TransferError> {
-        Ok(Transfer::color_function(ColorFunction::RgbToHsl))
+        Ok(Transfer::color_function(ColorFunction::RgbToHls))
     }
 
     pub(crate) fn transfer_to_xyz_d65() -> Result<Transfer, TransferError> {
@@ -29,7 +30,7 @@ builtin_space!(HslSrgb, HslSrgbProfile);
 
 impl ColorProfile for HslSrgbProfile {
     fn model(&self) -> crate::model::ColorModel {
-        <Hsl as crate::model::TypedColorModel>::MODEL
+        <Hls as crate::model::TypedColorModel>::MODEL
     }
 
     fn polar_hue_index(&self) -> Option<usize> {
@@ -37,7 +38,7 @@ impl ColorProfile for HslSrgbProfile {
     }
 
     fn hue_is_powerless(&self, coordinates: &[f64]) -> bool {
-        coordinates[1] <= 0.0
+        coordinates[2] <= 0.0
     }
 
     fn connection_space(&self) -> ConnectionSpace {

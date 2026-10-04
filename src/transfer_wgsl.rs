@@ -448,8 +448,8 @@ fn $NAME_hue(value: array<f32, 3>) -> f32 {
     return angle - 360.0 * floor(angle / 360.0);
 }
 "#;
-    const HSL_TO_RGB: &str = r#"
-fn $NAME_hsl_to_rgb(hue: f32, sat: f32, light: f32) -> array<f32, 3> {
+    const HLS_TO_RGB: &str = r#"
+fn $NAME_hls_to_rgb(hue: f32, light: f32, sat: f32) -> array<f32, 3> {
     let s = sat / 100.0;
     let l = light / 100.0;
     let a = s * min(l, 1.0 - l);
@@ -464,7 +464,7 @@ fn $NAME_hsl_to_rgb(hue: f32, sat: f32, light: f32) -> array<f32, 3> {
 }
 "#;
     let source = match function {
-        ColorFunction::RgbToHsl => format!(
+        ColorFunction::RgbToHls => format!(
             "{RGB_HUE}{}",
             r#"
 fn $NAME(value: array<f32, 3>) -> array<f32, 3> {
@@ -482,15 +482,15 @@ fn $NAME(value: array<f32, 3>) -> array<f32, 3> {
         sat = -sat;
     }
     hue = hue - 360.0 * floor(hue / 360.0);
-    return array<f32, 3>(hue, sat * 100.0, light * 100.0);
+    return array<f32, 3>(hue, light * 100.0, sat * 100.0);
 }
 "#
         ),
-        ColorFunction::HslToRgb => format!(
-            "{HSL_TO_RGB}{}",
+        ColorFunction::HlsToRgb => format!(
+            "{HLS_TO_RGB}{}",
             r#"
 fn $NAME(value: array<f32, 3>) -> array<f32, 3> {
-    return $NAME_hsl_to_rgb(value[0], value[1], value[2]);
+    return $NAME_hls_to_rgb(value[0], value[1], value[2]);
 }
 "#
         ),
@@ -505,7 +505,7 @@ fn $NAME(value: array<f32, 3>) -> array<f32, 3> {
 "#
         ),
         ColorFunction::HwbToRgb => format!(
-            "{HSL_TO_RGB}{}",
+            "{HLS_TO_RGB}{}",
             r#"
 fn $NAME(value: array<f32, 3>) -> array<f32, 3> {
     let white = value[1] / 100.0;
@@ -514,7 +514,7 @@ fn $NAME(value: array<f32, 3>) -> array<f32, 3> {
         let gray = white / (white + black);
         return array<f32, 3>(gray, gray, gray);
     }
-    let base = $NAME_hsl_to_rgb(value[0], 100.0, 50.0);
+    let base = $NAME_hls_to_rgb(value[0], 50.0, 100.0);
     let range = 1.0 - white - black;
     return array<f32, 3>(base[0] * range + white, base[1] * range + white, base[2] * range + white);
 }
@@ -612,8 +612,8 @@ mod tests {
     #[test]
     fn cylindrical_color_functions_generate_valid_wgsl() {
         for function in [
-            ColorFunction::RgbToHsl,
-            ColorFunction::HslToRgb,
+            ColorFunction::RgbToHls,
+            ColorFunction::HlsToRgb,
             ColorFunction::RgbToHwb,
             ColorFunction::HwbToRgb,
             ColorFunction::CartesianToPolar,

@@ -1,10 +1,10 @@
 use super::{
     ColorProfile, ColorSpace, ConnectionSpace, OklchD65, SpaceConnectionError, TypedColorSpace,
 };
-use crate::model::Oklab as OklabModel;
+use crate::model::Lab;
 use crate::transfer::{Transfer, TransferCurve, TransferError};
 
-named_space!(OklabD65, OklabModel);
+named_space!(OklabD65, Lab);
 
 impl OklabD65 {
     const XYZ_D65_TO_LMS: [[f64; 3]; 3] = [
@@ -52,7 +52,7 @@ builtin_space!(OklabD65, OklabD65Profile);
 
 impl ColorProfile for OklabD65Profile {
     fn model(&self) -> crate::model::ColorModel {
-        <OklabModel as crate::model::TypedColorModel>::MODEL
+        <Lab as crate::model::TypedColorModel>::MODEL
     }
 
     fn connection_space(&self) -> ConnectionSpace {

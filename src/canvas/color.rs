@@ -398,6 +398,29 @@ mod tests {
     }
 
     #[test]
+    fn oklab_spaces_accept_the_shared_lab_and_lch_models() {
+        use crate::color::{Lab, Lch, OklabD65, OklchD65};
+        let lab = Color::new_in_space::<Lab>(OklabD65, [0.5_f64, 0.1, -0.1], Opacity::<f32>::ONE)
+            .unwrap();
+        assert_eq!(
+            lab,
+            Color::new(OklabD65, [0.5_f64, 0.1, -0.1], Opacity::<f32>::ONE)
+        );
+        assert_eq!(lab.space().model(), ColorModel::Lab);
+        assert_ne!(
+            lab.space(),
+            Color::new(LabD50, [0.5_f64, 0.1, -0.1], Opacity::<f32>::ONE).space()
+        );
+        let lch = Color::new_in_space::<Lch>(OklchD65, [0.5_f64, 0.2, 180.0], Opacity::<f32>::ONE)
+            .unwrap();
+        assert_eq!(lch.space().model(), ColorModel::Lch);
+        assert_eq!(
+            lch,
+            Color::new(OklchD65, [0.5_f64, 0.2, 180.0], Opacity::<f32>::ONE)
+        );
+    }
+
+    #[test]
     fn constructing_a_color_does_not_normalize_its_storage() {
         let color = Color::new(Srgb, [255_u8, 128, 64], Opacity::<u8>::from(128));
 

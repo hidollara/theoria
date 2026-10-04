@@ -13,7 +13,7 @@ mod space;
 mod transfer;
 
 pub use icc_profile::{IccProfile, IccProfileError, IccRenderingIntent};
-pub use model::{ColorModel, Hsl, Hwb, Lab, Lch, Oklab, Oklch, Rgb, TypedColorModel, Xyz};
+pub use model::{ColorModel, Hls, Hwb, Lab, Lch, Rgb, TypedColorModel, Xyz};
 pub use space::{
     A98Rgb, ColorProfile, ColorSpace, ConnectionSpace, DisplayP3, HslSrgb, HwbSrgb, LabD50, LchD50,
     LinearDisplayP3, LinearSrgb, OklabD65, OklchD65, ProPhotoRgb, Rec2020, SpaceConnectionError,

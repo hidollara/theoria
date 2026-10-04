@@ -1,26 +1,23 @@
 /// The meaning and order of a color space's input coordinates.
 ///
-/// This does not define primaries, white points, encoding precision, or alpha.
+/// This does not define primaries, white points, component scales, encoding
+/// precision, or alpha. Lab/Lch include CIE and Oklab/Oklch spaces; their
+/// different coordinate meanings and scales are supplied by their profiles.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ColorModel {
-    Rgb,
     Xyz,
     Lab,
     Lch,
-    Oklab,
-    Oklch,
-    Hsl,
-    Hwb,
-    Gray,
-    Cmy,
-    Cmyk,
     Luv,
-    Yxy,
     YCbCr,
+    Yxy,
+    Rgb,
+    Gray,
     Hsv,
-    /// Hue, lightness, saturation (distinct from HSL's channel order).
     Hls,
-    /// Channels whose individual meanings are defined by the profile.
+    Hwb,
+    Cmyk,
+    Cmy,
     Other {
         channels: usize,
     },
@@ -47,13 +44,6 @@ pub trait TypedColorModel: Sized + 'static {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub struct Rgb;
-
-impl TypedColorModel for Rgb {
-    const MODEL: ColorModel = ColorModel::Rgb;
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Xyz;
 
 impl TypedColorModel for Xyz {
@@ -67,7 +57,7 @@ impl TypedColorModel for Lab {
     const MODEL: ColorModel = ColorModel::Lab;
 }
 
-/// CIE Lab lightness, chroma, and hue in degrees.
+/// Lightness, chroma, and hue; scales are defined by the color space.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Lch;
 
@@ -76,29 +66,21 @@ impl TypedColorModel for Lch {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub struct Oklab;
+pub struct Rgb;
 
-impl TypedColorModel for Oklab {
-    const MODEL: ColorModel = ColorModel::Oklab;
+impl TypedColorModel for Rgb {
+    const MODEL: ColorModel = ColorModel::Rgb;
 }
 
-/// Oklab lightness, chroma, and hue in degrees.
+/// Hue, lightness, and saturation; units are defined by the color space.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub struct Oklch;
+pub struct Hls;
 
-impl TypedColorModel for Oklch {
-    const MODEL: ColorModel = ColorModel::Oklch;
+impl TypedColorModel for Hls {
+    const MODEL: ColorModel = ColorModel::Hls;
 }
 
-/// Hue (degrees), saturation (percent), and lightness (percent).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub struct Hsl;
-
-impl TypedColorModel for Hsl {
-    const MODEL: ColorModel = ColorModel::Hsl;
-}
-
-/// Hue (degrees), whiteness (percent), and blackness (percent).
+/// Hue, whiteness, and blackness; units are defined by the color space.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Hwb;
 

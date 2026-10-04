@@ -2,8 +2,8 @@
 /// independent curves and affine matrices.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ColorFunction {
-    RgbToHsl,
-    HslToRgb,
+    RgbToHls,
+    HlsToRgb,
     RgbToHwb,
     HwbToRgb,
     CartesianToPolar,
@@ -21,8 +21,8 @@ impl ColorFunction {
 
     const fn channel_counts(self) -> (usize, usize) {
         match self {
-            Self::RgbToHsl
-            | Self::HslToRgb
+            Self::RgbToHls
+            | Self::HlsToRgb
             | Self::RgbToHwb
             | Self::HwbToRgb
             | Self::CartesianToPolar
@@ -32,8 +32,8 @@ impl ColorFunction {
 
     pub(super) fn evaluate(self, [first, second, third]: [f64; 3]) -> [f64; 3] {
         match self {
-            Self::RgbToHsl => rgb_to_hsl([first, second, third]),
-            Self::HslToRgb => hsl_to_rgb([first, second, third]),
+            Self::RgbToHls => rgb_to_hls([first, second, third]),
+            Self::HlsToRgb => hls_to_rgb([first, second, third]),
             Self::RgbToHwb => rgb_to_hwb([first, second, third]),
             Self::HwbToRgb => hwb_to_rgb([first, second, third]),
             Self::CartesianToPolar => {
@@ -70,7 +70,7 @@ fn rgb_hue([red, green, blue]: [f64; 3]) -> f64 {
     (sector * 60.0).rem_euclid(360.0)
 }
 
-fn rgb_to_hsl(rgb @ [red, green, blue]: [f64; 3]) -> [f64; 3] {
+fn rgb_to_hls(rgb @ [red, green, blue]: [f64; 3]) -> [f64; 3] {
     let max = red.max(green).max(blue);
     let min = red.min(green).min(blue);
     let light = (min + max) / 2.0;
@@ -85,10 +85,10 @@ fn rgb_to_hsl(rgb @ [red, green, blue]: [f64; 3]) -> [f64; 3] {
         hue = (hue + 180.0).rem_euclid(360.0);
         saturation = -saturation;
     }
-    [hue, saturation * 100.0, light * 100.0]
+    [hue, light * 100.0, saturation * 100.0]
 }
 
-fn hsl_to_rgb([hue, saturation, lightness]: [f64; 3]) -> [f64; 3] {
+fn hls_to_rgb([hue, lightness, saturation]: [f64; 3]) -> [f64; 3] {
     let saturation = saturation / 100.0;
     let lightness = lightness / 100.0;
     let amplitude = saturation * lightness.min(1.0 - lightness);
@@ -110,5 +110,5 @@ fn hwb_to_rgb([hue, whiteness, blackness]: [f64; 3]) -> [f64; 3] {
     if white + black >= 1.0 {
         return [white / (white + black); 3];
     }
-    hsl_to_rgb([hue, 100.0, 50.0]).map(|channel| channel * (1.0 - white - black) + white)
+    hls_to_rgb([hue, 50.0, 100.0]).map(|channel| channel * (1.0 - white - black) + white)
 }

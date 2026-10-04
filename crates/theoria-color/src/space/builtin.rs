@@ -216,7 +216,7 @@ mod tests {
     fn css_polar_spaces_convert_and_round_trip() {
         let srgb = ColorSpace::from(Srgb);
         for (space, red) in [
-            (ColorSpace::from(HslSrgb), [0.0, 100.0, 50.0]),
+            (ColorSpace::from(HslSrgb), [0.0, 50.0, 100.0]),
             (ColorSpace::from(HwbSrgb), [0.0, 0.0, 0.0]),
         ] {
             let converted = space.transfer_to(&srgb).unwrap().evaluate(&red).unwrap();
@@ -305,8 +305,8 @@ mod tests {
             (
                 ColorSpace::from(HslSrgb),
                 0,
-                [0.0, 0.0, 50.0],
-                [120.0, 100.0, 50.0],
+                [0.0, 50.0, 0.0],
+                [120.0, 50.0, 100.0],
             ),
             (
                 ColorSpace::from(HwbSrgb),

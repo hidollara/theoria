@@ -54,8 +54,8 @@ fn directed_stages_evaluate_in_order_and_change_channel_count() {
 #[test]
 fn color_functions_define_their_transfer_channels() {
     for function in [
-        ColorFunction::RgbToHsl,
-        ColorFunction::HslToRgb,
+        ColorFunction::RgbToHls,
+        ColorFunction::HlsToRgb,
         ColorFunction::RgbToHwb,
         ColorFunction::HwbToRgb,
         ColorFunction::CartesianToPolar,

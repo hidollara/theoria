@@ -300,16 +300,16 @@ fn icc_channels(space: DataColorSpace) -> usize {
 
 fn icc_model(space: DataColorSpace) -> ColorModel {
     match space {
-        DataColorSpace::Gray => ColorModel::Gray,
-        DataColorSpace::Cmyk => ColorModel::Cmyk,
         DataColorSpace::Xyz => ColorModel::Xyz,
         DataColorSpace::Lab => ColorModel::Lab,
         DataColorSpace::Luv => ColorModel::Luv,
         DataColorSpace::YCbr => ColorModel::YCbCr,
         DataColorSpace::Yxy => ColorModel::Yxy,
         DataColorSpace::Rgb => ColorModel::Rgb,
+        DataColorSpace::Gray => ColorModel::Gray,
         DataColorSpace::Hsv => ColorModel::Hsv,
         DataColorSpace::Hls => ColorModel::Hls,
+        DataColorSpace::Cmyk => ColorModel::Cmyk,
         DataColorSpace::Cmy => ColorModel::Cmy,
         DataColorSpace::Color2 => ColorModel::Other { channels: 2 },
         DataColorSpace::Color3 => ColorModel::Other { channels: 3 },
@@ -872,7 +872,6 @@ mod tests {
         assert_eq!(icc_model(DataColorSpace::Xyz), ColorModel::Xyz);
         assert_eq!(icc_model(DataColorSpace::Cmyk), ColorModel::Cmyk);
         assert_eq!(icc_model(DataColorSpace::Hls), ColorModel::Hls);
-        assert_ne!(icc_model(DataColorSpace::Hls), ColorModel::Hsl);
         assert_eq!(
             icc_model(DataColorSpace::Color3),
             ColorModel::Other { channels: 3 }

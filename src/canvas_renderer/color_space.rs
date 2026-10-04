@@ -497,8 +497,8 @@ mod tests {
         let space = ColorSpace::from(HslSrgb);
         let working = ColorSpace::from(LinearSrgb);
         let encode = space.transfer_to(&working).unwrap();
-        let first = encode.evaluate(&[60.0, 100.0, 50.0]).unwrap();
-        let second = encode.evaluate(&[240.0, 100.0, 50.0]).unwrap();
+        let first = encode.evaluate(&[60.0, 50.0, 100.0]).unwrap();
+        let second = encode.evaluate(&[240.0, 50.0, 100.0]).unwrap();
         let premultiply = |value: Vec<f64>, alpha: f32| {
             [
                 value[0] as f32 * alpha,
@@ -520,14 +520,14 @@ mod tests {
             actual[1] / actual[3],
             actual[2] / actual[3],
         ];
-        let hsl = working
+        let hls = working
             .transfer_to(&space)
             .unwrap()
             .evaluate(&straight.map(f64::from))
             .unwrap();
         assert!((actual[3] - 0.625).abs() < 1e-6);
-        assert!((hsl[0] - 150.0).abs() < 1e-4, "hue {}", hsl[0]);
-        assert!((hsl[1] - 100.0).abs() < 1e-4);
+        assert!((hls[0] - 150.0).abs() < 1e-4, "hue {}", hls[0]);
+        assert!((hls[2] - 100.0).abs() < 1e-4);
     }
 
     #[test]
@@ -535,8 +535,8 @@ mod tests {
         let space = ColorSpace::from(HslSrgb);
         let working = ColorSpace::from(LinearSrgb);
         let encode = space.transfer_to(&working).unwrap();
-        let gray = encode.evaluate(&[0.0, 0.0, 50.0]).unwrap();
-        let blue = encode.evaluate(&[240.0, 100.0, 50.0]).unwrap();
+        let gray = encode.evaluate(&[0.0, 50.0, 0.0]).unwrap();
+        let blue = encode.evaluate(&[240.0, 50.0, 100.0]).unwrap();
         let mut prepared = PreparedColors::default();
         prepared.prepare_interpolation(&space).unwrap();
         let actual = interpolate_premultiplied_rgba(
@@ -545,7 +545,7 @@ mod tests {
             0.5,
             prepared.interpolation(&space),
         );
-        let hsl = working
+        let hls = working
             .transfer_to(&space)
             .unwrap()
             .evaluate(
@@ -556,8 +556,8 @@ mod tests {
                     .collect::<Vec<_>>(),
             )
             .unwrap();
-        assert!((hsl[0] - 240.0).abs() < 1e-4);
-        assert!((hsl[1] - 50.0).abs() < 1e-4);
+        assert!((hls[0] - 240.0).abs() < 1e-4);
+        assert!((hls[1] - 50.0).abs() < 1e-4);
     }
 
     #[test]
@@ -565,8 +565,8 @@ mod tests {
         let space = ColorSpace::from(HslSrgb);
         let working = ColorSpace::from(LinearSrgb);
         let encode = space.transfer_to(&working).unwrap();
-        let red = encode.evaluate(&[0.0, 100.0, 50.0]).unwrap();
-        let blue = encode.evaluate(&[240.0, 100.0, 50.0]).unwrap();
+        let red = encode.evaluate(&[0.0, 50.0, 100.0]).unwrap();
+        let blue = encode.evaluate(&[240.0, 50.0, 100.0]).unwrap();
         let mut prepared = PreparedColors::default();
         prepared.prepare_interpolation(&space).unwrap();
         let actual = interpolate_premultiplied_rgba(
@@ -575,7 +575,7 @@ mod tests {
             0.5,
             prepared.interpolation(&space),
         );
-        let hsl = working
+        let hls = working
             .transfer_to(&space)
             .unwrap()
             .evaluate(
@@ -586,7 +586,7 @@ mod tests {
                     .collect::<Vec<_>>(),
             )
             .unwrap();
-        assert!((hsl[0] - 120.0).abs() < 1e-4, "hue {}", hsl[0]);
+        assert!((hls[0] - 120.0).abs() < 1e-4, "hue {}", hls[0]);
     }
 
     #[test]

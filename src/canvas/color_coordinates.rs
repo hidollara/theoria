@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::color::{Hsl, Hwb, Lab, Lch, Oklab, Oklch, Rgb, TypedColorModel, Xyz};
+use crate::color::{Hls, Hwb, Lab, Lch, Rgb, TypedColorModel, Xyz};
 
 use super::color::{Alpha, ColorValue};
 
@@ -133,13 +133,13 @@ impl ColorCoordinates<Lch> for [f64; 3] {
     }
 }
 
-impl ColorCoordinates<Hsl> for [f32; 3] {
+impl ColorCoordinates<Hls> for [f32; 3] {
     fn into_value(self) -> CoordinateValue {
         CoordinateValue::F32(self)
     }
 }
 
-impl ColorCoordinates<Hsl> for [f64; 3] {
+impl ColorCoordinates<Hls> for [f64; 3] {
     fn into_value(self) -> CoordinateValue {
         CoordinateValue::F64(self)
     }
@@ -152,30 +152,6 @@ impl ColorCoordinates<Hwb> for [f32; 3] {
 }
 
 impl ColorCoordinates<Hwb> for [f64; 3] {
-    fn into_value(self) -> CoordinateValue {
-        CoordinateValue::F64(self)
-    }
-}
-
-impl ColorCoordinates<Oklab> for [f32; 3] {
-    fn into_value(self) -> CoordinateValue {
-        CoordinateValue::F32(self)
-    }
-}
-
-impl ColorCoordinates<Oklab> for [f64; 3] {
-    fn into_value(self) -> CoordinateValue {
-        CoordinateValue::F64(self)
-    }
-}
-
-impl ColorCoordinates<Oklch> for [f32; 3] {
-    fn into_value(self) -> CoordinateValue {
-        CoordinateValue::F32(self)
-    }
-}
-
-impl ColorCoordinates<Oklch> for [f64; 3] {
     fn into_value(self) -> CoordinateValue {
         CoordinateValue::F64(self)
     }

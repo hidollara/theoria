@@ -1,10 +1,10 @@
 use super::{
     ColorProfile, ColorSpace, ConnectionSpace, OklabD65, SpaceConnectionError, TypedColorSpace,
 };
-use crate::model::Oklch;
+use crate::model::Lch;
 use crate::transfer::{ColorFunction, Transfer, TransferError};
 
-named_space!(OklchD65, Oklch);
+named_space!(OklchD65, Lch);
 
 impl OklchD65 {
     pub(crate) fn transfer_to_oklab_d65() -> Result<Transfer, TransferError> {
@@ -28,7 +28,7 @@ builtin_space!(OklchD65, OklchD65Profile);
 
 impl ColorProfile for OklchD65Profile {
     fn model(&self) -> crate::model::ColorModel {
-        <Oklch as crate::model::TypedColorModel>::MODEL
+        <Lch as crate::model::TypedColorModel>::MODEL
     }
 
     fn polar_hue_index(&self) -> Option<usize> {

@@ -137,12 +137,12 @@ fn hsl_gradient_interpolates_hue_in_its_selected_space() {
         [
             GradientStop::new(
                 0.0,
-                Color::new(HslSrgb, [0.0_f32, 100.0, 50.0], Opacity::<f32>::ONE),
+                Color::new(HslSrgb, [0.0_f32, 50.0, 100.0], Opacity::<f32>::ONE),
             )
             .unwrap(),
             GradientStop::new(
                 1.0,
-                Color::new(HslSrgb, [240.0_f32, 100.0, 50.0], Opacity::<f32>::ONE),
+                Color::new(HslSrgb, [240.0_f32, 50.0, 100.0], Opacity::<f32>::ONE),
             )
             .unwrap(),
         ],
