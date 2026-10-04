@@ -40,28 +40,51 @@ impl Transfer {
     }
 
     pub fn curves(curves: impl Into<Box<[TransferCurve]>>) -> Result<Self, TransferError> {
-        Ok(Self::single(TransferStage::curves(curves)?))
+        let curves = curves.into();
+        if curves.is_empty() {
+            return Err(TransferError::EmptyChannels);
+        }
+        Ok(Self::single(TransferStage::Curves(curves)))
     }
 
+    /// Constructs a matrix whose dimensions are checked by the array types.
     pub fn matrix<const INPUTS: usize, const OUTPUTS: usize>(
         coefficients: [[f64; INPUTS]; OUTPUTS],
         offsets: [f64; OUTPUTS],
     ) -> Result<Self, TransferError> {
-        Ok(Self::single(TransferStage::Matrix(TransferMatrix::new(
-            coefficients,
-            offsets,
-        )?)))
+        if INPUTS == 0 || OUTPUTS == 0 {
+            return Err(TransferError::EmptyChannels);
+        }
+        Self::matrix_from_parts(
+            INPUTS,
+            OUTPUTS,
+            coefficients
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>()
+                .into(),
+            offsets.into(),
+        )
     }
 
+    /// Constructs a matrix from runtime dimensions and row-major coefficients.
     pub fn matrix_from_flat(
         input_channels: usize,
         output_channels: usize,
         coefficients: impl Into<Box<[f64]>>,
         offsets: impl Into<Box<[f64]>>,
     ) -> Result<Self, TransferError> {
-        Ok(Self::single(TransferStage::Matrix(
-            TransferMatrix::from_flat(input_channels, output_channels, coefficients, offsets)?,
-        )))
+        let coefficients = coefficients.into();
+        let offsets = offsets.into();
+        if input_channels == 0 || output_channels == 0 {
+            return Err(TransferError::EmptyChannels);
+        }
+        if input_channels.checked_mul(output_channels) != Some(coefficients.len())
+            || offsets.len() != output_channels
+        {
+            return Err(TransferError::InvalidMatrixShape);
+        }
+        Self::matrix_from_parts(input_channels, output_channels, coefficients, offsets)
     }
 
     pub fn clut(
@@ -69,15 +92,51 @@ impl Transfer {
         output_channels: usize,
         values: impl Into<Arc<[f64]>>,
     ) -> Result<Self, TransferError> {
-        Ok(Self::single(TransferStage::Clut(TransferClut::new(
+        let grid = grid.into();
+        let values = values.into();
+        if grid.is_empty() || grid.len() > 16 || output_channels == 0 {
+            return Err(TransferError::InvalidClutShape);
+        }
+        let mut entries = Some(output_channels);
+        for points in grid.iter().copied() {
+            if points < 2 {
+                return Err(TransferError::InvalidClutShape);
+            }
+            entries = entries.and_then(|count| count.checked_mul(usize::from(points)));
+        }
+        if entries != Some(values.len()) || values.iter().any(|value| !value.is_finite()) {
+            return Err(TransferError::InvalidClutShape);
+        }
+        Ok(Self::single(TransferStage::Clut(TransferClut {
             grid,
             output_channels,
             values,
-        )?)))
+        })))
     }
 
     pub fn color_function(function: ColorFunction) -> Self {
         Self::single(TransferStage::ColorFunction(function))
+    }
+
+    fn matrix_from_parts(
+        input_channels: usize,
+        output_channels: usize,
+        coefficients: Box<[f64]>,
+        offsets: Box<[f64]>,
+    ) -> Result<Self, TransferError> {
+        if coefficients
+            .iter()
+            .chain(offsets.iter())
+            .any(|value| !value.is_finite())
+        {
+            return Err(TransferError::NonFiniteValue);
+        }
+        Ok(Self::single(TransferStage::Matrix(TransferMatrix {
+            input_channels,
+            output_channels,
+            coefficients,
+            offsets,
+        })))
     }
 
     fn single(stage: TransferStage) -> Self {
@@ -135,14 +194,6 @@ pub enum TransferStage {
 }
 
 impl TransferStage {
-    pub fn curves(curves: impl Into<Box<[TransferCurve]>>) -> Result<Self, TransferError> {
-        let curves = curves.into();
-        if curves.is_empty() {
-            return Err(TransferError::EmptyChannels);
-        }
-        Ok(Self::Curves(curves))
-    }
-
     pub fn input_channels(&self) -> usize {
         match self {
             Self::Curves(curves) => curves.len(),
@@ -172,67 +223,6 @@ pub struct TransferMatrix {
 }
 
 impl TransferMatrix {
-    /// Constructs a matrix whose dimensions are checked by the array types.
-    pub fn new<const INPUTS: usize, const OUTPUTS: usize>(
-        coefficients: [[f64; INPUTS]; OUTPUTS],
-        offsets: [f64; OUTPUTS],
-    ) -> Result<Self, TransferError> {
-        if INPUTS == 0 || OUTPUTS == 0 {
-            return Err(TransferError::EmptyChannels);
-        }
-        Self::from_parts(
-            INPUTS,
-            OUTPUTS,
-            coefficients
-                .into_iter()
-                .flatten()
-                .collect::<Vec<_>>()
-                .into(),
-            offsets.into(),
-        )
-    }
-
-    /// Constructs a matrix from runtime dimensions and row-major coefficients.
-    pub fn from_flat(
-        input_channels: usize,
-        output_channels: usize,
-        coefficients: impl Into<Box<[f64]>>,
-        offsets: impl Into<Box<[f64]>>,
-    ) -> Result<Self, TransferError> {
-        let coefficients = coefficients.into();
-        let offsets = offsets.into();
-        if input_channels == 0 || output_channels == 0 {
-            return Err(TransferError::EmptyChannels);
-        }
-        if input_channels.checked_mul(output_channels) != Some(coefficients.len())
-            || offsets.len() != output_channels
-        {
-            return Err(TransferError::InvalidMatrixShape);
-        }
-        Self::from_parts(input_channels, output_channels, coefficients, offsets)
-    }
-
-    fn from_parts(
-        input_channels: usize,
-        output_channels: usize,
-        coefficients: Box<[f64]>,
-        offsets: Box<[f64]>,
-    ) -> Result<Self, TransferError> {
-        if coefficients
-            .iter()
-            .chain(offsets.iter())
-            .any(|value| !value.is_finite())
-        {
-            return Err(TransferError::NonFiniteValue);
-        }
-        Ok(Self {
-            input_channels,
-            output_channels,
-            coefficients,
-            offsets,
-        })
-    }
-
     pub const fn input_channels(&self) -> usize {
         self.input_channels
     }
@@ -265,33 +255,6 @@ pub struct TransferClut {
 }
 
 impl TransferClut {
-    pub fn new(
-        grid: impl Into<Box<[u8]>>,
-        output_channels: usize,
-        values: impl Into<Arc<[f64]>>,
-    ) -> Result<Self, TransferError> {
-        let grid = grid.into();
-        let values = values.into();
-        if grid.is_empty() || grid.len() > 16 || output_channels == 0 {
-            return Err(TransferError::InvalidClutShape);
-        }
-        let mut entries = Some(output_channels);
-        for points in grid.iter().copied() {
-            if points < 2 {
-                return Err(TransferError::InvalidClutShape);
-            }
-            entries = entries.and_then(|count| count.checked_mul(usize::from(points)));
-        }
-        if entries != Some(values.len()) || values.iter().any(|value| !value.is_finite()) {
-            return Err(TransferError::InvalidClutShape);
-        }
-        Ok(Self {
-            grid,
-            output_channels,
-            values,
-        })
-    }
-
     pub fn grid(&self) -> &[u8] {
         &self.grid
     }

@@ -224,21 +224,17 @@ fn invalid_transfer_data_is_rejected_before_evaluation() {
     assert!(TransferCurve::clamp(1.0, 0.0).is_err());
     assert!(TransferCurve::clamp(f64::NAN, 1.0).is_err());
     assert!(TransferCurve::clamp(0.0, f64::NAN).is_err());
-    assert!(TransferMatrix::from_flat(3, 2, [0.0; 3], [0.0; 2]).is_err());
+    assert!(Transfer::matrix_from_flat(3, 2, [0.0; 3], [0.0; 2]).is_err());
     assert_eq!(
-        TransferMatrix::new::<0, 1>([[]], [0.0]),
+        Transfer::matrix::<0, 1>([[]], [0.0]),
         Err(TransferError::EmptyChannels)
     );
     assert_eq!(
-        TransferMatrix::new([[f64::NAN]], [0.0]),
-        Err(TransferError::NonFiniteValue)
-    );
-    assert_eq!(
-        TransferMatrix::new([[1.0]], [f64::INFINITY]),
-        Err(TransferError::NonFiniteValue)
-    );
-    assert_eq!(
         Transfer::matrix([[f64::NAN]], [0.0]),
+        Err(TransferError::NonFiniteValue)
+    );
+    assert_eq!(
+        Transfer::matrix([[1.0]], [f64::INFINITY]),
         Err(TransferError::NonFiniteValue)
     );
     assert_eq!(

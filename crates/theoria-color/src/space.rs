@@ -335,10 +335,10 @@ mod tests {
     #[test]
     fn known_encoding_link_is_selected_without_a_pcs_round_trip() {
         let transform = ColorSpace::from(Srgb).transfer_to(LinearSrgb).unwrap();
-        assert_eq!(
-            transform.stages(),
-            &[TransferStage::curves(vec![TransferCurve::SRGB_DECODE; 3]).unwrap()]
-        );
+        let [TransferStage::Curves(curves)] = transform.stages() else {
+            panic!("the direct encoding link must contain only its decode curves");
+        };
+        assert_eq!(curves.as_ref(), &[TransferCurve::SRGB_DECODE; 3]);
         let expected = 0.214_041_140_482_232_55;
         for actual in transform.evaluate(&[0.5; 3]).unwrap() {
             assert!((actual - expected).abs() < 1e-12);
