@@ -824,7 +824,7 @@ mod tests {
         for input in [0.0, 0.02, 0.04, 0.05, 0.25, 0.5, 1.0] {
             assert!(
                 (curve.evaluate(&[input]).unwrap()[0]
-                    - TransferCurve::srgb_decode().evaluate(input))
+                    - crate::space::Srgb::decode_curve().evaluate(input))
                 .abs()
                     < 1e-12
             );

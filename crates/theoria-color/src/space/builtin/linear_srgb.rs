@@ -1,15 +1,63 @@
+use std::sync::LazyLock;
+
 use super::{
     ColorProfile, ColorSpace, ConnectionSpace, HslSrgb, HwbSrgb, SpaceConnectionError, Srgb,
     TypedColorSpace,
 };
 use crate::model::Rgb;
-use crate::transfer::{Transfer, TransferCurve, TransferError};
+use crate::transfer::{CurveSegment, CurveSegmentKind, Transfer, TransferCurve, TransferError};
 
 named_space!(LinearSrgb, Rgb);
 
+const SRGB_ENCODE_THRESHOLD: f64 = 0.003_130_8;
+const SRGB_LINEAR_SCALE: f64 = 12.92;
+const SRGB_POWER_SCALE: f64 = 1.055;
+const SRGB_POWER_OFFSET: f64 = 0.055;
+const SRGB_GAMMA: f64 = 2.4;
+
+static SRGB_ENCODE_SEGMENTS: [CurveSegment; 3] = [
+    CurveSegment::exclusive(
+        -SRGB_ENCODE_THRESHOLD,
+        CurveSegmentKind::PowerAffine {
+            scale: -1.0,
+            offset: 0.0,
+            exponent: 1.0 / SRGB_GAMMA,
+            output_scale: -SRGB_POWER_SCALE,
+            output_offset: SRGB_POWER_OFFSET,
+        },
+    ),
+    CurveSegment::new(
+        SRGB_ENCODE_THRESHOLD,
+        CurveSegmentKind::Linear {
+            scale: SRGB_LINEAR_SCALE,
+            offset: 0.0,
+        },
+    ),
+    CurveSegment::new(
+        f64::INFINITY,
+        CurveSegmentKind::PowerAffine {
+            scale: 1.0,
+            offset: 0.0,
+            exponent: 1.0 / SRGB_GAMMA,
+            output_scale: SRGB_POWER_SCALE,
+            output_offset: -SRGB_POWER_OFFSET,
+        },
+    ),
+];
+
 impl LinearSrgb {
+    /// The extended-range sRGB encoding curve, expressed as ordinary segments.
+    /// Backends can compare curves with this definition to recognize the operation.
+    pub fn encode_curve() -> &'static TransferCurve {
+        static CURVE: LazyLock<TransferCurve> = LazyLock::new(|| {
+            TransferCurve::piecewise(SRGB_ENCODE_SEGMENTS.clone())
+                .expect("valid sRGB curve definition")
+        });
+        &CURVE
+    }
+
     pub(crate) fn transfer_to_srgb() -> Result<Transfer, TransferError> {
-        Transfer::curves(vec![TransferCurve::srgb_encode(); 3])
+        Transfer::curves(vec![Self::encode_curve().clone(); 3])
     }
 
     // Exact rational matrix from CSS Color 4's color-conversion sample code.

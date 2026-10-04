@@ -276,8 +276,7 @@ impl TransferClut {
 
 /// One-dimensional curves in a color transfer.
 ///
-/// Gamma and sampled curves operate on the `[0, 1]` domain. The
-/// signed sRGB variants are extended-range built-ins. Piecewise curves can
+/// Gamma and sampled curves operate on the `[0, 1]` domain. Piecewise curves can
 /// describe wider domains, including curves decoded from ICC profiles.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TransferCurve(CurveKind);
@@ -384,16 +383,6 @@ impl CurveSegment {
 impl TransferCurve {
     pub const IDENTITY: Self = Self(CurveKind::Identity);
 
-    /// Constructs the extended-range sRGB decoding curve as ordinary segments.
-    pub fn srgb_decode() -> Self {
-        Self(CurveKind::Piecewise(Box::new(SRGB_DECODE_SEGMENTS.clone())))
-    }
-
-    /// Constructs the extended-range sRGB encoding curve as ordinary segments.
-    pub fn srgb_encode() -> Self {
-        Self(CurveKind::Piecewise(Box::new(SRGB_ENCODE_SEGMENTS.clone())))
-    }
-
     pub fn kind(&self) -> TransferCurveKind<'_> {
         match &self.0 {
             CurveKind::Identity => TransferCurveKind::Identity,
@@ -405,25 +394,6 @@ impl TransferCurve {
                 max: *max,
             },
         }
-    }
-
-    /// Whether the segments match the sRGB decoding definition.
-    /// Equivalent caller-defined curves also qualify for backend optimization.
-    pub fn is_srgb_decode(&self) -> bool {
-        matches!(
-            &self.0,
-            CurveKind::Piecewise(segments)
-                if segments.as_ref() == SRGB_DECODE_SEGMENTS.as_slice()
-        )
-    }
-
-    /// Whether the segments match the sRGB encoding definition.
-    pub fn is_srgb_encode(&self) -> bool {
-        matches!(
-            &self.0,
-            CurveKind::Piecewise(segments)
-                if segments.as_ref() == SRGB_ENCODE_SEGMENTS.as_slice()
-        )
     }
 
     pub fn piecewise(segments: impl Into<Box<[CurveSegment]>>) -> Result<Self, TransferError> {
@@ -554,74 +524,6 @@ impl TransferCurve {
 
 /// ICC D50 PCS white, expressed as the specified XYZ tristimulus values.
 pub(super) const ICC_PCS_D50_XYZ: [f64; 3] = [0.9642, 1.0, 0.8249];
-// The built-in names retain their identity as optimization hints, but use the
-// same piecewise representation as curves supplied by callers or ICC profiles.
-const SRGB_DECODE_THRESHOLD: f64 = 0.04045;
-const SRGB_ENCODE_THRESHOLD: f64 = 0.003_130_8;
-const SRGB_LINEAR_SCALE: f64 = 12.92;
-const SRGB_POWER_SCALE: f64 = 1.055;
-const SRGB_POWER_OFFSET: f64 = 0.055;
-const SRGB_GAMMA: f64 = 2.4;
-
-static SRGB_DECODE_SEGMENTS: [CurveSegment; 3] = [
-    CurveSegment::exclusive(
-        -SRGB_DECODE_THRESHOLD,
-        CurveSegmentKind::PowerAffine {
-            scale: -1.0 / SRGB_POWER_SCALE,
-            offset: SRGB_POWER_OFFSET / SRGB_POWER_SCALE,
-            exponent: SRGB_GAMMA,
-            output_scale: -1.0,
-            output_offset: 0.0,
-        },
-    ),
-    CurveSegment::new(
-        SRGB_DECODE_THRESHOLD,
-        CurveSegmentKind::Linear {
-            scale: 1.0 / SRGB_LINEAR_SCALE,
-            offset: 0.0,
-        },
-    ),
-    CurveSegment::new(
-        f64::INFINITY,
-        CurveSegmentKind::PowerAffine {
-            scale: 1.0 / SRGB_POWER_SCALE,
-            offset: SRGB_POWER_OFFSET / SRGB_POWER_SCALE,
-            exponent: SRGB_GAMMA,
-            output_scale: 1.0,
-            output_offset: 0.0,
-        },
-    ),
-];
-
-static SRGB_ENCODE_SEGMENTS: [CurveSegment; 3] = [
-    CurveSegment::exclusive(
-        -SRGB_ENCODE_THRESHOLD,
-        CurveSegmentKind::PowerAffine {
-            scale: -1.0,
-            offset: 0.0,
-            exponent: 1.0 / SRGB_GAMMA,
-            output_scale: -SRGB_POWER_SCALE,
-            output_offset: SRGB_POWER_OFFSET,
-        },
-    ),
-    CurveSegment::new(
-        SRGB_ENCODE_THRESHOLD,
-        CurveSegmentKind::Linear {
-            scale: SRGB_LINEAR_SCALE,
-            offset: 0.0,
-        },
-    ),
-    CurveSegment::new(
-        f64::INFINITY,
-        CurveSegmentKind::PowerAffine {
-            scale: 1.0,
-            offset: 0.0,
-            exponent: 1.0 / SRGB_GAMMA,
-            output_scale: SRGB_POWER_SCALE,
-            output_offset: -SRGB_POWER_OFFSET,
-        },
-    ),
-];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TransferError {

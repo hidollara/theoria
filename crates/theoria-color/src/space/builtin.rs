@@ -271,6 +271,39 @@ mod tests {
     }
 
     #[test]
+    fn srgb_curve_definitions_are_ordinary_piecewise_values() {
+        use crate::transfer::{CurveSegment, CurveSegmentKind, TransferCurve, TransferCurveKind};
+
+        let decoded_half = ((0.5_f64 + 0.055) / 1.055).powf(2.4);
+        let encoded_half = 1.055 * 0.5_f64.powf(1.0 / 2.4) - 0.055;
+        assert!((Srgb::decode_curve().evaluate(0.5) - decoded_half).abs() < 1e-12);
+        assert!((LinearSrgb::encode_curve().evaluate(0.5) - encoded_half).abs() < 1e-12);
+
+        for (named, threshold, expected, is_decode) in [
+            (Srgb::decode_curve(), 0.04045, 1.0 / 12.92, true),
+            (LinearSrgb::encode_curve(), 0.003_130_8, 12.92, false),
+        ] {
+            let TransferCurveKind::Piecewise(segments) = named.kind() else {
+                panic!("an sRGB curve must have a piecewise definition");
+            };
+            let generic = TransferCurve::piecewise(segments.to_vec()).unwrap();
+            assert_eq!(named, &generic);
+            assert_eq!(&generic == Srgb::decode_curve(), is_decode);
+            assert_eq!(&generic == LinearSrgb::encode_curve(), !is_decode);
+            let mut changed = segments.to_vec();
+            changed[0] = CurveSegment::exclusive(-threshold, CurveSegmentKind::Constant(0.0));
+            let changed = TransferCurve::piecewise(changed).unwrap();
+            assert_ne!(&changed, Srgb::decode_curve());
+            assert_ne!(&changed, LinearSrgb::encode_curve());
+            for value in [-2.0, -1.0, -threshold, 0.0, threshold, 0.5, 1.0, 2.0] {
+                assert!((named.evaluate(value) - generic.evaluate(value)).abs() < 1e-12);
+                assert!((named.evaluate(-value) + named.evaluate(value)).abs() < 1e-12);
+            }
+            assert!((named.evaluate(1e-5) / 1e-5 - expected).abs() < 1e-12);
+        }
+    }
+
+    #[test]
     fn related_builtin_spaces_use_direct_calculator_transfers() {
         for (source, destination, stages) in [
             (ColorSpace::from(HslSrgb), ColorSpace::from(Srgb), 1),

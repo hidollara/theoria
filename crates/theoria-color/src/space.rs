@@ -340,7 +340,7 @@ mod tests {
         };
         assert_eq!(
             curves.as_ref(),
-            vec![TransferCurve::srgb_decode(); 3].as_slice()
+            vec![Srgb::decode_curve().clone(); 3].as_slice()
         );
         let expected = 0.214_041_140_482_232_55;
         for actual in transform.evaluate(&[0.5; 3]).unwrap() {
@@ -354,22 +354,22 @@ mod tests {
             (
                 ColorSpace::from(Srgb),
                 ColorSpace::from(LinearSrgb),
-                TransferCurve::srgb_decode(),
+                Srgb::decode_curve().clone(),
             ),
             (
                 ColorSpace::from(LinearSrgb),
                 ColorSpace::from(Srgb),
-                TransferCurve::srgb_encode(),
+                LinearSrgb::encode_curve().clone(),
             ),
             (
                 ColorSpace::from(DisplayP3),
                 ColorSpace::from(LinearDisplayP3),
-                TransferCurve::srgb_decode(),
+                Srgb::decode_curve().clone(),
             ),
             (
                 ColorSpace::from(LinearDisplayP3),
                 ColorSpace::from(DisplayP3),
-                TransferCurve::srgb_encode(),
+                LinearSrgb::encode_curve().clone(),
             ),
         ] {
             let expected = Transfer::curves(vec![curve; 3]).unwrap();

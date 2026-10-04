@@ -1,15 +1,63 @@
+use std::sync::LazyLock;
+
 use super::{
     ColorProfile, ColorSpace, ConnectionSpace, HslSrgb, HwbSrgb, LinearSrgb, SpaceConnectionError,
     TypedColorSpace,
 };
 use crate::model::Rgb;
-use crate::transfer::{Transfer, TransferCurve, TransferError};
+use crate::transfer::{CurveSegment, CurveSegmentKind, Transfer, TransferCurve, TransferError};
 
 named_space!(Srgb, Rgb);
 
+const SRGB_DECODE_THRESHOLD: f64 = 0.04045;
+const SRGB_LINEAR_SCALE: f64 = 12.92;
+const SRGB_POWER_SCALE: f64 = 1.055;
+const SRGB_POWER_OFFSET: f64 = 0.055;
+const SRGB_GAMMA: f64 = 2.4;
+
+static SRGB_DECODE_SEGMENTS: [CurveSegment; 3] = [
+    CurveSegment::exclusive(
+        -SRGB_DECODE_THRESHOLD,
+        CurveSegmentKind::PowerAffine {
+            scale: -1.0 / SRGB_POWER_SCALE,
+            offset: SRGB_POWER_OFFSET / SRGB_POWER_SCALE,
+            exponent: SRGB_GAMMA,
+            output_scale: -1.0,
+            output_offset: 0.0,
+        },
+    ),
+    CurveSegment::new(
+        SRGB_DECODE_THRESHOLD,
+        CurveSegmentKind::Linear {
+            scale: 1.0 / SRGB_LINEAR_SCALE,
+            offset: 0.0,
+        },
+    ),
+    CurveSegment::new(
+        f64::INFINITY,
+        CurveSegmentKind::PowerAffine {
+            scale: 1.0 / SRGB_POWER_SCALE,
+            offset: SRGB_POWER_OFFSET / SRGB_POWER_SCALE,
+            exponent: SRGB_GAMMA,
+            output_scale: 1.0,
+            output_offset: 0.0,
+        },
+    ),
+];
+
 impl Srgb {
+    /// The extended-range sRGB decoding curve, expressed as ordinary segments.
+    /// Backends can compare curves with this definition to recognize the operation.
+    pub fn decode_curve() -> &'static TransferCurve {
+        static CURVE: LazyLock<TransferCurve> = LazyLock::new(|| {
+            TransferCurve::piecewise(SRGB_DECODE_SEGMENTS.clone())
+                .expect("valid sRGB curve definition")
+        });
+        &CURVE
+    }
+
     pub(crate) fn transfer_to_linear_srgb() -> Result<Transfer, TransferError> {
-        Transfer::curves(vec![TransferCurve::srgb_decode(); 3])
+        Transfer::curves(vec![Self::decode_curve().clone(); 3])
     }
 
     pub(crate) fn transfer_to_xyz_d65() -> Result<Transfer, TransferError> {
