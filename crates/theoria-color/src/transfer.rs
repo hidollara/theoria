@@ -2,12 +2,10 @@ use std::{error::Error, fmt, sync::Arc};
 
 mod calculator;
 mod evaluate;
-mod function;
 #[cfg(test)]
 mod tests;
 
 pub use calculator::{CalculatorBinary, CalculatorOperation, CalculatorUnary, TransferCalculator};
-pub use function::ColorFunction;
 
 /// A directed sequence of color-coordinate operations.
 ///
@@ -116,10 +114,6 @@ impl Transfer {
         })))
     }
 
-    pub fn color_function(function: ColorFunction) -> Self {
-        Self::single(TransferStage::ColorFunction(function))
-    }
-
     pub fn calculator(
         input_channels: usize,
         output_channels: usize,
@@ -202,7 +196,6 @@ pub enum TransferStage {
     Curves(Box<[TransferCurve]>),
     Matrix(TransferMatrix),
     Clut(TransferClut),
-    ColorFunction(ColorFunction),
     Calculator(TransferCalculator),
 }
 
@@ -212,7 +205,6 @@ impl TransferStage {
             Self::Curves(curves) => curves.len(),
             Self::Matrix(matrix) => matrix.input_channels,
             Self::Clut(clut) => clut.grid.len(),
-            Self::ColorFunction(function) => function.input_channels(),
             Self::Calculator(calculator) => calculator.input_channels(),
         }
     }
@@ -222,7 +214,6 @@ impl TransferStage {
             Self::Curves(curves) => curves.len(),
             Self::Matrix(matrix) => matrix.output_channels,
             Self::Clut(clut) => clut.output_channels,
-            Self::ColorFunction(function) => function.output_channels(),
             Self::Calculator(calculator) => calculator.output_channels(),
         }
     }

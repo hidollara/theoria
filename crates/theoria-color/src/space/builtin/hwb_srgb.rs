@@ -1,19 +1,34 @@
+use super::calculation::{input, number, transfer};
 use super::{
     ColorProfile, ColorSpace, ConnectionSpace, HslSrgb, LinearSrgb, SpaceConnectionError, Srgb,
     TypedColorSpace,
 };
 use crate::model::Hwb;
-use crate::transfer::{ColorFunction, Transfer, TransferError};
+use crate::transfer::{Transfer, TransferError};
 
 named_space!(HwbSrgb, Hwb);
 
 impl HwbSrgb {
     pub(crate) fn transfer_to_srgb() -> Result<Transfer, TransferError> {
-        Ok(Transfer::color_function(ColorFunction::HwbToRgb))
+        let white = input(1) / number(100.0);
+        let black = input(2) / number(100.0);
+        let sum = white.clone() + black;
+        transfer(
+            HslSrgb::rgb_channels(input(0), number(0.5), number(1.0)).map(|channel| {
+                sum.clone().ge(number(1.0)).choose(
+                    white.clone() / sum.clone(),
+                    channel * (number(1.0) - sum.clone()) + white.clone(),
+                )
+            }),
+        )
     }
 
     pub(crate) fn transfer_from_srgb() -> Result<Transfer, TransferError> {
-        Ok(Transfer::color_function(ColorFunction::RgbToHwb))
+        transfer([
+            HslSrgb::hue(),
+            input(0).min(input(1)).min(input(2)) * number(100.0),
+            (number(1.0) - input(0).max(input(1)).max(input(2))) * number(100.0),
+        ])
     }
 
     pub(crate) fn transfer_to_xyz_d65() -> Result<Transfer, TransferError> {

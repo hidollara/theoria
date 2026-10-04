@@ -1,19 +1,48 @@
+use super::calculation::{input, number, transfer};
 use super::{
     ColorProfile, ColorSpace, ConnectionSpace, LabD50, SpaceConnectionError, TypedColorSpace,
     XyzD50,
 };
 use crate::model::Lch;
-use crate::transfer::{ColorFunction, Transfer, TransferError};
+use crate::transfer::{CalculatorBinary as B, CalculatorUnary as U, Transfer, TransferError};
 
 named_space!(LchD50, Lch);
 
 impl LchD50 {
     pub(crate) fn transfer_to_lab_d50() -> Result<Transfer, TransferError> {
-        Ok(Transfer::color_function(ColorFunction::PolarToCartesian))
+        Self::polar_to_cartesian()
     }
 
     pub(crate) fn transfer_from_lab_d50() -> Result<Transfer, TransferError> {
-        Ok(Transfer::color_function(ColorFunction::CartesianToPolar))
+        Self::cartesian_to_polar()
+    }
+
+    pub(super) fn polar_to_cartesian() -> Result<Transfer, TransferError> {
+        let angle = input(2) * number(std::f64::consts::PI / 180.0);
+        transfer([
+            input(0),
+            input(1) * angle.clone().unary(U::Cos),
+            input(1) * angle.unary(U::Sin),
+        ])
+    }
+
+    pub(super) fn cartesian_to_polar() -> Result<Transfer, TransferError> {
+        // Scaled hypot avoids squaring the unscaled coordinates.
+        let x = input(1).unary(U::Abs);
+        let y = input(2).unary(U::Abs);
+        let scale = x.clone().max(y.clone());
+        let a = x / scale.clone();
+        let b = y / scale.clone();
+        let chroma = scale.clone().eq(number(0.0)).choose(
+            number(0.0),
+            scale.clone() * (a.clone() * a + b.clone() * b).unary(U::SquareRoot),
+        );
+        let hue = scale.eq(number(0.0)).choose(
+            number(0.0),
+            (input(1).binary(input(2), B::Atan2) * number(180.0 / std::f64::consts::PI))
+                .modulo(360.0),
+        );
+        transfer([input(0), chroma, hue])
     }
 
     pub(crate) fn transfer_to_xyz_d50() -> Result<Transfer, TransferError> {

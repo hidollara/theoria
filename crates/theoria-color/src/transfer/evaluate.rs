@@ -27,9 +27,6 @@ impl Transfer {
                 TransferStage::Matrix(matrix) => matrix.evaluate(&values),
                 TransferStage::Clut(clut) => clut.evaluate(&values),
                 TransferStage::Calculator(calculator) => calculator.evaluate(&values),
-                TransferStage::ColorFunction(function) => function
-                    .evaluate([values[0], values[1], values[2]])
-                    .to_vec(),
             };
         }
         if values.iter().any(|value| !value.is_finite()) {

@@ -49,6 +49,7 @@ macro_rules! builtin_space {
 }
 
 mod a98_rgb;
+mod calculation;
 mod display_p3;
 mod hsl_srgb;
 mod hwb_srgb;
@@ -270,7 +271,7 @@ mod tests {
     }
 
     #[test]
-    fn related_builtin_spaces_use_direct_color_functions() {
+    fn related_builtin_spaces_use_direct_calculator_transfers() {
         for (source, destination, stages) in [
             (ColorSpace::from(HslSrgb), ColorSpace::from(Srgb), 1),
             (ColorSpace::from(Srgb), ColorSpace::from(HslSrgb), 1),
@@ -297,6 +298,47 @@ mod tests {
             );
             assert_eq!(source.transfer_to(&destination).unwrap(), direct);
         }
+    }
+
+    #[test]
+    fn calculator_color_conversions_preserve_edges_and_extended_coordinates() {
+        let srgb = ColorSpace::from(Srgb);
+        for space in [ColorSpace::from(HslSrgb), ColorSpace::from(HwbSrgb)] {
+            let to = srgb.transfer_to(&space).unwrap();
+            let from = space.transfer_to(&srgb).unwrap();
+            for r in [0.0, 0.25, 0.5, 1.0] {
+                for g in [0.0, 0.25, 0.5, 1.0] {
+                    for b in [0.0, 0.25, 0.5, 1.0] {
+                        let input = [r, g, b];
+                        let output = from.evaluate(&to.evaluate(&input).unwrap()).unwrap();
+                        for (actual, expected) in output.iter().zip(input) {
+                            assert!((actual - expected).abs() < 1e-12);
+                        }
+                    }
+                }
+            }
+        }
+        let hls = ColorSpace::from(HslSrgb).transfer_to(&srgb).unwrap();
+        assert_eq!(
+            hls.evaluate(&[-720.0, 50.0, 100.0]).unwrap(),
+            [1.0, 0.0, 0.0]
+        );
+        assert_eq!(
+            hls.evaluate(&[-600.0, 50.0, 100.0]).unwrap(),
+            [0.0, 1.0, 0.0]
+        );
+        let hwb = ColorSpace::from(HwbSrgb).transfer_to(&srgb).unwrap();
+        assert_eq!(hwb.evaluate(&[42.0, 80.0, 80.0]).unwrap(), [0.5; 3]);
+        let lab = ColorSpace::from(LabD50);
+        let lch = ColorSpace::from(LchD50);
+        let polar = lab.transfer_to(&lch).unwrap();
+        assert_eq!(polar.evaluate(&[50.0, 0.0, 0.0]).unwrap(), [50.0, 0.0, 0.0]);
+        assert_eq!(
+            polar.evaluate(&[50.0, 0.0, -40.0]).unwrap(),
+            [50.0, 40.0, 270.0]
+        );
+        let huge = polar.evaluate(&[50.0, 3e200, 4e200]).unwrap();
+        assert!((huge[1] / 5e200 - 1.0).abs() < 1e-12);
     }
 
     #[test]
