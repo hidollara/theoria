@@ -50,7 +50,7 @@ impl ConnectionSpace {
         let from_d50 = match destination {
             Self::XyzD65 => XyzD50::transfer_to_xyz_d65(),
             Self::XyzD50 => Transfer::IDENTITY,
-            Self::LabD50 => XyzD50::transfer_to_lab_d50(),
+            Self::LabD50 => LabD50::transfer_from_xyz_d50(),
         };
         to_d50
             .then(&from_d50)
@@ -359,7 +359,7 @@ mod tests {
             (
                 ColorSpace::from(LinearSrgb),
                 ColorSpace::from(Srgb),
-                LinearSrgb::encode_curve().clone(),
+                Srgb::encode_curve().clone(),
             ),
             (
                 ColorSpace::from(DisplayP3),
@@ -369,7 +369,7 @@ mod tests {
             (
                 ColorSpace::from(LinearDisplayP3),
                 ColorSpace::from(DisplayP3),
-                LinearSrgb::encode_curve().clone(),
+                Srgb::encode_curve().clone(),
             ),
         ] {
             let expected = Transfer::curves(vec![curve; 3]).unwrap();
@@ -397,7 +397,7 @@ mod tests {
     #[test]
     fn d65_and_lab_connection_spaces_bridge_through_xyz_d50() {
         let expected = XyzD65::transfer_to_xyz_d50()
-            .then(&XyzD50::transfer_to_lab_d50())
+            .then(&LabD50::transfer_from_xyz_d50())
             .unwrap();
         assert_eq!(
             ConnectionSpace::XyzD65.transfer_to(ConnectionSpace::LabD50),
@@ -431,7 +431,7 @@ mod tests {
         assert!(lab.direct_to(&xyz).unwrap().is_none());
         assert_eq!(
             xyz.transfer_to(&lab).unwrap(),
-            XyzD50::transfer_to_lab_d50()
+            LabD50::transfer_from_xyz_d50()
         );
         assert_eq!(
             lab.transfer_to(&xyz).unwrap(),

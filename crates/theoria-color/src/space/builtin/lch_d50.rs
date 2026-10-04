@@ -1,7 +1,6 @@
 use super::calculation::{input, number, transfer};
 use super::{
     ColorProfile, ColorSpace, ConnectionSpace, LabD50, SpaceConnectionError, TypedColorSpace,
-    XyzD50,
 };
 use crate::model::Lch;
 use crate::transfer::{CalculatorBinary as B, CalculatorUnary as U, Transfer, TransferError};
@@ -50,7 +49,7 @@ impl LchD50 {
     }
 
     pub(crate) fn transfer_from_xyz_d50() -> Result<Transfer, TransferError> {
-        XyzD50::transfer_to_lab_d50().then(&Self::transfer_from_lab_d50()?)
+        LabD50::transfer_from_xyz_d50().then(&Self::transfer_from_lab_d50()?)
     }
 }
 

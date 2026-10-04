@@ -9,11 +9,12 @@ use crate::transfer::{CurveSegment, CurveSegmentKind, Transfer, TransferCurve, T
 
 named_space!(Srgb, Rgb);
 
+const SRGB_ENCODE_THRESHOLD: f64 = 0.003_130_8;
 const SRGB_DECODE_THRESHOLD: f64 = 0.04045;
+const SRGB_GAMMA: f64 = 2.4;
 const SRGB_LINEAR_SCALE: f64 = 12.92;
 const SRGB_POWER_SCALE: f64 = 1.055;
 const SRGB_POWER_OFFSET: f64 = 0.055;
-const SRGB_GAMMA: f64 = 2.4;
 
 static SRGB_DECODE_SEGMENTS: [CurveSegment; 3] = [
     CurveSegment::exclusive(
@@ -45,7 +46,47 @@ static SRGB_DECODE_SEGMENTS: [CurveSegment; 3] = [
     ),
 ];
 
+static SRGB_ENCODE_SEGMENTS: [CurveSegment; 3] = [
+    CurveSegment::exclusive(
+        -SRGB_ENCODE_THRESHOLD,
+        CurveSegmentKind::PowerAffine {
+            scale: -1.0,
+            offset: 0.0,
+            exponent: 1.0 / SRGB_GAMMA,
+            output_scale: -SRGB_POWER_SCALE,
+            output_offset: SRGB_POWER_OFFSET,
+        },
+    ),
+    CurveSegment::new(
+        SRGB_ENCODE_THRESHOLD,
+        CurveSegmentKind::Linear {
+            scale: SRGB_LINEAR_SCALE,
+            offset: 0.0,
+        },
+    ),
+    CurveSegment::new(
+        f64::INFINITY,
+        CurveSegmentKind::PowerAffine {
+            scale: 1.0,
+            offset: 0.0,
+            exponent: 1.0 / SRGB_GAMMA,
+            output_scale: SRGB_POWER_SCALE,
+            output_offset: -SRGB_POWER_OFFSET,
+        },
+    ),
+];
+
 impl Srgb {
+    /// The extended-range sRGB encoding curve, expressed as ordinary segments.
+    /// Backends can compare curves with this definition to recognize the operation.
+    pub fn encode_curve() -> &'static TransferCurve {
+        static CURVE: LazyLock<TransferCurve> = LazyLock::new(|| {
+            TransferCurve::piecewise(SRGB_ENCODE_SEGMENTS.clone())
+                .expect("valid sRGB curve definition")
+        });
+        &CURVE
+    }
+
     /// The extended-range sRGB decoding curve, expressed as ordinary segments.
     /// Backends can compare curves with this definition to recognize the operation.
     pub fn decode_curve() -> &'static TransferCurve {
@@ -60,12 +101,16 @@ impl Srgb {
         Transfer::curves(vec![Self::decode_curve().clone(); 3])
     }
 
+    pub(crate) fn transfer_from_linear_srgb() -> Result<Transfer, TransferError> {
+        Transfer::curves(vec![Self::encode_curve().clone(); 3])
+    }
+
     pub(crate) fn transfer_to_xyz_d65() -> Result<Transfer, TransferError> {
         Self::transfer_to_linear_srgb()?.then(&LinearSrgb::transfer_to_xyz_d65()?)
     }
 
     pub(crate) fn transfer_from_xyz_d65() -> Result<Transfer, TransferError> {
-        LinearSrgb::transfer_from_xyz_d65()?.then(&LinearSrgb::transfer_to_srgb()?)
+        LinearSrgb::transfer_from_xyz_d65()?.then(&Srgb::transfer_from_linear_srgb()?)
     }
 }
 

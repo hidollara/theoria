@@ -1,6 +1,5 @@
 use super::{
-    ColorProfile, ColorSpace, ConnectionSpace, DisplayP3, LinearSrgb, SpaceConnectionError,
-    TypedColorSpace,
+    ColorProfile, ColorSpace, ConnectionSpace, DisplayP3, SpaceConnectionError, TypedColorSpace,
 };
 use crate::model::Rgb;
 use crate::transfer::{Transfer, TransferError};
@@ -66,11 +65,7 @@ impl ColorProfile for LinearDisplayP3Profile {
         destination: &ColorSpace,
     ) -> Result<Option<Transfer>, SpaceConnectionError> {
         if *destination == ColorSpace::from(DisplayP3) {
-            Ok(Some(Transfer::curves(vec![
-                LinearSrgb::encode_curve()
-                    .clone();
-                3
-            ])?))
+            Ok(Some(DisplayP3::transfer_from_linear_display_p3()?))
         } else {
             Ok(None)
         }

@@ -11,9 +11,7 @@ use moxcms::{
 
 use super::icc_mpe::MpeTags;
 use super::model::ColorModel;
-use super::space::{
-    ColorProfile, ColorSpace, ConnectionSpace, LabD50, SpaceConnectionError, XyzD50,
-};
+use super::space::{ColorProfile, ColorSpace, ConnectionSpace, LabD50, SpaceConnectionError};
 use super::transfer::{
     CurveSegment, CurveSegmentKind, ICC_PCS_D50_XYZ, Transfer, TransferCurve, TransferError,
 };
@@ -262,7 +260,7 @@ impl IccProfileData {
         if self.pcs == Pcs::LabD50 {
             Ok(LabD50::transfer_to_xyz_d50()
                 .then(&adjustment)?
-                .then(&XyzD50::transfer_to_lab_d50())?)
+                .then(&LabD50::transfer_from_xyz_d50())?)
         } else {
             Ok(adjustment)
         }

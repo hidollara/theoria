@@ -1,6 +1,6 @@
 use super::{
-    ColorProfile, ColorSpace, ConnectionSpace, LinearDisplayP3, LinearSrgb, SpaceConnectionError,
-    Srgb, TypedColorSpace,
+    ColorProfile, ColorSpace, ConnectionSpace, LinearDisplayP3, SpaceConnectionError, Srgb,
+    TypedColorSpace,
 };
 use crate::model::Rgb;
 use crate::transfer::{Transfer, TransferError};
@@ -8,15 +8,20 @@ use crate::transfer::{Transfer, TransferError};
 named_space!(DisplayP3, Rgb);
 
 impl DisplayP3 {
+    pub(crate) fn transfer_to_linear_display_p3() -> Result<Transfer, TransferError> {
+        Transfer::curves(vec![Srgb::decode_curve().clone(); 3])
+    }
+
+    pub(crate) fn transfer_from_linear_display_p3() -> Result<Transfer, TransferError> {
+        Transfer::curves(vec![Srgb::encode_curve().clone(); 3])
+    }
+
     pub(crate) fn transfer_to_xyz_d65() -> Result<Transfer, TransferError> {
-        Transfer::curves(vec![Srgb::decode_curve().clone(); 3])?
-            .then(&LinearDisplayP3::transfer_to_xyz_d65()?)
+        Self::transfer_to_linear_display_p3()?.then(&LinearDisplayP3::transfer_to_xyz_d65()?)
     }
 
     pub(crate) fn transfer_from_xyz_d65() -> Result<Transfer, TransferError> {
-        LinearDisplayP3::transfer_from_xyz_d65()?.then(&Transfer::curves(
-            vec![LinearSrgb::encode_curve().clone(); 3],
-        )?)
+        LinearDisplayP3::transfer_from_xyz_d65()?.then(&Self::transfer_from_linear_display_p3()?)
     }
 }
 
@@ -44,10 +49,7 @@ impl ColorProfile for DisplayP3Profile {
         destination: &ColorSpace,
     ) -> Result<Option<Transfer>, SpaceConnectionError> {
         if *destination == ColorSpace::from(super::LinearDisplayP3) {
-            Ok(Some(Transfer::curves(vec![
-                Srgb::decode_curve().clone();
-                3
-            ])?))
+            Ok(Some(DisplayP3::transfer_to_linear_display_p3()?))
         } else {
             Ok(None)
         }
