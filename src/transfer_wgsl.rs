@@ -1,5 +1,8 @@
 use std::{error::Error, fmt};
 
+#[path = "transfer_wgsl/calculator.rs"]
+mod calculator;
+
 use theoria_color::{
     ColorFunction, CurveSegmentKind, Transfer, TransferClut, TransferCurve, TransferCurveKind,
     TransferStage,
@@ -102,6 +105,13 @@ fn lower_wgsl(
             continue;
         }
         let mut expressions = Vec::with_capacity(stage.output_channels());
+        if let TransferStage::Calculator(calculator) = stage {
+            let name = format!("{prefix}_calculator_{stage_index}");
+            helpers.push_str(&self::calculator::wgsl(calculator, &name)?);
+            body.push_str(&format!("    let {output_name} = {name}({input_name});\n"));
+            input_name = output_name;
+            continue;
+        }
         match stage {
             TransferStage::Curves(curves) => {
                 for (channel, curve) in curves.iter().enumerate() {
@@ -130,6 +140,7 @@ fn lower_wgsl(
             }
             TransferStage::Clut(_) => unreachable!("CLUT stages are handled above"),
             TransferStage::ColorFunction(_) => unreachable!("color functions are handled above"),
+            TransferStage::Calculator(_) => unreachable!("calculators are handled above"),
         }
         body.push_str(&format!(
             "    let {output_name} = array<f32, {}>({});\n",
@@ -622,6 +633,87 @@ mod tests {
             let transfer = Transfer::color_function(function);
             validate(&transfer.wgsl(54).unwrap());
         }
+    }
+
+    #[test]
+    fn calculators_generate_valid_wgsl_for_all_operations_and_lazy_branches() {
+        use theoria_color::{
+            CalculatorBinary as B, CalculatorOperation as O, CalculatorUnary as U,
+        };
+        for operation in [
+            U::Negate,
+            U::Abs,
+            U::SquareRoot,
+            U::CubeRoot,
+            U::Floor,
+            U::Ceil,
+            U::Truncate,
+            U::Round,
+            U::Exp,
+            U::Ln,
+            U::Log10,
+            U::Sin,
+            U::Cos,
+            U::Tan,
+            U::Asin,
+            U::Acos,
+            U::Atan,
+        ] {
+            validate(
+                &Transfer::calculator(1, 1, [O::Input(0), O::Unary(operation)])
+                    .unwrap()
+                    .wgsl(90)
+                    .unwrap(),
+            );
+        }
+        for operation in [
+            B::Add,
+            B::Subtract,
+            B::Multiply,
+            B::Divide,
+            B::Remainder,
+            B::Power,
+            B::Min,
+            B::Max,
+            B::Atan2,
+            B::Equal,
+            B::Less,
+            B::LessEqual,
+            B::Greater,
+            B::GreaterEqual,
+        ] {
+            validate(
+                &Transfer::calculator(2, 1, [O::Input(0), O::Input(1), O::Binary(operation)])
+                    .unwrap()
+                    .wgsl(91)
+                    .unwrap(),
+            );
+        }
+        let transfer = Transfer::calculator(
+            2,
+            2,
+            [
+                O::Input(0),
+                O::Duplicate(0),
+                O::Constant(0.0),
+                O::Binary(B::Greater),
+                O::IfElse {
+                    when_true: vec![O::Discard, O::Input(1), O::Unary(U::SquareRoot)].into(),
+                    when_false: vec![O::Constant(-1.0), O::Binary(B::Multiply)].into(),
+                },
+                O::Duplicate(0),
+            ],
+        )
+        .unwrap();
+        let source = transfer.wgsl(92).unwrap();
+        validate(&source);
+        assert!(source.contains("if calc_"));
+        assert!(source.contains("else {"));
+        assert!(source.contains("sqrt("));
+        assert_eq!(
+            source,
+            transfer.wgsl_with_storage(92, 0, 0).unwrap().source()
+        );
     }
 
     #[test]

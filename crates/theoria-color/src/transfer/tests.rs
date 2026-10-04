@@ -2,6 +2,123 @@ use super::*;
 use crate::space::{ColorSpace, LabD50, XyzD50};
 
 #[test]
+fn calculator_changes_channels_and_evaluates_only_the_selected_branch() {
+    use CalculatorOperation::*;
+    let transfer = Transfer::calculator(
+        2,
+        1,
+        [
+            Input(0),
+            Constant(0.0),
+            Binary(CalculatorBinary::Greater),
+            IfElse {
+                when_true: vec![Input(1), Unary(CalculatorUnary::SquareRoot)].into(),
+                when_false: vec![Constant(7.0)].into(),
+            },
+        ],
+    )
+    .unwrap();
+    assert!(transfer.supports_channels(2, 1));
+    assert_eq!(transfer.evaluate(&[1.0, 9.0]).unwrap(), [3.0]);
+    assert_eq!(transfer.evaluate(&[-1.0, -9.0]).unwrap(), [7.0]);
+    assert_eq!(
+        transfer.evaluate(&[1.0, -9.0]),
+        Err(TransferError::NonFiniteValue)
+    );
+    let matrix = Transfer::matrix([[2.0]], [1.0]).unwrap();
+    assert_eq!(
+        transfer
+            .then(&matrix)
+            .unwrap()
+            .evaluate(&[1.0, 9.0])
+            .unwrap(),
+        [7.0]
+    );
+}
+
+#[test]
+fn calculator_rejects_invalid_programs_at_construction() {
+    use CalculatorOperation::*;
+    for operations in [
+        vec![Input(1)],
+        vec![Discard],
+        vec![Duplicate(0)],
+        vec![Unary(CalculatorUnary::Sin)],
+        vec![Constant(1.0), Binary(CalculatorBinary::Add)],
+        vec![
+            Constant(1.0),
+            IfElse {
+                when_true: vec![Constant(1.0)].into(),
+                when_false: vec![].into(),
+            },
+        ],
+        vec![
+            Constant(0.0),
+            IfElse {
+                when_true: vec![Input(1)].into(),
+                when_false: vec![Constant(1.0)].into(),
+            },
+        ],
+    ] {
+        assert_eq!(
+            Transfer::calculator(1, 1, operations),
+            Err(TransferError::InvalidCalculator)
+        );
+    }
+    assert!(matches!(
+        Transfer::calculator(1, 2, [Input(0)]),
+        Err(TransferError::ChannelMismatch { .. })
+    ));
+    assert_eq!(
+        Transfer::calculator(1, 1, [Constant(f64::NAN)]),
+        Err(TransferError::NonFiniteValue)
+    );
+    let mut nested = vec![Constant(1.0)];
+    for _ in 0..66 {
+        nested = vec![
+            Constant(1.0),
+            IfElse {
+                when_true: nested.into(),
+                when_false: vec![Constant(1.0)].into(),
+            },
+        ];
+    }
+    assert_eq!(
+        Transfer::calculator(1, 1, nested),
+        Err(TransferError::InvalidCalculator)
+    );
+}
+
+#[test]
+fn calculator_operand_order_stack_and_rounding_are_explicit() {
+    use CalculatorOperation::*;
+    let transfer = Transfer::calculator(
+        2,
+        4,
+        [
+            Input(0),
+            Input(1),
+            Binary(CalculatorBinary::Subtract),
+            Duplicate(0),
+            Constant(2.0),
+            Binary(CalculatorBinary::Divide),
+            Input(0),
+            Input(1),
+            Binary(CalculatorBinary::Atan2),
+            Constant(-2.5),
+            Unary(CalculatorUnary::Round),
+            Constant(99.0),
+            Discard,
+        ],
+    )
+    .unwrap();
+    assert_eq!(
+        transfer.evaluate(&[3.0, 1.0]).unwrap(),
+        [2.0, 1.0, 1.0_f64.atan2(3.0), -3.0]
+    );
+}
+
+#[test]
 fn d50_pcs_white_black_and_negative_roundtrip() {
     let xyz = ColorSpace::from(XyzD50);
     let lab = ColorSpace::from(LabD50);

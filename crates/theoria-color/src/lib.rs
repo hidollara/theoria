@@ -20,6 +20,7 @@ pub use space::{
     Srgb, TypedColorSpace, XyzD50, XyzD65,
 };
 pub use transfer::{
-    ColorFunction, CurveSegment, CurveSegmentKind, Transfer, TransferClut, TransferCurve,
-    TransferCurveKind, TransferError, TransferMatrix, TransferStage,
+    CalculatorBinary, CalculatorOperation, CalculatorUnary, ColorFunction, CurveSegment,
+    CurveSegmentKind, Transfer, TransferCalculator, TransferClut, TransferCurve, TransferCurveKind,
+    TransferError, TransferMatrix, TransferStage,
 };

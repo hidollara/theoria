@@ -1,10 +1,12 @@
 use std::{error::Error, fmt, sync::Arc};
 
+mod calculator;
 mod evaluate;
 mod function;
 #[cfg(test)]
 mod tests;
 
+pub use calculator::{CalculatorBinary, CalculatorOperation, CalculatorUnary, TransferCalculator};
 pub use function::ColorFunction;
 
 /// A directed sequence of color-coordinate operations.
@@ -118,6 +120,16 @@ impl Transfer {
         Self::single(TransferStage::ColorFunction(function))
     }
 
+    pub fn calculator(
+        input_channels: usize,
+        output_channels: usize,
+        operations: impl Into<Box<[CalculatorOperation]>>,
+    ) -> Result<Self, TransferError> {
+        Ok(Self::single(TransferStage::Calculator(
+            TransferCalculator::new(input_channels, output_channels, operations.into())?,
+        )))
+    }
+
     fn matrix_from_parts(
         input_channels: usize,
         output_channels: usize,
@@ -191,6 +203,7 @@ pub enum TransferStage {
     Matrix(TransferMatrix),
     Clut(TransferClut),
     ColorFunction(ColorFunction),
+    Calculator(TransferCalculator),
 }
 
 impl TransferStage {
@@ -200,6 +213,7 @@ impl TransferStage {
             Self::Matrix(matrix) => matrix.input_channels,
             Self::Clut(clut) => clut.grid.len(),
             Self::ColorFunction(function) => function.input_channels(),
+            Self::Calculator(calculator) => calculator.input_channels(),
         }
     }
 
@@ -209,6 +223,7 @@ impl TransferStage {
             Self::Matrix(matrix) => matrix.output_channels,
             Self::Clut(clut) => clut.output_channels,
             Self::ColorFunction(function) => function.output_channels(),
+            Self::Calculator(calculator) => calculator.output_channels(),
         }
     }
 }
@@ -624,6 +639,7 @@ pub enum TransferError {
     InvalidMatrixShape,
     InvalidClutShape,
     InvalidCurve,
+    InvalidCalculator,
     NonFiniteValue,
 }
 
@@ -639,6 +655,9 @@ impl fmt::Display for TransferError {
             }
             Self::InvalidClutShape => formatter.write_str("invalid CLUT dimensions or samples"),
             Self::InvalidCurve => formatter.write_str("invalid transfer curve"),
+            Self::InvalidCalculator => {
+                formatter.write_str("invalid calculator input, stack or branch structure")
+            }
             Self::NonFiniteValue => formatter.write_str("transfer data and values must be finite"),
         }
     }
