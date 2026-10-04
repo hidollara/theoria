@@ -1,27 +1,3 @@
-mod hsl;
-mod hwb;
-mod lab;
-mod lch;
-mod oklab;
-mod oklch;
-mod rgb;
-mod xyz;
-
-pub use hsl::Hsl;
-pub use hwb::Hwb;
-pub use lab::Lab;
-pub use lch::Lch;
-pub use oklab::Oklab;
-pub use oklch::Oklch;
-pub use rgb::Rgb;
-pub use xyz::Xyz;
-
-/// An authored coordinate representation accepted by a color model.
-///
-/// This does not impose a value range. Representations with invariants enforce
-/// them when their values are constructed.
-pub trait ColorCoordinates<M: TypedColorModel>: 'static {}
-
 /// Marks a coordinate model for statically typed color spaces.
 ///
 /// The model groups compatible coordinate representations; a profile defines
@@ -29,15 +5,46 @@ pub trait ColorCoordinates<M: TypedColorModel>: 'static {}
 /// the runtime metadata exposed by [`crate::space::ColorSpace`].
 pub trait TypedColorModel: Sized + 'static {}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Rgb;
 
-    fn accepts<M: TypedColorModel, C: ColorCoordinates<M>>() {}
+impl TypedColorModel for Rgb {}
 
-    #[test]
-    fn models_accept_whole_coordinate_representations() {
-        accepts::<Rgb, [u8; 3]>();
-        accepts::<Lab, [f32; 3]>();
-    }
-}
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Xyz;
+
+impl TypedColorModel for Xyz {}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Lab;
+
+impl TypedColorModel for Lab {}
+
+/// CIE Lab lightness, chroma, and hue in degrees.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Lch;
+
+impl TypedColorModel for Lch {}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Oklab;
+
+impl TypedColorModel for Oklab {}
+
+/// Oklab lightness, chroma, and hue in degrees.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Oklch;
+
+impl TypedColorModel for Oklch {}
+
+/// Hue (degrees), saturation (percent), and lightness (percent).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Hsl;
+
+impl TypedColorModel for Hsl {}
+
+/// Hue (degrees), whiteness (percent), and blackness (percent).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Hwb;
+
+impl TypedColorModel for Hwb {}

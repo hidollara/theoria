@@ -1,6 +1,7 @@
 mod blend;
 pub(crate) mod canvas_image;
 mod color;
+mod color_coordinates;
 mod color_field;
 mod composition;
 pub(crate) mod composition_shader;
@@ -14,6 +15,7 @@ pub use blend::{Blend, BlendMode, BlendOperation, BlendShader, BlendShaderError,
 pub use canvas_image::{CanvasImage, CanvasImageError};
 pub(crate) use color::ColorValue;
 pub use color::{Color, ColorError};
+pub use color_coordinates::ColorCoordinates;
 pub use color_field::{
     AcrossPathGradient, AcrossPathGradientError, AlongPathGradient, ColorField, ColorRamp,
     ColorRampError, ConicGradient, ConicGradientError, GradientExtend, GradientPoint, GradientStop,
