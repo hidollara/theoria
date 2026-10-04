@@ -10,9 +10,19 @@ use crate::{
 /// A separate runtime space with the same conversions and coordinate geometry.
 /// This exercises space identity without manufacturing another standard space.
 pub(crate) fn distinct_color_space(space: impl Into<ColorSpace>) -> ColorSpace {
-    struct Distinct(ColorSpace);
+    struct Distinct(ColorSpace, u64);
 
     impl ColorProfile for Distinct {
+        fn equivalent(&self, other: &dyn ColorProfile) -> bool {
+            (other as &dyn std::any::Any)
+                .downcast_ref::<Self>()
+                .is_some_and(|other| self.1 == other.1)
+        }
+
+        fn hash(&self, mut state: &mut dyn std::hash::Hasher) {
+            std::hash::Hash::hash(&self.1, &mut state);
+        }
+
         fn model(&self) -> crate::color::ColorModel {
             self.0.model()
         }
@@ -38,7 +48,11 @@ pub(crate) fn distinct_color_space(space: impl Into<ColorSpace>) -> ColorSpace {
     }
 
     let space = space.into();
-    ColorSpace::new(Distinct(space))
+    static NEXT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    ColorSpace::new(Distinct(
+        space,
+        NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+    ))
 }
 
 pub(crate) struct TestDriver {

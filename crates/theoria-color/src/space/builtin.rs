@@ -1,4 +1,8 @@
-use std::marker::PhantomData;
+use std::{
+    any::TypeId,
+    hash::{Hash, Hasher},
+    marker::PhantomData,
+};
 
 use super::{ColorProfile, ColorSpace, ConnectionSpace, SpaceConnectionError, TypedColorSpace};
 #[cfg(test)]
@@ -18,6 +22,14 @@ impl<S> TypedProfile<S> {
 }
 
 impl<S: TypedColorSpace> ColorProfile for TypedProfile<S> {
+    fn equivalent(&self, other: &dyn ColorProfile) -> bool {
+        other.type_id() == TypeId::of::<Self>()
+    }
+
+    fn hash(&self, mut state: &mut dyn Hasher) {
+        TypeId::of::<Self>().hash(&mut state);
+    }
+
     fn model(&self) -> ColorModel {
         S::Model::MODEL
     }
@@ -119,6 +131,17 @@ mod tests {
         fn check<S: TypedColorSpace + Copy>(definition: S) {
             let space: ColorSpace = definition.into();
             assert_eq!(space, definition.into());
+            let reconstructed = ColorSpace::new(TypedProfile::<S>::new());
+            assert!(!std::sync::Arc::ptr_eq(
+                &space.profile,
+                &reconstructed.profile
+            ));
+            assert_eq!(space, reconstructed);
+            assert_eq!(
+                HashSet::from([space.clone(), reconstructed.clone()]).len(),
+                1
+            );
+            assert!(space.direct_to(&reconstructed).unwrap().unwrap().is_empty());
             assert_eq!(space.model(), S::Model::MODEL);
             assert_eq!(space.connection_space(), S::connection_space());
             assert_eq!(

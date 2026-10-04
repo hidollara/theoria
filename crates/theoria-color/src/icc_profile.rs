@@ -1,6 +1,8 @@
 use std::{
+    any::Any,
     error::Error,
     fmt,
+    hash::{Hash, Hasher},
     sync::{Arc, OnceLock},
 };
 
@@ -766,6 +768,19 @@ impl Error for IccProfileError {
 }
 
 impl ColorProfile for IccColorProfile {
+    fn equivalent(&self, other: &dyn ColorProfile) -> bool {
+        (other as &dyn Any)
+            .downcast_ref::<Self>()
+            .is_some_and(|other| {
+                Arc::ptr_eq(&self.data, &other.data) && self.intent == other.intent
+            })
+    }
+
+    fn hash(&self, mut state: &mut dyn Hasher) {
+        Arc::as_ptr(&self.data).hash(&mut state);
+        self.intent.hash(&mut state);
+    }
+
     fn model(&self) -> ColorModel {
         icc_model(self.data.parsed.color_space)
     }
@@ -1303,6 +1318,18 @@ mod tests {
         let bytes = ParsedProfile::new_srgb().encode().unwrap();
         let first = IccProfile::from_bytes(&bytes).unwrap();
         let second = IccProfile::from_bytes(&bytes).unwrap();
+
+        let selected = first.color_space(IccRenderingIntent::RelativeColorimetric);
+        let reconstructed = ColorSpace::new(IccColorProfile {
+            data: first.inner.clone(),
+            intent: IccRenderingIntent::RelativeColorimetric,
+        });
+        assert_eq!(selected, reconstructed);
+        assert_eq!(
+            std::collections::HashSet::from([selected.clone(), reconstructed.clone()]).len(),
+            1
+        );
+        assert!(selected.transfer_to(&reconstructed).unwrap().is_empty());
 
         assert_eq!(
             first.color_space(IccRenderingIntent::RelativeColorimetric),

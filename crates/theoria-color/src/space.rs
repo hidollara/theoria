@@ -1,4 +1,5 @@
 use std::{
+    any::Any,
     error::Error,
     fmt,
     hash::{Hash, Hasher},
@@ -76,8 +77,8 @@ impl ConnectionSpace {
 ///
 /// This handle does not itself validate the range of an individual coordinate
 /// value or guarantee that the profile supports both directions for the
-/// selected intent. Equality is the identity of the shared profile allocation,
-/// which clones retain.
+/// selected intent. Equality and hashing use the selected profile's equivalence
+/// contract, independently of the allocation of this handle.
 #[derive(Clone)]
 pub struct ColorSpace {
     profile: Arc<dyn ColorProfile>,
@@ -189,7 +190,7 @@ impl From<&ColorSpace> for ColorSpace {
 
 impl PartialEq for ColorSpace {
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.profile, &other.profile)
+        self.profile.equivalent(other.profile.as_ref())
     }
 }
 
@@ -197,7 +198,7 @@ impl Eq for ColorSpace {}
 
 impl Hash for ColorSpace {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        (Arc::as_ptr(&self.profile) as *const ()).hash(state);
+        self.profile.hash(state);
     }
 }
 
@@ -218,7 +219,16 @@ impl fmt::Debug for ColorSpace {
 /// Definitions are `Send + Sync` so their handles can be shared by renderers.
 /// `model`, `channels`, and `connection_space` must remain stable for the lifetime of
 /// the profile so its [`ColorSpace`] handle has stable identity.
-pub trait ColorProfile: Send + Sync {
+pub trait ColorProfile: Any + Send + Sync {
+    /// Compares selected definitions, not their handle allocations.
+    /// Must be reflexive, symmetric, and transitive, and remain stable while
+    /// the profile is alive. Equivalent profiles must expose the same model,
+    /// channel count, and conversion behavior.
+    fn equivalent(&self, other: &dyn ColorProfile) -> bool;
+
+    /// Hashes the equivalence definition. Equivalent profiles must hash alike.
+    fn hash(&self, state: &mut dyn Hasher);
+
     /// The model of authored input coordinates, not the connection-space model.
     fn model(&self) -> ColorModel;
 
@@ -526,6 +536,16 @@ mod tests {
         struct LinkedSpace(Option<ColorSpace>);
 
         impl ColorProfile for LinkedSpace {
+            fn equivalent(&self, other: &dyn ColorProfile) -> bool {
+                (other as &dyn Any)
+                    .downcast_ref::<Self>()
+                    .is_some_and(|other| self.0 == other.0)
+            }
+
+            fn hash(&self, mut state: &mut dyn Hasher) {
+                self.0.hash(&mut state);
+            }
+
             fn model(&self) -> ColorModel {
                 ColorModel::Rgb
             }
@@ -567,6 +587,14 @@ mod tests {
         struct InvalidLink;
 
         impl ColorProfile for InvalidLink {
+            fn equivalent(&self, other: &dyn ColorProfile) -> bool {
+                other.type_id() == std::any::TypeId::of::<Self>()
+            }
+
+            fn hash(&self, mut state: &mut dyn Hasher) {
+                std::any::TypeId::of::<Self>().hash(&mut state);
+            }
+
             fn model(&self) -> ColorModel {
                 ColorModel::Rgb
             }
@@ -605,6 +633,14 @@ mod tests {
         struct InvalidPcs;
 
         impl ColorProfile for InvalidPcs {
+            fn equivalent(&self, other: &dyn ColorProfile) -> bool {
+                other.type_id() == std::any::TypeId::of::<Self>()
+            }
+
+            fn hash(&self, mut state: &mut dyn Hasher) {
+                std::any::TypeId::of::<Self>().hash(&mut state);
+            }
+
             fn model(&self) -> ColorModel {
                 ColorModel::Other { channels: 4 }
             }
