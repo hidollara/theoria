@@ -317,7 +317,7 @@ mod tests {
             "/crates/theoria-color/src/color/fixtures/sRGB-v4.icc"
         )))
         .unwrap();
-        let color = crate::canvas::Color::new_in_space(
+        let color = crate::canvas::Color::new_in_space::<crate::color::Rgb>(
             profile.color_space(crate::color::IccRenderingIntent::RelativeColorimetric),
             vec![0.25, 0.5, 0.75],
             Opacity::<f32>::ONE,

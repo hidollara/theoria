@@ -3,7 +3,8 @@ use std::{error::Error, fmt, sync::Arc};
 use super::color_coordinates::ColorCoordinates;
 use super::opacity::{Opacity, OpacitySample};
 use crate::color::{
-    ColorSpace, IccProfileError, SpaceConnectionError, TransferError, TypedColorSpace,
+    ColorModel, ColorSpace, IccProfileError, SpaceConnectionError, TransferError, TypedColorModel,
+    TypedColorSpace,
 };
 
 /// A Canvas color retaining its authored space and coordinate representation.
@@ -97,16 +98,27 @@ impl Alpha {
 impl Color {
     /// Retains the authored coordinates and opacity without converting color spaces.
     /// Only coordinate representations supported by Canvas can be constructed.
+    ///
+    /// ```compile_fail
+    /// use theoria::{canvas::{Color, Opacity}, color::LabD50};
+    /// // Unsigned RGB code values are not Lab coordinates.
+    /// Color::new(LabD50, [1_u8, 2, 3], Opacity::<u8>::ONE);
+    /// ```
     #[allow(private_bounds)]
-    pub fn new<S, C, A>(space: S, coordinates: C, opacity: Opacity<A>) -> Self
-    where
-        S: TypedColorSpace,
-        C: ColorCoordinates<S::Model> + CanvasCoordinates,
-        A: CanvasOpacity,
-    {
+    pub fn new<S: TypedColorSpace>(
+        space: S,
+        coordinates: impl ColorCoordinates<S::Model>,
+        opacity: Opacity<impl CanvasOpacity>,
+    ) -> Self {
+        let coordinates = coordinates.into_value();
+        assert_eq!(
+            coordinates.channels(),
+            S::Model::MODEL.channels(),
+            "coordinates must match their declared model"
+        );
         Self {
             space: space.into(),
-            value: coordinates.erase(A::erase(opacity)),
+            value: coordinates.with_alpha(erase_opacity(opacity)),
         }
     }
 
@@ -116,21 +128,26 @@ impl Color {
 
     /// Keeps authored device coordinates and their selected color space.
     /// The renderer converts them into its working space when needed.
-    pub fn new_in_space(
+    #[allow(private_bounds)]
+    pub fn new_in_space<M: TypedColorModel>(
         space: impl Into<ColorSpace>,
-        coordinates: impl Into<Arc<[f64]>>,
-        opacity: Opacity<f32>,
+        coordinates: impl ColorCoordinates<M>,
+        opacity: Opacity<impl CanvasOpacity>,
     ) -> Result<Self, ColorError> {
         let space = space.into();
-        let coordinates = coordinates.into();
-        if coordinates.len() != space.channels()
-            || coordinates.iter().any(|value| !value.is_finite())
-        {
+        if space.model() != M::MODEL {
+            return Err(ColorError::ModelMismatch {
+                expected: space.model(),
+                actual: M::MODEL,
+            });
+        }
+        let coordinates = coordinates.into_value();
+        if coordinates.channels() != space.channels() || !coordinates.is_finite() {
             return Err(ColorError::InvalidCoordinates);
         }
         Ok(Self {
             space,
-            value: ColorValue::Dynamic(coordinates, Alpha::F32(opacity.sample())),
+            value: coordinates.with_alpha(erase_opacity(opacity)),
         })
     }
 
@@ -142,32 +159,8 @@ impl Color {
     }
 }
 
-trait CanvasCoordinates {
-    fn erase(self, alpha: Alpha) -> ColorValue;
-}
-
-impl CanvasCoordinates for [f32; 3] {
-    fn erase(self, alpha: Alpha) -> ColorValue {
-        ColorValue::F32(self, alpha)
-    }
-}
-
-impl CanvasCoordinates for [f64; 3] {
-    fn erase(self, alpha: Alpha) -> ColorValue {
-        ColorValue::F64(self, alpha)
-    }
-}
-
-impl CanvasCoordinates for [u8; 3] {
-    fn erase(self, alpha: Alpha) -> ColorValue {
-        ColorValue::U8(self, alpha)
-    }
-}
-
-impl CanvasCoordinates for [u16; 3] {
-    fn erase(self, alpha: Alpha) -> ColorValue {
-        ColorValue::U16(self, alpha)
-    }
+fn erase_opacity<A: CanvasOpacity>(opacity: Opacity<A>) -> Alpha {
+    A::erase(opacity)
 }
 
 trait CanvasOpacity: OpacitySample {
@@ -207,6 +200,10 @@ impl From<&Color> for Color {
 #[derive(Debug)]
 pub enum ColorError {
     InvalidCoordinates,
+    ModelMismatch {
+        expected: ColorModel,
+        actual: ColorModel,
+    },
     UnsupportedColorChannels(usize),
     Profile(IccProfileError),
     Connection(SpaceConnectionError),
@@ -235,6 +232,10 @@ impl fmt::Display for ColorError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidCoordinates => formatter.write_str("color coordinates are invalid"),
+            Self::ModelMismatch { expected, actual } => write!(
+                formatter,
+                "color space requires {expected:?} coordinates, got {actual:?}"
+            ),
             Self::UnsupportedColorChannels(channels) => write!(
                 formatter,
                 "gradient interpolation requires three color channels, got {channels}"
@@ -277,7 +278,7 @@ mod tests {
         let bytes = moxcms::ColorProfile::new_srgb().encode().unwrap();
         let profile = IccProfile::from_bytes(&bytes).unwrap();
         let coordinates: Arc<[f64]> = vec![0.25, 0.5, 0.75].into();
-        let color = Color::new_in_space(
+        let color = Color::new_in_space::<crate::color::Rgb>(
             profile.color_space(IccRenderingIntent::RelativeColorimetric),
             coordinates.clone(),
             Opacity::<f32>::new(0.5).unwrap(),
@@ -311,7 +312,7 @@ mod tests {
         let first = IccProfile::from_bytes(&bytes).unwrap();
         let second = IccProfile::from_bytes(&bytes).unwrap();
         let color = |profile: &IccProfile| {
-            Color::new_in_space(
+            Color::new_in_space::<crate::color::Rgb>(
                 profile.color_space(IccRenderingIntent::RelativeColorimetric),
                 vec![0.25, 0.5, 0.75],
                 Opacity::<f32>::ONE,
@@ -328,13 +329,72 @@ mod tests {
         let profile = IccProfile::from_bytes(&bytes).unwrap();
         let opacity = Opacity::<f32>::ONE;
         assert!(matches!(
-            Color::new_in_space(
+            Color::new_in_space::<crate::color::Rgb>(
                 profile.color_space(IccRenderingIntent::RelativeColorimetric),
                 vec![0.5, 0.5],
                 opacity,
             ),
             Err(ColorError::InvalidCoordinates)
         ));
+    }
+
+    #[test]
+    fn dynamic_space_rejects_another_model_with_the_same_channel_count() {
+        let error =
+            Color::new_in_space::<crate::color::Rgb>(XyzD50, [1_u8, 2, 3], Opacity::<u8>::ONE)
+                .unwrap_err();
+        assert!(matches!(
+            error,
+            ColorError::ModelMismatch {
+                expected: ColorModel::Xyz,
+                actual: ColorModel::Rgb,
+            }
+        ));
+        assert!(
+            Color::new_in_space::<crate::color::Xyz>(
+                XyzD50,
+                [0.1_f64, 0.2, 0.3],
+                Opacity::<u8>::ONE,
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn typed_coordinates_preserve_storage_in_an_icc_space() {
+        let bytes = moxcms::ColorProfile::new_srgb().encode().unwrap();
+        let profile = IccProfile::from_bytes(&bytes).unwrap();
+        let color = Color::new_in_space::<crate::color::Rgb>(
+            profile.color_space(IccRenderingIntent::RelativeColorimetric),
+            [255_u8, 128, 64],
+            Opacity::<u16>::ONE,
+        )
+        .unwrap();
+        assert!(matches!(
+            color.value,
+            ColorValue::U8([255, 128, 64], Alpha::U16(u16::MAX))
+        ));
+        let rgba = color.straight_rgba_in(Srgb);
+        for (actual, expected) in rgba
+            .into_iter()
+            .zip([1.0, 128.0 / 255.0, 64.0 / 255.0, 1.0])
+        {
+            assert!((actual - expected).abs() < 0.01);
+        }
+    }
+
+    #[test]
+    fn dynamic_coordinates_reject_non_finite_values() {
+        for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(matches!(
+                Color::new_in_space::<crate::color::Rgb>(
+                    Srgb,
+                    [value, 0.0, 0.0],
+                    Opacity::<f32>::ONE,
+                ),
+                Err(ColorError::InvalidCoordinates)
+            ));
+        }
     }
 
     #[test]

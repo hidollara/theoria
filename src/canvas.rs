@@ -15,7 +15,7 @@ pub use blend::{Blend, BlendMode, BlendOperation, BlendShader, BlendShaderError,
 pub use canvas_image::{CanvasImage, CanvasImageError};
 pub(crate) use color::ColorValue;
 pub use color::{Color, ColorError};
-pub use color_coordinates::ColorCoordinates;
+pub use color_coordinates::{ColorCoordinates, CoordinateValue};
 pub use color_field::{
     AcrossPathGradient, AcrossPathGradientError, AlongPathGradient, ColorField, ColorRamp,
     ColorRampError, ConicGradient, ConicGradientError, GradientExtend, GradientPoint, GradientStop,

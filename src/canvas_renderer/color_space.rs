@@ -392,7 +392,7 @@ mod tests {
         raw.green_trc = None;
         raw.blue_trc = None;
         let profile = crate::color::IccProfile::from_bytes(&raw.encode().unwrap()).unwrap();
-        let color = Color::new_in_space(
+        let color = Color::new_in_space::<crate::color::Rgb>(
             profile.color_space(IccRenderingIntent::RelativeColorimetric),
             vec![0.25, 0.5, 0.75],
             Opacity::<f32>::ONE,
@@ -410,7 +410,7 @@ mod tests {
             "/crates/theoria-color/src/color/fixtures/sRGB-v4.icc"
         )))
         .unwrap();
-        let color = Color::new_in_space(
+        let color = Color::new_in_space::<crate::color::Rgb>(
             profile.color_space(IccRenderingIntent::RelativeColorimetric),
             vec![0.25, 0.5, 0.75],
             Opacity::<f32>::ONE,
