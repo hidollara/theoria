@@ -5,9 +5,6 @@ use std::{
 };
 
 use crate::color::{ColorSpace, Rgb, TypedColorSpace};
-use crate::transfer_wgsl::TransferWgslExt;
-
-use super::composition_shader::{self, Binding};
 
 /// The straight-RGB operation evaluated where source and backdrop overlap.
 /// Alpha and Porter-Duff composition are separate from this operation.
@@ -71,7 +68,7 @@ impl BlendShader {
                 "blend helpers must not declare entry points or global resources".into(),
             ));
         }
-        let source = composition_shader::operation(&definition.helpers, &definition.body);
+        let source = operation(&definition.helpers, &definition.body);
         let validation = format!(
             "{source}\n@fragment fn theoria_validate() -> @location(0) vec4<f32> {{\n    return vec4<f32>(theoria_blend(vec3<f32>(0.0), vec3<f32>(0.0)), 1.0);\n}}"
         );
@@ -91,73 +88,22 @@ impl BlendShader {
         )
         .validate(&module)
         .map_err(|error| BlendShaderError(error.to_string()))?;
-        let shader = Self(definition);
-        let complete = shader.wgsl_module(Binding::WebGpu);
-        let module = naga::front::wgsl::parse_str(&complete)
-            .map_err(|error| BlendShaderError(error.emit_to_string(&complete)))?;
-        naga::valid::Validator::new(
-            naga::valid::ValidationFlags::all(),
-            naga::valid::Capabilities::all(),
-        )
-        .validate(&module)
-        .map_err(|error| BlendShaderError(error.to_string()))?;
-        Ok(shader)
+        Ok(Self(definition))
     }
 
     pub(crate) fn identity() -> &'static Self {
         static IDENTITY: OnceLock<BlendShader> = OnceLock::new();
-        IDENTITY.get_or_init(|| Self(WgslBlend::new(composition_shader::IDENTITY_BODY)))
+        IDENTITY.get_or_init(|| Self(WgslBlend::new("return source;")))
     }
 
-    pub(crate) fn wgsl_module(&self, binding: Binding) -> String {
-        composition_shader::assemble(binding, &self.0.helpers, &self.0.body)
+    /// Module-level helper definitions for the blend operation.
+    pub fn helpers(&self) -> &str {
+        &self.0.helpers
     }
 
-    pub(crate) fn wgsl_module_for_spaces(
-        &self,
-        binding: Binding,
-        working: &ColorSpace,
-        blend: &ColorSpace,
-        composite: &ColorSpace,
-    ) -> Result<String, Box<dyn Error>> {
-        let conversions = [
-            (working, composite, "working_to_composite"),
-            (composite, working, "composite_to_working"),
-            (working, blend, "working_to_blend"),
-            (blend, composite, "blend_to_composite"),
-        ];
-        let mut wgsl = String::new();
-        for (id, (from, to, name)) in conversions.into_iter().enumerate() {
-            if from.channels() != 3 || to.channels() != 3 {
-                return Err(std::io::Error::other(
-                    "Canvas composition requires three-channel color spaces",
-                )
-                .into());
-            }
-            if from == to {
-                wgsl.push_str(&format!(
-                    "\nfn {name}(value: vec3<f32>) -> vec3<f32> {{ return value; }}\n"
-                ));
-                continue;
-            }
-            let transfer = from.transfer_to(to)?;
-            if transfer.is_empty() {
-                wgsl.push_str(&format!(
-                    "\nfn {name}(value: vec3<f32>) -> vec3<f32> {{ return value; }}\n"
-                ));
-                continue;
-            }
-            wgsl.push_str(&transfer.wgsl(id as u32)?);
-            wgsl.push_str(&format!(
-                "\nfn {name}(value: vec3<f32>) -> vec3<f32> {{\n    let result = theoria_transfer_{id}(array<f32, 3>(value.x, value.y, value.z));\n    return vec3<f32>(result[0], result[1], result[2]);\n}}\n"
-            ));
-        }
-        Ok(composition_shader::assemble_with_conversions(
-            binding,
-            &self.0.helpers,
-            &self.0.body,
-            &wgsl,
-        ))
+    /// WGSL body using the straight-RGB `backdrop` and `source` arguments.
+    pub fn body(&self) -> &str {
+        &self.0.body
     }
 }
 
@@ -306,7 +252,7 @@ mod tests {
     use super::*;
     use crate::{
         canvas::{Composite, Composition},
-        color::{DisplayP3, IccProfile, IccRenderingIntent, LinearSrgb, Srgb},
+        color::{DisplayP3, Srgb},
     };
 
     #[test]
@@ -330,7 +276,7 @@ mod tests {
                 WgslBlend::new("return source;")
                     .with_helpers("fn straight_rgb(a: vec4<f32>) -> vec3<f32> { return a.rgb; }")
             )
-            .is_err()
+            .is_ok()
         );
         assert!(
             BlendShader::wgsl(
@@ -385,46 +331,10 @@ mod tests {
         assert_ne!(srgb.space(), p3.space());
         assert_eq!(srgb.shader(), p3.shader());
     }
+}
 
-    #[test]
-    fn composition_shader_lowers_space_transfers_without_space_numbers() {
-        let icc = IccProfile::from_bytes(include_bytes!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/crates/theoria-color/src/color/fixtures/sRGB-v4.icc"
-        )))
-        .unwrap();
-        let shader = BlendShader::wgsl("return backdrop * source;").unwrap();
-        let composition = Composition::new(
-            Composite::SourceOver,
-            icc.color_space(IccRenderingIntent::RelativeColorimetric),
-        )
-        .with_blend_shader(
-            shader.clone(),
-            crate::test_support::distinct_color_space(Srgb),
-        );
-        assert_eq!(
-            composition.composite_space(),
-            &icc.color_space(IccRenderingIntent::RelativeColorimetric)
-        );
-        assert!(composition.blend().is_some());
-        let source = shader
-            .wgsl_module_for_spaces(
-                Binding::WebGpu,
-                &ColorSpace::from(LinearSrgb),
-                composition.blend().unwrap().space(),
-                composition.composite_space(),
-            )
-            .unwrap();
-        assert!(source.contains("theoria_transfer_0"));
-        assert!(!source.contains("operation.composite_space"));
-        let module = naga::front::wgsl::parse_str(&source)
-            .map_err(|error| error.emit_to_string(&source))
-            .unwrap();
-        naga::valid::Validator::new(
-            naga::valid::ValidationFlags::all(),
-            naga::valid::Capabilities::all(),
-        )
-        .validate(&module)
-        .unwrap();
-    }
+fn operation(helpers: &str, body: &str) -> String {
+    format!(
+        "{helpers}\nfn theoria_blend(backdrop: vec3<f32>, source: vec3<f32>) -> vec3<f32> {{\n{body}\n}}\n"
+    )
 }

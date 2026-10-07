@@ -1,6 +1,6 @@
 use std::{env, fs, path::PathBuf};
 
-#[path = "src/canvas/composition_shader.rs"]
+#[path = "src/canvas_renderer/composition_shader.rs"]
 mod composition_shader;
 #[path = "src/rgb_shader.rs"]
 mod rgb_shader;
@@ -11,7 +11,7 @@ mod transfer_wgsl;
 fn main() {
     let output_dir = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR is set"));
     for source_file in [
-        "src/canvas/composition_shader.rs",
+        "src/canvas_renderer/composition_shader.rs",
         "src/rgb_shader.rs",
         "src/transfer_wgsl.rs",
     ] {

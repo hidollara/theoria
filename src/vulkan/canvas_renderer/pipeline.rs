@@ -9,8 +9,10 @@ use std::{
 
 use ash::vk;
 
+use crate::canvas_renderer::{blend::BlendShaderExt, composition_shader::Binding};
+
 use crate::{
-    canvas::{Composite, Composition, composition_shader::Binding},
+    canvas::{Composite, Composition},
     color::{ColorSpace, LinearSrgb},
 };
 

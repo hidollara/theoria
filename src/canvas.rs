@@ -4,7 +4,6 @@ mod color;
 mod color_coordinates;
 mod color_field;
 mod composition;
-pub(crate) mod composition_shader;
 mod coverage;
 pub(crate) mod image;
 mod model;
