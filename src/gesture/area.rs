@@ -57,7 +57,7 @@ impl<E> fmt::Debug for GestureSink<E> {
 pub(super) struct GestureArea<E: 'static> {
     sink: GestureSink<E>,
     region: HitRegion,
-    local_to_parent: Projective2,
+    local_to_parent: Option<Projective2>,
 }
 
 impl<E: 'static> GestureArea<E> {
@@ -70,12 +70,14 @@ impl<E: 'static> GestureArea<E> {
         Self {
             sink: GestureSink::new(sink),
             region,
-            local_to_parent: Projective2::IDENTITY,
+            local_to_parent: Some(Projective2::IDENTITY),
         }
     }
 
     pub(super) fn transformed(mut self, local_to_parent: impl Into<Projective2>) -> Self {
-        self.local_to_parent = self.local_to_parent.then(local_to_parent.into());
+        self.local_to_parent = self
+            .local_to_parent
+            .and_then(|current| current.then(local_to_parent.into()));
         self
     }
 
@@ -87,7 +89,7 @@ impl<E: 'static> GestureArea<E> {
         if !point.is_finite() {
             return None;
         }
-        self.local_to_parent
+        self.local_to_parent?
             .try_inverse()?
             .try_transform_point(point)
     }
@@ -101,7 +103,7 @@ impl<E: 'static> GestureArea<E> {
             return None;
         }
 
-        let parent_to_local = self.local_to_parent.try_inverse()?;
+        let parent_to_local = self.local_to_parent?.try_inverse()?;
         let local_position = parent_to_local.try_transform_point(point)?;
         let local_scale = maximum_scale_at(parent_to_local, point)?;
         let local_tolerance = tolerance * local_scale;

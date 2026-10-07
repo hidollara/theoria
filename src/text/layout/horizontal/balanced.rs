@@ -211,7 +211,7 @@ fn reconstruct(
         };
         reversed.push(HorizontalLine {
             line: state.line.clone(),
-            baseline: Vector2::ZERO,
+            baseline: Offset::ZERO,
             source_range: paragraph.start + line_start..paragraph.start + line_end,
             paragraph_is_rtl,
             justify_allowed: line_end < paragraph_text.len(),

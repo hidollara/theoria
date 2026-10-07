@@ -163,7 +163,7 @@ impl<'a> CanvasCommandEncoder<'a> {
     }
 
     fn unbounded_mesh(&self, source_to_root: Projective2) -> Option<Mesh> {
-        let source_to_view = source_to_root.then(self.view.canvas_to_view);
+        let source_to_view = source_to_root.then(self.view.canvas_to_view)?;
         let view_to_source = source_to_view.try_inverse()?;
         let corners = [
             Point::new(0.0, 0.0),
@@ -421,7 +421,9 @@ impl<'a> CanvasCommandEncoder<'a> {
         let Some((viewport, _)) = self.target_region else {
             return DEFAULT_TESSELLATION_TOLERANCE;
         };
-        let path_to_view = path_to_root.then(self.view.canvas_to_view);
+        let path_to_view = path_to_root
+            .then(self.view.canvas_to_view)
+            .expect("finite composed transform");
         screen_space_tolerance(path, path_to_view, viewport.width, viewport.height)
     }
 

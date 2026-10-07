@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::{math::Vector2, transform::Affine2};
+use crate::{geometry::Offset, transform::Affine2};
 
 use super::{JustificationOptions, PositionedRun, RunOrientation, TextLine, spacing};
 
@@ -64,11 +64,12 @@ impl TextLine {
         self.apply_spacing(content, opportunity, adjustment, false);
         let mut shift = 0.0;
         for (positioned, before) in Arc::make_mut(&mut self.runs).iter_mut().zip(advances) {
-            let translation = positioned.placement.translation();
-            positioned.placement = Affine2::new(
-                positioned.placement.linear(),
-                Vector2::new(translation.x, translation.y + shift),
-            );
+            positioned.placement = positioned
+                .placement
+                .then(
+                    Affine2::from_translation(Offset::new(0.0, shift)).expect("finite text offset"),
+                )
+                .expect("finite text placement");
             positioned.inline_start += shift;
             if positioned.orientation == RunOrientation::Combined {
                 continue;

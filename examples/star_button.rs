@@ -6,14 +6,13 @@ use theoria::{
     component::{Component, MountContext},
     event::ChannelSource,
     font::Font,
-    geometry::Point,
+    geometry::{Offset, Point},
     gesture::{
         Click, ClickArea, ClickGesture, ClickRecognizer, Drag, DragArea, DragGesture, DragPhase,
         DragRecognizer,
     },
     input::pointer::{MovementThreshold, PointerButton, PointerEvent, PointerId},
     interaction::HitRegion,
-    math::Vector2,
     path::{FillRule, LineCap, LineJoin, Path, StrokeStyle},
     reactive::State,
     surface::SurfaceContent,
@@ -62,8 +61,10 @@ impl Component for StarButton {
         let click_areas = context.create_computed(move |context| {
             let center = *context.read(&click_center);
             vec![
-                ClickArea::new(click.clone(), click_region.clone())
-                    .transformed(Affine2::from_translation(Vector2::new(center.x, center.y))),
+                ClickArea::new(click.clone(), click_region.clone()).transformed(
+                    Affine2::from_translation(Offset::new(center.x, center.y))
+                        .expect("finite translation"),
+                ),
             ]
         });
         let committed_click_areas = Rc::new(RefCell::new(Vec::new()));
@@ -87,8 +88,10 @@ impl Component for StarButton {
         let drag_areas = context.create_computed(move |context| {
             let center = *context.read(&drag_center);
             vec![
-                DragArea::new(drag.clone(), hit_region.clone())
-                    .transformed(Affine2::from_translation(Vector2::new(center.x, center.y))),
+                DragArea::new(drag.clone(), hit_region.clone()).transformed(
+                    Affine2::from_translation(Offset::new(center.x, center.y))
+                        .expect("finite translation"),
+                ),
             ]
         });
         let committed_drag_areas = Rc::new(RefCell::new(Vec::new()));
@@ -203,7 +206,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .to_canvas(Color::new(Srgb, [235_u8, 242, 255], Opacity::<u8>::ONE))
                     .expect("the counter glyphs can be realized")
                     .expect("the counter contains drawable glyphs")
-                    .transformed(Affine2::from_translation(Vector2::new(385.0, 470.0)));
+                    .transformed(
+                        Affine2::from_translation(Offset::new(385.0, 470.0))
+                            .expect("finite translation"),
+                    );
                 let hint = Text::horizontal(TextStyle::new(&fonts, 22.0))
                     .push("Click or drag the star")
                     .layout()
@@ -211,10 +217,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .to_canvas(Color::new(Srgb, [150_u8, 167, 198], Opacity::<u8>::ONE))
                     .expect("the hint glyphs can be realized")
                     .expect("the hint contains drawable glyphs")
-                    .transformed(Affine2::from_translation(Vector2::new(375.0, 535.0)));
+                    .transformed(
+                        Affine2::from_translation(Offset::new(375.0, 535.0))
+                            .expect("finite translation"),
+                    );
 
                 fill.composite(outline, Composition::new(Composite::SourceOver, LinearSrgb))
-                    .transformed(Affine2::from_translation(Vector2::new(center.x, center.y)))
+                    .transformed(
+                        Affine2::from_translation(Offset::new(center.x, center.y))
+                            .expect("finite translation"),
+                    )
                     .composite(counter, Composition::new(Composite::SourceOver, LinearSrgb))
                     .composite(hint, Composition::new(Composite::SourceOver, LinearSrgb))
             });

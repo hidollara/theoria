@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::{geometry::Point, math::Vector2};
+use crate::geometry::{Point, Radii};
 
 mod style;
 
@@ -41,7 +41,7 @@ pub enum PathSegment {
         end: Point,
     },
     EllipticalArcTo {
-        radii: Vector2,
+        radii: Radii,
         x_rotation: f32,
         size: ArcSize,
         sweep: ArcSweep,
@@ -134,7 +134,7 @@ impl Subpath {
     /// degenerates to a straight segment.
     pub fn elliptical_arc_to(
         mut self,
-        radii: Vector2,
+        radii: Radii,
         x_rotation: f32,
         size: ArcSize,
         sweep: ArcSweep,
@@ -324,7 +324,7 @@ mod tests {
 
     #[test]
     fn records_elliptical_arc_semantics_without_flattening_them() {
-        let radii = Vector2::new(4.0, 2.0);
+        let radii = Radii::new(4.0, 2.0);
         let end = Point::new(8.0, 1.0);
         let subpath = Subpath::new(Point::new(0.0, 0.0)).elliptical_arc_to(
             radii,
@@ -387,7 +387,7 @@ mod tests {
     #[test]
     fn non_finite_arc_parameters_are_reported_without_failing_construction() {
         let path = Path::new().add_subpath(Subpath::new(Point::new(0.0, 0.0)).elliptical_arc_to(
-            Vector2::new(2.0, f32::INFINITY),
+            Radii::new(2.0, f32::INFINITY),
             f32::NAN,
             ArcSize::Minor,
             ArcSweep::Positive,

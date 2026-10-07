@@ -21,7 +21,7 @@ pub(super) fn wrap_vertical_paragraph(
     if paragraph_text.is_empty() {
         return Ok(vec![VerticalColumn {
             line: TextLine::default(),
-            baseline: Vector2::ZERO,
+            baseline: Offset::ZERO,
             source_range: paragraph.start..paragraph.start,
             justify_allowed: false,
             line_box_start: paragraph_style.start_indent() + paragraph_style.first_line_indent(),
@@ -166,7 +166,7 @@ pub(super) fn wrap_vertical_paragraph(
         };
         columns.push(VerticalColumn {
             line,
-            baseline: Vector2::ZERO,
+            baseline: Offset::ZERO,
             source_range: paragraph.start + column_start..paragraph.start + column_end,
             justify_allowed: column_end < paragraph_text.len(),
             line_box_start: logical_start_indent,

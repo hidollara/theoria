@@ -12,7 +12,7 @@ impl TextLine {
             }
         }
         resolve_horizontal_tabs(&mut runs, content);
-        let mut pen = Vector2::ZERO;
+        let mut pen = Offset::ZERO;
         let runs: Arc<[PositionedRun]> = runs
             .into_iter()
             .map(|run| {
@@ -23,10 +23,11 @@ impl TextLine {
                         .unwrap_or(0.0);
                 let positioned = PositionedRun {
                     run,
-                    placement: Affine2::from_translation(Vector2::new(
+                    placement: Affine2::from_translation(Offset::new(
                         pen.x,
                         pen.y + baseline_offset - baseline_shift,
-                    )),
+                    ))
+                    .expect("finite translation"),
                     inline_start: pen.x,
                     inline_scale: 1.0,
                     orientation: RunOrientation::Upright,

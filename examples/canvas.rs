@@ -5,9 +5,8 @@ use theoria::{
         ImageExtend, ImagePattern, LinearGradient, MeshGradient, Opacity, RadialGradient,
     },
     color::{LinearSrgb, Srgb},
-    geometry::Point,
+    geometry::{Offset, Point, Radii},
     image::{Srgba8Image, Srgba8ImageError},
-    math::Vector2,
     path::{
         ArcSize, ArcSweep, DashPattern, FillRule, LineCap, LineJoin, Path, StrokeStyle, Subpath,
     },
@@ -54,12 +53,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let image_layer = Canvas::draw(
                         ImagePattern::placed(
                             (*image).clone(),
-                            Affine2::from_scale(Vector2::new(2.0, 2.0)).then(
-                                Affine2::from_translation(Vector2::new(
-                                    width * 0.24,
-                                    height * 0.22,
-                                )),
-                            ),
+                            Affine2::from_scale(2.0, 2.0)
+                                .expect("finite scale")
+                                .then(
+                                    Affine2::from_translation(Offset::new(
+                                        width * 0.24,
+                                        height * 0.22,
+                                    ))
+                                    .expect("finite translation"),
+                                )
+                                .expect("finite composed transform"),
                         )
                         .unwrap()
                         .with_extend(ImageExtend::Repeat),
@@ -185,7 +188,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         )?,
                         Coverage::fill(ellipse_path(
                             Point::new(width * 0.22, height * 0.23),
-                            Vector2::new(height * 0.13, height * 0.13),
+                            Radii::new(height * 0.13, height * 0.13),
                         )),
                     );
                     let conic_layer = Canvas::draw(
@@ -238,7 +241,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         )?,
                         Coverage::fill(ellipse_path(
                             Point::new(width * 0.76, height * 0.70),
-                            Vector2::new(height * 0.14, height * 0.14),
+                            Radii::new(height * 0.14, height * 0.14),
                         )),
                     );
                     let stroke_path = Path::new().add_subpath(
@@ -253,7 +256,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 Point::new(width * 0.80, height * 0.40),
                             )
                             .elliptical_arc_to(
-                                Vector2::new(width * 0.10, height * 0.12),
+                                Radii::new(width * 0.10, height * 0.12),
                                 0.2,
                                 ArcSize::Minor,
                                 ArcSweep::Positive,
@@ -392,7 +395,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     event_loop.run()
 }
 
-fn ellipse_path(center: Point, radii: Vector2) -> Path {
+fn ellipse_path(center: Point, radii: Radii) -> Path {
     let left = Point::new(center.x - radii.x, center.y);
     let right = Point::new(center.x + radii.x, center.y);
     Path::new().add_subpath(

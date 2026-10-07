@@ -10,10 +10,10 @@ use crate::{
 pub(crate) fn transformed_point_to_clip(point: Point, canvas_to_view: Projective2) -> [f32; 4] {
     let transformed = canvas_to_view.transform_homogeneous(point);
     [
-        transformed.x * 2.0 - transformed.z,
-        transformed.z - transformed.y * 2.0,
+        transformed.x * 2.0 - transformed.w,
+        transformed.w - transformed.y * 2.0,
         0.0,
-        transformed.z,
+        transformed.w,
     ]
 }
 
@@ -151,13 +151,15 @@ mod tests {
         let identity = screen_space_tolerance(&path, Projective2::IDENTITY, 100.0, 100.0);
         let enlarged = screen_space_tolerance(
             &path,
-            Projective2::from_rows([[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 1.0]]),
+            Projective2::from_rows([[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 1.0]])
+                .expect("valid projective coefficients"),
             100.0,
             100.0,
         );
         let reduced = screen_space_tolerance(
             &path,
-            Projective2::from_rows([[0.1, 0.0, 0.0], [0.0, 0.1, 0.0], [0.0, 0.0, 1.0]]),
+            Projective2::from_rows([[0.1, 0.0, 0.0], [0.0, 0.1, 0.0], [0.0, 0.0, 1.0]])
+                .expect("valid projective coefficients"),
             100.0,
             100.0,
         );

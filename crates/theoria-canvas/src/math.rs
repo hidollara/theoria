@@ -1,58 +1,6 @@
 use std::ops::{Add, Mul, Neg, Sub};
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Vector2 {
-    pub x: f32,
-    pub y: f32,
-}
-
-impl Vector2 {
-    pub const ZERO: Self = Self::new(0.0, 0.0);
-
-    pub const fn new(x: f32, y: f32) -> Self {
-        Self { x, y }
-    }
-
-    pub const fn dot(self, other: Self) -> f32 {
-        self.x * other.x + self.y * other.y
-    }
-
-    pub fn length(self) -> f32 {
-        self.dot(self).sqrt()
-    }
-}
-
-impl Add for Vector2 {
-    type Output = Self;
-
-    fn add(self, other: Self) -> Self::Output {
-        Self::new(self.x + other.x, self.y + other.y)
-    }
-}
-
-impl Sub for Vector2 {
-    type Output = Self;
-
-    fn sub(self, other: Self) -> Self::Output {
-        Self::new(self.x - other.x, self.y - other.y)
-    }
-}
-
-impl Neg for Vector2 {
-    type Output = Self;
-
-    fn neg(self) -> Self::Output {
-        Self::new(-self.x, -self.y)
-    }
-}
-
-impl Mul<f32> for Vector2 {
-    type Output = Self;
-
-    fn mul(self, scalar: f32) -> Self::Output {
-        Self::new(self.x * scalar, self.y * scalar)
-    }
-}
+use crate::geometry::Offset as Vector2;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Vector3 {
@@ -62,22 +10,8 @@ pub struct Vector3 {
 }
 
 impl Vector3 {
-    pub const ZERO: Self = Self::new(0.0, 0.0, 0.0);
-
     pub const fn new(x: f32, y: f32, z: f32) -> Self {
         Self { x, y, z }
-    }
-
-    pub const fn dot(self, other: Self) -> f32 {
-        self.x * other.x + self.y * other.y + self.z * other.z
-    }
-
-    pub fn length(self) -> f32 {
-        self.dot(self).sqrt()
-    }
-
-    pub fn is_finite(self) -> bool {
-        self.x.is_finite() && self.y.is_finite() && self.z.is_finite()
     }
 }
 
@@ -127,10 +61,12 @@ impl Matrix2 {
         Self { x_axis, y_axis }
     }
 
+    #[cfg(test)]
     pub const fn from_scale(scale: Vector2) -> Self {
         Self::from_columns(Vector2::new(scale.x, 0.0), Vector2::new(0.0, scale.y))
     }
 
+    #[cfg(test)]
     pub fn from_angle(radians: f32) -> Self {
         let (sin, cos) = radians.sin_cos();
         Self::from_columns(Vector2::new(cos, sin), Vector2::new(-sin, cos))
@@ -223,18 +159,6 @@ impl Matrix3 {
         ]
     }
 
-    pub const fn x_axis(self) -> Vector3 {
-        self.x_axis
-    }
-
-    pub const fn y_axis(self) -> Vector3 {
-        self.y_axis
-    }
-
-    pub const fn z_axis(self) -> Vector3 {
-        self.z_axis
-    }
-
     pub const fn transform_vector(self, vector: Vector3) -> Vector3 {
         Vector3::new(
             self.x_axis.x * vector.x + self.y_axis.x * vector.y + self.z_axis.x * vector.z,
@@ -270,10 +194,6 @@ impl Matrix3 {
             [d * h - e * g, b * g - a * h, a * e - b * d],
         ]);
         Some(inverse.scaled(determinant.recip()))
-    }
-
-    pub fn is_finite(self) -> bool {
-        self.x_axis.is_finite() && self.y_axis.is_finite() && self.z_axis.is_finite()
     }
 
     fn scaled(self, scalar: f32) -> Self {

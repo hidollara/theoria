@@ -231,6 +231,7 @@ impl CanvasRenderer {
         preserve_working: bool,
         prepared: &PreparedColors,
     ) -> Result<()> {
+        crate::canvas_renderer::canvas_plan::validate_transforms(canvas, view.canvas_to_view)?;
         let hardware_srgb = matches!(
             format,
             vk::Format::R8G8B8A8_SRGB | vk::Format::B8G8R8A8_SRGB

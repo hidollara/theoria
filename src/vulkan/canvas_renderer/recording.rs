@@ -92,7 +92,13 @@ impl<'a> CanvasRecorder<'a> {
                 self.render_draw(accumulator, draw, canvas_to_root);
             }
             CanvasNode::Transform { content, transform } => {
-                self.render_node(accumulator, content, transform.then(canvas_to_root));
+                self.render_node(
+                    accumulator,
+                    content,
+                    transform
+                        .then(canvas_to_root)
+                        .expect("finite composed transform"),
+                );
             }
             CanvasNode::Composite {
                 backdrop,

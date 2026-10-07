@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use crate::math::Vector2;
+use crate::geometry::Offset;
 
 use super::{InlineAlignment, TextLine};
 
@@ -8,7 +8,7 @@ use super::{InlineAlignment, TextLine};
 #[derive(Clone, Debug)]
 pub(super) struct VerticalColumn {
     pub(super) line: TextLine,
-    pub(super) baseline: Vector2,
+    pub(super) baseline: Offset,
     pub(super) source_range: Range<usize>,
     pub(super) justify_allowed: bool,
     pub(super) line_box_start: f32,

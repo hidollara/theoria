@@ -3,9 +3,8 @@ use std::sync::Arc;
 use crate::{
     canvas::{Color, Opacity},
     color::{ColorSpace, DisplayP3, LinearSrgb, Srgb},
-    geometry::Point,
+    geometry::{Offset, Point},
     image::{AlphaAssociation, RasterImage, RasterPlane, Rgba8, Srgba8Image},
-    math::Vector2,
     path::{
         DashPattern, DashPatternError, FillRule, LineCap, LineJoin, Path, StrokeStyle,
         StrokeStyleError,
@@ -24,6 +23,15 @@ fn sample_canvas() -> Canvas {
         Color::new(Srgb, [10_u8, 20, 30], Opacity::<u8>::ONE),
         Coverage::all(),
     )
+}
+
+#[test]
+fn canvas_image_rejects_pixel_mapping_overflow() {
+    let view = CanvasView::new(Affine2::from_scale(f32::MAX, 1.0).unwrap().into());
+    assert_eq!(
+        CanvasImage::new(sample_canvas(), view, 2, 1).unwrap_err(),
+        CanvasImageError::InvalidPlacement
+    );
 }
 
 fn assert_point_near(actual: Option<Point>, expected: Point) {
@@ -246,8 +254,10 @@ fn canvas_retains_an_opaque_rgb8_raster_without_inventing_alpha_metadata() {
 #[test]
 fn image_pattern_separates_placement_sampling_and_extension() {
     let image = Srgba8Image::new(2, 3, vec![255; 2 * 3 * 4]).unwrap();
-    let image_to_canvas = Affine2::from_scale(Vector2::new(2.0, 2.0))
-        .then(Affine2::from_translation(Vector2::new(10.0, 20.0)));
+    let image_to_canvas = Affine2::from_scale(2.0, 2.0)
+        .expect("finite scale")
+        .then(Affine2::from_translation(Offset::new(10.0, 20.0)).expect("finite translation"))
+        .unwrap();
     let pattern = ImagePattern::placed(image, image_to_canvas)
         .unwrap()
         .with_sampling(ImageSampling::Nearest)
@@ -309,7 +319,8 @@ fn transform_preserves_the_child_canvas_as_a_shared_value() {
         ColorField::Solid(Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE).into()),
     );
     let child_to_parent =
-        Projective2::from_rows([[1.0, 0.0, 20.0], [0.0, 1.0, 30.0], [0.001, 0.0, 1.0]]);
+        Projective2::from_rows([[1.0, 0.0, 20.0], [0.0, 1.0, 30.0], [0.001, 0.0, 1.0]])
+            .expect("valid projective coefficients");
     let transformed = child.clone().transformed(child_to_parent);
 
     assert!(matches!(transformed.node(), CanvasNode::Transform {
@@ -429,7 +440,8 @@ fn transformed_wraps_the_canvas_without_baking_primitive_coordinates() {
         Point::new(1.0, 0.0),
         Point::new(0.0, 1.0),
     ];
-    let transform = Projective2::from_rows([[2.0, 0.0, 10.0], [0.0, 3.0, 20.0], [0.0, 0.0, 1.0]]);
+    let transform = Projective2::from_rows([[2.0, 0.0, 10.0], [0.0, 3.0, 20.0], [0.0, 0.0, 1.0]])
+        .expect("valid projective coefficients");
     let content = filled_triangle(
         triangle,
         ColorField::Solid(Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE).into()),
@@ -541,8 +553,8 @@ fn axis_aligned_points_map_to_normalized_view_corners() {
 #[test]
 fn affine_points_map_to_the_normalized_view() {
     let origin = Point::new(10.0, 20.0);
-    let p10 = origin + Vector2::new(20.0, 10.0);
-    let p01 = origin + Vector2::new(-5.0, 15.0);
+    let p10 = origin + Offset::new(20.0, 10.0);
+    let p01 = origin + Offset::new(-5.0, 15.0);
     let view = CanvasView::affine(origin, p10, p01).unwrap();
 
     assert_point_near(

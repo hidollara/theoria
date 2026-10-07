@@ -1,5 +1,3 @@
-#[cfg(test)]
-use crate::math::Vector2;
 pub use theoria_canvas::geometry::*;
 
 pub(crate) fn point_segment_distance_squared(point: Point, start: Point, end: Point) -> f32 {
@@ -22,7 +20,7 @@ mod tests {
     #[test]
     fn point_and_vector_operations_preserve_their_meaning() {
         let start = Point::new(10.0, 20.0);
-        let offset = Vector2::new(3.0, -4.0);
+        let offset = Offset::new(3.0, -4.0);
         let end = start + offset;
 
         assert_eq!(end, Point::new(13.0, 16.0));

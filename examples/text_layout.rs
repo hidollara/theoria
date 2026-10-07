@@ -2,8 +2,7 @@ use theoria::{
     canvas::{CanvasView, Color, Composite, Composition, Opacity},
     color::{LinearSrgb, Srgb},
     font::Font,
-    geometry::Point,
-    math::Vector2,
+    geometry::{Offset, Point},
     surface::SurfaceContent,
     text::{OpenTypeFeatureTag, Span, Text, TextStyle},
     transform::Affine2,
@@ -59,10 +58,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ))
                     .expect("the horizontal glyphs can be realized")
                     .expect("the horizontal sample contains drawable glyphs")
-                    .transformed(Affine2::from_translation(Vector2::new(
-                        width * 0.08,
-                        height * 0.16,
-                    )));
+                    .transformed(
+                        Affine2::from_translation(Offset::new(width * 0.08, height * 0.16))
+                            .expect("finite translation"),
+                    );
 
                 let vertical = Text::vertical(body_style.with_font_size(font_size * 0.9))
                     .push("縦書き Theoria 2026\n日本語とABCを組む")
@@ -76,10 +75,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ))
                     .expect("the vertical glyphs can be realized")
                     .expect("the vertical sample contains drawable glyphs")
-                    .transformed(Affine2::from_translation(Vector2::new(
-                        width * 0.76,
-                        height * 0.12,
-                    )));
+                    .transformed(
+                        Affine2::from_translation(Offset::new(width * 0.76, height * 0.12))
+                            .expect("finite translation"),
+                    );
 
                 let canvas = horizontal.composite(
                     vertical,

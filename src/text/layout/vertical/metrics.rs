@@ -48,9 +48,9 @@ pub(super) fn vertical_column_metrics(
                     upright_column_metrics(positioned.run.font(), positioned.run.font_size())
                 }
                 RunOrientation::Sideways => VerticalColumnMetrics {
-                    left: (metrics.descent + half_leading - positioned.placement.translation().x)
+                    left: (metrics.descent + half_leading - positioned.placement.offset().x)
                         .max(0.0),
-                    right: (metrics.ascent + half_leading + positioned.placement.translation().x)
+                    right: (metrics.ascent + half_leading + positioned.placement.offset().x)
                         .max(0.0),
                 },
                 RunOrientation::Combined => {

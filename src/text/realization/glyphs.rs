@@ -4,7 +4,7 @@ use crate::{
     canvas::{Canvas, Color, ColorField, Coverage, Opacity},
     color::Srgb,
     font::{GlyphPresentationError, GlyphRealizationRequest, RealizedGlyph},
-    math::Vector2,
+    geometry::Offset,
     transform::Affine2,
 };
 
@@ -53,7 +53,7 @@ impl LayoutRun {
         }
 
         let scale = self.font_size / f32::from(self.font.metrics().units_per_em());
-        let mut pen = Vector2::ZERO;
+        let mut pen = Offset::ZERO;
         let mut mask = None;
 
         for positioned in self.glyphs.iter().copied() {
@@ -98,7 +98,7 @@ impl LayoutRun {
         }
 
         let scale = self.font_size / f32::from(self.font.metrics().units_per_em());
-        let mut pen = Vector2::ZERO;
+        let mut pen = Offset::ZERO;
         let mut canvas = None;
         for positioned in self.glyphs.iter().copied() {
             if source_range.is_some_and(|range| !range.contains(&positioned.cluster)) {
@@ -176,19 +176,22 @@ impl TextLine {
     }
 }
 
-pub(super) fn glyph_placement(scale: f32, origin: Vector2) -> Affine2 {
-    Affine2::from_translation(origin).then(Affine2::from_scale(Vector2::new(scale, -scale)))
+pub(super) fn glyph_placement(scale: f32, origin: Offset) -> Affine2 {
+    Affine2::from_translation(origin)
+        .expect("finite translation")
+        .then(Affine2::from_scale(scale, -scale).expect("finite scale"))
+        .expect("finite composed transform")
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{geometry::Point, math::Vector2};
+    use crate::geometry::{Offset, Point};
 
     use super::*;
 
     #[test]
     fn glyph_placement_scales_design_units_and_flips_font_y() {
-        let transform = glyph_placement(0.02, Vector2::new(500.0, 250.0));
+        let transform = glyph_placement(0.02, Offset::new(500.0, 250.0));
 
         assert_eq!(
             transform.transform_point(Point::new(0.0, 0.0)),

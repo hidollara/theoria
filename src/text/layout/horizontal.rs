@@ -369,7 +369,7 @@ impl HorizontalText {
         Ok(Text {
             content: attributed.content,
             lines,
-            size: Vector2::new(width, height),
+            size: Offset::new(width, height),
             writing_mode: WritingMode::Horizontal,
             paint_ranges: attributed.paint_ranges,
         })
@@ -396,7 +396,7 @@ struct WrapContext<'a> {
 #[derive(Clone, Debug)]
 struct HorizontalLine {
     line: TextLine,
-    baseline: Vector2,
+    baseline: Offset,
     source_range: Range<usize>,
     paragraph_is_rtl: bool,
     justify_allowed: bool,

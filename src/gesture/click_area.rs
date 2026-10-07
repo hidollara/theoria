@@ -68,8 +68,8 @@ mod tests {
     use std::{cell::RefCell, rc::Rc};
 
     use crate::{
+        geometry::Offset,
         input::pointer::{PointerButton, PointerId, PointerKind},
-        math::Vector2,
         path::{FillRule, Path},
         test_support::TestRuntime,
         transform::Affine2,
@@ -115,8 +115,9 @@ mod tests {
             });
             let areas = [
                 ClickArea::new(back, square(10.0)),
-                ClickArea::new(front, square(10.0))
-                    .transformed(Affine2::from_translation(Vector2::new(2.0, 3.0))),
+                ClickArea::new(front, square(10.0)).transformed(
+                    Affine2::from_translation(Offset::new(2.0, 3.0)).expect("finite translation"),
+                ),
             ];
             context.receive(move |click: Click, context| {
                 if let Some(area) = areas
@@ -199,7 +200,7 @@ mod tests {
                 output.borrow_mut().push(event);
             });
             let area = ClickArea::new(target, square(10.0))
-                .transformed(Affine2::from_scale(Vector2::new(0.0, 1.0)));
+                .transformed(Affine2::from_scale(0.0, 1.0).expect("finite scale"));
             context.receive(move |click: Click, context| {
                 let _ = area.try_forward(&click, 0.01, context);
             })
@@ -214,5 +215,14 @@ mod tests {
         );
         runtime.run_until_idle().expect("valid Effects");
         assert!(events.borrow().is_empty());
+    }
+
+    #[test]
+    fn overflowing_composition_cannot_produce_a_hit() {
+        let instance = TestRuntime::new(|context| context.receive(|_: Click, _| {}));
+        let area = ClickArea::new(instance.interface().clone(), square(10.0))
+            .transformed(Affine2::from_scale(f32::MAX, 1.0).unwrap())
+            .transformed(Affine2::from_scale(2.0, 1.0).unwrap());
+        assert!(!area.contains(Point::new(0.0, 5.0), 0.01));
     }
 }

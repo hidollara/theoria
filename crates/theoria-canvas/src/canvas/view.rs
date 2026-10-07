@@ -1,6 +1,5 @@
 use crate::{
-    geometry::Point,
-    math::{Matrix2, Vector2},
+    geometry::{Offset, Point},
     transform::{Affine2, Projective2},
 };
 
@@ -28,10 +27,8 @@ impl CanvasView {
         let x_axis = p10 - p00;
         let y_axis = p01 - p00;
 
-        let view_to_canvas = Affine2::new(
-            Matrix2::from_columns(x_axis, y_axis),
-            Vector2::new(p00.x, p00.y),
-        );
+        let view_to_canvas =
+            Affine2::from_rows([[x_axis.x, y_axis.x, p00.x], [x_axis.y, y_axis.y, p00.y]])?;
         let canvas_to_view = view_to_canvas.try_inverse()?;
         Some(Self::new(Projective2::from(canvas_to_view)))
     }
@@ -42,8 +39,8 @@ impl CanvasView {
         let diagonal = p11 - p00;
         Self::affine(
             p00,
-            p00 + Vector2::new(diagonal.x, 0.0),
-            p00 + Vector2::new(0.0, diagonal.y),
+            p00 + Offset::new(diagonal.x, 0.0),
+            p00 + Offset::new(0.0, diagonal.y),
         )
     }
 

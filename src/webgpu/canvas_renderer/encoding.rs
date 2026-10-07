@@ -23,7 +23,9 @@ impl TriangleVertex {
         canvas_to_root: Projective2,
         view: CanvasView,
     ) -> [Self; 3] {
-        let canvas_to_view = canvas_to_root.then(view.canvas_to_view);
+        let canvas_to_view = canvas_to_root
+            .then(view.canvas_to_view)
+            .expect("finite composed transform");
         std::array::from_fn(|index| Self {
             position: transformed_point_to_clip(points[index], canvas_to_view),
             color: colors[index].components(),
@@ -69,7 +71,9 @@ impl ImageVertex {
     ) -> [Self; 3] {
         let width = pattern.image().width() as f32;
         let height = pattern.image().height() as f32;
-        let image_to_view = image_to_root.then(view.canvas_to_view);
+        let image_to_view = image_to_root
+            .then(view.canvas_to_view)
+            .expect("finite composed transform");
         points.map(|point| {
             let image_point = pattern.canvas_to_image().transform_homogeneous(point);
             Self {
@@ -77,7 +81,7 @@ impl ImageVertex {
                 uvw_and_association: [
                     image_point.x / width,
                     image_point.y / height,
-                    image_point.z,
+                    image_point.w,
                     u32::from(rgb_is_premultiplied) as f32,
                 ],
                 metadata: [

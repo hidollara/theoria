@@ -1,8 +1,7 @@
 use crate::{
     canvas::{Canvas, ColorField, Composite, Composition, Coverage},
     color::LinearSrgb,
-    geometry::Point,
-    math::Vector2,
+    geometry::{Offset, Point},
     transform::Affine2,
 };
 
@@ -40,18 +39,24 @@ impl Text {
         self.lines
             .iter()
             .flat_map(|line| {
-                let line_placement = Affine2::from_translation(line.baseline);
+                let line_placement =
+                    Affine2::from_translation(line.baseline).expect("finite translation");
                 line.line.runs.iter().flat_map(move |positioned| {
-                    let run_placement = positioned.placement.then(line_placement);
+                    let run_placement = positioned
+                        .placement
+                        .then(line_placement)
+                        .expect("finite composed transform");
                     let scale = positioned.run.font_size
                         / f32::from(positioned.run.font.metrics().units_per_em());
-                    let mut pen = Vector2::ZERO;
+                    let mut pen = Offset::ZERO;
                     positioned.run.glyphs.iter().filter_map(move |glyph| {
                         let origin = pen + glyph.offset;
                         pen = pen + glyph.advance;
                         let [minimum, maximum] =
                             positioned.run.font.glyph_ink_bounds(glyph.glyph_id)?;
-                        let placement = glyph_placement(scale, origin).then(run_placement);
+                        let placement = glyph_placement(scale, origin)
+                            .then(run_placement)
+                            .expect("finite composed transform");
                         transformed_bounds(minimum, maximum, placement)
                     })
                 })
@@ -74,7 +79,11 @@ impl Text {
             let line_mask = positioned
                 .line
                 .coverage_canvas(source_range)?
-                .map(|canvas| canvas.transformed(Affine2::from_translation(positioned.baseline)));
+                .map(|canvas| {
+                    canvas.transformed(
+                        Affine2::from_translation(positioned.baseline).expect("finite translation"),
+                    )
+                });
             mask = overlay(mask, line_mask);
         }
         Ok(mask.map(Coverage::from_alpha))
@@ -91,7 +100,11 @@ impl Text {
             let line = positioned
                 .line
                 .realized_canvas(foreground, palette_index, source_range)?
-                .map(|canvas| canvas.transformed(Affine2::from_translation(positioned.baseline)));
+                .map(|canvas| {
+                    canvas.transformed(
+                        Affine2::from_translation(positioned.baseline).expect("finite translation"),
+                    )
+                });
             canvas = overlay(canvas, line);
         }
         Ok(canvas)

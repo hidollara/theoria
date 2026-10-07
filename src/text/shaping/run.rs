@@ -2,7 +2,7 @@ use std::{ops::Range, sync::Arc};
 
 use crate::{
     font::{GlyphId, ResolvedFont},
-    math::Vector2,
+    geometry::Offset,
 };
 
 #[cfg(test)]
@@ -18,8 +18,8 @@ use super::{
 pub(in crate::text) struct ShapedGlyph {
     pub(in crate::text) glyph_id: GlyphId,
     pub(in crate::text) cluster: usize,
-    pub(in crate::text) offset: Vector2,
-    pub(in crate::text) advance: Vector2,
+    pub(in crate::text) offset: Offset,
+    pub(in crate::text) advance: Offset,
     /// HarfRust found that U+0640 can be inserted before this cluster without
     /// invalidating the surrounding shaping result.
     pub(in crate::text) safe_to_insert_tatweel: bool,
@@ -29,8 +29,8 @@ impl ShapedGlyph {
     pub(super) const fn new(
         glyph_id: GlyphId,
         cluster: usize,
-        offset: Vector2,
-        advance: Vector2,
+        offset: Offset,
+        advance: Offset,
         safe_to_insert_tatweel: bool,
     ) -> Self {
         Self {
@@ -134,10 +134,10 @@ impl GlyphRun {
         self.glyphs.iter().map(|glyph| glyph.cluster)
     }
 
-    pub(in crate::text) fn advance(&self) -> Vector2 {
+    pub(in crate::text) fn advance(&self) -> Offset {
         self.glyphs
             .iter()
-            .fold(Vector2::ZERO, |sum, glyph| sum + glyph.advance)
+            .fold(Offset::ZERO, |sum, glyph| sum + glyph.advance)
     }
 }
 
@@ -151,6 +151,6 @@ pub(super) fn validate_placements(glyphs: &[ShapedGlyph]) -> Result<(), GlyphRun
     Ok(())
 }
 
-fn is_finite(vector: Vector2) -> bool {
+fn is_finite(vector: Offset) -> bool {
     vector.x.is_finite() && vector.y.is_finite()
 }

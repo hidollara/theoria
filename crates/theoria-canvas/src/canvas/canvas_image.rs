@@ -6,6 +6,7 @@ use std::{
 };
 
 use super::{Canvas, CanvasView};
+use crate::transform::{Affine2, Projective2};
 
 #[derive(Debug)]
 struct CanvasImageInner {
@@ -39,6 +40,12 @@ impl CanvasImage {
         height: u32,
     ) -> Result<Self, CanvasImageError> {
         validate_dimensions(width, height)?;
+        let to_pixels = Projective2::from(
+            Affine2::from_scale(width as f32, height as f32).expect("finite u32 dimensions"),
+        );
+        view.canvas_to_view
+            .then(to_pixels)
+            .ok_or(CanvasImageError::InvalidPlacement)?;
         Ok(Self {
             inner: Arc::new(CanvasImageInner {
                 content,
@@ -106,11 +113,16 @@ impl fmt::Debug for CanvasImageInstanceKey {
 pub enum CanvasImageError {
     Empty { width: u32, height: u32 },
     DimensionsTooLarge { width: u32, height: u32 },
+    InvalidPlacement,
 }
 
 impl fmt::Display for CanvasImageError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::InvalidPlacement => write!(
+                formatter,
+                "CanvasImage placement exceeds finite coordinates"
+            ),
             Self::Empty { width, height } => {
                 write!(
                     formatter,

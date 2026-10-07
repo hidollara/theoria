@@ -5,11 +5,10 @@ use theoria::{
     color::{LinearSrgb, Srgb},
     event::OwningSink,
     font::Font,
-    geometry::Point,
+    geometry::{Offset, Point},
     gesture::{Click, ClickArea, ClickGesture, ClickRecognizer},
     input::pointer::PointerButton,
     interaction::HitRegion,
-    math::Vector2,
     path::{FillRule, LineCap, LineJoin, Path, StrokeStyle},
     surface::SurfaceContent,
     text::{Text, TextStyle},
@@ -56,7 +55,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 });
                 let area = ClickArea::new(increment, star_hit_region).transformed(
-                    Affine2::from_translation(Vector2::new(STAR_CENTER.x, STAR_CENTER.y)),
+                    Affine2::from_translation(Offset::new(STAR_CENTER.x, STAR_CENTER.y))
+                        .expect("finite translation"),
                 );
                 let route_click = context.receive(move |click: Click, context| {
                     let _ = area.try_forward(&click, HIT_TOLERANCE, context);
@@ -94,13 +94,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .to_canvas(Color::new(Srgb, [232_u8, 240, 255], Opacity::<u8>::ONE))
                         .expect("the counter glyphs can be realized")
                         .expect("the counter contains drawable glyphs")
-                        .transformed(Affine2::from_translation(Vector2::new(210.0, 390.0)));
+                        .transformed(
+                            Affine2::from_translation(Offset::new(210.0, 390.0))
+                                .expect("finite translation"),
+                        );
 
                     fill.composite(outline, Composition::new(Composite::SourceOver, LinearSrgb))
-                        .transformed(Affine2::from_translation(Vector2::new(
-                            STAR_CENTER.x,
-                            STAR_CENTER.y,
-                        )))
+                        .transformed(
+                            Affine2::from_translation(Offset::new(STAR_CENTER.x, STAR_CENTER.y))
+                                .expect("finite translation"),
+                        )
                         .composite(label, Composition::new(Composite::SourceOver, LinearSrgb))
                 });
                 window_content(context, window.surface().size(), canvas)
@@ -125,7 +128,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .to_canvas(Color::new(Srgb, [145_u8, 168, 205], Opacity::<u8>::ONE))
                         .expect("the heading glyphs can be realized")
                         .expect("the heading contains drawable glyphs")
-                        .transformed(Affine2::from_translation(Vector2::new(90.0, 145.0)));
+                        .transformed(
+                            Affine2::from_translation(Offset::new(90.0, 145.0))
+                                .expect("finite translation"),
+                        );
                     let value = Text::horizontal(TextStyle::new(&fonts, 96.0))
                         .push(count.to_string())
                         .layout()
@@ -133,7 +139,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .to_canvas(Color::new(Srgb, [90_u8, 220, 255], Opacity::<u8>::ONE))
                         .expect("the shared value glyphs can be realized")
                         .expect("the shared value contains drawable glyphs")
-                        .transformed(Affine2::from_translation(Vector2::new(285.0, 300.0)));
+                        .transformed(
+                            Affine2::from_translation(Offset::new(285.0, 300.0))
+                                .expect("finite translation"),
+                        );
                     let status = if controller_open {
                         "Controller Window is open"
                     } else {
@@ -150,7 +159,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         })
                         .expect("the lifecycle status glyphs can be realized")
                         .expect("the lifecycle status contains drawable glyphs")
-                        .transformed(Affine2::from_translation(Vector2::new(110.0, 380.0)));
+                        .transformed(
+                            Affine2::from_translation(Offset::new(110.0, 380.0))
+                                .expect("finite translation"),
+                        );
                     heading
                         .composite(value, Composition::new(Composite::SourceOver, LinearSrgb))
                         .composite(status, Composition::new(Composite::SourceOver, LinearSrgb))

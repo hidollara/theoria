@@ -187,8 +187,13 @@ impl Image {
                     [image.width() as f32, 0.0, 0.0],
                     [0.0, image.height() as f32, 0.0],
                     [0.0, 0.0, 1.0],
-                ]);
-                image.view().canvas_to_view.then(normalized_to_pixels)
+                ])
+                .expect("valid projective coefficients");
+                image
+                    .view()
+                    .canvas_to_view
+                    .then(normalized_to_pixels)
+                    .expect("finite composed transform")
             }
         }
     }

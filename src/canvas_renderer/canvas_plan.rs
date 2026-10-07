@@ -8,6 +8,69 @@ use crate::canvas::{
 use crate::color::ColorSpace;
 #[cfg(test)]
 use crate::color::LinearSrgb;
+use crate::transform::Projective2;
+
+/// Checks composed transforms before GPU command recording uses them.
+pub(crate) fn validate_transforms(canvas: &Canvas, view: Projective2) -> std::io::Result<()> {
+    fn invalid() -> std::io::Error {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Canvas transform composition is not finite or has no projectable points",
+        )
+    }
+    fn field(source: &ColorField, root: Projective2, view: Projective2) -> std::io::Result<()> {
+        if let ColorField::Canvas(canvas) = source {
+            visit(canvas, root, view)?;
+        }
+        Ok(())
+    }
+    fn visit(canvas: &Canvas, root: Projective2, view: Projective2) -> std::io::Result<()> {
+        root.then(view).ok_or_else(invalid)?;
+        match canvas.node() {
+            CanvasNode::Draw(draw) => {
+                field(&draw.source, root, view)?;
+                if let CoverageNode::AlphaOf(source) = draw.coverage.node() {
+                    field(source, root, view)?;
+                }
+            }
+            CanvasNode::Transform { content, transform } => {
+                visit(content, transform.then(root).ok_or_else(invalid)?, view)?;
+            }
+            CanvasNode::Composite {
+                backdrop, source, ..
+            } => {
+                visit(backdrop, root, view)?;
+                visit(source, root, view)?;
+            }
+        }
+        Ok(())
+    }
+    visit(canvas, Projective2::IDENTITY, view)
+}
+
+#[cfg(test)]
+mod transform_validation_tests {
+    use super::*;
+    use crate::{
+        canvas::{Color, Opacity},
+        color::Srgb,
+        transform::Affine2,
+    };
+
+    #[test]
+    fn rejects_overflow_before_recording_nested_canvases() {
+        let solid = Canvas::draw(
+            Color::new(Srgb, [0_u8; 3], Opacity::<u8>::ONE),
+            crate::canvas::Coverage::all(),
+        );
+        let too_large = solid
+            .transformed(Affine2::from_scale(f32::MAX, 1.0).unwrap())
+            .transformed(Affine2::from_scale(2.0, 1.0).unwrap());
+        assert!(validate_transforms(&too_large, Projective2::IDENTITY).is_err());
+        let nested = Canvas::draw(too_large, crate::canvas::Coverage::all());
+        assert!(validate_transforms(&nested, Projective2::IDENTITY).is_err());
+    }
+}
 
 /// Resolves fallible authored colors before either backend starts recording.
 /// The converted values belong to this render, not to the Canvas definition.

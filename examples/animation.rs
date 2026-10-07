@@ -4,9 +4,8 @@ use theoria::{
     canvas::{Canvas, CanvasView, Color, Composite, Composition, Coverage, Opacity},
     color::{LinearSrgb, Srgb},
     event::OwningSink,
-    geometry::Point,
+    geometry::{Offset, Point},
     input::pointer::{PointerButton, PointerEvent, PointerPhase},
-    math::{Matrix2, Vector2},
     path::{LineJoin, Path, StrokeStyle},
     surface::SurfaceContent,
     transform::Affine2,
@@ -58,8 +57,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let width = size.width.max(1) as f32;
                 let height = size.height.max(1) as f32;
                 let pointer = *context.read(&pointer_value);
-                let center = pointer.map_or(Vector2::new(width * 0.5, height * 0.5), |pointer| {
-                    Vector2::new(pointer.position.x, pointer.position.y)
+                let center = pointer.map_or(Offset::new(width * 0.5, height * 0.5), |pointer| {
+                    Offset::new(pointer.position.x, pointer.position.y)
                 });
                 let pressed_scale = if pointer.is_some_and(|pointer| pointer.pressed) {
                     0.82
@@ -67,9 +66,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     1.0
                 };
                 let pulse = pressed_scale * (0.88 + 0.12 * (elapsed * TAU * 0.6).sin());
-                let transform = Affine2::from_scale(Vector2::new(pulse, pulse))
-                    .then(Affine2::from_matrix(Matrix2::from_angle(elapsed * 0.8)))
-                    .then(Affine2::from_translation(center));
+                let transform = Affine2::from_scale(pulse, pulse)
+                    .expect("finite scale")
+                    .then(Affine2::from_rotation(elapsed * 0.8).expect("finite rotation"))
+                    .expect("finite composed transform")
+                    .then(Affine2::from_translation(center).expect("finite translation"))
+                    .expect("finite composed transform");
 
                 let glow = Canvas::draw(
                     Color::new(

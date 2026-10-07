@@ -3,7 +3,7 @@
 pub mod canvas;
 pub mod geometry;
 pub mod image;
-pub mod math;
+mod math;
 pub mod path;
 pub mod transform;
 

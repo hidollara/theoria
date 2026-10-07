@@ -1,7 +1,7 @@
 use super::*;
 use crate::{
     font::GlyphId,
-    math::Vector2,
+    geometry::Offset,
     text::{
         MissingGlyphPolicy, OpenTypeFeatureTag, ShapingOptions,
         shaping::ShapingDirection,
@@ -44,7 +44,7 @@ fn top_to_bottom_shaping_selects_vertical_punctuation_forms() {
         vertical
             .glyphs
             .iter()
-            .any(|glyph| glyph.offset != Vector2::ZERO)
+            .any(|glyph| glyph.offset != Offset::ZERO)
     );
 }
 #[test]
@@ -52,8 +52,8 @@ fn rejects_non_finite_shaped_positions() {
     let glyph = ShapedGlyph::new(
         GlyphId::new(1),
         0,
-        Vector2::ZERO,
-        Vector2::new(500.0, 0.0),
+        Offset::ZERO,
+        Offset::new(500.0, 0.0),
         false,
     );
     assert_eq!(validate_placements(&[glyph]), Ok(()));
@@ -61,8 +61,8 @@ fn rejects_non_finite_shaped_positions() {
         validate_placements(&[ShapedGlyph::new(
             GlyphId::new(1),
             0,
-            Vector2::new(f32::INFINITY, 0.0),
-            Vector2::ZERO,
+            Offset::new(f32::INFINITY, 0.0),
+            Offset::ZERO,
             false,
         )]),
         Err(GlyphRunError::NonFinitePlacement)

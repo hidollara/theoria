@@ -188,7 +188,7 @@ fn baseline_shift_moves_only_the_styled_run_toward_ascent() {
         .layout()
         .unwrap();
     assert!(
-        text.lines[0].line.runs[1].placement.translation().y
-            < text.lines[0].line.runs[0].placement.translation().y
+        text.lines[0].line.runs[1].placement.offset().y
+            < text.lines[0].line.runs[0].placement.offset().y
     );
 }

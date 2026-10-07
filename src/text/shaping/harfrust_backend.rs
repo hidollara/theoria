@@ -5,7 +5,7 @@ use harfrust::{
 
 use crate::{
     font::{GlyphId, ResolvedFont},
-    math::Vector2,
+    geometry::Offset,
 };
 
 use super::{ShapedGlyph, ShapingDirection, ShapingOptions};
@@ -103,8 +103,8 @@ fn positioned_glyphs(infos: &[GlyphInfo], positions: &[GlyphPosition]) -> Vec<Sh
             ShapedGlyph::new(
                 GlyphId::new(info.glyph_id),
                 info.cluster as usize,
-                Vector2::new(position.x_offset as f32, position.y_offset as f32),
-                Vector2::new(position.x_advance as f32, position.y_advance as f32),
+                Offset::new(position.x_offset as f32, position.y_offset as f32),
+                Offset::new(position.x_advance as f32, position.y_advance as f32),
                 info.safe_to_insert_tatweel(),
             )
         })
@@ -150,8 +150,8 @@ mod tests {
         assert_eq!(glyphs.len(), 1);
         assert_eq!(glyphs[0].glyph_id, GlyphId::new(42));
         assert_eq!(glyphs[0].cluster, 7);
-        assert_eq!(glyphs[0].offset, Vector2::new(15.0, 30.0));
-        assert_eq!(glyphs[0].advance, Vector2::new(600.0, -20.0));
+        assert_eq!(glyphs[0].offset, Offset::new(15.0, 30.0));
+        assert_eq!(glyphs[0].advance, Offset::new(600.0, -20.0));
     }
 
     #[test]

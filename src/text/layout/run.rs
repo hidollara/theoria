@@ -1,6 +1,6 @@
 use std::ops::{Deref, DerefMut};
 
-use crate::{math::Vector2, transform::Affine2};
+use crate::{geometry::Offset, transform::Affine2};
 
 use super::GlyphRun;
 
@@ -16,10 +16,10 @@ impl LayoutRun {
         Self { shaped, font_size }
     }
 
-    pub(super) fn advance(&self) -> Vector2 {
+    pub(super) fn advance(&self) -> Offset {
         let design = self.shaped.advance();
         let scale = self.font_size / f32::from(self.shaped.font.metrics().units_per_em());
-        Vector2::new(design.x * scale, -design.y * scale)
+        Offset::new(design.x * scale, -design.y * scale)
     }
 
     pub(super) const fn font_size(&self) -> f32 {

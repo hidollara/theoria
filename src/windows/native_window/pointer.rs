@@ -25,6 +25,7 @@ use ::windows::{
 };
 
 use crate::{
+    geometry::Offset,
     geometry::Point,
     input::{
         pointer::{
@@ -33,7 +34,6 @@ use crate::{
         },
         scroll::{ScrollDelta, ScrollEvent},
     },
-    math::Vector2,
 };
 
 pub(super) const fn is_pointer_message(message: u32) -> bool {
@@ -78,8 +78,8 @@ pub(super) fn scroll_event(hwnd: HWND, message: u32, wparam: WPARAM) -> Option<S
     let (_, position) = pointer_info(hwnd, wparam)?;
     let steps = f32::from(wheel_delta(wparam)) / WHEEL_DELTA as f32;
     let delta = match message {
-        WM_POINTERWHEEL => Vector2::new(0.0, -steps),
-        WM_POINTERHWHEEL => Vector2::new(steps, 0.0),
+        WM_POINTERWHEEL => Offset::new(0.0, -steps),
+        WM_POINTERHWHEEL => Offset::new(steps, 0.0),
         _ => return None,
     };
 

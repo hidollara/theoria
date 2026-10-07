@@ -8,7 +8,6 @@ use skrifa::{GlyphId, MetadataProvider};
 use crate::{
     canvas::{Canvas, ColorField, Coverage, ImagePattern, ImageSampling},
     image::Srgba8Image,
-    math::{Matrix2, Vector2},
     transform::Affine2,
 };
 
@@ -94,13 +93,11 @@ pub(super) fn canvas(
     let image = Srgba8Image::new(width, height, pixmap.take_demultiplied())
         .map_err(|_| GlyphPresentationError::UnsupportedSvg)?;
     let pixel_to_design = raster_scale.recip();
-    let image_to_font = Affine2::new(
-        Matrix2::from_columns(
-            Vector2::new(pixel_to_design, 0.0),
-            Vector2::new(0.0, -pixel_to_design),
-        ),
-        Vector2::new(bounds.x(), -bounds.y()),
-    );
+    let image_to_font = Affine2::from_rows([
+        [pixel_to_design, 0.0, bounds.x()],
+        [0.0, -pixel_to_design, -bounds.y()],
+    ])
+    .ok_or(GlyphPresentationError::UnsupportedSvg)?;
     let pattern = ImagePattern::placed(image, image_to_font)
         .ok_or(GlyphPresentationError::UnsupportedSvg)?
         .with_sampling(ImageSampling::Linear);

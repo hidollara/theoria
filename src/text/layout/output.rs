@@ -49,7 +49,7 @@ impl TextBounds {
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextLineInfo {
     source_range: Range<usize>,
-    baseline: Vector2,
+    baseline: Offset,
     ascent: f32,
     descent: f32,
     leading: f32,
@@ -61,7 +61,7 @@ impl TextLineInfo {
         self.source_range.clone()
     }
 
-    pub const fn baseline(&self) -> Vector2 {
+    pub const fn baseline(&self) -> Offset {
         self.baseline
     }
 
@@ -86,7 +86,7 @@ impl TextLineInfo {
 #[derive(Clone, Debug)]
 pub(in crate::text) struct PositionedTextLine {
     pub(in crate::text) line: TextLine,
-    pub(in crate::text) baseline: Vector2,
+    pub(in crate::text) baseline: Offset,
     pub(in crate::text) source_range: Range<usize>,
     pub(in crate::text) metrics: LineMetrics,
 }
@@ -131,7 +131,7 @@ pub enum WritingMode {
 pub struct Text {
     pub(in crate::text) content: Arc<str>,
     pub(in crate::text) lines: Arc<[PositionedTextLine]>,
-    pub(super) size: Vector2,
+    pub(super) size: Offset,
     pub(in crate::text) writing_mode: WritingMode,
     pub(in crate::text) paint_ranges: Arc<[PaintRange]>,
 }
@@ -205,7 +205,7 @@ impl Text {
     /// Wrapped text keeps its requested width even when its content is shorter.
     /// Unbreakable content may draw beyond that width; layout does not imply
     /// clipping.
-    pub const fn size(&self) -> Vector2 {
+    pub const fn size(&self) -> Offset {
         self.size
     }
 }

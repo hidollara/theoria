@@ -6,7 +6,7 @@ fn an_empty_text_line_is_the_additive_layout_identity() {
     let line = TextLine::default();
 
     assert!(line.runs.is_empty());
-    assert_eq!(line.advance(), Vector2::ZERO);
+    assert_eq!(line.advance(), Offset::ZERO);
 }
 
 #[test]
@@ -56,7 +56,7 @@ fn a_text_line_places_multiple_fonts_by_accumulating_run_advances() {
     );
 
     assert_eq!(line.runs.len(), 2);
-    assert_eq!(line.runs[0].inline_start, Vector2::ZERO.x);
+    assert_eq!(line.runs[0].inline_start, Offset::ZERO.x);
     assert_eq!(line.runs[1].inline_start, expected_second_origin.x);
     assert_eq!(line.advance(), expected_advance);
 }
@@ -85,7 +85,7 @@ fn horizontal_runs_align_their_alphabetic_baselines() {
             .unwrap_or(0.0)
             * run.font_size()
             / f32::from(run.font().metrics().units_per_em());
-        assert!((positioned.placement.translation().y - expected).abs() < 0.001);
+        assert!((positioned.placement.offset().y - expected).abs() < 0.001);
     }
 }
 

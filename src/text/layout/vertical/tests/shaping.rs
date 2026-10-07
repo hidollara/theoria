@@ -53,7 +53,7 @@ fn vertical_text_shapes_upright_and_sideways_runs_into_one_text() {
             (Some(roman), Some(center)) => roman - center,
             _ => synthesized_sideways_cross_offset(run),
         };
-        assert!((positioned.placement.translation().x - expected).abs() < 0.001);
+        assert!((positioned.placement.offset().x - expected).abs() < 0.001);
     }
     assert!(text.lines[0].line.advance().y > 0.0);
 }

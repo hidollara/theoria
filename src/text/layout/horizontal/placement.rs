@@ -21,7 +21,7 @@ pub(super) fn position_lines(lines: &mut [HorizontalLine], default_style: &TextS
         let baseline_y = previous_metrics.map_or(metrics.ascent, |previous: LineMetrics| {
             previous_baseline + previous.descent + previous.leading + metrics.ascent + paragraph_gap
         });
-        positioned.baseline = Vector2::new(0.0, baseline_y);
+        positioned.baseline = Offset::new(0.0, baseline_y);
         previous_baseline = baseline_y;
         previous_metrics = Some(metrics);
         previous_paragraph_spacing_after = if positioned.paragraph_last {
@@ -92,7 +92,7 @@ pub(super) fn apply_fixed_line_height(
         .map_or(0.0, |line| line.baseline.y + final_descent);
 }
 
-pub(super) fn layout_size(lines: &[HorizontalLine], default_style: &TextStyle) -> Vector2 {
+pub(super) fn layout_size(lines: &[HorizontalLine], default_style: &TextStyle) -> Offset {
     let width = lines
         .iter()
         .map(|positioned| positioned.line.advance().x.abs() + positioned.inline_insets)
@@ -107,7 +107,7 @@ pub(super) fn layout_size(lines: &[HorizontalLine], default_style: &TextStyle) -
             .unwrap_or_default();
         positioned.baseline.y + metrics.descent
     });
-    Vector2::new(width, height)
+    Offset::new(width, height)
 }
 
 pub(super) fn text_line_metrics(line: &TextLine) -> Option<LineMetrics> {
@@ -115,7 +115,7 @@ pub(super) fn text_line_metrics(line: &TextLine) -> Option<LineMetrics> {
         .iter()
         .map(|positioned| {
             let metrics = font_line_metrics(positioned.run.font(), positioned.run.font_size());
-            let offset = positioned.placement.translation().y;
+            let offset = positioned.placement.offset().y;
             LineMetrics {
                 ascent: (metrics.ascent - offset).max(0.0),
                 descent: (metrics.descent + offset).max(0.0),
@@ -193,9 +193,9 @@ mod tests {
         HorizontalLine {
             line: TextLine {
                 runs: Arc::new([]),
-                advance: Vector2::new(width, 0.0),
+                advance: Offset::new(width, 0.0),
             },
-            baseline: Vector2::ZERO,
+            baseline: Offset::ZERO,
             source_range: 0..0,
             paragraph_is_rtl,
             justify_allowed: false,

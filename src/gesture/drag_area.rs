@@ -69,7 +69,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::math::Vector2;
+    use crate::geometry::Offset;
 
     struct Capture {
         areas: Vec<DragArea>,
@@ -137,8 +137,9 @@ mod tests {
             let recorder = context.receive(move |event: Drag, _context| {
                 output.borrow_mut().push(event);
             });
-            let area = DragArea::new(recorder, square())
-                .transformed(Affine2::from_translation(Vector2::new(100.0, 100.0)));
+            let area = DragArea::new(recorder, square()).transformed(
+                Affine2::from_translation(Offset::new(100.0, 100.0)).expect("finite translation"),
+            );
             let mut capture = Capture {
                 areas: vec![area],
                 captured: None,

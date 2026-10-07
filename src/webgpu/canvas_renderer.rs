@@ -265,6 +265,7 @@ impl CanvasRenderer {
         prepared: &PreparedColors,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let output = (!target.preserve_working).then_some(&target.output);
+        crate::canvas_renderer::canvas_plan::validate_transforms(canvas, view.canvas_to_view)?;
         let hardware_srgb = matches!(
             target.format,
             wgpu::TextureFormat::Rgba8UnormSrgb | wgpu::TextureFormat::Bgra8UnormSrgb
@@ -464,7 +465,13 @@ impl CanvasRecorder<'_> {
         match canvas.node() {
             CanvasNode::Draw(draw) => self.render_draw(accumulator, draw, canvas_to_root),
             CanvasNode::Transform { content, transform } => {
-                self.render_node(accumulator, content, transform.then(canvas_to_root));
+                self.render_node(
+                    accumulator,
+                    content,
+                    transform
+                        .then(canvas_to_root)
+                        .expect("finite composed transform"),
+                );
             }
             CanvasNode::Composite {
                 backdrop,
@@ -636,7 +643,7 @@ impl CanvasRecorder<'_> {
     }
 
     fn unbounded_mesh(&self, source_to_root: Projective2) -> Option<Mesh> {
-        let source_to_view = source_to_root.then(self.view.canvas_to_view);
+        let source_to_view = source_to_root.then(self.view.canvas_to_view)?;
         let view_to_source = source_to_view.try_inverse()?;
         let corners = [
             Point::new(0.0, 0.0),
@@ -868,7 +875,9 @@ impl CanvasRecorder<'_> {
         let Some(region) = self.target_region else {
             return DEFAULT_TESSELLATION_TOLERANCE;
         };
-        let path_to_view = path_to_root.then(self.view.canvas_to_view);
+        let path_to_view = path_to_root
+            .then(self.view.canvas_to_view)
+            .expect("finite composed transform");
         screen_space_tolerance(path, path_to_view, region.width, region.height)
     }
 }

@@ -1,5 +1,5 @@
 pub mod animation;
-pub use theoria_canvas::{canvas, image, math, transform};
+pub use theoria_canvas::{canvas, image, transform};
 mod canvas_renderer;
 pub use theoria_color as color;
 mod component_execution;

@@ -41,11 +41,11 @@ fn combined_upright_compresses_long_text_without_expanding_short_text() {
     let long = Text::vertical(style).push("1234").layout().unwrap();
     let short_scale = short.lines[0].line.runs[0]
         .placement
-        .transform_vector(Vector2::new(1.0, 0.0))
+        .transform_offset(Offset::new(1.0, 0.0))
         .x;
     let long_scale = long.lines[0].line.runs[0]
         .placement
-        .transform_vector(Vector2::new(1.0, 0.0))
+        .transform_offset(Offset::new(1.0, 0.0))
         .x;
 
     assert_eq!(short_scale, 1.0);

@@ -24,7 +24,7 @@ pub(super) fn wrap_paragraph(
         let paragraph_is_rtl = paragraph_level(options).is_some_and(|level| level.is_rtl());
         return Ok(vec![HorizontalLine {
             line: TextLine::default(),
-            baseline: Vector2::ZERO,
+            baseline: Offset::ZERO,
             source_range: paragraph.start..paragraph.start,
             paragraph_is_rtl,
             justify_allowed: false,
@@ -188,7 +188,7 @@ pub(super) fn wrap_paragraph(
         };
         lines.push(HorizontalLine {
             line,
-            baseline: Vector2::ZERO,
+            baseline: Offset::ZERO,
             source_range: paragraph.start + line_start..paragraph.start + line_end,
             paragraph_is_rtl,
             justify_allowed: line_end < paragraph_text.len(),

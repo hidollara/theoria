@@ -1,4 +1,4 @@
-use crate::{geometry::Point, math::Vector2};
+use crate::geometry::{Offset, Point};
 
 /// A permitted movement boundary around a pointer-down position.
 ///
@@ -29,7 +29,7 @@ impl MovementThreshold {
     }
 
     pub(crate) fn exceeded(self, origin: Point, position: Point) -> bool {
-        let Vector2 { x, y } = position - origin;
+        let Offset { x, y } = position - origin;
         if !x.is_finite() || !y.is_finite() {
             return true;
         }

@@ -5,7 +5,6 @@ use skrifa::bitmap::{BitmapData, BitmapGlyph, Origin};
 use crate::{
     canvas::{Canvas, ColorField, Coverage, ImagePattern, ImageSampling},
     image::Srgba8Image,
-    math::{Matrix2, Vector2},
     transform::Affine2,
 };
 
@@ -29,10 +28,8 @@ pub(super) fn canvas(
         Origin::TopLeft => origin_y,
         Origin::BottomLeft => origin_y + glyph.height as f32 * unit_y,
     };
-    let image_to_font = Affine2::new(
-        Matrix2::from_columns(Vector2::new(unit_x, 0.0), Vector2::new(0.0, -unit_y)),
-        Vector2::new(left, top),
-    );
+    let image_to_font = Affine2::from_rows([[unit_x, 0.0, left], [0.0, -unit_y, top]])
+        .ok_or(GlyphPresentationError::InvalidBitmap)?;
     let pattern = ImagePattern::placed(image, image_to_font)
         .ok_or(GlyphPresentationError::InvalidBitmap)?
         .with_sampling(ImageSampling::Linear);

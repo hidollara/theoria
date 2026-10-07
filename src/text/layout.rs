@@ -4,7 +4,7 @@ use unicode_bidi::{Level, ParagraphBidiInfo};
 
 use crate::{
     font::{BaselineAxis, BaselineKind, ResolvedFont},
-    math::Vector2,
+    geometry::Offset,
     transform::Affine2,
 };
 

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::math::Vector2;
+use crate::geometry::Offset;
 
 use super::{GlyphRun, LayoutRun, ShapingDirection, TabAlignment, TabStop, TabStops};
 
@@ -189,10 +189,10 @@ impl InlineRun {
         };
         let glyphs = Arc::make_mut(&mut self.run.glyphs);
         for glyph in glyphs.iter_mut() {
-            glyph.advance = Vector2::ZERO;
+            glyph.advance = Offset::ZERO;
         }
         if let Some(glyph) = glyphs.last_mut() {
-            glyph.advance = Vector2::new(design_advance, 0.0);
+            glyph.advance = Offset::new(design_advance, 0.0);
         }
     }
 
@@ -301,7 +301,7 @@ fn word_separator_clusters(run: &GlyphRun, content: &str) -> Vec<(usize, usize)>
 fn cluster_has_inline_advance(run: &GlyphRun, start: usize, end: usize) -> bool {
     let advance = run.glyphs[start..end]
         .iter()
-        .fold(Vector2::ZERO, |sum, glyph| sum + glyph.advance);
+        .fold(Offset::ZERO, |sum, glyph| sum + glyph.advance);
     match run.direction {
         ShapingDirection::LeftToRight | ShapingDirection::RightToLeft => advance.x != 0.0,
         ShapingDirection::TopToBottom | ShapingDirection::BottomToTop => advance.y != 0.0,
@@ -337,17 +337,17 @@ pub(super) fn canvas_to_design_units(run: &GlyphRun, font_size: f32, spacing: f3
     spacing * f32::from(run.font.metrics().units_per_em()) / font_size
 }
 
-pub(super) fn spacing_advance(run: &GlyphRun, spacing: f32) -> Vector2 {
+pub(super) fn spacing_advance(run: &GlyphRun, spacing: f32) -> Offset {
     let advance = run
         .glyphs
         .iter()
-        .fold(Vector2::ZERO, |sum, glyph| sum + glyph.advance);
+        .fold(Offset::ZERO, |sum, glyph| sum + glyph.advance);
     match run.direction {
         ShapingDirection::LeftToRight | ShapingDirection::RightToLeft => {
-            Vector2::new(spacing * nonzero_sign(advance.x, 1.0).signum(), 0.0)
+            Offset::new(spacing * nonzero_sign(advance.x, 1.0).signum(), 0.0)
         }
         ShapingDirection::TopToBottom | ShapingDirection::BottomToTop => {
-            Vector2::new(0.0, spacing * nonzero_sign(advance.y, -1.0).signum())
+            Offset::new(0.0, spacing * nonzero_sign(advance.y, -1.0).signum())
         }
     }
 }

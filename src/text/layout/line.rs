@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::{math::Vector2, transform::Affine2};
+use crate::{geometry::Offset, transform::Affine2};
 
 use super::{GlyphRun, LayoutRun, PositionedRun, RunOrientation};
 
@@ -8,20 +8,21 @@ use super::{GlyphRun, LayoutRun, PositionedRun, RunOrientation};
 #[derive(Clone, Debug)]
 pub(in crate::text) struct TextLine {
     pub(in crate::text) runs: Arc<[PositionedRun]>,
-    pub(in crate::text) advance: Vector2,
+    pub(in crate::text) advance: Offset,
 }
 
 impl TextLine {
-    pub(super) const fn advance(&self) -> Vector2 {
+    pub(super) const fn advance(&self) -> Offset {
         self.advance
     }
 
     pub(super) fn reflow_horizontal_runs(&mut self) {
         let mut pen = 0.0;
         for positioned in Arc::make_mut(&mut self.runs) {
-            let baseline_y = positioned.placement.translation().y;
+            let baseline_y = positioned.placement.offset().y;
             positioned.inline_start = pen;
-            positioned.placement = Affine2::from_translation(Vector2::new(pen, baseline_y));
+            positioned.placement = Affine2::from_translation(Offset::new(pen, baseline_y))
+                .expect("finite translation");
             pen += positioned.run.advance().x;
         }
         self.advance.x = pen;
@@ -47,10 +48,11 @@ impl TextLine {
         for positioned in &mut positioned_runs[index + 1..] {
             positioned.inline_start += delta;
             let placement = positioned.placement;
-            positioned.placement = Affine2::new(
-                placement.linear(),
-                placement.translation() + Vector2::new(0.0, delta),
-            );
+            positioned.placement = placement
+                .then(
+                    Affine2::from_translation(Offset::new(0.0, delta)).expect("finite text offset"),
+                )
+                .expect("finite text placement");
         }
         self.advance.y += delta;
         true
@@ -61,7 +63,7 @@ impl Default for TextLine {
     fn default() -> Self {
         Self {
             runs: Arc::from([]),
-            advance: Vector2::ZERO,
+            advance: Offset::ZERO,
         }
     }
 }

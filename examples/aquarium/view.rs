@@ -4,8 +4,7 @@ use theoria::{
     canvas::{Canvas, Color, Composite, Composition, Coverage, Opacity},
     color::{LinearSrgb, Srgb},
     font::Font,
-    geometry::Point,
-    math::Vector2,
+    geometry::{Offset, Point},
     path::Path,
     text::{Text, TextStyle},
     transform::Affine2,
@@ -177,7 +176,7 @@ fn label(font: &Font, content: &str, size: f32, color: impl Into<Color>, x: f32,
         .to_canvas(color)
         .expect("the aquarium label glyphs can be realized")
         .expect("the aquarium label contains drawable glyphs")
-        .transformed(Affine2::from_translation(Vector2::new(x, y)))
+        .transformed(Affine2::from_translation(Offset::new(x, y)).expect("finite translation"))
 }
 
 fn stage_name(stage: MessageStage) -> &'static str {

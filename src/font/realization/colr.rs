@@ -21,7 +21,6 @@ use crate::{
     },
     color::{LinearSrgb, Srgb},
     geometry::Point,
-    math::{Matrix2, Vector2},
     path::Path,
     transform::Affine2,
 };
@@ -294,8 +293,13 @@ impl<'font, 'palette> CanvasColorPainter<'font, 'palette> {
 
 impl ColorPainter for CanvasColorPainter<'_, '_> {
     fn push_transform(&mut self, transform: Transform) {
-        let local = affine(transform);
-        self.transforms.push(local.then(self.transform()));
+        match affine(transform).and_then(|local| local.then(self.transform())) {
+            Some(transform) => self.transforms.push(transform),
+            None => {
+                self.fail(GlyphPresentationError::InvalidColorGlyph);
+                self.transforms.push(Affine2::IDENTITY);
+            }
+        }
     }
 
     fn pop_transform(&mut self) {
@@ -379,14 +383,11 @@ impl ColorPainter for CanvasColorPainter<'_, '_> {
     }
 }
 
-fn affine(transform: Transform) -> Affine2 {
-    Affine2::new(
-        Matrix2::from_columns(
-            Vector2::new(transform.xx, transform.yx),
-            Vector2::new(transform.xy, transform.yy),
-        ),
-        Vector2::new(transform.dx, transform.dy),
-    )
+fn affine(transform: Transform) -> Option<Affine2> {
+    Affine2::from_rows([
+        [transform.xx, transform.xy, transform.dx],
+        [transform.yx, transform.yy, transform.dy],
+    ])
 }
 
 fn intersect(left: Coverage, right: Coverage) -> Coverage {

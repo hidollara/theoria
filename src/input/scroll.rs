@@ -1,4 +1,4 @@
-use crate::{geometry::Point, math::Vector2};
+use crate::geometry::{Offset, Point};
 
 /// Distance reported by a scrolling input source.
 ///
@@ -7,8 +7,8 @@ use crate::{geometry::Point, math::Vector2};
 /// report a direct surface-space displacement.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ScrollDelta {
-    Steps(Vector2),
-    Pixels(Vector2),
+    Steps(Offset),
+    Pixels(Offset),
 }
 
 /// A scroll observation located in its current input coordinate space.

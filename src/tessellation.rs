@@ -263,7 +263,7 @@ impl<'a> DashCursor<'a> {
 mod tests {
     use super::*;
     use crate::{
-        math::Vector2,
+        geometry::Radii,
         path::{ArcSize, ArcSweep, Subpath},
     };
 
@@ -484,7 +484,7 @@ mod tests {
             Subpath::new(Point::new(0.0, 0.0))
                 .quadratic_to(Point::new(4.0, 8.0), Point::new(8.0, 0.0))
                 .elliptical_arc_to(
-                    Vector2::new(4.0, 3.0),
+                    Radii::new(4.0, 3.0),
                     0.2,
                     ArcSize::Minor,
                     ArcSweep::Positive,
@@ -579,14 +579,14 @@ mod tests {
         let ellipse = Path::new().add_subpath(
             Subpath::new(Point::new(-4.0, 0.0))
                 .elliptical_arc_to(
-                    Vector2::new(4.0, 2.0),
+                    Radii::new(4.0, 2.0),
                     0.0,
                     ArcSize::Minor,
                     ArcSweep::Positive,
                     Point::new(4.0, 0.0),
                 )
                 .elliptical_arc_to(
-                    Vector2::new(4.0, 2.0),
+                    Radii::new(4.0, 2.0),
                     0.0,
                     ArcSize::Minor,
                     ArcSweep::Positive,
@@ -606,7 +606,7 @@ mod tests {
     #[test]
     fn a_zero_arc_radius_degenerates_to_a_line() {
         let arc = Path::new().add_subpath(Subpath::new(Point::new(0.0, 0.0)).elliptical_arc_to(
-            Vector2::new(0.0, 3.0),
+            Radii::new(0.0, 3.0),
             0.0,
             ArcSize::Major,
             ArcSweep::Negative,

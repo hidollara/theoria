@@ -77,7 +77,9 @@ impl TrianglePushConstants {
         canvas_to_root: Projective2,
         view: CanvasView,
     ) -> Self {
-        let canvas_to_view = canvas_to_root.then(view.canvas_to_view);
+        let canvas_to_view = canvas_to_root
+            .then(view.canvas_to_view)
+            .expect("finite composed transform");
         Self {
             vertices: std::array::from_fn(|index| GpuVertex {
                 position: transformed_point_to_clip(points[index], canvas_to_view),
@@ -156,7 +158,9 @@ impl ImagePushConstants {
             RgbAlphaAssociation::Straight => 0.0,
             RgbAlphaAssociation::Premultiplied => 1.0,
         };
-        let image_to_view = image_to_root.then(view.canvas_to_view);
+        let image_to_view = image_to_root
+            .then(view.canvas_to_view)
+            .expect("finite composed transform");
         Self {
             vertices: points.map(|point| {
                 let image_point = canvas_to_image.transform_homogeneous(point);
@@ -165,7 +169,7 @@ impl ImagePushConstants {
                     uv: [
                         image_point.x / width,
                         image_point.y / height,
-                        image_point.z,
+                        image_point.w,
                         rgb_is_premultiplied,
                     ],
                 }

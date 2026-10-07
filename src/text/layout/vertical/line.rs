@@ -38,9 +38,10 @@ impl TextLine {
                     };
                     let orientation_transform = match orientation {
                         RunOrientation::Upright => Affine2::IDENTITY,
-                        RunOrientation::Sideways => Affine2::from_matrix(
-                            crate::math::Matrix2::from_angle(std::f32::consts::FRAC_PI_2),
-                        ),
+                        RunOrientation::Sideways => {
+                            Affine2::from_rotation(std::f32::consts::FRAC_PI_2)
+                                .expect("finite rotation")
+                        }
                         RunOrientation::Combined => unreachable!("combined runs require a group"),
                     };
                     let cross = match orientation {
@@ -50,9 +51,15 @@ impl TextLine {
                     };
                     positioned_runs.push(PositionedRun {
                         run,
-                        placement: orientation_transform.then(Affine2::from_translation(
-                            Vector2::new(cross + baseline_shift, inline),
-                        )),
+                        placement: orientation_transform
+                            .then(
+                                Affine2::from_translation(Offset::new(
+                                    cross + baseline_shift,
+                                    inline,
+                                ))
+                                .expect("finite translation"),
+                            )
+                            .expect("finite composed transform"),
                         inline_start: inline,
                         inline_scale: 1.0,
                         orientation,
@@ -69,7 +76,7 @@ impl TextLine {
         }
         Self {
             runs: positioned_runs.into(),
-            advance: Vector2::new(0.0, inline),
+            advance: Offset::new(0.0, inline),
         }
     }
 }
@@ -186,12 +193,16 @@ fn position_combined_runs(
         let visual_start = start.min(end);
         output.push(PositionedRun {
             run,
-            placement: Affine2::from_scale(Vector2::new(render_scale, render_scale)).then(
-                Affine2::from_translation(Vector2::new(
-                    (start - center) * render_scale,
-                    baseline_y,
-                )),
-            ),
+            placement: Affine2::from_scale(render_scale, render_scale)
+                .expect("finite scale")
+                .then(
+                    Affine2::from_translation(Offset::new(
+                        (start - center) * render_scale,
+                        baseline_y,
+                    ))
+                    .expect("finite translation"),
+                )
+                .expect("finite composed transform"),
             inline_start: inline + (visual_start - minimum) * inline_scale,
             inline_scale,
             orientation: RunOrientation::Combined,

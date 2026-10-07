@@ -359,7 +359,7 @@ impl VerticalText {
                 }
             }
             let content_height = column.line.advance().y.abs();
-            column.baseline = Vector2::new(
+            column.baseline = Offset::new(
                 baseline_x,
                 column.line_box_start
                     + inline_alignment_offset(
@@ -392,7 +392,7 @@ impl VerticalText {
         Ok(Text {
             content: attributed.content,
             lines,
-            size: Vector2::new(width, height),
+            size: Offset::new(width, height),
             writing_mode: WritingMode::Vertical,
             paint_ranges: attributed.paint_ranges,
         })
