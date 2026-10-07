@@ -187,7 +187,7 @@ impl BlendMode {
                     "let cb = backdrop; let cs = source; return clamp({expression}, vec3<f32>(0.0), vec3<f32>(1.0));"
                 );
                 let definition = WgslBlend::new(body)
-                    .with_helpers(include_str!("../../shaders/canvas_renderer/css_blend.wgsl"));
+                    .with_helpers(include_str!("../../shaders/css_blend.wgsl"));
                 BlendShader::wgsl(definition)
                     .expect("the static CSS blend shader must satisfy its WGSL contract")
             })

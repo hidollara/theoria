@@ -615,7 +615,7 @@ impl MeshGradient {
         })
     }
 
-    pub(crate) fn triangles(&self) -> &[[GradientPoint; 3]] {
+    pub fn triangles(&self) -> &[[GradientPoint; 3]] {
         &self.triangles
     }
 

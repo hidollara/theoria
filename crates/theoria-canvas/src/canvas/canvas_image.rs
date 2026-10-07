@@ -65,16 +65,16 @@ impl CanvasImage {
         self.inner.height
     }
 
-    pub(crate) fn instance_key(&self) -> CanvasImageInstanceKey {
+    pub fn instance_key(&self) -> CanvasImageInstanceKey {
         CanvasImageInstanceKey(Arc::downgrade(&self.inner))
     }
 }
 
 #[derive(Clone)]
-pub(crate) struct CanvasImageInstanceKey(Weak<CanvasImageInner>);
+pub struct CanvasImageInstanceKey(Weak<CanvasImageInner>);
 
 impl CanvasImageInstanceKey {
-    pub(crate) fn is_alive(&self) -> bool {
+    pub fn is_alive(&self) -> bool {
         self.0.strong_count() != 0
     }
 }

@@ -1,3 +1,5 @@
+use crate::canvas_renderer::color_space::ColorRendererExt;
+
 use std::{error::Error, sync::Arc};
 
 use ash::vk;

@@ -1,3 +1,6 @@
+#[cfg(test)]
+use crate::canvas_renderer::color_space::ColorRendererExt;
+
 use skrifa::{
     GlyphId, MetadataProvider,
     color::{

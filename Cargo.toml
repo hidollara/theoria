@@ -5,6 +5,7 @@ edition = "2024"
 
 [workspace]
 members = [
+    "crates/theoria-canvas",
     "crates/theoria-color",
     "crates/theoria-component",
     "crates/theoria-event",
@@ -25,6 +26,7 @@ naga = { version = "30.0.0", features = ["wgsl-in", "spv-out"] }
 png = "0.18.0"
 resvg = { version = "0.48.1", default-features = false, features = ["text", "raster-images"] }
 skrifa = "0.46.2"
+theoria-canvas = { path = "crates/theoria-canvas" }
 theoria-component = { path = "crates/theoria-component" }
 theoria-color = { path = "crates/theoria-color" }
 theoria-event = { path = "crates/theoria-event" }

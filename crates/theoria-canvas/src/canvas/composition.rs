@@ -42,7 +42,7 @@ pub enum Composite {
 }
 
 impl Composite {
-    pub(crate) const ALL: [Self; 13] = [
+    pub const ALL: [Self; 13] = [
         Self::Clear,
         Self::Copy,
         Self::Destination,
@@ -103,14 +103,10 @@ impl Composition {
         self.blend.as_ref()
     }
 
-    pub(crate) fn blend_shader(&self) -> &BlendShader {
+    pub fn blend_shader(&self) -> &BlendShader {
         match &self.blend {
             Some(blend) => blend.shader(),
             None => BlendShader::identity(),
         }
-    }
-
-    pub(crate) fn requires_destination_read_in(&self, working_space: &ColorSpace) -> bool {
-        self.blend.is_some() || &self.composite_space != working_space
     }
 }

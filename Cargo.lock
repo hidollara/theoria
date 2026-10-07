@@ -1341,6 +1341,7 @@ dependencies = [
  "png",
  "resvg",
  "skrifa 0.46.2",
+ "theoria-canvas",
  "theoria-color",
  "theoria-component",
  "theoria-event",
@@ -1348,6 +1349,14 @@ dependencies = [
  "unicode-bidi",
  "wgpu",
  "windows",
+]
+
+[[package]]
+name = "theoria-canvas"
+version = "0.1.0"
+dependencies = [
+ "naga",
+ "theoria-color",
 ]
 
 [[package]]

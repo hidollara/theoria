@@ -1,3 +1,7 @@
+use crate::canvas_renderer::blend::CompositionExt;
+
+use crate::canvas_renderer::color_space::ColorRendererExt;
+
 use wgpu::util::DeviceExt;
 
 use crate::{

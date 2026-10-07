@@ -3,7 +3,7 @@ use crate::path::{FillRule, Path, StrokeStyle};
 use super::ColorField;
 
 #[derive(Clone, Debug)]
-pub(crate) enum CoverageNode {
+pub enum CoverageNode {
     All,
     Fill { path: Path, rule: FillRule },
     Stroke { path: Path, style: StrokeStyle },
@@ -14,8 +14,8 @@ pub(crate) enum CoverageNode {
 ///
 /// Zero contributes nothing, one applies the field fully, and fractional
 /// values represent masks or antialiased sample coverage. Its
-/// representation is intentionally private so this semantic does not become a
-/// public rendering or expression graph.
+/// node is available for renderer inspection. The stored representation remains
+/// private, and coverage is constructed through these semantic operations.
 #[derive(Clone, Debug)]
 pub struct Coverage {
     pub(super) node: CoverageNode,
@@ -55,7 +55,8 @@ impl Coverage {
         }
     }
 
-    pub(crate) const fn node(&self) -> &CoverageNode {
+    /// Borrows the declared coverage operation.
+    pub const fn node(&self) -> &CoverageNode {
         &self.node
     }
 }

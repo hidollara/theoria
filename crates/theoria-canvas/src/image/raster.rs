@@ -113,7 +113,7 @@ where
         self.inner.alpha
     }
 
-    pub(crate) fn instance_key(&self) -> RasterImageInstanceKey {
+    pub fn instance_key(&self) -> RasterImageInstanceKey {
         RasterImageInstanceKey(Arc::downgrade(&self.inner.identity))
     }
 }
@@ -170,14 +170,14 @@ where
 }
 
 /// A non-owning identity used by renderer caches.
-pub(crate) struct RasterImageInstanceKey(Weak<()>);
+pub struct RasterImageInstanceKey(Weak<()>);
 
 impl RasterImageInstanceKey {
     pub(crate) fn from_owner(owner: &Arc<()>) -> Self {
         Self(Arc::downgrade(owner))
     }
 
-    pub(crate) fn is_alive(&self) -> bool {
+    pub fn is_alive(&self) -> bool {
         self.0.strong_count() != 0
     }
 }

@@ -110,41 +110,47 @@ impl PreparedColors {
     }
 }
 
-impl Color {
+pub(crate) trait ColorRendererExt {
+    fn straight_rgba_in(&self, space: impl Into<ColorSpace>) -> [f32; 4];
+    fn try_straight_rgba_in(&self, space: impl Into<ColorSpace>) -> Result<[f32; 4], ColorError>;
+}
+
+impl ColorRendererExt for Color {
     /// Resolves the declared source color into a renderer-selected RGB space.
-    pub(crate) fn straight_rgba_in(&self, space: impl Into<ColorSpace>) -> [f32; 4] {
+    fn straight_rgba_in(&self, space: impl Into<ColorSpace>) -> [f32; 4] {
         self.try_straight_rgba_in(space)
             .expect("this caller requires an ICC conversion known to succeed")
     }
 
-    pub(crate) fn try_straight_rgba_in(
-        &self,
-        space: impl Into<ColorSpace>,
-    ) -> Result<[f32; 4], ColorError> {
-        let coordinates: Vec<f64> = match &self.value {
+    fn try_straight_rgba_in(&self, space: impl Into<ColorSpace>) -> Result<[f32; 4], ColorError> {
+        let coordinates: Vec<f64> = match self.value() {
             ColorValue::Dynamic(coordinates, _) => coordinates.to_vec(),
-            _ => self.value.coordinates_as_f64().to_vec(),
+            _ => self.value().coordinates_as_f64().to_vec(),
         };
         let destination = space.into();
         if destination.channels() != 3 {
             return Err(ColorError::UnsupportedColorChannels(destination.channels()));
         }
-        let converted = if self.space == destination {
+        let converted = if self.space() == &destination {
             coordinates
         } else {
-            let transfer = self.space.transfer_to(&destination)?;
+            let transfer = self.space().transfer_to(&destination)?;
             transfer.evaluate(&coordinates)?
         };
         Ok([
             converted[0] as f32,
             converted[1] as f32,
             converted[2] as f32,
-            self.value.alpha().as_f32(),
+            self.value().alpha().as_f32(),
         ])
     }
 }
 
-impl ColorValue {
+trait ColorValueExt {
+    fn coordinates_as_f64(&self) -> [f64; 3];
+}
+
+impl ColorValueExt for ColorValue {
     fn coordinates_as_f64(&self) -> [f64; 3] {
         match self {
             Self::F32(coordinates, _) => coordinates.map(f64::from),
@@ -398,7 +404,7 @@ mod tests {
         assert_eq!(color, original);
         assert!(prepared.lower(&color)[0] > 0.0);
         assert!(matches!(
-            &color.value,
+            color.value(),
             ColorValue::Dynamic(coordinates, _) if coordinates.as_ref() == [0.25, 0.5, 0.75]
         ));
     }

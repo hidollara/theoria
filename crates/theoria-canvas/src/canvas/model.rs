@@ -5,13 +5,16 @@ use crate::transform::Projective2;
 use super::{ColorField, Composition, Coverage};
 
 #[derive(Clone, Debug)]
-pub(crate) struct Draw {
-    pub(crate) source: ColorField,
-    pub(crate) coverage: Coverage,
+/// A draw's declared color field and coverage, exposed for renderer inspection.
+pub struct Draw {
+    pub source: ColorField,
+    pub coverage: Coverage,
 }
 
 #[derive(Clone, Debug)]
-pub(crate) enum CanvasNode {
+/// The drawing structure inspected by a renderer.
+/// Constructing a node does not construct a [`Canvas`]; use its drawing methods.
+pub enum CanvasNode {
     Draw(Draw),
     Transform {
         content: Canvas,
@@ -29,6 +32,14 @@ pub(crate) enum CanvasNode {
 /// The Canvas assigns no physical direction to its axes and has no pixel size.
 /// A CanvasView gives its coordinates drawing semantics by mapping them into a
 /// normalized, top-left-origin View square.
+///
+/// Nodes can be inspected, but are not a second construction route:
+/// ```compile_fail
+/// use theoria_canvas::{Canvas, CanvasNode};
+/// fn wrap(node: CanvasNode) -> Canvas {
+///     node.into()
+/// }
+/// ```
 #[derive(Clone, Debug)]
 pub struct Canvas {
     pub(super) node: Arc<CanvasNode>,
@@ -69,7 +80,8 @@ impl Canvas {
         }
     }
 
-    pub(crate) fn node(&self) -> &CanvasNode {
+    /// Borrows this drawing's node without exposing the shared storage.
+    pub fn node(&self) -> &CanvasNode {
         &self.node
     }
 }

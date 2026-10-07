@@ -30,7 +30,6 @@ fn main() {
     for source_file in [
         "shaders/canvas_renderer/composition_context.wgsl",
         "shaders/canvas_renderer/composition_fragment.wgsl",
-        "shaders/canvas_renderer/css_blend.wgsl",
     ] {
         println!("cargo:rerun-if-changed={source_file}");
     }

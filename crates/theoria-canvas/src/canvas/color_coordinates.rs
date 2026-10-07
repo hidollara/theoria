@@ -55,7 +55,7 @@ impl CoordinateValue {
 /// required. Its original values are kept until renderer preparation.
 ///
 /// ```
-/// use theoria::{
+/// use theoria_canvas::{
 ///     canvas::{Color, ColorCoordinates, CoordinateValue, Opacity},
 ///     color::{Rgb, Srgb},
 /// };

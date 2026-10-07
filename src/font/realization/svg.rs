@@ -1,3 +1,5 @@
+use crate::canvas_renderer::color_space::ColorRendererExt;
+
 use std::io::Read;
 
 use resvg::{tiny_skia, usvg};

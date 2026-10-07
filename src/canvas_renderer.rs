@@ -7,6 +7,8 @@ pub(crate) mod canvas_plan;
 pub(crate) mod color_space;
 pub(crate) mod composition_encoding;
 pub(crate) mod composition_shader;
+#[cfg(test)]
+mod declaration_tests;
 pub(crate) mod icc_image_shader;
 pub(crate) mod mesh_paint;
 pub(crate) mod path_sampling;

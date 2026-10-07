@@ -1,7 +1,11 @@
 use std::error::Error;
 
 use super::composition_shader::{self, Binding};
-use crate::{canvas::BlendShader, color::ColorSpace, transfer_wgsl::TransferWgslExt};
+use crate::{
+    canvas::{BlendShader, Composition},
+    color::ColorSpace,
+    transfer_wgsl::TransferWgslExt,
+};
 
 pub(crate) trait BlendShaderExt {
     #[cfg(test)]
@@ -116,5 +120,15 @@ mod tests {
         )
         .validate(&module)
         .unwrap();
+    }
+}
+
+pub(crate) trait CompositionExt {
+    fn requires_destination_read_in(&self, working_space: &ColorSpace) -> bool;
+}
+
+impl CompositionExt for Composition {
+    fn requires_destination_read_in(&self, working_space: &ColorSpace) -> bool {
+        self.blend().is_some() || self.composite_space() != working_space
     }
 }

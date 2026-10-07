@@ -1,3 +1,5 @@
+use crate::canvas_renderer::blend::CompositionExt;
+
 use super::color_space::PreparedColors;
 use crate::canvas::{
     Canvas, CanvasNode, ColorError, ColorField, Composite, Composition, CoverageNode, Draw,

@@ -1,3 +1,5 @@
+use crate::canvas_renderer::blend::CompositionExt;
+
 use ash::vk;
 
 mod commands;
