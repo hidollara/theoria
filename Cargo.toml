@@ -8,6 +8,7 @@ members = [
     "crates/theoria-canvas",
     "crates/theoria-renderer",
     "crates/theoria-webgpu",
+    "crates/theoria-vulkan",
     "crates/theoria-color",
     "crates/theoria-component",
     "crates/theoria-event",
@@ -20,15 +21,12 @@ default = ["webgpu"]
 webgpu = ["dep:theoria-webgpu"]
 
 [dependencies]
-theoria-renderer = { path = "crates/theoria-renderer", features = ["wgsl", "tessellation", "mesh-paint"] }
-ash = "0.38.0"
-bytemuck = { version = "1.25.0", features = ["derive"] }
+theoria-renderer = { path = "crates/theoria-renderer", features = ["tessellation"] }
 flate2 = "1.1.2"
 harfrust = "0.13.2"
 icu_locale_core = "2.3.0"
 icu_properties = { version = "2.3.0", features = ["unicode_bidi"] }
 icu_segmenter = { version = "2.3.0", features = ["unstable"] }
-naga = { version = "30.0.0", features = ["wgsl-in", "spv-out"] }
 png = "0.18.0"
 resvg = { version = "0.48.1", default-features = false, features = ["text", "raster-images"] }
 skrifa = "0.46.2"
@@ -37,6 +35,7 @@ theoria-component = { path = "crates/theoria-component" }
 theoria-color = { path = "crates/theoria-color" }
 theoria-event = { path = "crates/theoria-event" }
 theoria-reactive = { path = "crates/theoria-reactive" }
+theoria-vulkan = { path = "crates/theoria-vulkan", features = ["win32"] }
 unicode-bidi = { version = "0.3.18", default-features = false }
 theoria-webgpu = { path = "crates/theoria-webgpu", optional = true }
 windows = { version = "0.62.2", features = [
@@ -49,12 +48,5 @@ windows = { version = "0.62.2", features = [
     "Win32_UI_WindowsAndMessaging",
 ] }
 
-[build-dependencies]
-theoria-renderer = { path = "crates/theoria-renderer", features = ["wgsl"] }
-naga = { version = "30.0.0", features = ["wgsl-in", "spv-out"] }
-theoria-color = { path = "crates/theoria-color" }
-
 [dev-dependencies]
 font-test-data = "0.8.0"
-half = "2.7.1"
-moxcms = { version = "0.8.1", default-features = false }

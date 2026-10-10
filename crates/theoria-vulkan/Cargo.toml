@@ -1,0 +1,24 @@
+[package]
+name = "theoria-vulkan"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = []
+win32 = []
+
+[dependencies]
+ash = "0.38.0"
+bytemuck = { version = "1.25.0", features = ["derive"] }
+naga = { version = "30.0.0", features = ["wgsl-in", "spv-out"] }
+theoria-canvas = { path = "../theoria-canvas" }
+theoria-color = { path = "../theoria-color" }
+theoria-renderer = { path = "../theoria-renderer", features = ["wgsl", "tessellation", "mesh-paint"] }
+
+[build-dependencies]
+naga = { version = "30.0.0", features = ["wgsl-in", "spv-out"] }
+theoria-color = { path = "../theoria-color" }
+theoria-renderer = { path = "../theoria-renderer", features = ["wgsl"] }
+
+[dev-dependencies]
+half = "2.7.1"

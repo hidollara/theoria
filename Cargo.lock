@@ -1326,17 +1326,12 @@ dependencies = [
 name = "theoria"
 version = "0.1.0"
 dependencies = [
- "ash",
- "bytemuck",
  "flate2",
  "font-test-data",
- "half",
  "harfrust 0.13.2",
  "icu_locale_core",
  "icu_properties",
  "icu_segmenter",
- "moxcms",
- "naga",
  "png",
  "resvg",
  "skrifa 0.46.2",
@@ -1346,6 +1341,7 @@ dependencies = [
  "theoria-event",
  "theoria-reactive",
  "theoria-renderer",
+ "theoria-vulkan",
  "theoria-webgpu",
  "unicode-bidi",
  "windows",
@@ -1394,6 +1390,19 @@ dependencies = [
  "theoria-canvas",
  "theoria-color",
  "wgpu",
+]
+
+[[package]]
+name = "theoria-vulkan"
+version = "0.1.0"
+dependencies = [
+ "ash",
+ "bytemuck",
+ "half",
+ "naga",
+ "theoria-canvas",
+ "theoria-color",
+ "theoria-renderer",
 ]
 
 [[package]]

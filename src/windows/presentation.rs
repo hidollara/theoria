@@ -10,9 +10,10 @@ use crate::{
     component::MountContext,
     reactive::Computed,
     surface::{SurfaceContent, SurfaceSize, Viewport},
-    vulkan::{CanvasRenderer, PresentOutcome, Win32Presenter},
-    windows::{Result, presentation_target::Win32PresentationTarget},
+    windows::Result,
 };
+
+use theoria_vulkan::{CanvasRenderer, PresentOutcome, Win32PresentationTarget, Win32Presenter};
 
 pub(super) struct WindowPresentation {
     presenter: Win32Presenter,

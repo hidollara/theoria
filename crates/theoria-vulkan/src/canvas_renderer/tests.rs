@@ -1,0 +1,217 @@
+use super::super::color::RgbAlphaAssociation;
+use super::encoding::ImagePushConstants;
+use super::pipeline::composite_blend_factors;
+use super::*;
+use crate::test_support::{can_record_directly, required_scratch_images};
+use theoria_canvas::canvas::{
+    Color, Composite, Composition, Coverage, ImagePattern, Opacity, canvas_image::CanvasImage,
+    image::ImageKind,
+};
+use theoria_canvas::geometry::Point;
+use theoria_canvas::image::Srgba8Image;
+use theoria_canvas::transform::Projective2;
+use theoria_color::{LinearSrgb, Srgb};
+use theoria_renderer::canvas_plan::collect_images;
+
+fn sample_canvas() -> Canvas {
+    Canvas::draw(
+        Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE),
+        Coverage::all(),
+    )
+}
+
+#[test]
+fn canvas_image_is_an_image_boundary_while_canvas_color_field_stays_semantic() {
+    let pixels = Srgba8Image::new(1, 1, vec![255; 4]).unwrap();
+    let producer = Canvas::draw(pixels.clone(), Coverage::all());
+    let view = CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(1.0, 1.0)).unwrap();
+    let image = CanvasImage::new(producer.clone(), view, 1, 1).unwrap();
+
+    let mut outer_images = Vec::new();
+    collect_images(
+        &Canvas::draw(image.clone(), Coverage::all()),
+        &mut outer_images,
+    );
+    assert_eq!(outer_images.len(), 1);
+    assert!(matches!(outer_images[0].kind(),
+        ImageKind::Canvas(source) if source.instance_key() == image.instance_key()
+    ));
+
+    let mut canvas_dependencies = Vec::new();
+    collect_images(
+        &Canvas::draw(producer, Coverage::all()),
+        &mut canvas_dependencies,
+    );
+    assert_eq!(canvas_dependencies.len(), 1);
+    assert!(matches!(
+        canvas_dependencies[0].kind(),
+        ImageKind::Raster(source) if source.instance_key() == pixels.instance_key()
+    ));
+}
+
+#[test]
+fn image_sampling_respects_the_sampled_rgb_alpha_association() {
+    let straight = Srgba8Image::new(1, 1, vec![255, 128, 64, 128]).unwrap();
+    let canvas_image = CanvasImage::new(
+        sample_canvas(),
+        CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(1.0, 1.0)).unwrap(),
+        1,
+        1,
+    )
+    .unwrap();
+    let points = [Point::new(0.0, 0.0); 3];
+    let view = CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(1.0, 1.0)).unwrap();
+
+    let straight_constants = ImagePushConstants::new(
+        &ImagePattern::new(straight),
+        RgbAlphaAssociation::Straight,
+        4,
+        points,
+        Projective2::IDENTITY,
+        view,
+    );
+    let premultiplied_constants = ImagePushConstants::new(
+        &ImagePattern::new(canvas_image),
+        RgbAlphaAssociation::Premultiplied,
+        4,
+        points,
+        Projective2::IDENTITY,
+        view,
+    );
+
+    assert_eq!(straight_constants.vertices[0].uv[3], 0.0);
+    assert_eq!(premultiplied_constants.vertices[0].uv[3], 1.0);
+}
+
+#[test]
+fn four_sample_msaa_is_preferred_with_a_single_sample_fallback() {
+    assert_eq!(
+        choose_sample_count(
+            vk::SampleCountFlags::TYPE_1
+                | vk::SampleCountFlags::TYPE_2
+                | vk::SampleCountFlags::TYPE_4,
+        ),
+        vk::SampleCountFlags::TYPE_4
+    );
+    assert_eq!(
+        choose_sample_count(vk::SampleCountFlags::TYPE_1 | vk::SampleCountFlags::TYPE_2),
+        vk::SampleCountFlags::TYPE_1
+    );
+}
+
+#[test]
+fn only_coverage_boundaries_reserve_independent_results() {
+    let masked = Canvas::draw(sample_canvas(), Coverage::from_alpha(sample_canvas()))
+        .transformed(Projective2::IDENTITY);
+    let root =
+        sample_canvas().composite(masked, Composition::new(Composite::SourceOver, LinearSrgb));
+
+    assert_eq!(required_scratch_images(&root), 3);
+}
+
+#[test]
+fn non_source_over_composites_create_group_boundaries() {
+    let leaf = Canvas::draw(
+        Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE),
+        Coverage::all(),
+    );
+    let grouped = leaf
+        .clone()
+        .composite(leaf, Composition::new(Composite::SourceIn, LinearSrgb));
+    let root = sample_canvas().composite(
+        grouped.clone(),
+        Composition::new(Composite::SourceOver, LinearSrgb),
+    );
+
+    assert!(!can_record_directly(&grouped));
+    assert_eq!(required_scratch_images(&grouped), 2);
+    assert_eq!(required_scratch_images(&root), 3);
+}
+
+#[test]
+fn destination_reading_blends_reserve_source_and_backdrop_images() {
+    let backdrop = Canvas::draw(
+        Color::new(Srgb, [64_u8, 128, 255], Opacity::<u8>::ONE),
+        Coverage::all(),
+    );
+    let source = Canvas::draw(
+        Color::new(Srgb, [255_u8, 128, 64], Opacity::<u8>::ONE),
+        Coverage::all(),
+    );
+    let blended = backdrop.composite(
+        source,
+        Composition::new(Composite::SourceOver, LinearSrgb)
+            .with_blend(theoria_canvas::canvas::BlendMode::Multiply, LinearSrgb),
+    );
+
+    assert!(!can_record_directly(&blended));
+    assert_eq!(required_scratch_images(&blended), 3);
+}
+
+#[test]
+fn nonlinear_composition_uses_the_destination_reading_path() {
+    let backdrop = Canvas::draw(
+        Color::new(Srgb, [64_u8, 128, 255], Opacity::<u8>::ONE),
+        Coverage::all(),
+    );
+    let source = Canvas::draw(
+        Color::new(Srgb, [255_u8, 128, 64], Opacity::<u8>::ONE),
+        Coverage::all(),
+    );
+    let nonlinear = backdrop.clone().composite(
+        source.clone(),
+        Composition::new(Composite::SourceOver, Srgb),
+    );
+    let linear = backdrop.composite(source, Composition::new(Composite::SourceOver, LinearSrgb));
+
+    assert!(!can_record_directly(&nonlinear));
+    assert_eq!(required_scratch_images(&nonlinear), 3);
+    assert!(can_record_directly(&linear));
+    assert_eq!(required_scratch_images(&linear), 1);
+}
+
+#[test]
+fn porter_duff_operators_use_premultiplied_alpha_factors() {
+    let zero = vk::BlendFactor::ZERO;
+    let one = vk::BlendFactor::ONE;
+    let source_alpha = vk::BlendFactor::SRC_ALPHA;
+    let destination_alpha = vk::BlendFactor::DST_ALPHA;
+    let one_minus_source_alpha = vk::BlendFactor::ONE_MINUS_SRC_ALPHA;
+    let one_minus_destination_alpha = vk::BlendFactor::ONE_MINUS_DST_ALPHA;
+
+    let expected = [
+        (Composite::Clear, (zero, zero)),
+        (Composite::Copy, (one, zero)),
+        (Composite::Destination, (zero, one)),
+        (Composite::SourceOver, (one, one_minus_source_alpha)),
+        (
+            Composite::DestinationOver,
+            (one_minus_destination_alpha, one),
+        ),
+        (Composite::SourceIn, (destination_alpha, zero)),
+        (Composite::DestinationIn, (zero, source_alpha)),
+        (Composite::SourceOut, (one_minus_destination_alpha, zero)),
+        (Composite::DestinationOut, (zero, one_minus_source_alpha)),
+        (
+            Composite::SourceAtop,
+            (destination_alpha, one_minus_source_alpha),
+        ),
+        (
+            Composite::DestinationAtop,
+            (one_minus_destination_alpha, source_alpha),
+        ),
+        (
+            Composite::Xor,
+            (one_minus_destination_alpha, one_minus_source_alpha),
+        ),
+    ];
+
+    for (operator, factors) in expected {
+        assert_eq!(composite_blend_factors(operator), factors);
+    }
+
+    assert_eq!(
+        composite_blend_factors(Composite::Plus),
+        (vk::BlendFactor::ONE, vk::BlendFactor::ONE)
+    );
+}

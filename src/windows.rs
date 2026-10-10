@@ -13,7 +13,6 @@ mod message;
 mod message_pump;
 mod native_window;
 mod presentation;
-mod presentation_target;
 mod window;
 
 pub use self::capabilities::WindowCapabilities;
@@ -21,8 +20,8 @@ pub use self::group::{WindowGroup, WindowGroupContext};
 pub use self::message::{Win32Message, Win32QueuedMessage, Win32ThreadMessage};
 pub use self::message_pump::{Win32QueuedMessageSource, Win32ThreadMessageSource};
 pub use self::native_window::{Win32WindowMessage, Win32WindowMessageSource};
-pub use self::presentation_target::Win32PresentationTarget;
 pub use self::window::Window;
+pub use theoria_vulkan::Win32PresentationTarget;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 

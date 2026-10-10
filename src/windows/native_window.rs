@@ -17,10 +17,9 @@ use ::windows::{
     core::{PCWSTR, Result, w},
 };
 
-use crate::{
-    surface::SurfaceSize,
-    windows::{event_buffer::WindowEventBuffer, presentation_target::Win32PresentationTarget},
-};
+use crate::{surface::SurfaceSize, windows::event_buffer::WindowEventBuffer};
+
+use theoria_vulkan::Win32PresentationTarget;
 
 mod message;
 mod pointer;

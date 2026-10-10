@@ -1,4 +1,4 @@
-use crate::canvas_renderer::color_space::ColorRendererExt;
+use theoria_renderer::color_space::ColorRendererExt;
 
 use std::io::Read;
 
