@@ -1176,8 +1176,7 @@ mod tests {
 
     #[test]
     fn custom_wgsl_blend_is_used_by_webgpu() {
-        let shader =
-            theoria_canvas::canvas::BlendShader::wgsl("return vec3<f32>(1.0, 0.0, 0.0);").unwrap();
+        let shader = theoria_canvas::canvas::BlendShader::wgsl("return vec3<f32>(1.0, 0.0, 0.0);");
         let backdrop = Canvas::draw(
             Color::new(Srgb, [0_u8, 255, 0], Opacity::<u8>::ONE),
             Coverage::all(),
@@ -1193,6 +1192,33 @@ mod tests {
         );
         if let Some(pixel) = render_pixel(&canvas) {
             assert_eq!(pixel, [255, 0, 0, 255]);
+        }
+    }
+
+    #[test]
+    fn invalid_custom_blend_is_a_webgpu_render_error() {
+        let color = Color::new(Srgb, [255_u8, 0, 0], Opacity::<u8>::ONE);
+        let draw = Canvas::draw(color, Coverage::all());
+        for definition in [
+            theoria_canvas::WgslBlend::new("return missing(source);"),
+            theoria_canvas::WgslBlend::new("return source;").with_helpers(
+                "fn working_to_composite(value: vec3<f32>) -> vec3<f32> { return value; }",
+            ),
+        ] {
+            let canvas = draw.clone().composite(
+                draw.clone(),
+                Composition::new(Composite::SourceOver, LinearSrgb)
+                    .with_blend(theoria_canvas::BlendShader::wgsl(definition), Srgb),
+            );
+            if let Some(result) = try_render_pixel_bytes_with_working_space(
+                &canvas,
+                wgpu::TextureFormat::Rgba8UnormSrgb,
+                None,
+                LinearSrgb.into(),
+            ) {
+                let error = result.expect_err("invalid blends must return a render error");
+                assert!(!error.to_string().is_empty());
+            }
         }
     }
 
@@ -1347,6 +1373,16 @@ mod tests {
         profile: Option<&IccProfile>,
         working_space: ColorSpace,
     ) -> Option<[u8; 8]> {
+        try_render_pixel_bytes_with_working_space(canvas, format, profile, working_space)
+            .map(|result| result.expect("test Canvas renders successfully"))
+    }
+
+    fn try_render_pixel_bytes_with_working_space(
+        canvas: &Canvas,
+        format: wgpu::TextureFormat,
+        profile: Option<&IccProfile>,
+        working_space: ColorSpace,
+    ) -> Option<Result<[u8; 8], Box<dyn std::error::Error>>> {
         // Each readback test owns a native device. Keep these device lifetimes
         // separate while allowing the CPU-only tests to run in parallel.
         static RENDER_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -1409,14 +1445,14 @@ mod tests {
                 }
                 None => target,
             };
-            renderer
-                .render(
-                    target,
-                    Viewport::new(0.0, 0.0, size.width as f32, size.height as f32),
-                    canvas,
-                    view,
-                )
-                .unwrap();
+            if let Err(error) = renderer.render(
+                target,
+                Viewport::new(0.0, 0.0, size.width as f32, size.height as f32),
+                canvas,
+                view,
+            ) {
+                return Some(Err(error));
+            }
 
             let bytes_per_row = 256;
             let readback = device.create_buffer(&wgpu::BufferDescriptor {
@@ -1458,7 +1494,7 @@ mod tests {
             device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
             completed.recv().unwrap().unwrap();
             let bytes = readback.get_mapped_range(..).unwrap();
-            Some(bytes[..8].try_into().unwrap())
+            Some(Ok(bytes[..8].try_into().unwrap()))
         })
     }
 

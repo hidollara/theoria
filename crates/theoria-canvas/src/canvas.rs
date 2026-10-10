@@ -10,7 +10,7 @@ mod model;
 mod opacity;
 mod view;
 
-pub use blend::{Blend, BlendMode, BlendOperation, BlendShader, BlendShaderError, WgslBlend};
+pub use blend::{Blend, BlendMode, BlendOperation, BlendShader, WgslBlend};
 pub use canvas_image::{CanvasImage, CanvasImageError};
 pub use color::ColorValue;
 pub use color::{Alpha, Color, ColorError};

@@ -8,7 +8,7 @@ const FRAGMENT: &str = include_str!("../shaders/composition_fragment.wgsl");
 /// not call it in that case, but WGSL still needs a complete module.
 pub const IDENTITY_BODY: &str = "return source;";
 
-fn operation(helpers: &str, body: &str) -> String {
+pub(super) fn operation(helpers: &str, body: &str) -> String {
     let fragments = [
         helpers,
         "fn theoria_blend(backdrop: vec3<f32>, source: vec3<f32>) -> vec3<f32> {",

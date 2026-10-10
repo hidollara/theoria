@@ -5,4 +5,3 @@ edition = "2024"
 
 [dependencies]
 theoria-color = { path = "../theoria-color" }
-naga = { version = "30.0.0", features = ["wgsl-in"] }

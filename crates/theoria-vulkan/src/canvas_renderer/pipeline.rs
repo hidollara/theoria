@@ -530,7 +530,7 @@ mod tests {
             assert!(!compile_fragment(&source).unwrap().is_empty(), "{mode:?}");
         }
 
-        let shader = BlendShader::wgsl("return backdrop * source;").unwrap();
+        let shader = BlendShader::wgsl("return backdrop * source;");
         let source = theoria_renderer::composition_shader::assemble(
             "var<immediate> operation: CompositionOperation;",
             shader.helpers(),

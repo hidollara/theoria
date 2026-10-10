@@ -268,6 +268,40 @@ mod tests {
     }
 
     #[test]
+    fn invalid_custom_blend_is_a_vulkan_render_error() {
+        let size = SurfaceSize {
+            width: 2,
+            height: 2,
+        };
+        let Some(mut surface) = test_surface(size) else {
+            return;
+        };
+        let color = theoria_canvas::Color::new(Srgb, [255_u8, 0, 0], Opacity::<u8>::ONE);
+        let draw = Canvas::draw(color.clone(), Coverage::all());
+        let view = CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(1.0, 1.0)).unwrap();
+        for definition in [
+            theoria_canvas::WgslBlend::new("return missing(source);"),
+            theoria_canvas::WgslBlend::new("return source;").with_helpers(
+                "fn working_to_composite(value: vec3<f32>) -> vec3<f32> { return value; }",
+            ),
+        ] {
+            let canvas = draw.clone().composite(
+                draw.clone(),
+                Composition::new(Composite::SourceOver, LinearSrgb)
+                    .with_blend(theoria_canvas::BlendShader::wgsl(definition), Srgb),
+            );
+            let content = SurfaceContent::new(canvas, view, color.clone());
+            let result = surface.render(&content);
+            assert!(result.is_err(), "invalid blends must return a render error");
+        }
+        // A rejected definition must not prevent a subsequent valid render.
+        let image = surface
+            .render(&SurfaceContent::new(draw, view, color))
+            .unwrap();
+        assert_eq!(&image.pixels()[..4], &[255, 0, 0, 255]);
+    }
+
+    #[test]
     fn selected_working_space_preserves_srgba_readback() {
         let size = SurfaceSize {
             width: 2,
