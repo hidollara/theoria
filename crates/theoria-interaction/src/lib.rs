@@ -1,7 +1,7 @@
 //! Hit testing, pointer gesture recognition, and Component input bindings.
 //!
 //! These operations do not require a native window or GPU backend. Hit testing
-//! uses the renderer's shared CPU path flattening support.
+//! uses Geometry's optional CPU path flattening support.
 
 use theoria_component as component;
 use theoria_event as event;

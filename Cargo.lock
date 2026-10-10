@@ -1373,6 +1373,9 @@ version = "0.1.0"
 [[package]]
 name = "theoria-geometry"
 version = "0.1.0"
+dependencies = [
+ "lyon_path",
+]
 
 [[package]]
 name = "theoria-interaction"
@@ -1382,7 +1385,6 @@ dependencies = [
  "theoria-event",
  "theoria-geometry",
  "theoria-reactive",
- "theoria-renderer",
  "theoria-runtime",
 ]
 
@@ -1401,6 +1403,7 @@ dependencies = [
  "naga",
  "theoria-canvas",
  "theoria-color",
+ "theoria-geometry",
  "wgpu",
 ]
 

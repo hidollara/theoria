@@ -2,3 +2,10 @@
 name = "theoria-geometry"
 version = "0.1.0"
 edition = "2024"
+
+[features]
+default = []
+lyon = ["dep:lyon_path"]
+
+[dependencies]
+lyon_path = { version = "1.0.19", optional = true }

@@ -1,9 +1,7 @@
 use crate::{
     geometry::Point,
-    path::{FillRule, Path},
+    path::{FillRule, Path, flatten_subpaths},
 };
-
-use theoria_renderer::path::flatten_subpaths;
 
 use super::geometry::point_segment_distance_squared;
 

@@ -4,6 +4,12 @@ use crate::geometry::{Point, Radii};
 
 mod style;
 
+/// Optional Lyon path conversion and flattening support.
+#[cfg(feature = "lyon")]
+pub mod lyon;
+#[cfg(feature = "lyon")]
+pub use lyon::flatten_subpaths;
+
 pub use style::{
     DashPattern, DashPatternError, FillRule, LineCap, LineJoin, StrokeStyle, StrokeStyleError,
 };

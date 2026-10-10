@@ -6,10 +6,11 @@ edition = "2024"
 [features]
 default = []
 wgsl = ["dep:naga"]
-tessellation = ["dep:lyon_tessellation"]
+tessellation = ["dep:lyon_tessellation", "theoria-geometry/lyon"]
 mesh-paint = ["tessellation"]
 
 [dependencies]
+theoria-geometry = { path = "../theoria-geometry" }
 theoria-canvas = { path = "../theoria-canvas" }
 theoria-color = { path = "../theoria-color" }
 lyon_tessellation = { version = "1.0.20", optional = true }

@@ -1,15 +1,16 @@
-use lyon_tessellation::{
+use lyon_path::{
+    ArcFlags, Path as LyonPath, PathEvent,
+    builder::SvgPathBuilder,
+    iterator::PathIterator,
     math::{Angle, point, vector},
-    path::{
-        ArcFlags, Path as LyonPath, PathEvent, builder::SvgPathBuilder, iterator::PathIterator,
-    },
 };
 
-use theoria_canvas::geometry::Point;
+use crate::geometry::Point;
 
 use super::{ArcSize, ArcSweep, Path, PathSegment};
 
-pub(crate) fn append_segment(builder: &mut impl SvgPathBuilder, segment: PathSegment) {
+/// Appends a segment after the builder's current point.
+pub fn append_segment(builder: &mut impl SvgPathBuilder, segment: PathSegment) {
     match segment {
         PathSegment::LineTo(end) => builder.line_to(point(end.x, end.y)),
         PathSegment::QuadraticTo { control, end } => {
@@ -42,7 +43,8 @@ pub(crate) fn append_segment(builder: &mut impl SvgPathBuilder, segment: PathSeg
     }
 }
 
-pub(crate) fn append_path(builder: &mut impl SvgPathBuilder, path: &Path) {
+/// Appends finite subpaths, preserving curves and closure.
+pub fn append_path(builder: &mut impl SvgPathBuilder, path: &Path) {
     for subpath in path.subpaths() {
         if !subpath.is_finite() {
             continue;
@@ -58,7 +60,8 @@ pub(crate) fn append_path(builder: &mut impl SvgPathBuilder, path: &Path) {
     }
 }
 
-pub(crate) fn build_lyon_path(path: &Path) -> LyonPath {
+/// Converts finite subpaths to a Lyon path without flattening curves.
+pub fn build_lyon_path(path: &Path) -> LyonPath {
     let mut builder = LyonPath::builder().with_svg();
     append_path(&mut builder, path);
     builder.build()
@@ -87,4 +90,50 @@ pub fn flatten_subpaths(path: &Path, tolerance: f32) -> Vec<Vec<Point>> {
         }
     }
     output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::path::Subpath;
+
+    #[test]
+    fn preserves_subpath_boundaries_and_closure() {
+        let a = Point::new(0.0, 0.0);
+        let b = Point::new(1.0, 0.0);
+        let c = Point::new(2.0, 0.0);
+        let d = Point::new(3.0, 0.0);
+        let path = Path::new()
+            .add_subpath(Subpath::new(a).line_to(b).close())
+            .add_subpath(Subpath::new(c).line_to(d));
+        assert_eq!(
+            flatten_subpaths(&path, 0.1),
+            vec![vec![a, b, a], vec![c, d]]
+        );
+    }
+
+    #[test]
+    fn flattens_curves_with_the_requested_tolerance() {
+        let start = Point::new(0.0, 0.0);
+        let end = Point::new(10.0, 0.0);
+        let path =
+            Path::new().add_subpath(Subpath::new(start).quadratic_to(Point::new(5.0, 10.0), end));
+        let coarse = flatten_subpaths(&path, 1.0);
+        let fine = flatten_subpaths(&path, 0.01);
+        assert_eq!(fine.len(), 1);
+        assert_eq!(fine[0].first(), Some(&start));
+        assert_eq!(fine[0].last(), Some(&end));
+        assert!(fine[0].len() > coarse[0].len());
+    }
+
+    #[test]
+    fn skips_non_finite_subpaths() {
+        let start = Point::new(1.0, 2.0);
+        let end = Point::new(3.0, 4.0);
+        let path = Path::new()
+            .add_subpath(Subpath::new(start).line_to(Point::new(f32::NAN, 0.0)))
+            .add_subpath(Subpath::new(start).line_to(end));
+        assert_eq!(flatten_subpaths(&path, 0.1), vec![vec![start, end]]);
+        assert!(flatten_subpaths(&Path::new(), 0.1).is_empty());
+    }
 }
