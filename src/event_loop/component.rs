@@ -26,6 +26,7 @@ impl ComponentParticipant {
         )
     }
 
+    #[cfg(feature = "vulkan")]
     pub(crate) fn flush_effects(&self) -> Result<(), crate::reactive::ReactiveError> {
         self.execution.borrow_mut().flush_effects()
     }

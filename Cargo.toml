@@ -17,7 +17,8 @@ members = [
 resolver = "3"
 
 [features]
-default = ["webgpu"]
+default = ["vulkan", "webgpu"]
+vulkan = ["dep:theoria-vulkan"]
 webgpu = ["dep:theoria-webgpu"]
 
 [dependencies]
@@ -35,7 +36,7 @@ theoria-component = { path = "crates/theoria-component" }
 theoria-color = { path = "crates/theoria-color" }
 theoria-event = { path = "crates/theoria-event" }
 theoria-reactive = { path = "crates/theoria-reactive" }
-theoria-vulkan = { path = "crates/theoria-vulkan", features = ["win32"] }
+theoria-vulkan = { path = "crates/theoria-vulkan", features = ["win32"], optional = true }
 unicode-bidi = { version = "0.3.18", default-features = false }
 theoria-webgpu = { path = "crates/theoria-webgpu", optional = true }
 windows = { version = "0.62.2", features = [
@@ -50,3 +51,27 @@ windows = { version = "0.62.2", features = [
 
 [dev-dependencies]
 font-test-data = "0.8.0"
+
+[[example]]
+name = "animation"
+required-features = ["vulkan"]
+
+[[example]]
+name = "canvas"
+required-features = ["vulkan"]
+
+[[example]]
+name = "message_aquarium"
+required-features = ["vulkan"]
+
+[[example]]
+name = "multi_window"
+required-features = ["vulkan"]
+
+[[example]]
+name = "star_button"
+required-features = ["vulkan"]
+
+[[example]]
+name = "text_layout"
+required-features = ["vulkan"]

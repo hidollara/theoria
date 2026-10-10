@@ -4,8 +4,10 @@ use std::{cell::Cell, fmt, rc::Weak, time::Duration};
 
 use crate::reactive::Value;
 
+#[cfg(any(feature = "vulkan", test))]
 mod scheduler;
 
+#[cfg(feature = "vulkan")]
 pub(crate) use scheduler::FrameScheduler;
 
 /// Monotonic timing information for one requested animation update.

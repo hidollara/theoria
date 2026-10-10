@@ -9,7 +9,7 @@ use crate::{
     },
     surface::Surface,
     window::CloseRequested,
-    windows::native_window::Win32WindowMessageSource,
+    windows::window_message::Win32WindowMessageSource,
 };
 
 /// Portable projections and native observations exposed by a Win32 Window.

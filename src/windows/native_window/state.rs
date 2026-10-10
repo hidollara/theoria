@@ -1,6 +1,6 @@
 //! State retained behind one native Win32 Window procedure.
 
-use crate::{surface::SurfaceSize, windows::native_window::message::WindowMessages};
+use crate::{surface::SurfaceSize, windows::window_message::WindowMessages};
 
 pub(super) struct WindowState {
     size: SurfaceSize,

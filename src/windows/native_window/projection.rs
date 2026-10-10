@@ -9,7 +9,8 @@ use crate::{
     surface::SurfaceSize,
     windows::{
         event_buffer::{Win32WindowEvent, WindowEventBuffer},
-        native_window::{message::Win32WindowMessage, pointer},
+        native_window::pointer,
+        window_message::Win32WindowMessage,
     },
 };
 

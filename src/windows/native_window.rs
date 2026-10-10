@@ -21,17 +21,13 @@ use crate::{surface::SurfaceSize, windows::event_buffer::WindowEventBuffer};
 
 use theoria_vulkan::Win32PresentationTarget;
 
-mod message;
 mod pointer;
 mod procedure;
 mod projection;
 mod state;
 
-pub use self::message::{Win32WindowMessage, Win32WindowMessageSource};
-use self::{
-    message::WindowMessages, procedure::initialize_windowing, procedure::resize_client_area,
-    state::WindowState,
-};
+use self::{procedure::initialize_windowing, procedure::resize_client_area, state::WindowState};
+use super::window_message::{Win32WindowMessageSource, WindowMessages};
 
 pub(super) struct Win32Window {
     hwnd: HWND,

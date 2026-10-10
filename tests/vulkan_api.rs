@@ -1,3 +1,5 @@
+#![cfg(feature = "vulkan")]
+
 use std::any::TypeId;
 
 #[test]
