@@ -7,8 +7,8 @@ use ash::vk;
 use crate::{
     image::RasterPlane,
     vulkan::{
-        host_buffer::HostBuffer, image_layout::transition_image_layers, one_shot::OneShotCommands,
-        presenter::RenderDevice,
+        device::RenderDevice, host_buffer::HostBuffer, image_layout::transition_image_layers,
+        one_shot::OneShotCommands,
     },
 };
 

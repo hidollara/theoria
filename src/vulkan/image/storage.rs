@@ -4,7 +4,7 @@ use std::error::Error;
 
 use ash::vk;
 
-use crate::vulkan::presenter::RenderDevice;
+use crate::vulkan::device::RenderDevice;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 

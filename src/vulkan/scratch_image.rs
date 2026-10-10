@@ -3,8 +3,8 @@ use std::error::Error;
 use ash::vk;
 
 use super::{
+    device::RenderDevice,
     image::{ImageCache, SampledImageBinding, VulkanImage},
-    presenter::RenderDevice,
 };
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;

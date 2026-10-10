@@ -8,8 +8,8 @@ use crate::{
     canvas::{ImageExtend, ImagePattern, ImageSampling},
     color::ColorSpace,
     vulkan::{
-        color::RgbAlphaAssociation, host_buffer::HostBuffer, image::storage::VulkanImage,
-        presenter::RenderDevice,
+        color::RgbAlphaAssociation, device::RenderDevice, host_buffer::HostBuffer,
+        image::storage::VulkanImage,
     },
 };
 

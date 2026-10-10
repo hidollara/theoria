@@ -12,7 +12,7 @@ use crate::{
     image::RasterImageInstanceKey,
 };
 
-use super::{color::RgbAlphaAssociation, presenter::RenderDevice};
+use super::{color::RgbAlphaAssociation, device::RenderDevice};
 
 mod descriptors;
 mod storage;

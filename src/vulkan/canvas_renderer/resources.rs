@@ -7,7 +7,7 @@ use ash::vk;
 use crate::{
     canvas::Composition,
     color::ColorSpace,
-    vulkan::{image::ImageCache, presenter::RenderDevice, scratch_image::ScratchImage},
+    vulkan::{device::RenderDevice, image::ImageCache, scratch_image::ScratchImage},
 };
 
 use super::pipeline::{Pipelines, create_pipelines};

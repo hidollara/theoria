@@ -1,14 +1,14 @@
 //! An acquired presentation image and the operations valid before it is presented.
 
-use std::{error::Error, marker::PhantomData};
+use std::error::Error;
 
 use ash::vk;
 
 use crate::{
     canvas::Color,
-    color::{IccProfile, IccRenderingIntent, LinearSrgb, Srgb},
+    color::Srgb,
     surface::{OutputAlpha, OutputImage},
-    vulkan::image_layout::transition_image,
+    vulkan::{image_layout::transition_image, render_target::RenderTarget},
 };
 
 use super::{device::PresentationDevice, swapchain::SwapchainResources};
@@ -43,63 +43,6 @@ impl FrameSynchronization {
             device.destroy_fence(self.finished, None);
             device.destroy_semaphore(self.image_available, None);
         }
-    }
-}
-
-/// An acquired destination that a renderer can record commands into.
-pub struct RenderTarget<'a> {
-    pub(crate) command_buffer: vk::CommandBuffer,
-    image_view: vk::ImageView,
-    format: vk::Format,
-    extent: vk::Extent2D,
-    clear_color: Color,
-    output: OutputImage,
-    _frame: PhantomData<&'a ()>,
-}
-
-impl<'a> RenderTarget<'a> {
-    pub(in crate::vulkan) fn new(
-        command_buffer: vk::CommandBuffer,
-        image_view: vk::ImageView,
-        format: vk::Format,
-        extent: vk::Extent2D,
-        clear_color: Color,
-    ) -> Self {
-        Self {
-            command_buffer,
-            image_view,
-            format,
-            extent,
-            clear_color,
-            output: OutputImage::new(LinearSrgb, OutputAlpha::Premultiplied),
-            _frame: PhantomData,
-        }
-    }
-
-    pub(crate) fn surface(&self) -> (vk::ImageView, vk::Format, vk::Extent2D) {
-        (self.image_view, self.format, self.extent)
-    }
-
-    pub(crate) fn clear_color(&self) -> Color {
-        self.clear_color.clone()
-    }
-
-    pub(crate) fn output(&self) -> &OutputImage {
-        &self.output
-    }
-
-    /// Selects the color and alpha meaning of the destination pixels.
-    /// The Vulkan attachment format must be compatible with this description.
-    pub fn with_output(mut self, output: OutputImage) -> Self {
-        self.output = output;
-        self
-    }
-
-    /// Encodes the final working image into ICC device RGB coordinates.
-    /// The target format must not perform an additional sRGB encoding.
-    pub fn with_icc_output(mut self, profile: &IccProfile, intent: IccRenderingIntent) -> Self {
-        self.output = OutputImage::new(profile.color_space(intent), OutputAlpha::Premultiplied);
-        self
     }
 }
 

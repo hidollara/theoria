@@ -9,12 +9,8 @@ use crate::{
     image::{IccRasterImage, Srgba8Image},
     surface::{OutputAlpha, OutputImage, SurfaceContent, SurfaceSize, Viewport},
     vulkan::{
-        CanvasRenderer,
-        host_buffer::HostBuffer,
-        image::VulkanImage,
-        image_layout::transition_image,
-        one_shot::OneShotCommands,
-        presenter::{RenderDevice, RenderTarget},
+        CanvasRenderer, device::RenderDevice, host_buffer::HostBuffer, image::VulkanImage,
+        image_layout::transition_image, one_shot::OneShotCommands, render_target::RenderTarget,
     },
 };
 

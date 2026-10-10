@@ -14,9 +14,10 @@ mod frame;
 mod swapchain;
 
 use device::PresentationDevice;
-pub use device::RenderDevice;
 use frame::FrameSynchronization;
-pub use frame::{PresentFrame, PresentOutcome, RenderTarget};
+pub use frame::{PresentFrame, PresentOutcome};
+
+use super::device::RenderDevice;
 use swapchain::SwapchainResources;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;

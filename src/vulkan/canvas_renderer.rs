@@ -22,10 +22,8 @@ use crate::{
 };
 
 use super::{
-    color::PremultipliedWorkingRgba,
-    image::VulkanImage,
-    image_layout::transition_image,
-    presenter::{RenderDevice, RenderTarget},
+    color::PremultipliedWorkingRgba, device::RenderDevice, image::VulkanImage,
+    image_layout::transition_image, render_target::RenderTarget,
 };
 
 mod encoding;
