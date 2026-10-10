@@ -13,7 +13,8 @@ pub enum MovementThreshold {
 }
 
 impl MovementThreshold {
-    pub(crate) fn is_valid(self) -> bool {
+    /// Whether every extent is finite and nonnegative.
+    pub fn is_valid(self) -> bool {
         match self {
             Self::Radial { radius } => radius.is_finite() && radius >= 0.0,
             Self::AxisAligned {
@@ -28,7 +29,9 @@ impl MovementThreshold {
         }
     }
 
-    pub(crate) fn exceeded(self, origin: Point, position: Point) -> bool {
+    /// Whether movement from `origin` exceeds this threshold.
+    /// Non-finite displacement is treated as exceeding the threshold.
+    pub fn exceeded(self, origin: Point, position: Point) -> bool {
         let Offset { x, y } = position - origin;
         if !x.is_finite() || !y.is_finite() {
             return true;

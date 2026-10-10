@@ -1,19 +1,19 @@
-//! Internal contract between EventLoop coordination and a platform pump.
+//! Contract between EventLoop coordination and a platform pump.
 
 use std::{error::Error, io, sync::Weak, time::Duration};
 
-pub(crate) type PumpResult<T> = Result<T, Box<dyn Error>>;
+pub type PumpResult<T> = Result<T, Box<dyn Error>>;
 
 /// One platform event observed while driving the current thread.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum PumpEvent {
+pub enum PumpEvent {
     NativeProgress,
     Idle,
     ExitRequested(i32),
 }
 
 /// Platform operations needed by the EventLoop coordinator.
-pub(crate) trait EventPump {
+pub trait EventPump {
     fn wake_capability(&self) -> Weak<dyn EventPumpWake>;
     fn wait(&mut self) -> PumpResult<PumpEvent>;
     fn wait_for(&mut self, timeout: Duration) -> PumpResult<PumpEvent>;
@@ -21,6 +21,6 @@ pub(crate) trait EventPump {
 }
 
 /// Thread-safe wake capability supplied by one platform event pump.
-pub(crate) trait EventPumpWake: Send + Sync {
+pub trait EventPumpWake: Send + Sync {
     fn wake(&self) -> io::Result<()>;
 }

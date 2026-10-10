@@ -1333,6 +1333,7 @@ dependencies = [
  "theoria-event",
  "theoria-reactive",
  "theoria-renderer",
+ "theoria-runtime",
  "theoria-text",
  "theoria-vulkan",
  "theoria-webgpu",
@@ -1381,6 +1382,17 @@ dependencies = [
  "theoria-canvas",
  "theoria-color",
  "wgpu",
+]
+
+[[package]]
+name = "theoria-runtime"
+version = "0.1.0"
+dependencies = [
+ "theoria-canvas",
+ "theoria-component",
+ "theoria-event",
+ "theoria-reactive",
+ "theoria-renderer",
 ]
 
 [[package]]

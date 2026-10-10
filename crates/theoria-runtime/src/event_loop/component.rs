@@ -11,12 +11,13 @@ use crate::{component::MountContext, component_execution::ComponentExecution};
 use super::EventLoopParticipant;
 
 /// Applies one EventLoop's delivery and Effect-flush policy to a Component.
-pub(crate) struct ComponentParticipant {
+pub struct ComponentParticipant {
     execution: RefCell<ComponentExecution>,
 }
 
 impl ComponentParticipant {
-    pub(crate) fn mount<R>(build: impl FnOnce(&mut MountContext<'_>) -> R) -> (Self, R) {
+    /// Mounts one Component execution boundary and returns the builder's output.
+    pub fn mount<R>(build: impl FnOnce(&mut MountContext<'_>) -> R) -> (Self, R) {
         let (execution, result) = ComponentExecution::mount(build);
         (
             Self {
@@ -26,7 +27,8 @@ impl ComponentParticipant {
         )
     }
 
-    pub(crate) fn flush_effects(&self) -> Result<(), crate::reactive::ReactiveError> {
+    /// Flushes initial or externally triggered reactive work.
+    pub fn flush_effects(&self) -> Result<(), crate::reactive::ReactiveError> {
         self.execution.borrow_mut().flush_effects()
     }
 

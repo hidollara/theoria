@@ -1,4 +1,4 @@
-//! Internal scheduling that connects Window frame opportunities to Components.
+//! Scheduling that connects host frame opportunities to Components.
 
 use std::{
     cell::Cell,
@@ -34,7 +34,8 @@ impl FrameTiming {
     }
 }
 
-pub(crate) struct FrameScheduler {
+/// Drives request-based animation frames for one host surface.
+pub struct FrameScheduler {
     channel: Channel<FrameOpportunity>,
     requests: Rc<FrameRequests>,
     timing: Rc<FrameTiming>,
@@ -42,8 +43,15 @@ pub(crate) struct FrameScheduler {
     interval: Duration,
 }
 
+impl Default for FrameScheduler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FrameScheduler {
-    pub(crate) fn new() -> Self {
+    /// Creates a scheduler with a nominal 60 Hz minimum frame interval.
+    pub fn new() -> Self {
         Self::with_timing(Instant::now(), DEFAULT_FRAME_INTERVAL)
     }
 
@@ -76,7 +84,8 @@ impl FrameScheduler {
         self.timing.sample(now)
     }
 
-    pub(crate) fn mount(&self, context: &mut MountContext<'_>) -> FrameClock {
+    /// Mounts the shared frame value in a Component's lifetime boundary.
+    pub fn mount(&self, context: &mut MountContext<'_>) -> FrameClock {
         let frame = context.create_state(AnimationFrame::default());
         let clock = self.clock(frame.value());
         let timing = Rc::clone(&self.timing);
@@ -88,7 +97,7 @@ impl FrameScheduler {
     }
 
     /// Incorporates requests made since the previous event-loop iteration.
-    pub(crate) fn prepare(&mut self, now: Instant, drawable: bool) {
+    pub fn prepare(&mut self, now: Instant, drawable: bool) {
         if !drawable {
             if self.deadline.take().is_some() {
                 self.requests.pending.set(true);
@@ -105,12 +114,13 @@ impl FrameScheduler {
         }));
     }
 
-    pub(crate) const fn deadline(&self) -> Option<Instant> {
+    /// Returns the next requested frame's deadline, if any.
+    pub const fn deadline(&self) -> Option<Instant> {
         self.deadline
     }
 
     /// Publishes a due frame and consumes its request.
-    pub(crate) fn publish_due(&mut self, now: Instant) -> bool {
+    pub fn publish_due(&mut self, now: Instant) -> bool {
         if !self.take_due(now) {
             return false;
         }

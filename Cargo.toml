@@ -7,6 +7,7 @@ edition = "2024"
 members = [
     "crates/theoria-canvas",
     "crates/theoria-text",
+    "crates/theoria-runtime",
     "crates/theoria-renderer",
     "crates/theoria-webgpu",
     "crates/theoria-vulkan",
@@ -30,6 +31,7 @@ theoria-component = { path = "crates/theoria-component" }
 theoria-color = { path = "crates/theoria-color" }
 theoria-event = { path = "crates/theoria-event" }
 theoria-reactive = { path = "crates/theoria-reactive" }
+theoria-runtime = { path = "crates/theoria-runtime" }
 theoria-text = { path = "crates/theoria-text" }
 theoria-vulkan = { path = "crates/theoria-vulkan", features = ["win32"], optional = true }
 theoria-webgpu = { path = "crates/theoria-webgpu", optional = true }

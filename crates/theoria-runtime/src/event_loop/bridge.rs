@@ -201,11 +201,11 @@ mod tests {
 
     use super::*;
     use crate::event_loop::component::ComponentParticipant;
-    use crate::windows;
+    use crate::event_loop::{EventLoop, tests::TestPump};
 
     #[test]
     fn cross_thread_events_are_published_on_the_event_loop_thread() {
-        let mut event_loop = windows::event_loop();
+        let mut event_loop = EventLoop::with_pump(Box::new(TestPump::new()));
         let (bridge, sender) = event_loop.handle().bridge::<u32>().unwrap();
         let received = Rc::new(Cell::new(None));
         let output = Rc::clone(&received);
@@ -227,7 +227,7 @@ mod tests {
 
     #[test]
     fn a_bridge_sender_does_not_keep_its_bridge_alive() {
-        let event_loop = windows::event_loop();
+        let event_loop = EventLoop::with_pump(Box::new(TestPump::new()));
         let (bridge, sender) = event_loop.handle().bridge::<u32>().unwrap();
         drop(bridge);
 

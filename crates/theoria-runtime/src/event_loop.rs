@@ -11,10 +11,10 @@ use std::{
 
 mod bridge;
 mod component;
-pub(crate) mod pump;
+pub mod pump;
 
 pub use self::bridge::{EventLoopBridge, EventLoopBridgeSendError, EventLoopBridgeSender};
-pub(crate) use self::component::ComponentParticipant;
+pub use self::component::ComponentParticipant;
 use self::pump::{EventPump, EventPumpWake, PumpEvent};
 
 /// Time an otherwise idle iteration may lend to one waitable work item.
@@ -28,8 +28,8 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 ///
 /// An EventLoop owns the platform pump selected when it is constructed, but
 /// does not own registered Windows, Components, or other producers. Platform
-/// modules construct this value; for example, [`crate::windows::event_loop`]
-/// selects the Win32 message pump. Registered objects retain themselves through
+/// integrations construct this value with their native message pump.
+/// Registered objects retain themselves through
 /// their own lifetime boundaries and register here non-owningly.
 pub struct EventLoop {
     pump: Box<dyn EventPump>,
@@ -38,7 +38,8 @@ pub struct EventLoop {
 }
 
 impl EventLoop {
-    pub(crate) fn with_pump(pump: Box<dyn EventPump>) -> Self {
+    /// Creates a coordinator owning the supplied platform message pump.
+    pub fn with_pump(pump: Box<dyn EventPump>) -> Self {
         Self {
             pump,
             registrations: Rc::new(Registrations::default()),
@@ -223,10 +224,8 @@ pub struct EventLoopHandle {
 }
 
 impl EventLoopHandle {
-    pub(crate) fn register<T>(
-        &self,
-        participant: &Rc<T>,
-    ) -> std::result::Result<(), EventLoopClosed>
+    /// Registers local work non-owningly; the caller must retain the participant.
+    pub fn register<T>(&self, participant: &Rc<T>) -> std::result::Result<(), EventLoopClosed>
     where
         T: EventLoopParticipant + 'static,
     {
@@ -320,7 +319,8 @@ impl fmt::Display for EventLoopClosed {
 
 impl Error for EventLoopClosed {}
 
-pub(crate) trait EventLoopParticipant {
+/// Host work driven by an EventLoop on its owning thread.
+pub trait EventLoopParticipant {
     /// Returns whether this participant can never process or produce work again.
     fn is_closed(&self) -> bool;
 
@@ -380,12 +380,12 @@ mod tests {
 
     use super::*;
 
-    struct TestPump {
+    pub(super) struct TestPump {
         wake: Arc<TestWake>,
     }
 
     impl TestPump {
-        fn new() -> Self {
+        pub(super) fn new() -> Self {
             Self {
                 wake: Arc::new(TestWake),
             }

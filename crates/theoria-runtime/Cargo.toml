@@ -1,0 +1,11 @@
+[package]
+name = "theoria-runtime"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+theoria-canvas = { path = "../theoria-canvas" }
+theoria-component = { path = "../theoria-component" }
+theoria-event = { path = "../theoria-event" }
+theoria-reactive = { path = "../theoria-reactive" }
+theoria-renderer = { path = "../theoria-renderer" }

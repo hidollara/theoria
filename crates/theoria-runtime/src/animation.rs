@@ -6,7 +6,7 @@ use crate::reactive::Value;
 
 mod scheduler;
 
-pub(crate) use scheduler::FrameScheduler;
+pub use scheduler::FrameScheduler;
 
 /// Monotonic timing information for one requested animation update.
 ///
