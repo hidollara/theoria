@@ -1,11 +1,8 @@
 use std::borrow::Borrow;
 
-use crate::{
-    geometry::Point,
-    path::{
-        DashPattern, FillRule, LineCap, LineJoin, Path, PathSegment, StrokeStyle, append_path,
-        append_segment, build_lyon_path,
-    },
+use crate::path::{
+    DashPattern, FillRule, LineCap, LineJoin, Path, PathSegment, StrokeStyle, append_path,
+    append_segment, build_lyon_path,
 };
 use lyon_tessellation::{
     FillOptions, FillRule as LyonFillRule, FillTessellator, LineCap as LyonLineCap,
@@ -14,21 +11,22 @@ use lyon_tessellation::{
     math::{Point as LyonPoint, point},
     path::{Path as LyonPath, PathEvent, builder::PathBuilder, iterator::PathIterator},
 };
+use theoria_canvas::geometry::Point;
 
-pub(crate) const DEFAULT_TESSELLATION_TOLERANCE: f32 = StrokeOptions::DEFAULT_TOLERANCE;
+pub const DEFAULT_TESSELLATION_TOLERANCE: f32 = StrokeOptions::DEFAULT_TOLERANCE;
 
 /// Backend-independent triangles produced from semantic vector geometry.
-pub(crate) struct Mesh {
+pub struct Mesh {
     pub vertices: Vec<Point>,
     pub indices: Vec<u32>,
 }
 
 #[cfg(test)]
-pub(crate) fn tessellate_fill(path: &Path, rule: FillRule) -> Mesh {
+pub fn tessellate_fill(path: &Path, rule: FillRule) -> Mesh {
     tessellate_fill_with_tolerance(path, rule, FillOptions::DEFAULT_TOLERANCE)
 }
 
-pub(crate) fn tessellate_fill_with_tolerance(path: &Path, rule: FillRule, tolerance: f32) -> Mesh {
+pub fn tessellate_fill_with_tolerance(path: &Path, rule: FillRule, tolerance: f32) -> Mesh {
     let mut buffers: VertexBuffers<LyonPoint, u32> = VertexBuffers::new();
     let result = {
         let mut output = BuffersBuilder::new(&mut buffers, Positions);
@@ -80,11 +78,11 @@ pub(crate) fn tessellate_fill_with_tolerance(path: &Path, rule: FillRule, tolera
 }
 
 #[cfg(test)]
-pub(crate) fn tessellate_stroke(path: &Path, style: impl Borrow<StrokeStyle>) -> Mesh {
+pub fn tessellate_stroke(path: &Path, style: impl Borrow<StrokeStyle>) -> Mesh {
     tessellate_stroke_with_tolerance(path, style, StrokeOptions::DEFAULT_TOLERANCE)
 }
 
-pub(crate) fn tessellate_stroke_with_tolerance(
+pub fn tessellate_stroke_with_tolerance(
     path: &Path,
     style: impl Borrow<StrokeStyle>,
     tolerance: f32,
@@ -262,10 +260,8 @@ impl<'a> DashCursor<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        geometry::Radii,
-        path::{ArcSize, ArcSweep, Subpath},
-    };
+    use crate::path::{ArcSize, ArcSweep, Subpath};
+    use theoria_canvas::geometry::Radii;
 
     fn square(min: f32, max: f32, reverse: bool) -> Subpath {
         let points = if reverse {

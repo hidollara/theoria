@@ -1,22 +1,20 @@
 use std::collections::HashMap;
 
-use crate::{
-    canvas::{Color, ColorError, ColorValue},
-    color::{ColorSpace, LinearDisplayP3, LinearSrgb, Transfer},
-};
+use theoria_canvas::canvas::{Color, ColorError, ColorValue};
+use theoria_color::{ColorSpace, LinearDisplayP3, LinearSrgb, Transfer};
 
 /// Renderer-owned conversions prepared before commands are recorded.
 ///
 /// Keys identify colors within the borrowed, immutable Canvas for one render.
 /// The Canvas stays alive and unmoved until this cache is discarded.
-pub(crate) struct PreparedColors {
+pub struct PreparedColors {
     working_space: ColorSpace,
     premultiplied: HashMap<usize, [f32; 4]>,
     interpolations: HashMap<ColorSpace, PreparedInterpolation>,
 }
 
 /// Conversion plan for one gradient's declared interpolation space.
-pub(crate) struct PreparedInterpolation {
+pub struct PreparedInterpolation {
     to_interpolation: Transfer,
     to_working: Transfer,
     identity: bool,
@@ -25,7 +23,7 @@ pub(crate) struct PreparedInterpolation {
 }
 
 impl PreparedInterpolation {
-    pub(crate) fn is_linear_builtin(&self) -> bool {
+    pub fn is_linear_builtin(&self) -> bool {
         self.linear_builtin
     }
 
@@ -56,7 +54,7 @@ impl Default for PreparedColors {
 }
 
 impl PreparedColors {
-    pub(crate) fn new(working_space: impl Into<ColorSpace>) -> Self {
+    pub fn new(working_space: impl Into<ColorSpace>) -> Self {
         Self {
             working_space: working_space.into(),
             premultiplied: HashMap::new(),
@@ -64,11 +62,11 @@ impl PreparedColors {
         }
     }
 
-    pub(crate) fn working_space(&self) -> &ColorSpace {
+    pub fn working_space(&self) -> &ColorSpace {
         &self.working_space
     }
 
-    pub(crate) fn prepare_interpolation(&mut self, space: &ColorSpace) -> Result<(), ColorError> {
+    pub fn prepare_interpolation(&mut self, space: &ColorSpace) -> Result<(), ColorError> {
         if self.interpolations.contains_key(space) {
             return Ok(());
         }
@@ -88,11 +86,11 @@ impl PreparedColors {
         Ok(())
     }
 
-    pub(crate) fn interpolation(&self, space: &ColorSpace) -> &PreparedInterpolation {
+    pub fn interpolation(&self, space: &ColorSpace) -> &PreparedInterpolation {
         &self.interpolations[space]
     }
 
-    pub(crate) fn prepare(&mut self, color: &Color) -> Result<(), ColorError> {
+    pub fn prepare(&mut self, color: &Color) -> Result<(), ColorError> {
         let key = color as *const Color as usize;
         if let std::collections::hash_map::Entry::Vacant(entry) = self.premultiplied.entry(key) {
             let [red, green, blue, alpha] = color.try_straight_rgba_in(&self.working_space)?;
@@ -101,7 +99,7 @@ impl PreparedColors {
         Ok(())
     }
 
-    pub(crate) fn lower(&self, color: &Color) -> [f32; 4] {
+    pub fn lower(&self, color: &Color) -> [f32; 4] {
         let key = color as *const Color as usize;
         self.premultiplied
             .get(&key)
@@ -110,7 +108,7 @@ impl PreparedColors {
     }
 }
 
-pub(crate) trait ColorRendererExt {
+pub trait ColorRendererExt {
     fn straight_rgba_in(&self, space: impl Into<ColorSpace>) -> [f32; 4];
     fn try_straight_rgba_in(&self, space: impl Into<ColorSpace>) -> Result<[f32; 4], ColorError>;
 }
@@ -171,7 +169,7 @@ pub(crate) fn lower_straight_color(color: &Color) -> [f32; 4] {
     lower_straight_color_in(color, LinearSrgb)
 }
 
-pub(crate) fn lower_straight_color_in(color: &Color, space: impl Into<ColorSpace>) -> [f32; 4] {
+pub fn lower_straight_color_in(color: &Color, space: impl Into<ColorSpace>) -> [f32; 4] {
     let [red, green, blue, alpha] = color.straight_rgba_in(space);
     [red * alpha, green * alpha, blue * alpha, alpha]
 }
@@ -311,7 +309,7 @@ fn mix_polar(
     lower_polar(mixed, alpha, interpolation)
 }
 
-pub(crate) fn convert_premultiplied_space(
+pub fn convert_premultiplied_space(
     value: [f32; 4],
     from: &ColorSpace,
     to: &ColorSpace,
@@ -353,8 +351,8 @@ fn convert_premultiplied(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::canvas::Opacity;
-    use crate::color::{HslSrgb, IccRenderingIntent, LchD50, OklchD65, Srgb};
+    use theoria_canvas::canvas::Opacity;
+    use theoria_color::{HslSrgb, IccRenderingIntent, LchD50, OklchD65, Srgb};
 
     #[test]
     fn a_solid_color_is_lowered_once_per_render() {
@@ -373,8 +371,8 @@ mod tests {
         raw.red_trc = None;
         raw.green_trc = None;
         raw.blue_trc = None;
-        let profile = crate::color::IccProfile::from_bytes(&raw.encode().unwrap()).unwrap();
-        let color = Color::new_in_space::<crate::color::Rgb>(
+        let profile = theoria_color::IccProfile::from_bytes(&raw.encode().unwrap()).unwrap();
+        let color = Color::new_in_space::<theoria_color::Rgb>(
             profile.color_space(IccRenderingIntent::RelativeColorimetric),
             vec![0.25, 0.5, 0.75],
             Opacity::<f32>::ONE,
@@ -387,12 +385,12 @@ mod tests {
 
     #[test]
     fn preparing_an_icc_color_does_not_rewrite_authored_data() {
-        let profile = crate::color::IccProfile::from_bytes(include_bytes!(concat!(
+        let profile = theoria_color::IccProfile::from_bytes(include_bytes!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/crates/theoria-color/src/color/fixtures/sRGB-v4.icc"
+            "/../theoria-color/src/color/fixtures/sRGB-v4.icc"
         )))
         .unwrap();
-        let color = Color::new_in_space::<crate::color::Rgb>(
+        let color = Color::new_in_space::<theoria_color::Rgb>(
             profile.color_space(IccRenderingIntent::RelativeColorimetric),
             vec![0.25, 0.5, 0.75],
             Opacity::<f32>::ONE,
@@ -416,7 +414,7 @@ mod tests {
         let mut prepared = PreparedColors::default();
         prepared.prepare_interpolation(&Srgb.into()).unwrap();
         prepared
-            .prepare_interpolation(&crate::color::LinearSrgb.into())
+            .prepare_interpolation(&theoria_color::LinearSrgb.into())
             .unwrap();
         let encoded =
             interpolate_premultiplied_rgba(black, white, 0.5, prepared.interpolation(&Srgb.into()));
@@ -424,7 +422,7 @@ mod tests {
             black,
             white,
             0.5,
-            prepared.interpolation(&crate::color::LinearSrgb.into()),
+            prepared.interpolation(&theoria_color::LinearSrgb.into()),
         );
 
         assert!(encoded[0] < linear[0]);
@@ -576,7 +574,7 @@ mod tests {
         let mut prepared = PreparedColors::default();
         for (space, hue_index) in [
             (ColorSpace::from(HslSrgb), 0),
-            (ColorSpace::from(crate::color::HwbSrgb), 0),
+            (ColorSpace::from(theoria_color::HwbSrgb), 0),
             (ColorSpace::from(LchD50), 2),
             (ColorSpace::from(OklchD65), 2),
         ] {

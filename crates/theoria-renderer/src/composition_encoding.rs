@@ -1,11 +1,9 @@
-use crate::{
-    canvas::{Composite, Composition},
-    color::{ColorSpace, DisplayP3, LinearDisplayP3, LinearSrgb, Srgb},
-};
+use theoria_canvas::canvas::{Composite, Composition};
+use theoria_color::{ColorSpace, DisplayP3, LinearDisplayP3, LinearSrgb, Srgb};
 
 /// Encodes only the operation flags. Space conversions are baked into the
 /// selected pipeline rather than assigned fixed numeric space identifiers.
-pub(crate) fn encode(composition: &Composition) -> [u32; 2] {
+pub fn encode(composition: &Composition) -> [u32; 2] {
     let has_blend = u32::from(composition.blend().is_some());
     [has_blend, encode_composite(composition.composite())]
 }
@@ -30,7 +28,7 @@ fn encode_composite(composite: Composite) -> u32 {
 
 /// Raster upload uses four named input spaces; cached Canvas images are
 /// already in the renderer's working space (index 4).
-pub(crate) fn encode_image_space(space: &ColorSpace, working: &ColorSpace) -> u32 {
+pub fn encode_image_space(space: &ColorSpace, working: &ColorSpace) -> u32 {
     if space == working {
         return 4;
     }
@@ -50,8 +48,8 @@ pub(crate) fn encode_image_space(space: &ColorSpace, working: &ColorSpace) -> u3
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::canvas::BlendMode;
-    use crate::color::{DisplayP3, LinearDisplayP3, LinearSrgb, Srgb};
+    use theoria_canvas::canvas::BlendMode;
+    use theoria_color::{DisplayP3, LinearDisplayP3, LinearSrgb, Srgb};
 
     #[test]
     fn blend_presence_is_encoded_independently_of_its_implementation() {

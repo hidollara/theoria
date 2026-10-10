@@ -1,16 +1,16 @@
 //! Lowers an ICC image transfer for the shared raster-sampling shader contract.
 
-use crate::color::{ColorSpace, IccProfile, IccRenderingIntent};
 use crate::transfer_wgsl::TransferWgslExt;
+use theoria_color::{ColorSpace, IccProfile, IccRenderingIntent};
 
-pub(crate) struct IccImageShader {
-    pub(crate) source: String,
-    pub(crate) tables: Vec<f32>,
+pub struct IccImageShader {
+    pub source: String,
+    pub tables: Vec<f32>,
 }
 
 /// `template` supplies the backend's vertex entry and sampling policy. Both
 /// backends bind the profile's optional transfer tables at group 0, binding 2.
-pub(crate) fn build(
+pub fn build(
     profile: &IccProfile,
     intent: IccRenderingIntent,
     has_alpha: bool,

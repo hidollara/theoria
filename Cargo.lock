@@ -1335,7 +1335,6 @@ dependencies = [
  "icu_locale_core",
  "icu_properties",
  "icu_segmenter",
- "lyon_tessellation",
  "moxcms",
  "naga",
  "png",
@@ -1346,6 +1345,7 @@ dependencies = [
  "theoria-component",
  "theoria-event",
  "theoria-reactive",
+ "theoria-renderer",
  "unicode-bidi",
  "wgpu",
  "windows",
@@ -1381,6 +1381,20 @@ version = "0.1.0"
 [[package]]
 name = "theoria-reactive"
 version = "0.1.0"
+
+[[package]]
+name = "theoria-renderer"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "half",
+ "lyon_tessellation",
+ "moxcms",
+ "naga",
+ "theoria-canvas",
+ "theoria-color",
+ "wgpu",
+]
 
 [[package]]
 name = "thiserror"

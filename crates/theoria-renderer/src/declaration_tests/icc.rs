@@ -1,17 +1,15 @@
 #[cfg(test)]
 mod tests {
-    use crate::canvas_renderer::raster::convert_icc8_to_linear_rgba16;
-    use crate::{
-        color::{ColorSpace, IccProfile, IccRenderingIntent, Srgb},
-        image::{IccRasterImage, Srgba8Image},
-    };
+    use crate::raster::convert_icc8_to_linear_rgba16;
+    use theoria_canvas::image::{IccRasterImage, Srgba8Image};
+    use theoria_color::{ColorSpace, IccProfile, IccRenderingIntent, Srgb};
 
     #[test]
     fn real_profile_output_can_be_sampled_as_a_canvas_image() {
         let source = Srgba8Image::new(2, 1, vec![64, 128, 192, 77, 200, 20, 40, 255]).unwrap();
         let profile = IccProfile::from_bytes(include_bytes!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/crates/theoria-color/src/color/fixtures/DisplayP3-v4.icc"
+            "/../theoria-color/src/color/fixtures/DisplayP3-v4.icc"
         )))
         .unwrap();
         let encoded =
@@ -36,7 +34,7 @@ mod tests {
             let source_rgb: [f32; 3] =
                 std::array::from_fn(|index| f32::from(expected[index]) / 255.0);
             let linear = ColorSpace::from(Srgb)
-                .transfer_to(crate::color::LinearSrgb)
+                .transfer_to(theoria_color::LinearSrgb)
                 .unwrap()
                 .evaluate(&source_rgb.map(f64::from))
                 .unwrap();
@@ -48,7 +46,7 @@ mod tests {
                     < 0.002
             );
         }
-        let canvas_image = crate::canvas::Image::from(encoded);
+        let canvas_image = theoria_canvas::canvas::Image::from(encoded);
         assert_eq!((canvas_image.width(), canvas_image.height()), (2, 1));
     }
 
@@ -57,7 +55,7 @@ mod tests {
         let source = Srgba8Image::new(1, 1, vec![128, 128, 128, 255]).unwrap();
         let profile = IccProfile::from_bytes(include_bytes!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/crates/theoria-color/src/color/fixtures/sGrey-v4.icc"
+            "/../theoria-color/src/color/fixtures/sGrey-v4.icc"
         )))
         .unwrap();
         let encoded =
@@ -71,7 +69,7 @@ mod tests {
     fn real_cmyk_profile_can_enter_the_canvas_image_pipeline() {
         let profile = IccProfile::from_bytes(include_bytes!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/crates/theoria-color/src/color/fixtures/CGATS001Compat-v2-micro.icc"
+            "/../theoria-color/src/color/fixtures/CGATS001Compat-v2-micro.icc"
         )))
         .unwrap();
         assert_eq!(profile.device_channels(), 4);

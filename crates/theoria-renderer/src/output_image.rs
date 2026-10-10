@@ -2,7 +2,7 @@
 //!
 //! The GPU attachment format is backend-specific and deliberately separate.
 
-use crate::color::ColorSpace;
+use theoria_color::ColorSpace;
 
 /// How the destination image represents alpha.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

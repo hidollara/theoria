@@ -1,8 +1,10 @@
 //! Distance and normalized-position sampling along flattened Paths.
 
-use crate::{geometry::Point, path::Path, path::flatten_subpaths};
+use crate::path::Path;
+use crate::path::flatten_subpaths;
+use theoria_canvas::geometry::Point;
 
-pub(crate) struct PathSampler {
+pub struct PathSampler {
     subpaths: Vec<MeasuredSubpath>,
 }
 
@@ -19,13 +21,13 @@ struct MeasuredSegment {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct PathSample {
+pub struct PathSample {
     offset: f32,
-    pub(crate) signed_distance: f32,
+    pub signed_distance: f32,
 }
 
 impl PathSampler {
-    pub(crate) fn new(path: &Path, tolerance: f32) -> Self {
+    pub fn new(path: &Path, tolerance: f32) -> Self {
         let subpaths = flatten_subpaths(path, tolerance)
             .into_iter()
             .map(|points| {
@@ -56,11 +58,11 @@ impl PathSampler {
         Self { subpaths }
     }
 
-    pub(crate) fn nearest_offset(&self, point: Point) -> Option<f32> {
+    pub fn nearest_offset(&self, point: Point) -> Option<f32> {
         self.nearest_sample(point).map(|sample| sample.offset)
     }
 
-    pub(crate) fn nearest_sample(&self, point: Point) -> Option<PathSample> {
+    pub fn nearest_sample(&self, point: Point) -> Option<PathSample> {
         let mut nearest: Option<(f32, PathSample)> = None;
         for subpath in &self.subpaths {
             for segment in &subpath.segments {
@@ -89,11 +91,9 @@ impl PathSampler {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        geometry::Point,
-        path::{Path, Subpath},
-        tessellation::DEFAULT_TESSELLATION_TOLERANCE,
-    };
+    use crate::path::{Path, Subpath};
+    use crate::tessellation::DEFAULT_TESSELLATION_TOLERANCE;
+    use theoria_canvas::geometry::Point;
 
     use super::PathSampler;
 

@@ -3,19 +3,19 @@ use std::io;
 #[cfg(test)]
 use half::f16;
 
+use theoria_canvas::image::RasterPlane;
 #[cfg(test)]
-use crate::color::{IccProfile, IccRenderingIntent, LinearSrgb};
-use crate::image::RasterPlane;
+use theoria_color::{IccProfile, IccRenderingIntent, LinearSrgb};
 
-pub(crate) struct PackedIccSamples {
-    pub(crate) samples: Vec<u8>,
-    pub(crate) layers: u32,
-    pub(crate) row_stride: usize,
+pub struct PackedIccSamples {
+    pub samples: Vec<u8>,
+    pub layers: u32,
+    pub row_stride: usize,
 }
 
 /// Packs unchanged ICC device samples and optional straight alpha into RGBA8
 /// texture-array layers. Unused components are padding, not color conversion.
-pub(crate) fn pack_icc_samples(
+pub fn pack_icc_samples(
     width: u32,
     height: u32,
     pixels: &[u8],
@@ -87,11 +87,7 @@ pub(crate) fn convert_icc8_to_linear_rgba16(
 
 /// Expands an RGB8 plane into the portable RGBA8 upload representation used
 /// by renderers whose sampled texture API has no three-channel byte format.
-pub(crate) fn expand_rgb8_to_rgba8(
-    width: u32,
-    height: u32,
-    plane: &RasterPlane<u8>,
-) -> RasterPlane<u8> {
+pub fn expand_rgb8_to_rgba8(width: u32, height: u32, plane: &RasterPlane<u8>) -> RasterPlane<u8> {
     let width = usize::try_from(width).expect("validated image width fits address space");
     let height = usize::try_from(height).expect("validated image height fits address space");
     let output_stride = width
@@ -132,7 +128,7 @@ mod tests {
     fn icc_upload_keeps_out_of_srgb_gamut_coordinates() {
         let profile = IccProfile::from_bytes(include_bytes!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/crates/theoria-color/src/color/fixtures/DisplayP3-v4.icc"
+            "/../theoria-color/src/color/fixtures/DisplayP3-v4.icc"
         )))
         .unwrap();
         let converted = convert_icc8_to_linear_rgba16(

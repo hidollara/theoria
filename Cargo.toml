@@ -6,6 +6,7 @@ edition = "2024"
 [workspace]
 members = [
     "crates/theoria-canvas",
+    "crates/theoria-renderer",
     "crates/theoria-color",
     "crates/theoria-component",
     "crates/theoria-event",
@@ -14,6 +15,7 @@ members = [
 resolver = "3"
 
 [dependencies]
+theoria-renderer = { path = "crates/theoria-renderer", features = ["wgsl", "tessellation", "mesh-paint"] }
 ash = "0.38.0"
 bytemuck = { version = "1.25.0", features = ["derive"] }
 flate2 = "1.1.2"
@@ -21,7 +23,6 @@ harfrust = "0.13.2"
 icu_locale_core = "2.3.0"
 icu_properties = { version = "2.3.0", features = ["unicode_bidi"] }
 icu_segmenter = { version = "2.3.0", features = ["unstable"] }
-lyon_tessellation = "1.0.20"
 naga = { version = "30.0.0", features = ["wgsl-in", "spv-out"] }
 png = "0.18.0"
 resvg = { version = "0.48.1", default-features = false, features = ["text", "raster-images"] }
@@ -44,6 +45,7 @@ windows = { version = "0.62.2", features = [
 ] }
 
 [build-dependencies]
+theoria-renderer = { path = "crates/theoria-renderer", features = ["wgsl"] }
 naga = { version = "30.0.0", features = ["wgsl-in", "spv-out"] }
 theoria-color = { path = "crates/theoria-color" }
 

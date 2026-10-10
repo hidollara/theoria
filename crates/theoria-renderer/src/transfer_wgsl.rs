@@ -11,7 +11,7 @@ use theoria_color::{
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum TransferWgslError {
+pub enum TransferWgslError {
     NotRepresentableInF32,
     ShaderTableTooLarge,
 }
@@ -31,7 +31,7 @@ impl fmt::Display for TransferWgslError {
 
 impl Error for TransferWgslError {}
 
-pub(crate) trait TransferWgslExt {
+pub trait TransferWgslExt {
     fn wgsl(&self, id: u32) -> Result<String, TransferWgslError>;
     fn wgsl_with_storage(
         &self,
@@ -154,18 +154,18 @@ fn lower_wgsl(
 
 /// Generated WGSL and the packed storage-buffer contents it expects.
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct TransferShader {
+pub struct TransferShader {
     source: String,
     values: Vec<f32>,
 }
 
 impl TransferShader {
-    pub(crate) fn source(&self) -> &str {
+    pub fn source(&self) -> &str {
         &self.source
     }
 
     /// Empty when the generated WGSL has no storage-buffer binding.
-    pub(crate) fn table_values(&self) -> &[f32] {
+    pub fn table_values(&self) -> &[f32] {
         &self.values
     }
 }
@@ -754,7 +754,7 @@ mod tests {
 
     #[test]
     fn icc_profile_transfer_generates_valid_wgsl() {
-        let bytes = include_bytes!("../crates/theoria-color/src/color/fixtures/sRGB-v4.icc");
+        let bytes = include_bytes!("../../theoria-color/src/color/fixtures/sRGB-v4.icc");
         let profile = IccProfile::from_bytes(bytes).unwrap();
         let space = profile.color_space(IccRenderingIntent::RelativeColorimetric);
         let transfer = space.transfer_to_connection_space().unwrap();

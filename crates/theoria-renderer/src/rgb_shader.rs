@@ -8,11 +8,11 @@ use crate::transfer_wgsl::TransferWgslExt;
 const MARKER: &str = "// @theoria-rgb-conversions";
 
 #[allow(dead_code)]
-pub(crate) fn assemble(source: &str) -> String {
+pub fn assemble(source: &str) -> String {
     assemble_for(source, &LinearSrgb.into()).expect("default RGB transfer is representable")
 }
 
-pub(crate) fn assemble_for(
+pub fn assemble_for(
     source: &str,
     working_space: &ColorSpace,
 ) -> Result<String, Box<dyn std::error::Error>> {
@@ -83,7 +83,7 @@ fn working_to_linear_srgb(value: vec3<f32>) -> vec3<f32> {
     Ok(source.replacen(MARKER, &definitions, 1))
 }
 
-pub(crate) fn assemble_output_for(
+pub fn assemble_output_for(
     source: &str,
     working_space: &ColorSpace,
     output_space: &ColorSpace,
@@ -151,7 +151,7 @@ mod tests {
         ];
         for space in spaces {
             let source =
-                assemble_for(include_str!("../shaders/webgpu/image.wgsl"), &space).unwrap();
+                assemble_for(include_str!("../tests/fixtures/image.wgsl"), &space).unwrap();
             let module = naga::front::wgsl::parse_str(&source).unwrap();
             naga::valid::Validator::new(
                 naga::valid::ValidationFlags::all(),
@@ -165,7 +165,7 @@ mod tests {
     #[test]
     fn distinct_space_handle_can_be_used_as_working_space() {
         let space = crate::test_support::distinct_color_space(Srgb);
-        let source = assemble_for(include_str!("../shaders/webgpu/image.wgsl"), &space).unwrap();
+        let source = assemble_for(include_str!("../tests/fixtures/image.wgsl"), &space).unwrap();
         let module = naga::front::wgsl::parse_str(&source).unwrap();
         naga::valid::Validator::new(
             naga::valid::ValidationFlags::all(),
@@ -178,7 +178,7 @@ mod tests {
     #[test]
     fn output_shader_accepts_distinct_working_and_destination_spaces() {
         let source = assemble_output_for(
-            include_str!("../shaders/canvas_renderer/output_image.wgsl"),
+            include_str!("../shaders/output_image.wgsl"),
             &DisplayP3.into(),
             &Srgb.into(),
         )

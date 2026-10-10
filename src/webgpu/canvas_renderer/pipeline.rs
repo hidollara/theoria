@@ -5,7 +5,7 @@ use std::{
 
 use wgpu::util::DeviceExt;
 
-use crate::canvas_renderer::{blend::BlendShaderExt, composition_shader::Binding};
+use crate::canvas_renderer::blend::BlendShaderExt;
 
 use crate::{
     canvas::{Composite, Composition},
@@ -109,12 +109,12 @@ impl Pipelines {
         let composite_shader = shader(
             device,
             "theoria WebGPU composite shader",
-            include_str!("../../../shaders/canvas_renderer/composite.wgsl"),
+            theoria_renderer::shaders::COMPOSITE,
         );
         let mask_shader = shader(
             device,
             "theoria WebGPU mask shader",
-            include_str!("../../../shaders/canvas_renderer/mask.wgsl"),
+            theoria_renderer::shaders::MASK,
         );
         let triangle = create_pipeline(
             device,
@@ -269,7 +269,7 @@ impl Pipelines {
             }
             let blend = composition.blend().map_or(&working, |blend| blend.space());
             let source = composition.blend_shader().wgsl_module_for_spaces(
-                Binding::WebGpu,
+                "@group(2) @binding(0) var<uniform> operation: CompositionOperation;",
                 &working,
                 blend,
                 composition.composite_space(),
@@ -306,7 +306,7 @@ impl Pipelines {
         let key = (format, space.clone());
         if !self.outputs.contains_key(&key) {
             let source = crate::rgb_shader::assemble_output_for(
-                include_str!("../../../shaders/canvas_renderer/output_image.wgsl"),
+                theoria_renderer::shaders::OUTPUT_IMAGE,
                 &self.working_space,
                 space,
             )?;

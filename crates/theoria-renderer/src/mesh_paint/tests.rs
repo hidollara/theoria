@@ -1,15 +1,13 @@
 use super::{TestWorkingColor, paint_triangle};
-use crate::{
-    canvas::{
-        Color, ColorField, ConicGradient, GradientExtend, GradientPoint, GradientStop,
-        LinearGradient, MeshGradient, Opacity, RadialGradient,
-    },
-    canvas_renderer::WorkingColor,
-    color::{DisplayP3, HslSrgb, LinearSrgb, Srgb},
-    geometry::Point,
+use crate::WorkingColor;
+use theoria_canvas::canvas::{
+    Color, ColorField, ConicGradient, GradientExtend, GradientPoint, GradientStop, LinearGradient,
+    MeshGradient, Opacity, RadialGradient,
 };
+use theoria_canvas::geometry::Point;
+use theoria_color::{DisplayP3, HslSrgb, LinearSrgb, Srgb};
 
-fn lowered(color: impl Into<crate::canvas::Color>) -> TestWorkingColor {
+fn lowered(color: impl Into<theoria_canvas::canvas::Color>) -> TestWorkingColor {
     TestWorkingColor::from_color(&color.into(), &super::PreparedColors::default())
 }
 

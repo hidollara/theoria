@@ -1,13 +1,11 @@
 //! Conversion and precision decisions that depend on the rendered view.
 
-use crate::{
-    geometry::Point,
-    path::{Path, PathSegment},
-    tessellation::DEFAULT_TESSELLATION_TOLERANCE,
-    transform::Projective2,
-};
+use crate::path::{Path, PathSegment};
+use crate::tessellation::DEFAULT_TESSELLATION_TOLERANCE;
+use theoria_canvas::geometry::Point;
+use theoria_canvas::transform::Projective2;
 
-pub(crate) fn transformed_point_to_clip(point: Point, canvas_to_view: Projective2) -> [f32; 4] {
+pub fn transformed_point_to_clip(point: Point, canvas_to_view: Projective2) -> [f32; 4] {
     let transformed = canvas_to_view.transform_homogeneous(point);
     [
         transformed.x * 2.0 - transformed.w,
@@ -17,7 +15,7 @@ pub(crate) fn transformed_point_to_clip(point: Point, canvas_to_view: Projective
     ]
 }
 
-pub(crate) fn screen_space_tolerance(
+pub fn screen_space_tolerance(
     path: &Path,
     path_to_view: Projective2,
     viewport_width: f32,
@@ -134,10 +132,11 @@ fn path_reference_points(path: &Path) -> Vec<Point> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        canvas::CanvasView, geometry::Point, path::Path,
-        tessellation::DEFAULT_TESSELLATION_TOLERANCE, transform::Projective2,
-    };
+    use crate::path::Path;
+    use crate::tessellation::DEFAULT_TESSELLATION_TOLERANCE;
+    use theoria_canvas::canvas::CanvasView;
+    use theoria_canvas::geometry::Point;
+    use theoria_canvas::transform::Projective2;
 
     use super::{screen_space_tolerance, transformed_point_to_clip};
 

@@ -11,11 +11,9 @@ pub mod input;
 pub mod interaction;
 pub mod path;
 pub mod recording;
-mod rgb_shader;
 pub mod surface;
-mod tessellation;
 pub mod text;
-mod transfer_wgsl;
+
 pub mod vulkan;
 pub mod webgpu;
 pub mod window;
@@ -27,3 +25,5 @@ pub mod windows;
 pub use theoria_component as component;
 pub use theoria_event as event;
 pub use theoria_reactive as reactive;
+
+use theoria_renderer::{rgb_shader, tessellation};

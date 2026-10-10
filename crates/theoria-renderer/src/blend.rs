@@ -1,18 +1,14 @@
 use std::error::Error;
 
-use super::composition_shader::{self, Binding};
-use crate::{
-    canvas::{BlendShader, Composition},
-    color::ColorSpace,
-    transfer_wgsl::TransferWgslExt,
-};
+use super::composition_shader;
+use crate::transfer_wgsl::TransferWgslExt;
+use theoria_canvas::canvas::BlendShader;
+use theoria_color::ColorSpace;
 
-pub(crate) trait BlendShaderExt {
-    #[cfg(test)]
-    fn wgsl_module(&self, binding: Binding) -> String;
+pub trait BlendShaderExt {
     fn wgsl_module_for_spaces(
         &self,
-        binding: Binding,
+        binding: &str,
         working: &ColorSpace,
         blend: &ColorSpace,
         composite: &ColorSpace,
@@ -20,14 +16,9 @@ pub(crate) trait BlendShaderExt {
 }
 
 impl BlendShaderExt for BlendShader {
-    #[cfg(test)]
-    fn wgsl_module(&self, binding: Binding) -> String {
-        composition_shader::assemble(binding, self.helpers(), self.body())
-    }
-
     fn wgsl_module_for_spaces(
         &self,
-        binding: Binding,
+        binding: &str,
         working: &ColorSpace,
         blend: &ColorSpace,
         composite: &ColorSpace,
@@ -76,15 +67,13 @@ impl BlendShaderExt for BlendShader {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        canvas::{Composite, Composition},
-        color::{IccProfile, IccRenderingIntent, LinearSrgb, Srgb},
-    };
+    use theoria_canvas::canvas::{Composite, Composition};
+    use theoria_color::{IccProfile, IccRenderingIntent, LinearSrgb, Srgb};
     #[test]
     fn composition_shader_lowers_space_transfers_without_space_numbers() {
         let icc = IccProfile::from_bytes(include_bytes!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/crates/theoria-color/src/color/fixtures/sRGB-v4.icc"
+            "/../theoria-color/src/color/fixtures/sRGB-v4.icc"
         )))
         .unwrap();
         let shader = BlendShader::wgsl("return backdrop * source;").unwrap();
@@ -103,7 +92,7 @@ mod tests {
         assert!(composition.blend().is_some());
         let source = shader
             .wgsl_module_for_spaces(
-                Binding::WebGpu,
+                "@group(2) @binding(0) var<uniform> operation: CompositionOperation;",
                 &ColorSpace::from(LinearSrgb),
                 composition.blend().unwrap().space(),
                 composition.composite_space(),
@@ -120,15 +109,5 @@ mod tests {
         )
         .validate(&module)
         .unwrap();
-    }
-}
-
-pub(crate) trait CompositionExt {
-    fn requires_destination_read_in(&self, working_space: &ColorSpace) -> bool;
-}
-
-impl CompositionExt for Composition {
-    fn requires_destination_read_in(&self, working_space: &ColorSpace) -> bool {
-        self.blend().is_some() || self.composite_space() != working_space
     }
 }

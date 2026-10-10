@@ -1,13 +1,13 @@
 #[cfg(test)]
 mod tests {
-    use crate::canvas::{Alpha, Color, ColorError, ColorValue, Opacity};
-    use crate::canvas_renderer::color_space::ColorRendererExt;
-    use crate::color::{ColorModel, ColorSpace};
-    use crate::color::{
+    use crate::color_space::ColorRendererExt;
+    use std::sync::Arc;
+    use theoria_canvas::canvas::{Alpha, Color, ColorError, ColorValue, Opacity};
+    use theoria_color::{ColorModel, ColorSpace};
+    use theoria_color::{
         DisplayP3, IccProfile, IccRenderingIntent, LabD50, LinearDisplayP3, LinearSrgb, Srgb,
         XyzD50, XyzD65,
     };
-    use std::sync::Arc;
 
     // CSS Color 4 §10.9 gives these equivalent coordinates for #7654CD.
     // https://www.w3.org/TR/css-color-4/#predefined
@@ -21,7 +21,7 @@ mod tests {
         let bytes = moxcms::ColorProfile::new_srgb().encode().unwrap();
         let profile = IccProfile::from_bytes(&bytes).unwrap();
         let coordinates: Arc<[f64]> = vec![0.25, 0.5, 0.75].into();
-        let color = Color::new_in_space::<crate::color::Rgb>(
+        let color = Color::new_in_space::<theoria_color::Rgb>(
             profile.color_space(IccRenderingIntent::RelativeColorimetric),
             coordinates.clone(),
             Opacity::<f32>::new(0.5).unwrap(),
@@ -42,7 +42,7 @@ mod tests {
             assert!((actual - expected).abs() < 0.01);
         }
         assert_eq!(rgba[3], 0.5);
-        let lowered = crate::canvas_renderer::color_space::lower_straight_color(&color);
+        let lowered = crate::color_space::lower_straight_color(&color);
         assert_eq!(lowered[3], 0.5);
         for (actual, straight) in lowered[..3].iter().zip(color.straight_rgba_in(LinearSrgb)) {
             assert!((actual - straight * 0.5).abs() < 1e-5);
@@ -55,7 +55,7 @@ mod tests {
         let first = IccProfile::from_bytes(&bytes).unwrap();
         let second = IccProfile::from_bytes(&bytes).unwrap();
         let color = |profile: &IccProfile| {
-            Color::new_in_space::<crate::color::Rgb>(
+            Color::new_in_space::<theoria_color::Rgb>(
                 profile.color_space(IccRenderingIntent::RelativeColorimetric),
                 vec![0.25, 0.5, 0.75],
                 Opacity::<f32>::ONE,
@@ -72,7 +72,7 @@ mod tests {
         let profile = IccProfile::from_bytes(&bytes).unwrap();
         let opacity = Opacity::<f32>::ONE;
         assert!(matches!(
-            Color::new_in_space::<crate::color::Rgb>(
+            Color::new_in_space::<theoria_color::Rgb>(
                 profile.color_space(IccRenderingIntent::RelativeColorimetric),
                 vec![0.5, 0.5],
                 opacity,
@@ -84,7 +84,7 @@ mod tests {
     #[test]
     fn dynamic_space_rejects_another_model_with_the_same_channel_count() {
         let error =
-            Color::new_in_space::<crate::color::Rgb>(XyzD50, [1_u8, 2, 3], Opacity::<u8>::ONE)
+            Color::new_in_space::<theoria_color::Rgb>(XyzD50, [1_u8, 2, 3], Opacity::<u8>::ONE)
                 .unwrap_err();
         assert!(matches!(
             error,
@@ -94,7 +94,7 @@ mod tests {
             }
         ));
         assert!(
-            Color::new_in_space::<crate::color::Xyz>(
+            Color::new_in_space::<theoria_color::Xyz>(
                 XyzD50,
                 [0.1_f64, 0.2, 0.3],
                 Opacity::<u8>::ONE,
@@ -107,7 +107,7 @@ mod tests {
     fn typed_coordinates_preserve_storage_in_an_icc_space() {
         let bytes = moxcms::ColorProfile::new_srgb().encode().unwrap();
         let profile = IccProfile::from_bytes(&bytes).unwrap();
-        let color = Color::new_in_space::<crate::color::Rgb>(
+        let color = Color::new_in_space::<theoria_color::Rgb>(
             profile.color_space(IccRenderingIntent::RelativeColorimetric),
             [255_u8, 128, 64],
             Opacity::<u16>::ONE,
@@ -130,7 +130,7 @@ mod tests {
     fn dynamic_coordinates_reject_non_finite_values() {
         for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
             assert!(matches!(
-                Color::new_in_space::<crate::color::Rgb>(
+                Color::new_in_space::<theoria_color::Rgb>(
                     Srgb,
                     [value, 0.0, 0.0],
                     Opacity::<f32>::ONE,
@@ -142,7 +142,7 @@ mod tests {
 
     #[test]
     fn oklab_spaces_accept_the_shared_lab_and_lch_models() {
-        use crate::color::{Lab, Lch, OklabD65, OklchD65};
+        use theoria_color::{Lab, Lch, OklabD65, OklchD65};
         let lab = Color::new_in_space::<Lab>(OklabD65, [0.5_f64, 0.1, -0.1], Opacity::<f32>::ONE)
             .unwrap();
         assert_eq!(
@@ -241,7 +241,7 @@ mod tests {
     fn xyz_and_lab_colors_remain_authored_until_renderer_lowering() {
         let opacity = Opacity::<f32>::new(0.4).unwrap();
         let original = Color::new(Srgb, CSS_SRGB, opacity);
-        let lowered_original = crate::canvas_renderer::color_space::lower_straight_color(&original);
+        let lowered_original = crate::color_space::lower_straight_color(&original);
 
         for (canvas, space) in [
             (
@@ -266,7 +266,7 @@ mod tests {
             {
                 assert!((actual - expected).abs() < 0.002, "{actual} != {expected}");
             }
-            let lowered = crate::canvas_renderer::color_space::lower_straight_color(&canvas);
+            let lowered = crate::color_space::lower_straight_color(&canvas);
             for (actual, expected) in lowered.into_iter().zip(lowered_original) {
                 assert!((actual - expected).abs() < 0.001, "{actual} != {expected}");
             }
@@ -276,7 +276,7 @@ mod tests {
     #[test]
     fn lab_color_can_be_used_as_a_gradient_stop() {
         let lab = Color::new(LabD50, CSS_LAB_D50, Opacity::<f32>::new(0.4).unwrap());
-        let stop = crate::canvas::GradientStop::new(0.5, lab).unwrap();
+        let stop = theoria_canvas::canvas::GradientStop::new(0.5, lab).unwrap();
 
         let rgba = stop.color().straight_rgba_in(Srgb);
         for (actual, expected) in rgba

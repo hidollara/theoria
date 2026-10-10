@@ -17,7 +17,7 @@ impl Viewport {
         }
     }
 
-    pub(crate) fn has_finite_positive_size(self) -> bool {
+    pub fn has_finite_positive_size(self) -> bool {
         self.x.is_finite()
             && self.y.is_finite()
             && self.width.is_finite()

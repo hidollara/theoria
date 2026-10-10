@@ -1,41 +1,31 @@
 use std::{env, fs, path::PathBuf};
 
-#[path = "src/canvas_renderer/composition_shader.rs"]
-mod composition_shader;
-#[path = "src/rgb_shader.rs"]
-mod rgb_shader;
-#[path = "src/transfer_wgsl.rs"]
-#[allow(dead_code)] // Build-time validation only uses the inline lowering path.
-mod transfer_wgsl;
+use theoria_renderer::{composition_shader, rgb_shader, shaders};
 
 fn main() {
     let output_dir = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR is set"));
-    for source_file in [
-        "src/canvas_renderer/composition_shader.rs",
-        "src/rgb_shader.rs",
-        "src/transfer_wgsl.rs",
-    ] {
-        println!("cargo:rerun-if-changed={source_file}");
-    }
     for (source_file, output_prefix) in [
         ("shaders/vulkan/triangle.wgsl", "triangle"),
         ("shaders/vulkan/image.wgsl", "image"),
-        ("shaders/canvas_renderer/composite.wgsl", "composite"),
-        ("shaders/canvas_renderer/mask.wgsl", "mask"),
     ] {
         println!("cargo:rerun-if-changed={source_file}");
         compile_shader(source_file, output_prefix, &output_dir);
     }
 
-    for source_file in [
-        "shaders/canvas_renderer/composition_context.wgsl",
-        "shaders/canvas_renderer/composition_fragment.wgsl",
-    ] {
-        println!("cargo:rerun-if-changed={source_file}");
+    for (source, output_prefix) in [(shaders::COMPOSITE, "composite"), (shaders::MASK, "mask")] {
+        compile_shader_source(
+            source,
+            output_prefix,
+            &output_dir,
+            &[
+                ("vs_main", naga::ShaderStage::Vertex, "vert"),
+                ("fs_main", naga::ShaderStage::Fragment, "frag"),
+            ],
+        );
     }
     compile_shader_source(
         &composition_shader::assemble(
-            composition_shader::Binding::Vulkan,
+            "var<immediate> operation: CompositionOperation;",
             "",
             composition_shader::IDENTITY_BODY,
         ),
@@ -54,11 +44,9 @@ fn main() {
         }
     }
 
-    let output_shader = "shaders/canvas_renderer/output_image.wgsl";
-    println!("cargo:rerun-if-changed={output_shader}");
     validate_shader(
         &rgb_shader::assemble_output_for(
-            &fs::read_to_string(output_shader).expect("read output image shader"),
+            shaders::OUTPUT_IMAGE,
             &theoria_color::LinearSrgb.into(),
             &theoria_color::Srgb.into(),
         )
@@ -66,7 +54,7 @@ fn main() {
     );
 
     let webgpu_blend = composition_shader::assemble(
-        composition_shader::Binding::WebGpu,
+        "@group(2) @binding(0) var<uniform> operation: CompositionOperation;",
         "",
         composition_shader::IDENTITY_BODY,
     );

@@ -1,0 +1,22 @@
+[package]
+name = "theoria-renderer"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = []
+wgsl = ["dep:naga"]
+tessellation = ["dep:lyon_tessellation"]
+mesh-paint = ["tessellation"]
+
+[dependencies]
+theoria-canvas = { path = "../theoria-canvas" }
+theoria-color = { path = "../theoria-color" }
+lyon_tessellation = { version = "1.0.20", optional = true }
+naga = { version = "30.0.0", features = ["wgsl-in"], optional = true }
+
+[dev-dependencies]
+wgpu = "30.0.1"
+bytemuck = "1.25.0"
+half = "2.7.1"
+moxcms = { version = "0.8.1", default-features = false }

@@ -1,15 +1,13 @@
 #[cfg(test)]
 mod tests {
-    use crate::canvas_renderer::raster::convert_icc8_to_linear_rgba16;
-    use crate::{
-        canvas::{
-            Image,
-            image::{ImageKind, RasterImageView},
-        },
-        color::{DisplayP3, IccProfile, IccRenderingIntent, LinearSrgb, Srgb},
-        image::{AlphaAssociation, IccImageError, RasterImage, RasterPlane, Rgba8},
-    };
+    use crate::raster::convert_icc8_to_linear_rgba16;
     use std::sync::Arc;
+    use theoria_canvas::canvas::{
+        Image,
+        image::{ImageKind, RasterImageView},
+    };
+    use theoria_canvas::image::{AlphaAssociation, IccImageError, RasterImage, RasterPlane, Rgba8};
+    use theoria_color::{DisplayP3, IccProfile, IccRenderingIntent, LinearSrgb, Srgb};
 
     #[test]
     fn typed_raster_image_retains_its_space_after_erasure() {
@@ -36,7 +34,7 @@ mod tests {
     fn icc_image_preserves_samples_until_renderer_conversion() {
         let profile = IccProfile::from_bytes(include_bytes!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/crates/theoria-color/src/color/fixtures/sRGB-v4.icc"
+            "/../theoria-color/src/color/fixtures/sRGB-v4.icc"
         )))
         .unwrap();
         let source: Arc<[u8]> = vec![64, 128, 192, 77].into();
@@ -64,7 +62,7 @@ mod tests {
         assert_eq!(pixels, source.as_ref());
         let converted =
             convert_icc8_to_linear_rgba16(1, pixels, profile, intent, has_alpha).unwrap();
-        let expected = crate::color::ColorSpace::from(Srgb)
+        let expected = theoria_color::ColorSpace::from(Srgb)
             .transfer_to(LinearSrgb)
             .unwrap()
             .evaluate(&[64.0 / 255.0, 128.0 / 255.0, 192.0 / 255.0])
@@ -81,7 +79,7 @@ mod tests {
     fn icc_image_checks_sample_count_at_construction() {
         let profile = IccProfile::from_bytes(include_bytes!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/crates/theoria-color/src/color/fixtures/sGrey-v4.icc"
+            "/../theoria-color/src/color/fixtures/sGrey-v4.icc"
         )))
         .unwrap();
         assert!(matches!(

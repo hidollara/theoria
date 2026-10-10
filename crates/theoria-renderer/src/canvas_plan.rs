@@ -1,17 +1,17 @@
-use crate::canvas_renderer::blend::CompositionExt;
+use crate::composition::CompositionExt;
 
 use super::color_space::PreparedColors;
-use crate::canvas::{
+use theoria_canvas::canvas::{
     Canvas, CanvasNode, ColorError, ColorField, Composite, Composition, CoverageNode, Draw,
     image::Image,
 };
-use crate::color::ColorSpace;
+use theoria_canvas::transform::Projective2;
+use theoria_color::ColorSpace;
 #[cfg(test)]
-use crate::color::LinearSrgb;
-use crate::transform::Projective2;
+use theoria_color::LinearSrgb;
 
 /// Checks composed transforms before GPU command recording uses them.
-pub(crate) fn validate_transforms(canvas: &Canvas, view: Projective2) -> std::io::Result<()> {
+pub fn validate_transforms(canvas: &Canvas, view: Projective2) -> std::io::Result<()> {
     fn invalid() -> std::io::Error {
         std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -51,23 +51,21 @@ pub(crate) fn validate_transforms(canvas: &Canvas, view: Projective2) -> std::io
 #[cfg(test)]
 mod transform_validation_tests {
     use super::*;
-    use crate::{
-        canvas::{Color, Opacity},
-        color::Srgb,
-        transform::Affine2,
-    };
+    use theoria_canvas::canvas::{Color, Opacity};
+    use theoria_canvas::transform::Affine2;
+    use theoria_color::Srgb;
 
     #[test]
     fn rejects_overflow_before_recording_nested_canvases() {
         let solid = Canvas::draw(
             Color::new(Srgb, [0_u8; 3], Opacity::<u8>::ONE),
-            crate::canvas::Coverage::all(),
+            theoria_canvas::canvas::Coverage::all(),
         );
         let too_large = solid
             .transformed(Affine2::from_scale(f32::MAX, 1.0).unwrap())
             .transformed(Affine2::from_scale(2.0, 1.0).unwrap());
         assert!(validate_transforms(&too_large, Projective2::IDENTITY).is_err());
-        let nested = Canvas::draw(too_large, crate::canvas::Coverage::all());
+        let nested = Canvas::draw(too_large, theoria_canvas::canvas::Coverage::all());
         assert!(validate_transforms(&nested, Projective2::IDENTITY).is_err());
     }
 }
@@ -75,11 +73,11 @@ mod transform_validation_tests {
 /// Resolves fallible authored colors before either backend starts recording.
 /// The converted values belong to this render, not to the Canvas definition.
 #[cfg(test)]
-pub(crate) fn prepare_colors(canvas: &Canvas) -> Result<PreparedColors, ColorError> {
+fn prepare_colors(canvas: &Canvas) -> Result<PreparedColors, ColorError> {
     prepare_colors_in(canvas, LinearSrgb)
 }
 
-pub(crate) fn prepare_colors_in(
+pub fn prepare_colors_in(
     canvas: &Canvas,
     working_space: impl Into<ColorSpace>,
 ) -> Result<PreparedColors, ColorError> {
@@ -160,11 +158,11 @@ fn prepare_color_field(
 /// Collects the blend programs needed to record this Canvas. Canvas images are
 /// materialized separately and therefore run their own collection pass.
 #[cfg(test)]
-pub(crate) fn collect_compositions(canvas: &Canvas, compositions: &mut Vec<Composition>) {
+fn collect_compositions(canvas: &Canvas, compositions: &mut Vec<Composition>) {
     collect_compositions_in(canvas, compositions, &ColorSpace::from(LinearSrgb));
 }
 
-pub(crate) fn collect_compositions_in(
+pub fn collect_compositions_in(
     canvas: &Canvas,
     compositions: &mut Vec<Composition>,
     working_space: &ColorSpace,
@@ -205,7 +203,7 @@ fn collect_color_field_compositions(
     }
 }
 
-pub(crate) fn collect_images(canvas: &Canvas, images: &mut Vec<Image>) {
+pub fn collect_images(canvas: &Canvas, images: &mut Vec<Image>) {
     match canvas.node() {
         CanvasNode::Draw(draw) => collect_draw_images(draw, images),
         CanvasNode::Transform { content, .. } => collect_images(content, images),
@@ -239,12 +237,7 @@ fn collect_color_field_images(source: &ColorField, images: &mut Vec<Image>) {
     }
 }
 
-#[cfg(test)]
-pub(crate) fn required_scratch_images(canvas: &Canvas) -> usize {
-    required_scratch_images_in(canvas, &ColorSpace::from(LinearSrgb))
-}
-
-pub(crate) fn required_scratch_images_in(canvas: &Canvas, working_space: &ColorSpace) -> usize {
+pub fn required_scratch_images_in(canvas: &Canvas, working_space: &ColorSpace) -> usize {
     1 + additional_scratch_images(canvas, working_space)
 }
 
@@ -289,12 +282,7 @@ fn additional_scratch_images(canvas: &Canvas, working_space: &ColorSpace) -> usi
     }
 }
 
-#[cfg(test)]
-pub(crate) fn can_record_directly(canvas: &Canvas) -> bool {
-    can_record_directly_in(canvas, &ColorSpace::from(LinearSrgb))
-}
-
-pub(crate) fn can_record_directly_in(canvas: &Canvas, working_space: &ColorSpace) -> bool {
+pub fn can_record_directly_in(canvas: &Canvas, working_space: &ColorSpace) -> bool {
     match canvas.node() {
         CanvasNode::Draw(_) => true,
         CanvasNode::Transform { content, .. } => can_record_directly_in(content, working_space),
@@ -323,10 +311,8 @@ fn required_color_field_scratch_images(source: &ColorField, working_space: &Colo
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        canvas::{BlendMode, Color, Composition, Coverage, Opacity},
-        color::{LinearSrgb, Srgb},
-    };
+    use theoria_canvas::canvas::{BlendMode, Color, Composition, Coverage, Opacity};
+    use theoria_color::{LinearSrgb, Srgb};
 
     #[test]
     fn destination_reading_compositions_collect_their_shader() {
@@ -377,13 +363,13 @@ mod tests {
 
     #[test]
     fn renderer_prepares_icc_colors_before_recording() {
-        let profile = crate::color::IccProfile::from_bytes(include_bytes!(concat!(
+        let profile = theoria_color::IccProfile::from_bytes(include_bytes!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/crates/theoria-color/src/color/fixtures/sRGB-v4.icc"
+            "/../theoria-color/src/color/fixtures/sRGB-v4.icc"
         )))
         .unwrap();
-        let color = crate::canvas::Color::new_in_space::<crate::color::Rgb>(
-            profile.color_space(crate::color::IccRenderingIntent::RelativeColorimetric),
+        let color = theoria_canvas::canvas::Color::new_in_space::<theoria_color::Rgb>(
+            profile.color_space(theoria_color::IccRenderingIntent::RelativeColorimetric),
             vec![0.25, 0.5, 0.75],
             Opacity::<f32>::ONE,
         )
@@ -419,10 +405,10 @@ mod tests {
         };
         let canvas = leaf().composite(
             leaf(),
-            Composition::new(Composite::SourceOver, crate::color::LinearDisplayP3),
+            Composition::new(Composite::SourceOver, theoria_color::LinearDisplayP3),
         );
-        let linear_srgb = ColorSpace::from(crate::color::LinearSrgb);
-        let linear_p3 = ColorSpace::from(crate::color::LinearDisplayP3);
+        let linear_srgb = ColorSpace::from(theoria_color::LinearSrgb);
+        let linear_p3 = ColorSpace::from(theoria_color::LinearDisplayP3);
         assert!(!can_record_directly_in(&canvas, &linear_srgb));
         assert_eq!(required_scratch_images_in(&canvas, &linear_srgb), 3);
         assert!(can_record_directly_in(&canvas, &linear_p3));

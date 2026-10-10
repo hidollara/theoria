@@ -1,9 +1,7 @@
-use crate::{
-    canvas::{
-        ColorField, GradientExtend, GradientPoint, GradientStop, LinearGradient, MeshGradient,
-    },
-    geometry::Point,
+use theoria_canvas::canvas::{
+    ColorField, GradientExtend, GradientPoint, GradientStop, LinearGradient, MeshGradient,
 };
+use theoria_canvas::geometry::Point;
 
 use super::{
     WorkingColor,
@@ -26,7 +24,7 @@ impl WorkingColor for TestWorkingColor {
     const TRANSPARENT: Self = Self([0.0; 4]);
 
     fn from_color(
-        color: &crate::canvas::Color,
+        color: &theoria_canvas::canvas::Color,
         prepared: &super::color_space::PreparedColors,
     ) -> Self {
         Self(prepared.lower(color))
@@ -42,9 +40,9 @@ impl WorkingColor for TestWorkingColor {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct PaintedTriangle<C: WorkingColor> {
-    pub(crate) points: [Point; 3],
-    pub(crate) colors: [C; 3],
+pub struct PaintedTriangle<C: WorkingColor> {
+    pub points: [Point; 3],
+    pub colors: [C; 3],
 }
 
 #[derive(Clone, Copy)]
@@ -85,7 +83,7 @@ fn paint_triangle(
     paint_triangle_prepared(points, source, path_sampler.as_ref(), &prepared)
 }
 
-pub(crate) fn paint_triangle_prepared<C: WorkingColor>(
+pub fn paint_triangle_prepared<C: WorkingColor>(
     points: [Point; 3],
     source: &ColorField,
     path_sampler: Option<&PathSampler>,
@@ -149,7 +147,7 @@ pub(crate) fn paint_triangle_prepared<C: WorkingColor>(
     }
 }
 
-fn conic_parameter(point: Point, gradient: &crate::canvas::ConicGradient) -> Option<f32> {
+fn conic_parameter(point: Point, gradient: &theoria_canvas::canvas::ConicGradient) -> Option<f32> {
     let delta = point - gradient.center();
     let angle = delta.y.atan2(delta.x).rem_euclid(std::f32::consts::TAU);
     let sweep = gradient.end_angle() - gradient.start_angle();
@@ -262,7 +260,10 @@ fn extend_parameter(value: f32, extend: GradientExtend) -> f32 {
     }
 }
 
-fn radial_parameter(point: Point, gradient: &crate::canvas::RadialGradient) -> Option<f32> {
+fn radial_parameter(
+    point: Point,
+    gradient: &theoria_canvas::canvas::RadialGradient,
+) -> Option<f32> {
     let centers = gradient.end_center() - gradient.start_center();
     let from_start = point - gradient.start_center();
     let radius_delta = gradient.end_radius() - gradient.start_radius();

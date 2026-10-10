@@ -236,14 +236,15 @@ impl CanvasRenderer {
             format,
             vk::Format::R8G8B8A8_SRGB | vk::Format::B8G8R8A8_SRGB
         );
-        if hardware_srgb && output.is_some_and(|output| output.space != Srgb.into()) {
+        if hardware_srgb && output.is_some_and(|output| *output.space() != Srgb.into()) {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "an sRGB attachment requires an sRGB output space",
             )
             .into());
         }
-        if hardware_srgb && output.is_some_and(|output| output.alpha == OutputAlpha::Premultiplied)
+        if hardware_srgb
+            && output.is_some_and(|output| output.alpha() == OutputAlpha::Premultiplied)
         {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
@@ -255,7 +256,7 @@ impl CanvasRenderer {
             if hardware_srgb {
                 ColorSpace::from(LinearSrgb)
             } else {
-                output.space.clone()
+                output.space().clone()
             }
         });
         let working_format = self.working_format();
@@ -351,7 +352,7 @@ impl CanvasRenderer {
             image_view,
             clear_color,
             present_pipeline,
-            output.map(|output| output.alpha),
+            output.map(|output| output.alpha()),
         );
         Ok(())
     }

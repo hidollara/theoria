@@ -270,14 +270,15 @@ impl CanvasRenderer {
             target.format,
             wgpu::TextureFormat::Rgba8UnormSrgb | wgpu::TextureFormat::Bgra8UnormSrgb
         );
-        if hardware_srgb && output.is_some_and(|output| output.space != Srgb.into()) {
+        if hardware_srgb && output.is_some_and(|output| *output.space() != Srgb.into()) {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "an sRGB attachment requires an sRGB output space",
             )
             .into());
         }
-        if hardware_srgb && output.is_some_and(|output| output.alpha == OutputAlpha::Premultiplied)
+        if hardware_srgb
+            && output.is_some_and(|output| output.alpha() == OutputAlpha::Premultiplied)
         {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
@@ -289,7 +290,7 @@ impl CanvasRenderer {
             if hardware_srgb {
                 ColorSpace::from(LinearSrgb)
             } else {
-                output.space.clone()
+                output.space().clone()
             }
         });
         let mut compositions = Vec::new();
@@ -351,7 +352,7 @@ impl CanvasRenderer {
             None => clear,
         };
         let output_binding = output.map(|output| {
-            let uniform = OutputUniform::new(clear, output.alpha);
+            let uniform = OutputUniform::new(clear, output.alpha());
             let buffer = self
                 .device
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {

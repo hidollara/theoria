@@ -6,11 +6,7 @@ use crate::{
     reactive::Value,
 };
 
-mod output_image;
-mod viewport;
-
-pub use output_image::{OutputAlpha, OutputImage};
-pub use viewport::Viewport;
+pub use theoria_renderer::{OutputAlpha, OutputImage, Viewport};
 
 /// The finite extent of a drawable surface in surface pixels.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

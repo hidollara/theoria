@@ -18,9 +18,7 @@ pub enum ColorModel {
     Hwb,
     Cmyk,
     Cmy,
-    Other {
-        channels: usize,
-    },
+    Other { channels: usize },
 }
 
 impl ColorModel {

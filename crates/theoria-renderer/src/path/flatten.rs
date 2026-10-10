@@ -5,7 +5,7 @@ use lyon_tessellation::{
     },
 };
 
-use crate::geometry::Point;
+use theoria_canvas::geometry::Point;
 
 use super::{ArcSize, ArcSweep, Path, PathSegment};
 
@@ -65,7 +65,7 @@ pub(crate) fn build_lyon_path(path: &Path) -> LyonPath {
 }
 
 /// Flattens each valid Subpath independently while preserving closure.
-pub(crate) fn flatten_subpaths(path: &Path, tolerance: f32) -> Vec<Vec<Point>> {
+pub fn flatten_subpaths(path: &Path, tolerance: f32) -> Vec<Vec<Point>> {
     let source = build_lyon_path(path);
     let mut output = Vec::new();
     let mut current = Vec::new();

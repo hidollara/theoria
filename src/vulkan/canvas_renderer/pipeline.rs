@@ -9,7 +9,7 @@ use std::{
 
 use ash::vk;
 
-use crate::canvas_renderer::{blend::BlendShaderExt, composition_shader::Binding};
+use crate::canvas_renderer::blend::BlendShaderExt;
 
 use crate::{
     canvas::{Composite, Composition},
@@ -166,7 +166,7 @@ impl Pipelines {
             return Ok(());
         }
         let source = crate::rgb_shader::assemble_output_for(
-            include_str!("../../../shaders/canvas_renderer/output_image.wgsl"),
+            theoria_renderer::shaders::OUTPUT_IMAGE,
             &self.working_space,
             space,
         )?;
@@ -210,7 +210,7 @@ impl Pipelines {
             }
             let blend = composition.blend().map_or(&working, |blend| blend.space());
             let source = composition.blend_shader().wgsl_module_for_spaces(
-                Binding::Vulkan,
+                "var<immediate> operation: CompositionOperation;",
                 &working,
                 blend,
                 composition.composite_space(),
@@ -526,17 +526,25 @@ mod tests {
     fn css_and_custom_blends_compile_for_vulkan() {
         for mode in BlendMode::ALL {
             let blend = Blend::new(mode, Srgb);
-            let source = blend.shader().wgsl_module(Binding::Vulkan);
+            let source = crate::canvas_renderer::composition_shader::assemble(
+                "var<immediate> operation: CompositionOperation;",
+                blend.shader().helpers(),
+                blend.shader().body(),
+            );
             assert!(!compile_fragment(&source).unwrap().is_empty(), "{mode:?}");
         }
 
         let shader = BlendShader::wgsl("return backdrop * source;").unwrap();
-        let source = shader.wgsl_module(Binding::Vulkan);
+        let source = crate::canvas_renderer::composition_shader::assemble(
+            "var<immediate> operation: CompositionOperation;",
+            shader.helpers(),
+            shader.body(),
+        );
         assert!(!compile_fragment(&source).unwrap().is_empty());
 
         let source = shader
             .wgsl_module_for_spaces(
-                Binding::Vulkan,
+                "var<immediate> operation: CompositionOperation;",
                 &ColorSpace::from(crate::color::LinearSrgb),
                 &ColorSpace::from(Srgb),
                 &ColorSpace::from(Srgb),
