@@ -1346,8 +1346,8 @@ dependencies = [
  "theoria-event",
  "theoria-reactive",
  "theoria-renderer",
+ "theoria-webgpu",
  "unicode-bidi",
- "wgpu",
  "windows",
 ]
 
@@ -1393,6 +1393,19 @@ dependencies = [
  "naga",
  "theoria-canvas",
  "theoria-color",
+ "wgpu",
+]
+
+[[package]]
+name = "theoria-webgpu"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "half",
+ "naga",
+ "theoria-canvas",
+ "theoria-color",
+ "theoria-renderer",
  "wgpu",
 ]
 

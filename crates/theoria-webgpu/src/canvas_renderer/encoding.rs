@@ -1,13 +1,13 @@
 use std::mem::size_of;
 
-use crate::{
+use theoria_canvas::{
     canvas::{CanvasView, ImageExtend, ImagePattern},
-    canvas_renderer::view_space::transformed_point_to_clip,
     geometry::Point,
-    surface::OutputAlpha,
     transform::Projective2,
-    webgpu::color::PremultipliedWorkingRgba,
 };
+use theoria_renderer::{OutputAlpha, view_space::transformed_point_to_clip};
+
+use crate::color::PremultipliedWorkingRgba;
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -88,7 +88,7 @@ impl ImageVertex {
                     u32::from(pattern.extend_x() == ImageExtend::Transparent),
                     u32::from(pattern.extend_y() == ImageExtend::Transparent),
                     image_space_index,
-                    u32::from(pattern.sampling() == crate::canvas::ImageSampling::Linear),
+                    u32::from(pattern.sampling() == theoria_canvas::canvas::ImageSampling::Linear),
                 ],
             }
         })
@@ -126,9 +126,9 @@ pub(super) struct CompositionUniform {
 }
 
 impl CompositionUniform {
-    pub(super) fn new(composition: &crate::canvas::Composition) -> Self {
+    pub(super) fn new(composition: &theoria_canvas::canvas::Composition) -> Self {
         Self {
-            values: crate::canvas_renderer::composition_encoding::encode(composition),
+            values: theoria_renderer::composition_encoding::encode(composition),
         }
     }
 }

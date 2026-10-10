@@ -1,0 +1,15 @@
+[package]
+name = "theoria-webgpu"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bytemuck = { version = "1.25.0", features = ["derive"] }
+theoria-canvas = { path = "../theoria-canvas" }
+theoria-color = { path = "../theoria-color" }
+theoria-renderer = { path = "../theoria-renderer", features = ["wgsl", "tessellation", "mesh-paint"] }
+wgpu = "30.0.1"
+
+[dev-dependencies]
+half = "2.7.1"
+naga = { version = "30.0.0", features = ["wgsl-in"] }

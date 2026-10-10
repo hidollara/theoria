@@ -6,14 +6,7 @@ use crate::{
     reactive::Value,
 };
 
-pub use theoria_renderer::{OutputAlpha, OutputImage, Viewport};
-
-/// The finite extent of a drawable surface in surface pixels.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct SurfaceSize {
-    pub width: u32,
-    pub height: u32,
-}
+pub use theoria_renderer::{OutputAlpha, OutputImage, SurfaceSize, Viewport};
 
 /// An observation concerning one finite drawable surface.
 #[derive(Clone, Copy, Debug, PartialEq)]

@@ -1,10 +1,10 @@
-use crate::{
-    canvas::Color,
-    canvas_renderer::{WorkingColor, color_space},
-};
+use theoria_canvas::canvas::Color;
+use theoria_renderer::{WorkingColor, color_space};
 
 #[cfg(test)]
-use crate::{canvas::Opacity, color::Srgb};
+use theoria_canvas::canvas::Opacity;
+#[cfg(test)]
+use theoria_color::{LinearSrgb, Srgb};
 
 /// WebGPU Canvas working color in premultiplied renderer-selected RGB coordinates.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -20,7 +20,7 @@ impl PremultipliedWorkingRgba {
 
     #[cfg(test)]
     fn from_canvas_color(color: &Color) -> Self {
-        Self(color_space::lower_straight_color(color))
+        Self(color_space::lower_straight_color_in(color, LinearSrgb))
     }
 
     pub(super) const fn from_components(components: [f32; 4]) -> Self {

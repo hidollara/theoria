@@ -15,7 +15,8 @@ pub mod surface;
 pub mod text;
 
 pub mod vulkan;
-pub mod webgpu;
+#[cfg(feature = "webgpu")]
+pub use theoria_webgpu as webgpu;
 pub mod window;
 
 #[cfg(test)]

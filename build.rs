@@ -34,16 +34,6 @@ fn main() {
         &[("vs_main", naga::ShaderStage::Vertex, "vert")],
     );
 
-    for source_file in ["shaders/webgpu/triangle.wgsl", "shaders/webgpu/image.wgsl"] {
-        println!("cargo:rerun-if-changed={source_file}");
-        let source = fs::read_to_string(source_file).expect("read WebGPU WGSL shader");
-        if source_file.ends_with("/image.wgsl") {
-            validate_shader(&rgb_shader::assemble(&source));
-        } else {
-            validate_shader(&source);
-        }
-    }
-
     validate_shader(
         &rgb_shader::assemble_output_for(
             shaders::OUTPUT_IMAGE,
@@ -52,13 +42,6 @@ fn main() {
         )
         .expect("assemble output image shader"),
     );
-
-    let webgpu_blend = composition_shader::assemble(
-        "@group(2) @binding(0) var<uniform> operation: CompositionOperation;",
-        "",
-        composition_shader::IDENTITY_BODY,
-    );
-    validate_shader(&webgpu_blend);
 }
 
 fn compile_shader(source_file: &str, output_prefix: &str, output_dir: &std::path::Path) {

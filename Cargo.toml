@@ -7,12 +7,17 @@ edition = "2024"
 members = [
     "crates/theoria-canvas",
     "crates/theoria-renderer",
+    "crates/theoria-webgpu",
     "crates/theoria-color",
     "crates/theoria-component",
     "crates/theoria-event",
     "crates/theoria-reactive",
 ]
 resolver = "3"
+
+[features]
+default = ["webgpu"]
+webgpu = ["dep:theoria-webgpu"]
 
 [dependencies]
 theoria-renderer = { path = "crates/theoria-renderer", features = ["wgsl", "tessellation", "mesh-paint"] }
@@ -33,7 +38,7 @@ theoria-color = { path = "crates/theoria-color" }
 theoria-event = { path = "crates/theoria-event" }
 theoria-reactive = { path = "crates/theoria-reactive" }
 unicode-bidi = { version = "0.3.18", default-features = false }
-wgpu = "30.0.1"
+theoria-webgpu = { path = "crates/theoria-webgpu", optional = true }
 windows = { version = "0.62.2", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",

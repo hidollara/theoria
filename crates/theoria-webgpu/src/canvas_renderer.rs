@@ -1,35 +1,32 @@
-use crate::canvas_renderer::blend::CompositionExt;
-
-use crate::canvas_renderer::color_space::ColorRendererExt;
-
 use wgpu::util::DeviceExt;
 
-use crate::{
+use theoria_canvas::{
     canvas::{
         Canvas, CanvasNode, CanvasView, Color, ColorField, Composite, Composition, Coverage,
         CoverageNode, Draw, ImageExtend, ImagePattern, ImageSampling, Opacity,
         canvas_image::CanvasImage,
         image::{Image, ImageKind},
     },
-    canvas_renderer::{
-        canvas_plan::{
-            can_record_directly_in, collect_compositions_in, collect_images, prepare_colors_in,
-            required_scratch_images_in,
-        },
-        color_space::PreparedColors,
-        mesh_paint::paint_triangle_prepared,
-        path_sampling::PathSampler,
-        view_space::screen_space_tolerance,
-    },
-    color::{ColorSpace, IccProfile, IccRenderingIntent, LinearSrgb, Srgb},
     geometry::Point,
     path::Path,
-    surface::{OutputAlpha, OutputImage, SurfaceSize, Viewport},
+    transform::Projective2,
+};
+use theoria_color::{ColorSpace, IccProfile, IccRenderingIntent, LinearSrgb, Srgb};
+use theoria_renderer::{
+    OutputAlpha, OutputImage, SurfaceSize, Viewport,
+    canvas_plan::{
+        can_record_directly_in, collect_compositions_in, collect_images, prepare_colors_in,
+        required_scratch_images_in,
+    },
+    color_space::{ColorRendererExt, PreparedColors},
+    composition::CompositionExt,
+    mesh_paint::paint_triangle_prepared,
+    path_sampling::PathSampler,
     tessellation::{
         DEFAULT_TESSELLATION_TOLERANCE, Mesh, tessellate_fill_with_tolerance,
         tessellate_stroke_with_tolerance,
     },
-    transform::Projective2,
+    view_space::screen_space_tolerance,
 };
 
 use super::color::PremultipliedWorkingRgba;
@@ -197,7 +194,7 @@ impl CanvasRenderer {
     fn materialize_image(&mut self, image: &Image) -> Result<(), Box<dyn std::error::Error>> {
         match image.kind() {
             ImageKind::Raster(image) => {
-                if let crate::canvas::image::RasterImageView::Icc8 {
+                if let theoria_canvas::canvas::image::RasterImageView::Icc8 {
                     profile,
                     intent,
                     has_alpha,
@@ -265,7 +262,7 @@ impl CanvasRenderer {
         prepared: &PreparedColors,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let output = (!target.preserve_working).then_some(&target.output);
-        crate::canvas_renderer::canvas_plan::validate_transforms(canvas, view.canvas_to_view)?;
+        theoria_renderer::canvas_plan::validate_transforms(canvas, view.canvas_to_view)?;
         let hardware_srgb = matches!(
             target.format,
             wgpu::TextureFormat::Rgba8UnormSrgb | wgpu::TextureFormat::Bgra8UnormSrgb
@@ -339,12 +336,12 @@ impl CanvasRenderer {
             (None, _) => &self.pipelines.composites[&Composite::SourceOver],
             _ => unreachable!("an external target specifies an output image"),
         };
-        let clear = crate::canvas_renderer::color_space::lower_straight_color_in(
+        let clear = theoria_renderer::color_space::lower_straight_color_in(
             &target.clear_color,
             &self.working_space,
         );
         let clear = match output {
-            Some(_) => crate::canvas_renderer::color_space::convert_premultiplied_space(
+            Some(_) => theoria_renderer::color_space::convert_premultiplied_space(
                 clear,
                 &self.working_space,
                 &ColorSpace::from(LinearSrgb),
@@ -747,7 +744,7 @@ impl CanvasRecorder<'_> {
                 space,
             } => (
                 *premultiplied,
-                crate::canvas_renderer::composition_encoding::encode_image_space(
+                theoria_renderer::composition_encoding::encode_image_space(
                     space,
                     self.prepared.working_space(),
                 ),
@@ -1025,12 +1022,12 @@ mod tests {
     };
 
     use super::*;
-    use crate::{
+    use theoria_canvas::{
         canvas::{Composite, Coverage},
-        color::LinearSrgb,
         geometry::Point,
         image::Srgba8Image,
     };
+    use theoria_color::LinearSrgb;
 
     #[test]
     fn target_region_preserves_the_viewport_and_clips_its_scissor() {
@@ -1070,8 +1067,10 @@ mod tests {
         );
         let canvas = backdrop.composite(
             source,
-            Composition::new(Composite::SourceOver, crate::color::LinearSrgb)
-                .with_blend(crate::canvas::BlendMode::Multiply, crate::color::LinearSrgb),
+            Composition::new(Composite::SourceOver, theoria_color::LinearSrgb).with_blend(
+                theoria_canvas::canvas::BlendMode::Multiply,
+                theoria_color::LinearSrgb,
+            ),
         );
         if let Some(pixel) = render_pixel(&canvas) {
             assert_eq!(pixel, [0, 0, 0, 255]);
@@ -1094,10 +1093,10 @@ mod tests {
     fn selected_working_space_preserves_srgba_output() {
         let profile = IccProfile::from_bytes(include_bytes!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/crates/theoria-color/src/color/fixtures/DisplayP3-v4.icc"
+            "/../theoria-color/src/color/fixtures/DisplayP3-v4.icc"
         )))
         .unwrap();
-        let image = crate::canvas::Image::from_icc_u8(
+        let image = theoria_canvas::canvas::Image::from_icc_u8(
             1,
             1,
             vec![200, 100, 50],
@@ -1137,7 +1136,7 @@ mod tests {
             &canvas,
             wgpu::TextureFormat::Rgba8UnormSrgb,
             None,
-            crate::color::LinearDisplayP3.into(),
+            theoria_color::LinearDisplayP3.into(),
         );
         if let (Some(expected), Some(actual)) = (linear_srgb, linear_p3) {
             for (&actual, &expected) in actual.iter().zip(&expected) {
@@ -1161,8 +1160,8 @@ mod tests {
         );
         let canvas = backdrop.composite(
             source,
-            Composition::new(Composite::SourceOver, crate::color::LinearSrgb)
-                .with_blend(crate::canvas::BlendMode::Multiply, Srgb),
+            Composition::new(Composite::SourceOver, theoria_color::LinearSrgb)
+                .with_blend(theoria_canvas::canvas::BlendMode::Multiply, Srgb),
         );
         if let Some(pixel) = render_pixel(&canvas) {
             // Weighting the source and blend results in sRGB instead yields
@@ -1177,7 +1176,8 @@ mod tests {
 
     #[test]
     fn custom_wgsl_blend_is_used_by_webgpu() {
-        let shader = crate::canvas::BlendShader::wgsl("return vec3<f32>(1.0, 0.0, 0.0);").unwrap();
+        let shader =
+            theoria_canvas::canvas::BlendShader::wgsl("return vec3<f32>(1.0, 0.0, 0.0);").unwrap();
         let backdrop = Canvas::draw(
             Color::new(Srgb, [0_u8, 255, 0], Opacity::<u8>::ONE),
             Coverage::all(),
@@ -1188,8 +1188,8 @@ mod tests {
         );
         let canvas = backdrop.composite(
             source,
-            Composition::new(Composite::SourceOver, crate::color::LinearSrgb)
-                .with_blend(shader, crate::color::LinearSrgb),
+            Composition::new(Composite::SourceOver, theoria_color::LinearSrgb)
+                .with_blend(shader, theoria_color::LinearSrgb),
         );
         if let Some(pixel) = render_pixel(&canvas) {
             assert_eq!(pixel, [255, 0, 0, 255]);
@@ -1200,7 +1200,7 @@ mod tests {
     fn icc_output_profile_changes_final_webgpu_device_codes() {
         let profile = IccProfile::from_bytes(include_bytes!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/crates/theoria-color/src/color/fixtures/DisplayP3-v4.icc"
+            "/../theoria-color/src/color/fixtures/DisplayP3-v4.icc"
         )))
         .unwrap();
         let canvas = Canvas::draw(
@@ -1210,7 +1210,7 @@ mod tests {
         if let Some(pixel) =
             render_pixel_in(&canvas, wgpu::TextureFormat::Rgba8Unorm, Some(&profile))
         {
-            let reference = crate::image::IccRasterImage::from_srgba8(
+            let reference = theoria_canvas::image::IccRasterImage::from_srgba8(
                 &Srgba8Image::new(1, 1, vec![255, 0, 0, 255]).unwrap(),
                 profile,
                 IccRenderingIntent::RelativeColorimetric,
@@ -1243,10 +1243,10 @@ mod tests {
     fn icc_raster_keeps_out_of_srgb_gamut_values_when_sampled() {
         let profile = IccProfile::from_bytes(include_bytes!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/crates/theoria-color/src/color/fixtures/DisplayP3-v4.icc"
+            "/../theoria-color/src/color/fixtures/DisplayP3-v4.icc"
         )))
         .unwrap();
-        let image = crate::canvas::Image::from_icc_u8(
+        let image = theoria_canvas::canvas::Image::from_icc_u8(
             1,
             1,
             vec![255, 0, 0],
@@ -1274,11 +1274,11 @@ mod tests {
     fn cmyk_raster_with_alpha_is_transformed_when_drawn() {
         let profile = IccProfile::from_bytes(include_bytes!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/crates/theoria-color/src/color/fixtures/CGATS001Compat-v2-micro.icc"
+            "/../theoria-color/src/color/fixtures/CGATS001Compat-v2-micro.icc"
         )))
         .unwrap();
         let samples = [50, 100, 150, 20, 128];
-        let expected = crate::canvas_renderer::raster::convert_icc8_to_linear_rgba16(
+        let expected = crate::test_support::convert_icc8_to_linear_rgba16(
             1,
             &samples,
             &profile,
@@ -1286,7 +1286,7 @@ mod tests {
             true,
         )
         .unwrap();
-        let image = crate::canvas::Image::from_icc_u8(
+        let image = theoria_canvas::canvas::Image::from_icc_u8(
             1,
             1,
             samples.to_vec(),
@@ -1347,19 +1347,31 @@ mod tests {
         profile: Option<&IccProfile>,
         working_space: ColorSpace,
     ) -> Option<[u8; 8]> {
+        // Each readback test owns a native device. Keep these device lifetimes
+        // separate while allowing the CPU-only tests to run in parallel.
+        static RENDER_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _render_guard = RENDER_LOCK.lock().unwrap();
         block_on(async {
             let instance = wgpu::Instance::default();
-            let Ok(adapter) = instance
+            let adapter = match instance
                 .request_adapter(&wgpu::RequestAdapterOptions::default())
                 .await
-            else {
-                return None;
+            {
+                Ok(adapter) => adapter,
+                Err(error) => {
+                    eprintln!("skipping WebGPU render test: no adapter: {error}");
+                    return None;
+                }
             };
-            let Ok((device, queue)) = adapter
+            let (device, queue) = match adapter
                 .request_device(&wgpu::DeviceDescriptor::default())
                 .await
-            else {
-                return None;
+            {
+                Ok(device_and_queue) => device_and_queue,
+                Err(error) => {
+                    eprintln!("skipping WebGPU render test: no device: {error}");
+                    return None;
+                }
             };
             let size = SurfaceSize {
                 width: 2,

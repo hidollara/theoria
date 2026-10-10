@@ -5,13 +5,9 @@ use std::{
 
 use wgpu::util::DeviceExt;
 
-use crate::canvas_renderer::blend::BlendShaderExt;
-
-use crate::{
-    canvas::{Composite, Composition},
-    canvas_renderer::icc_image_shader,
-    color::{ColorSpace, IccProfile, IccRenderingIntent},
-};
+use theoria_canvas::canvas::{Composite, Composition};
+use theoria_color::{ColorSpace, IccProfile, IccRenderingIntent};
+use theoria_renderer::{blend::BlendShaderExt, icc_image_shader, rgb_shader};
 
 use super::encoding::{CompositionUniform, ImageVertex, OutputUniform, TriangleVertex};
 
@@ -99,12 +95,10 @@ impl Pipelines {
         let triangle_shader = shader(
             device,
             "theoria WebGPU triangle shader",
-            include_str!("../../../shaders/webgpu/triangle.wgsl"),
+            include_str!("../../shaders/triangle.wgsl"),
         );
-        let image_source = crate::rgb_shader::assemble_for(
-            include_str!("../../../shaders/webgpu/image.wgsl"),
-            working_space,
-        )?;
+        let image_source =
+            rgb_shader::assemble_for(include_str!("../../shaders/image.wgsl"), working_space)?;
         let image_shader = shader(device, "theoria WebGPU image shader", &image_source);
         let composite_shader = shader(
             device,
@@ -190,7 +184,7 @@ impl Pipelines {
             intent,
             has_alpha,
             working_space,
-            include_str!("../../../shaders/webgpu/icc_image.wgsl"),
+            include_str!("../../shaders/icc_image.wgsl"),
         )?;
         let shader = shader(device, "theoria WebGPU ICC image shader", lowered.source);
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -305,7 +299,7 @@ impl Pipelines {
     ) -> Result<&wgpu::RenderPipeline, Box<dyn std::error::Error>> {
         let key = (format, space.clone());
         if !self.outputs.contains_key(&key) {
-            let source = crate::rgb_shader::assemble_output_for(
+            let source = rgb_shader::assemble_output_for(
                 theoria_renderer::shaders::OUTPUT_IMAGE,
                 &self.working_space,
                 space,
@@ -427,12 +421,45 @@ mod tests {
     use super::*;
 
     #[test]
+    fn renderer_shader_templates_validate_without_a_device() {
+        let working_space = theoria_color::LinearSrgb.into();
+        let output_space = theoria_color::Srgb.into();
+        let sources = [
+            include_str!("../../shaders/triangle.wgsl").to_owned(),
+            rgb_shader::assemble_for(include_str!("../../shaders/image.wgsl"), &working_space)
+                .unwrap(),
+            theoria_renderer::shaders::COMPOSITE.to_owned(),
+            theoria_renderer::shaders::MASK.to_owned(),
+            theoria_renderer::composition_shader::assemble(
+                "@group(2) @binding(0) var<uniform> operation: CompositionOperation;",
+                "",
+                theoria_renderer::composition_shader::IDENTITY_BODY,
+            ),
+            rgb_shader::assemble_output_for(
+                theoria_renderer::shaders::OUTPUT_IMAGE,
+                &working_space,
+                &output_space,
+            )
+            .unwrap(),
+        ];
+        for source in sources {
+            let module = naga::front::wgsl::parse_str(&source).unwrap();
+            naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::all(),
+            )
+            .validate(&module)
+            .unwrap();
+        }
+    }
+
+    #[test]
     fn icc_image_shaders_validate_for_rgb_gray_and_cmyk_samples() {
         for (profile_bytes, intent) in [
             (
                 include_bytes!(concat!(
                     env!("CARGO_MANIFEST_DIR"),
-                    "/crates/theoria-color/src/color/fixtures/DisplayP3-v4.icc"
+                    "/../theoria-color/src/color/fixtures/DisplayP3-v4.icc"
                 ))
                 .as_slice(),
                 IccRenderingIntent::RelativeColorimetric,
@@ -440,7 +467,7 @@ mod tests {
             (
                 include_bytes!(concat!(
                     env!("CARGO_MANIFEST_DIR"),
-                    "/crates/theoria-color/src/color/fixtures/sGrey-v4.icc"
+                    "/../theoria-color/src/color/fixtures/sGrey-v4.icc"
                 ))
                 .as_slice(),
                 IccRenderingIntent::RelativeColorimetric,
@@ -448,7 +475,7 @@ mod tests {
             (
                 include_bytes!(concat!(
                     env!("CARGO_MANIFEST_DIR"),
-                    "/crates/theoria-color/src/color/fixtures/CGATS001Compat-v2-micro.icc"
+                    "/../theoria-color/src/color/fixtures/CGATS001Compat-v2-micro.icc"
                 ))
                 .as_slice(),
                 IccRenderingIntent::Perceptual,
@@ -460,8 +487,8 @@ mod tests {
                     &profile,
                     intent,
                     has_alpha,
-                    crate::test_support::distinct_color_space(crate::color::LinearSrgb),
-                    include_str!("../../../shaders/webgpu/icc_image.wgsl"),
+                    crate::test_support::distinct_color_space(theoria_color::LinearSrgb),
+                    include_str!("../../shaders/icc_image.wgsl"),
                 )
                 .unwrap();
                 let module = naga::front::wgsl::parse_str(&lowered.source).unwrap();

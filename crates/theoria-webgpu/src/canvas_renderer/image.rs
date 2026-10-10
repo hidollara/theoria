@@ -1,14 +1,14 @@
 use std::collections::HashMap;
 
-use crate::{
+use theoria_canvas::{
     canvas::{
         canvas_image::{CanvasImage, CanvasImageInstanceKey},
         image::{Image, ImageKind, RasterImageSource, RasterImageView},
     },
-    canvas_renderer::raster::{PackedIccSamples, pack_icc_samples},
-    color::ColorSpace,
     image::{AlphaAssociation, RasterImageInstanceKey},
 };
+use theoria_color::ColorSpace;
+use theoria_renderer::raster::{PackedIccSamples, pack_icc_samples};
 
 use super::pipeline::WORKING_FORMAT;
 
@@ -29,8 +29,8 @@ pub(super) enum GpuImageColor {
 }
 
 enum UploadPlane<'a> {
-    Borrowed(&'a crate::image::RasterPlane<u8>),
-    Expanded(crate::image::RasterPlane<u8>),
+    Borrowed(&'a theoria_canvas::image::RasterPlane<u8>),
+    Expanded(theoria_canvas::image::RasterPlane<u8>),
     Icc(PackedIccSamples),
 }
 
@@ -108,7 +108,7 @@ impl ImageCache {
                 },
             ),
             RasterImageView::Rgb8 { plane, color_space } => {
-                let expanded = crate::canvas_renderer::raster::expand_rgb8_to_rgba8(
+                let expanded = theoria_renderer::raster::expand_rgb8_to_rgba8(
                     image.width(),
                     image.height(),
                     plane,

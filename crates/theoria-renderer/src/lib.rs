@@ -34,6 +34,7 @@ pub mod raster;
 pub mod rgb_shader;
 #[cfg(feature = "wgsl")]
 pub mod shaders;
+mod surface_size;
 #[cfg(feature = "tessellation")]
 pub mod tessellation;
 #[cfg(feature = "wgsl")]
@@ -43,6 +44,7 @@ pub mod view_space;
 mod viewport;
 
 pub use output_image::{OutputAlpha, OutputImage};
+pub use surface_size::SurfaceSize;
 pub use viewport::Viewport;
 
 #[cfg(test)]
