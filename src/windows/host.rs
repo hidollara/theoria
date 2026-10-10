@@ -189,9 +189,7 @@ impl WindowInputs {
     }
 
     fn publish_to<E: 'static>(sink: &ChannelSink<E>, event: E) {
-        debug_assert_eq!(
-            sink.send(event).run(),
-            crate::event::DispatchOutcome::Completed
-        );
+        let outcome = sink.send(event).run();
+        debug_assert_eq!(outcome, crate::event::DispatchOutcome::Completed);
     }
 }

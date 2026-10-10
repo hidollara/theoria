@@ -114,8 +114,9 @@ impl FrameScheduler {
         if !self.take_due(now) {
             return false;
         }
+        let outcome = self.channel.sink().send(FrameOpportunity).run();
         debug_assert_eq!(
-            self.channel.sink().send(FrameOpportunity).run(),
+            outcome,
             crate::event::DispatchOutcome::Completed,
             "the FrameScheduler owns its live Channel and publishes inline"
         );
