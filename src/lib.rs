@@ -21,7 +21,8 @@ pub use theoria_webgpu as webgpu;
 
 #[cfg(test)]
 pub(crate) mod test_support;
-pub mod windows;
+#[cfg(target_os = "windows")]
+pub use theoria_windows as windows;
 
 pub use theoria_component as component;
 pub use theoria_event as event;

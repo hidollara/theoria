@@ -9,7 +9,6 @@ use std::{
 use crate::{
     component::MountContext,
     event_loop::EventLoopHandle,
-    reactive::Computed,
     surface::{SurfaceContent, SurfaceSize, Viewport},
     windows::{
         Result, capabilities::WindowCapabilities, group::WindowGroupContext,
@@ -17,6 +16,7 @@ use crate::{
     },
 };
 
+use theoria_reactive::Computed;
 use theoria_vulkan::{CanvasRenderer, PresentOutcome, Win32PresentationTarget, Win32Presenter};
 
 struct VulkanPresentation {

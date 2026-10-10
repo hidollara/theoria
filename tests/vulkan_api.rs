@@ -12,6 +12,7 @@ fn existing_paths_keep_the_standalone_vulkan_types() {
         TypeId::of::<theoria::vulkan::ImageSurface>(),
         TypeId::of::<theoria_vulkan::ImageSurface>(),
     );
+    #[cfg(target_os = "windows")]
     assert_eq!(
         TypeId::of::<theoria::windows::Win32PresentationTarget>(),
         TypeId::of::<theoria_vulkan::Win32PresentationTarget>(),

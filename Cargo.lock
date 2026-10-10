@@ -1337,6 +1337,7 @@ dependencies = [
  "theoria-text",
  "theoria-vulkan",
  "theoria-webgpu",
+ "theoria-windows",
  "windows",
 ]
 
@@ -1438,6 +1439,19 @@ dependencies = [
  "theoria-color",
  "theoria-renderer",
  "wgpu",
+]
+
+[[package]]
+name = "theoria-windows"
+version = "0.1.0"
+dependencies = [
+ "theoria-canvas",
+ "theoria-component",
+ "theoria-event",
+ "theoria-reactive",
+ "theoria-runtime",
+ "theoria-vulkan",
+ "windows",
 ]
 
 [[package]]

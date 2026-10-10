@@ -8,6 +8,7 @@ members = [
     "crates/theoria-canvas",
     "crates/theoria-text",
     "crates/theoria-runtime",
+    "crates/theoria-windows",
     "crates/theoria-renderer",
     "crates/theoria-webgpu",
     "crates/theoria-vulkan",
@@ -20,7 +21,7 @@ resolver = "3"
 
 [features]
 default = ["vulkan", "webgpu"]
-vulkan = ["dep:theoria-vulkan"]
+vulkan = ["dep:theoria-vulkan", "theoria-windows/vulkan"]
 webgpu = ["dep:theoria-webgpu"]
 
 [dependencies]
@@ -33,15 +34,16 @@ theoria-event = { path = "crates/theoria-event" }
 theoria-reactive = { path = "crates/theoria-reactive" }
 theoria-runtime = { path = "crates/theoria-runtime" }
 theoria-text = { path = "crates/theoria-text" }
-theoria-vulkan = { path = "crates/theoria-vulkan", features = ["win32"], optional = true }
+theoria-vulkan = { path = "crates/theoria-vulkan", optional = true }
 theoria-webgpu = { path = "crates/theoria-webgpu", optional = true }
+
+[target.'cfg(windows)'.dependencies]
+theoria-windows = { path = "crates/theoria-windows" }
+
+[target.'cfg(windows)'.dev-dependencies]
 windows = { version = "0.62.2", features = [
     "Win32_Foundation",
-    "Win32_Graphics_Gdi",
-    "Win32_System_LibraryLoader",
     "Win32_System_Threading",
-    "Win32_UI_HiDpi",
-    "Win32_UI_Input_Pointer",
     "Win32_UI_WindowsAndMessaging",
 ] }
 
