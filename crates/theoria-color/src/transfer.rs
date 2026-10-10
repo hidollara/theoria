@@ -27,13 +27,13 @@ impl Transfer {
     pub fn new(transfers: impl IntoIterator<Item = Self>) -> Result<Self, TransferError> {
         let mut stages: Vec<TransferStage> = Vec::new();
         for mut transfer in transfers {
-            if let (Some(previous), Some(next)) = (stages.last(), transfer.stages.first()) {
-                if previous.output_channels() != next.input_channels() {
-                    return Err(TransferError::ChannelMismatch {
-                        expected: previous.output_channels(),
-                        actual: next.input_channels(),
-                    });
-                }
+            if let (Some(previous), Some(next)) = (stages.last(), transfer.stages.first())
+                && previous.output_channels() != next.input_channels()
+            {
+                return Err(TransferError::ChannelMismatch {
+                    expected: previous.output_channels(),
+                    actual: next.input_channels(),
+                });
             }
             stages.append(&mut transfer.stages);
         }

@@ -116,11 +116,11 @@ fn composes_color_fields_in_paint_order_without_a_size() {
 
     let first = filled_triangle(
         first,
-        ColorField::Solid(Color::new(Srgb, [1.0_f32, 0.0, 0.0], Opacity::<f32>::ONE).into()),
+        ColorField::Solid(Color::new(Srgb, [1.0_f32, 0.0, 0.0], Opacity::<f32>::ONE)),
     );
     let second = filled_triangle(
         second,
-        ColorField::Solid(Color::new(Srgb, [0.0_f32, 1.0, 0.0], Opacity::<f32>::ONE).into()),
+        ColorField::Solid(Color::new(Srgb, [0.0_f32, 1.0, 0.0], Opacity::<f32>::ONE)),
     );
     let canvas = first.clone().composite(
         second.clone(),
@@ -145,7 +145,7 @@ fn fill_records_non_zero_by_default_and_accepts_even_odd_explicitly() {
         Point::new(2.0, 0.0),
         Point::new(1.0, 2.0),
     ]);
-    let source = ColorField::Solid(Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE).into());
+    let source = ColorField::Solid(Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE));
     let default_fill = Canvas::draw(source.clone(), Coverage::fill(path.clone()));
     let even_odd = Canvas::draw(source, Coverage::fill_with_rule(path, FillRule::EvenOdd));
 
@@ -293,7 +293,7 @@ fn cloned_canvases_diverge_without_changing_the_shared_value() {
         Point::new(1.0, 0.0),
         Point::new(0.0, 1.0),
     ];
-    let source = ColorField::Solid(Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE).into());
+    let source = ColorField::Solid(Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE));
     let base = filled_triangle(triangle, source.clone());
     let extended = base.clone().composite(
         filled_triangle(triangle, source),
@@ -316,7 +316,7 @@ fn transform_preserves_the_child_canvas_as_a_shared_value() {
     ];
     let child = filled_triangle(
         triangle,
-        ColorField::Solid(Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE).into()),
+        ColorField::Solid(Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE)),
     );
     let child_to_parent =
         Projective2::from_rows([[1.0, 0.0, 20.0], [0.0, 1.0, 30.0], [0.001, 0.0, 1.0]])
@@ -336,7 +336,7 @@ fn coverage_pairs_a_lazy_canvas_color_field_with_a_canvas_alpha_field() {
         Point::new(1.0, 0.0),
         Point::new(0.0, 1.0),
     ];
-    let source = ColorField::Solid(Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE).into());
+    let source = ColorField::Solid(Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE));
     let content = filled_triangle(triangle, source.clone());
     let coverage_canvas = filled_triangle(triangle, source.clone());
     let overlay = filled_triangle(triangle, source);
@@ -387,9 +387,11 @@ fn any_color_field_can_supply_an_alpha_coverage_field() {
 
 #[test]
 fn draw_keeps_source_and_coverage_as_distinct_semantics() {
-    let source = ColorField::Solid(
-        Color::new(Srgb, [0.8_f32, 0.2, 0.1], Opacity::<f32>::new(0.4).unwrap()).into(),
-    );
+    let source = ColorField::Solid(Color::new(
+        Srgb,
+        [0.8_f32, 0.2, 0.1],
+        Opacity::<f32>::new(0.4).unwrap(),
+    ));
     let coverage = Coverage::fill(Path::polygon([
         Point::new(0.0, 0.0),
         Point::new(1.0, 0.0),
@@ -444,7 +446,7 @@ fn transformed_wraps_the_canvas_without_baking_primitive_coordinates() {
         .expect("valid projective coefficients");
     let content = filled_triangle(
         triangle,
-        ColorField::Solid(Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE).into()),
+        ColorField::Solid(Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE)),
     );
     let transformed = content.clone().transformed(transform);
 

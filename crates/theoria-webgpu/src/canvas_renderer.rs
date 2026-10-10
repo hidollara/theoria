@@ -579,7 +579,7 @@ impl CanvasRecorder<'_> {
         self.render_mesh(
             image,
             mesh,
-            &ColorField::Solid(Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE).into()),
+            &ColorField::Solid(Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE)),
             mask_to_root,
         );
         image

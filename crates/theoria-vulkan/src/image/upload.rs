@@ -20,14 +20,12 @@ pub(super) fn upload_rgba8(
     height: u32,
     plane: &RasterPlane<u8>,
 ) -> Result<Arc<VulkanImage>> {
-    upload_rgba(
+    upload_rgba8_layers(
         device,
         width,
         height,
         plane.samples(),
         plane.row_stride(),
-        4,
-        vk::Format::R8G8B8A8_UNORM,
         1,
         false,
     )
@@ -40,27 +38,23 @@ pub(super) fn upload_rgba8_array(
     samples: &[u8],
     layers: u32,
 ) -> Result<Arc<VulkanImage>> {
-    upload_rgba(
+    upload_rgba8_layers(
         device,
         width,
         height,
         samples,
         usize::try_from(width)? * 4,
-        4,
-        vk::Format::R8G8B8A8_UNORM,
         layers,
         true,
     )
 }
 
-fn upload_rgba(
+fn upload_rgba8_layers(
     device: RenderDevice,
     width: u32,
     height: u32,
     pixels: &[u8],
     row_stride: usize,
-    bytes_per_pixel: usize,
-    format: vk::Format,
     layers: u32,
     array_view: bool,
 ) -> Result<Arc<VulkanImage>> {
@@ -76,7 +70,7 @@ fn upload_rgba(
         device.clone(),
         // Preserve stored coordinates exactly. Transfer decoding happens in
         // the image shader after straight/premultiplied alpha is interpreted.
-        format,
+        vk::Format::R8G8B8A8_UNORM,
         extent,
         vk::SampleCountFlags::TYPE_1,
         vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
@@ -100,7 +94,7 @@ fn upload_rgba(
             layers,
         );
         let region = vk::BufferImageCopy::default()
-            .buffer_row_length(u32::try_from(row_stride / bytes_per_pixel)?)
+            .buffer_row_length(u32::try_from(row_stride / 4)?)
             .image_subresource(
                 vk::ImageSubresourceLayers::default()
                     .aspect_mask(vk::ImageAspectFlags::COLOR)

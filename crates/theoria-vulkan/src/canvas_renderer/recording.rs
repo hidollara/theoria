@@ -256,7 +256,7 @@ impl<'a> CanvasRecorder<'a> {
             .begin_accumulator(image, vk::AttachmentLoadOp::CLEAR);
         self.commands.render_mesh(
             mesh,
-            &ColorField::Solid(Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE).into()),
+            &ColorField::Solid(Color::new(Srgb, [255_u8, 255, 255], Opacity::<u8>::ONE)),
             mask_to_root,
         );
         self.commands.end_rendering();
