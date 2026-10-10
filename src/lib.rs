@@ -10,7 +10,6 @@ pub use theoria_color as color;
 #[cfg(any(feature = "vulkan", test))]
 mod component_execution;
 pub mod event_loop;
-pub mod font;
 pub mod geometry;
 pub mod gesture;
 pub mod input;
@@ -18,7 +17,7 @@ pub mod interaction;
 pub mod path;
 pub mod recording;
 pub mod surface;
-pub mod text;
+pub use theoria_text::{font, text};
 
 #[cfg(feature = "vulkan")]
 pub use theoria_vulkan as vulkan;

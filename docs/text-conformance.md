@@ -3,6 +3,9 @@
 This file records which external specifications the text and font code intends
 to implement. It is a conformance ledger, not a design overview.
 
+The implementation lives in `crates/theoria-text`; source paths below are
+relative to that crate's `src/` directory.
+
 For CSS and W3C specifications, this ledger records whether the individual
 semantics adopted by Theoria conform to their referenced specifications. It
 does not claim that Theoria as a whole is a conforming CSS formatting engine.
@@ -63,7 +66,7 @@ while its URL is only a navigation aid.
 | UTS #51 emoji presentation and sequences | **Partial; no conformance claim** | Extended grapheme clusters stay intact during fallback, and HarfRust receives variation selectors and ZWJ sequences. Color glyph realizations are supported. | Presentation without an explicit variation selector remains an environment policy selected by font order. Theoria does not currently claim the UTS #51 C2 display capability and runs no Unicode emoji conformance data. |
 
 The versioned official Unicode files live under
-`tests/data/unicode/17.0.0/`. Their README records provenance.
+`crates/theoria-text/tests/data/unicode/17.0.0/`. Their README records provenance.
 
 ## OpenType consumption
 
@@ -154,5 +157,5 @@ When changing a Unicode, OpenType, shaping, vertical-layout or color-font path:
    normative baseline;
 3. do not promote **Delegated** or **Partial** to **Conformant** without an
    external conformance suite or an equally explicit verification argument;
-4. update `tests/data/unicode/<version>/` and all five Unicode conformance tests
+4. update `crates/theoria-text/tests/data/unicode/<version>/` and all five Unicode conformance tests
    together when changing the Unicode version baseline.

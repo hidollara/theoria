@@ -1,0 +1,21 @@
+[package]
+name = "theoria-text"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+theoria-canvas = { path = "../theoria-canvas" }
+theoria-color = { path = "../theoria-color" }
+theoria-renderer = { path = "../theoria-renderer" }
+flate2 = "1.1.2"
+harfrust = "0.13.2"
+icu_locale_core = "2.3.0"
+icu_properties = { version = "2.3.0", features = ["unicode_bidi"] }
+icu_segmenter = { version = "2.3.0", features = ["unstable"] }
+png = "0.18.0"
+resvg = { version = "0.48.1", default-features = false, features = ["text", "raster-images"] }
+skrifa = "0.46.2"
+unicode-bidi = { version = "0.3.18", default-features = false }
+
+[dev-dependencies]
+font-test-data = "0.8.0"
