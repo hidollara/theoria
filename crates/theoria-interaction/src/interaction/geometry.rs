@@ -1,6 +1,6 @@
-pub use theoria_canvas::geometry::*;
+use theoria_canvas::geometry::Point;
 
-pub(crate) fn point_segment_distance_squared(point: Point, start: Point, end: Point) -> f32 {
+pub(super) fn point_segment_distance_squared(point: Point, start: Point, end: Point) -> f32 {
     let segment = end - start;
     let length_squared = segment.dot(segment);
     if length_squared == 0.0 {
@@ -16,6 +16,7 @@ pub(crate) fn point_segment_distance_squared(point: Point, start: Point, end: Po
 #[cfg(test)]
 mod tests {
     use super::*;
+    use theoria_canvas::geometry::Offset;
 
     #[test]
     fn point_and_vector_operations_preserve_their_meaning() {

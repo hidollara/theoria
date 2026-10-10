@@ -9,6 +9,7 @@ members = [
     "crates/theoria-text",
     "crates/theoria-runtime",
     "crates/theoria-windows",
+    "crates/theoria-interaction",
     "crates/theoria-renderer",
     "crates/theoria-webgpu",
     "crates/theoria-vulkan",
@@ -25,12 +26,13 @@ vulkan = ["dep:theoria-vulkan", "theoria-windows/vulkan"]
 webgpu = ["dep:theoria-webgpu"]
 
 [dependencies]
-theoria-renderer = { path = "crates/theoria-renderer", features = ["tessellation"] }
+theoria-renderer = { path = "crates/theoria-renderer" }
 png = "0.18.0"
 theoria-canvas = { path = "crates/theoria-canvas" }
 theoria-component = { path = "crates/theoria-component" }
 theoria-color = { path = "crates/theoria-color" }
 theoria-event = { path = "crates/theoria-event" }
+theoria-interaction = { path = "crates/theoria-interaction" }
 theoria-reactive = { path = "crates/theoria-reactive" }
 theoria-runtime = { path = "crates/theoria-runtime" }
 theoria-text = { path = "crates/theoria-text" }

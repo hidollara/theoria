@@ -1331,6 +1331,7 @@ dependencies = [
  "theoria-color",
  "theoria-component",
  "theoria-event",
+ "theoria-interaction",
  "theoria-reactive",
  "theoria-renderer",
  "theoria-runtime",
@@ -1366,6 +1367,18 @@ dependencies = [
 [[package]]
 name = "theoria-event"
 version = "0.1.0"
+
+[[package]]
+name = "theoria-interaction"
+version = "0.1.0"
+dependencies = [
+ "theoria-canvas",
+ "theoria-component",
+ "theoria-event",
+ "theoria-reactive",
+ "theoria-renderer",
+ "theoria-runtime",
+]
 
 [[package]]
 name = "theoria-reactive"

@@ -1,7 +1,11 @@
 use crate::{
-    geometry::{Point, point_segment_distance_squared},
-    path::{FillRule, Path, flatten_subpaths},
+    geometry::Point,
+    path::{FillRule, Path},
 };
+
+use theoria_renderer::path::flatten_subpaths;
+
+use super::geometry::point_segment_distance_squared;
 
 #[derive(Clone, Debug, PartialEq)]
 enum Shape {

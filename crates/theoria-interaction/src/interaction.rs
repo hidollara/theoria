@@ -4,6 +4,7 @@
 //! higher-level component can derive matching visual and interactive geometry
 //! without making either one own the other.
 
+mod geometry;
 mod hit_region;
 
 pub use hit_region::{HitRegion, HitRegionError};
