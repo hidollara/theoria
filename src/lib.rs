@@ -1,13 +1,12 @@
 //! Declarative Canvas, Components, and platform integration.
 //!
 //! The default `vulkan` and `webgpu` features re-export their standalone rendering
-//! backends. The concrete Win32 Window frontend currently requires `vulkan`;
-//! the Win32 event loop and message types remain available without either backend.
+//! backends. Win32 Windows, input, and the event loop remain available without
+//! either backend; Vulkan adds the Canvas presentation constructors.
 
 pub mod animation;
 pub use theoria_canvas::{canvas, image, transform};
 pub use theoria_color as color;
-#[cfg(any(feature = "vulkan", test))]
 mod component_execution;
 pub mod event_loop;
 pub mod geometry;

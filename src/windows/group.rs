@@ -8,12 +8,12 @@ use std::{
 use crate::{
     component::MountContext,
     event_loop::EventLoopHandle,
-    reactive::Computed,
-    surface::SurfaceContent,
     windows::{
         Result,
         capabilities::WindowCapabilities,
         composition::{WindowChildren, WindowComposition},
+        native_window::Win32Window,
+        presentation::WindowPresentation,
     },
 };
 
@@ -64,16 +64,35 @@ pub struct WindowGroupContext<'context, 'mount> {
 }
 
 impl WindowGroupContext<'_, '_> {
-    /// Creates a hidden native Window and mounts its Component subtree.
-    pub fn mount_window(
+    /// Creates a hidden Window and mounts its subtree without rendering resources.
+    pub fn mount_window_without_presentation(
         &mut self,
         title: &str,
         width: u32,
         height: u32,
-        build: impl FnOnce(&mut MountContext<'_>, &WindowCapabilities) -> Computed<SurfaceContent>,
+        build: impl FnOnce(&mut MountContext<'_>, &WindowCapabilities),
+    ) -> Result<()> {
+        self.mount_window_with(
+            title,
+            width,
+            height,
+            |_| Ok(()),
+            |context, capabilities, ()| {
+                build(context, capabilities);
+            },
+        )
+    }
+
+    pub(super) fn mount_window_with<P: WindowPresentation + 'static>(
+        &mut self,
+        title: &str,
+        width: u32,
+        height: u32,
+        create_presentation: impl FnOnce(&Win32Window) -> Result<P>,
+        build: impl FnOnce(&mut MountContext<'_>, &WindowCapabilities, &P),
     ) -> Result<()> {
         self.windows
-            .mount_window(self.mount, title, width, height, build)
+            .mount_window(self.mount, title, width, height, create_presentation, build)
     }
 }
 

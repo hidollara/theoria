@@ -5,9 +5,10 @@ use std::rc::Rc;
 use crate::{
     component::MountContext,
     event_loop::EventLoopHandle,
-    reactive::Computed,
-    surface::SurfaceContent,
-    windows::{Result, capabilities::WindowCapabilities, composition::WindowComposition},
+    windows::{
+        Result, capabilities::WindowCapabilities, composition::WindowComposition,
+        native_window::Win32Window, presentation::WindowPresentation,
+    },
 };
 
 /// One Win32 Window with an independent Component update boundary.
@@ -20,17 +21,38 @@ pub struct Window {
 }
 
 impl Window {
-    /// Creates a hidden Win32 Window and mounts its Component tree.
+    /// Creates a hidden Win32 Window without allocating rendering resources.
     ///
     /// `build` can create State, Computed values, Effects, event connections, and
-    /// child components. Its return value is the Window's sole semantic output.
+    /// child components. Input, native messages, size, and frame scheduling are
+    /// available independently of a rendering backend.
     /// Call [`Window::show`] when the Window is ready to become visible.
-    pub fn new(
+    pub fn without_presentation(
         event_loop: &EventLoopHandle,
         title: &str,
         width: u32,
         height: u32,
-        build: impl FnOnce(&mut MountContext<'_>, &WindowCapabilities) -> Computed<SurfaceContent>,
+        build: impl FnOnce(&mut MountContext<'_>, &WindowCapabilities),
+    ) -> Result<Self> {
+        Self::mount(
+            event_loop,
+            title,
+            width,
+            height,
+            |_| Ok(()),
+            |context, capabilities, ()| {
+                build(context, capabilities);
+            },
+        )
+    }
+
+    pub(super) fn mount<P: WindowPresentation + 'static>(
+        event_loop: &EventLoopHandle,
+        title: &str,
+        width: u32,
+        height: u32,
+        create_presentation: impl FnOnce(&Win32Window) -> Result<P>,
+        build: impl FnOnce(&mut MountContext<'_>, &WindowCapabilities, &P),
     ) -> Result<Self> {
         let mut build = Some(build);
         let composition = WindowComposition::mount(|context, windows| {
@@ -39,6 +61,7 @@ impl Window {
                 title,
                 width,
                 height,
+                create_presentation,
                 build.take().expect("Window build runs once"),
             )
         })?;

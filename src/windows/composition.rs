@@ -9,9 +9,10 @@ use std::{
 use crate::{
     component::MountContext,
     event_loop::{ComponentParticipant, EventLoopHandle, EventLoopParticipant},
-    reactive::Computed,
-    surface::SurfaceContent,
-    windows::{Result, capabilities::WindowCapabilities, host::WindowHost},
+    windows::{
+        Result, capabilities::WindowCapabilities, host::WindowHost, native_window::Win32Window,
+        presentation::WindowPresentation,
+    },
 };
 
 /// Owns one Component execution boundary and its mounted Window producers.
@@ -182,16 +183,22 @@ pub(super) struct WindowChildren {
 }
 
 impl WindowChildren {
-    pub(super) fn mount_window(
+    pub(super) fn mount_window<P: WindowPresentation + 'static>(
         &mut self,
         context: &mut MountContext<'_>,
         title: &str,
         width: u32,
         height: u32,
-        build: impl FnOnce(&mut MountContext<'_>, &WindowCapabilities) -> Computed<SurfaceContent>,
+        create_presentation: impl FnOnce(&Win32Window) -> Result<P>,
+        build: impl FnOnce(&mut MountContext<'_>, &WindowCapabilities, &P),
     ) -> Result<()> {
         self.hosts.push(WindowHost::mount_child(
-            context, title, width, height, build,
+            context,
+            title,
+            width,
+            height,
+            create_presentation,
+            build,
         )?);
         Ok(())
     }

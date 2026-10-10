@@ -1,39 +1,32 @@
 //! Windows platform integration and concrete Window composition.
 //!
-//! Message observations and the event loop do not require a rendering backend.
-//! The concrete Window frontend uses Vulkan and is enabled by the `vulkan` feature.
+//! Windows, native input, and the event loop do not require a rendering backend.
+//! The `vulkan` feature adds Canvas presentation constructors.
 
 use std::{error::Error, fmt};
 
 use crate::event_loop::{EventLoop, EventLoopHandle, EventLoopStatus, EventLoopWaker};
 
-#[cfg(feature = "vulkan")]
 mod capabilities;
-#[cfg(feature = "vulkan")]
 mod composition;
-#[cfg(feature = "vulkan")]
 mod event_buffer;
-#[cfg(feature = "vulkan")]
 mod group;
-#[cfg(feature = "vulkan")]
 mod host;
 mod message;
 mod message_pump;
-#[cfg(feature = "vulkan")]
 mod native_window;
-#[cfg(feature = "vulkan")]
 mod presentation;
 #[cfg(feature = "vulkan")]
+mod vulkan;
 mod window;
 mod window_message;
+#[cfg(test)]
+mod window_tests;
 
-#[cfg(feature = "vulkan")]
 pub use self::capabilities::WindowCapabilities;
-#[cfg(feature = "vulkan")]
 pub use self::group::{WindowGroup, WindowGroupContext};
 pub use self::message::{Win32Message, Win32QueuedMessage, Win32ThreadMessage};
 pub use self::message_pump::{Win32QueuedMessageSource, Win32ThreadMessageSource};
-#[cfg(feature = "vulkan")]
 pub use self::window::Window;
 pub use self::window_message::{Win32WindowMessage, Win32WindowMessageSource};
 #[cfg(feature = "vulkan")]

@@ -14,8 +14,7 @@ use crate::{
         pointer::{MovementThreshold, PointerEvent},
         scroll::ScrollEvent,
     },
-    reactive::Computed,
-    surface::{Surface, SurfaceContent, SurfaceEvent},
+    surface::{Surface, SurfaceEvent},
     window::CloseRequested,
     windows::{
         Result,
@@ -30,24 +29,26 @@ use crate::{
 pub(super) struct WindowHost {
     inputs: WindowInputs,
     events: Rc<WindowEventBuffer>,
+    // Presentation resources must be released before their native Window.
+    presentation: Box<dyn WindowPresentation>,
     native: Win32Window,
     frames: FrameScheduler,
-    presentation: WindowPresentation,
 }
 
 impl WindowHost {
     /// Mounts one Window as a child of the Component currently being built.
-    pub(super) fn mount_child(
+    pub(super) fn mount_child<P: WindowPresentation + 'static>(
         context: &mut MountContext<'_>,
         title: &str,
         width: u32,
         height: u32,
-        build: impl FnOnce(&mut MountContext<'_>, &WindowCapabilities) -> Computed<SurfaceContent>,
+        create_presentation: impl FnOnce(&Win32Window) -> Result<P>,
+        build: impl FnOnce(&mut MountContext<'_>, &WindowCapabilities, &P),
     ) -> Result<Weak<RefCell<Self>>> {
         let native_events = Rc::new(WindowEventBuffer::new());
         let native = Win32Window::new(title, width, height, Rc::clone(&native_events))?;
         let frames = FrameScheduler::new();
-        let presentation = WindowPresentation::new(native.presentation_target())?;
+        let presentation = create_presentation(&native)?;
         let initial_size = native.size();
         let (horizontal, vertical) = native.movement_threshold_extents();
         let movement_threshold = MovementThreshold::AxisAligned {
@@ -82,8 +83,7 @@ impl WindowHost {
                 movement_threshold,
                 native_messages,
             );
-            let content = build(context, &capabilities);
-            presentation.bind(context, content);
+            build(context, &capabilities, &presentation);
 
             // Closing is ordinary Component behavior. User subscriptions made
             // by `build` are registered first on the default Dispatcher; this final
@@ -104,7 +104,7 @@ impl WindowHost {
                 events: native_events,
                 native,
                 frames,
-                presentation,
+                presentation: Box::new(presentation),
             }));
             mounted = Some(Rc::downgrade(&host));
             context.retain(Rc::clone(&host));

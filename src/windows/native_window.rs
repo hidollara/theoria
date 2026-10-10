@@ -19,8 +19,6 @@ use ::windows::{
 
 use crate::{surface::SurfaceSize, windows::event_buffer::WindowEventBuffer};
 
-use theoria_vulkan::Win32PresentationTarget;
-
 mod pointer;
 mod procedure;
 mod projection;
@@ -31,6 +29,7 @@ use super::window_message::{Win32WindowMessageSource, WindowMessages};
 
 pub(super) struct Win32Window {
     hwnd: HWND,
+    #[cfg(any(feature = "vulkan", test))]
     hinstance: HINSTANCE,
     // User32 may invoke the Window procedure synchronously during a native
     // call. Interior mutability makes that callback access explicit instead of
@@ -91,6 +90,7 @@ impl Win32Window {
 
             Ok(Self {
                 hwnd,
+                #[cfg(any(feature = "vulkan", test))]
                 hinstance,
                 state,
                 events,
@@ -102,14 +102,9 @@ impl Win32Window {
         let _ = unsafe { ShowWindow(self.hwnd, SW_SHOW) };
     }
 
-    pub(super) fn presentation_target(&self) -> Win32PresentationTarget {
-        unsafe {
-            Win32PresentationTarget::from_raw(
-                self.hwnd.0 as isize,
-                self.hinstance.0 as isize,
-                self.state.borrow().size(),
-            )
-        }
+    #[cfg(any(feature = "vulkan", test))]
+    pub(super) fn raw_handles(&self) -> (HWND, HINSTANCE) {
+        (self.hwnd, self.hinstance)
     }
 
     pub(super) fn size(&self) -> SurfaceSize {

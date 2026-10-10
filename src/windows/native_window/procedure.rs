@@ -34,8 +34,8 @@ pub(super) fn initialize_windowing(hinstance: HINSTANCE) -> Result<()> {
         .get_or_init(|| unsafe {
             let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
             pointer::enable()?;
-            // WM_SIZE explicitly stages a semantic redraw, and Vulkan does not
-            // require a persistent GDI device context for the Window.
+            // WM_SIZE explicitly stages a semantic redraw. Presentation owns
+            // its drawing resources rather than a persistent class GDI context.
             let class = WNDCLASSEXW {
                 cbSize: size_of::<WNDCLASSEXW>() as u32,
                 lpfnWndProc: Some(window_proc),

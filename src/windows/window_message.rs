@@ -7,9 +7,7 @@ use std::{
     rc::{Rc, Weak},
 };
 
-use ::windows::Win32::Foundation::HWND;
-#[cfg(any(feature = "vulkan", test))]
-use ::windows::Win32::Foundation::{LPARAM, WPARAM};
+use ::windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 
 use crate::{event::EventSource, windows::message::Win32Message};
 
@@ -26,7 +24,6 @@ pub struct Win32WindowMessage<'message> {
 }
 
 impl<'message> Win32WindowMessage<'message> {
-    #[cfg(any(feature = "vulkan", test))]
     const fn new(window: HWND, message: Win32Message<'message>) -> Self {
         Self { window, message }
     }
@@ -86,12 +83,10 @@ impl EventSource for Win32WindowMessageSource {
 
 /// Owns and publishes the message subscriptions for one native Window.
 #[derive(Clone)]
-#[cfg(any(feature = "vulkan", test))]
 pub(super) struct WindowMessages {
     state: Rc<WindowMessageState>,
 }
 
-#[cfg(any(feature = "vulkan", test))]
 impl WindowMessages {
     pub(super) fn new() -> Self {
         Self {
@@ -108,7 +103,6 @@ impl WindowMessages {
         }
     }
 
-    #[cfg(feature = "vulkan")]
     pub(super) fn observe(
         &self,
         receive: impl for<'message> Fn(Win32WindowMessage<'message>) + 'static,

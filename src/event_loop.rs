@@ -10,12 +10,10 @@ use std::{
 };
 
 mod bridge;
-#[cfg(any(feature = "vulkan", test))]
 mod component;
 pub(crate) mod pump;
 
 pub use self::bridge::{EventLoopBridge, EventLoopBridgeSendError, EventLoopBridgeSender};
-#[cfg(feature = "vulkan")]
 pub(crate) use self::component::ComponentParticipant;
 use self::pump::{EventPump, EventPumpWake, PumpEvent};
 
