@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-theoria-canvas = { path = "../theoria-canvas" }
+theoria-geometry = { path = "../theoria-geometry" }
 theoria-component = { path = "../theoria-component" }
 theoria-event = { path = "../theoria-event" }
 theoria-renderer = { path = "../theoria-renderer", features = ["tessellation"] }

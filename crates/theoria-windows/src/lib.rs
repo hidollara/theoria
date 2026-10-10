@@ -5,9 +5,9 @@
 
 #![cfg(target_os = "windows")]
 
-use theoria_canvas::geometry;
 use theoria_component as component;
 use theoria_event as event;
+use theoria_geometry::geometry;
 use theoria_runtime::{animation, event_loop, input, surface, window};
 
 mod windows;

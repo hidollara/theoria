@@ -8,7 +8,7 @@ default = []
 vulkan = ["dep:theoria-vulkan", "dep:theoria-reactive"]
 
 [target.'cfg(windows)'.dependencies]
-theoria-canvas = { path = "../theoria-canvas" }
+theoria-geometry = { path = "../theoria-geometry" }
 theoria-component = { path = "../theoria-component" }
 theoria-event = { path = "../theoria-event" }
 theoria-reactive = { path = "../theoria-reactive", optional = true }

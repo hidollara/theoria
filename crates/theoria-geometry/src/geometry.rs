@@ -1,6 +1,6 @@
 use std::ops::{Add, Mul, Neg, Sub};
 
-/// A displacement between two points in Canvas coordinates.
+/// A displacement between two points in a 2D coordinate system.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Offset {
     pub x: f32,

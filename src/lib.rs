@@ -4,8 +4,9 @@
 //! backends. Win32 Windows, input, and the event loop remain available without
 //! either backend; Vulkan adds the Canvas presentation constructors.
 
-pub use theoria_canvas::{canvas, geometry, image, path, transform};
+pub use theoria_canvas::{canvas, image};
 pub use theoria_color as color;
+pub use theoria_geometry::{geometry, path, transform};
 pub use theoria_interaction::{gesture, interaction};
 pub use theoria_runtime::{animation, event_loop, input, surface, window};
 pub mod recording;

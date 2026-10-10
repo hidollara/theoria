@@ -5,6 +5,7 @@ edition = "2024"
 
 [workspace]
 members = [
+    "crates/theoria-geometry",
     "crates/theoria-canvas",
     "crates/theoria-text",
     "crates/theoria-runtime",
@@ -29,6 +30,7 @@ webgpu = ["dep:theoria-webgpu"]
 theoria-renderer = { path = "crates/theoria-renderer" }
 png = "0.18.0"
 theoria-canvas = { path = "crates/theoria-canvas" }
+theoria-geometry = { path = "crates/theoria-geometry" }
 theoria-component = { path = "crates/theoria-component" }
 theoria-color = { path = "crates/theoria-color" }
 theoria-event = { path = "crates/theoria-event" }

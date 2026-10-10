@@ -1331,6 +1331,7 @@ dependencies = [
  "theoria-color",
  "theoria-component",
  "theoria-event",
+ "theoria-geometry",
  "theoria-interaction",
  "theoria-reactive",
  "theoria-renderer",
@@ -1347,6 +1348,7 @@ name = "theoria-canvas"
 version = "0.1.0"
 dependencies = [
  "theoria-color",
+ "theoria-geometry",
 ]
 
 [[package]]
@@ -1369,12 +1371,16 @@ name = "theoria-event"
 version = "0.1.0"
 
 [[package]]
+name = "theoria-geometry"
+version = "0.1.0"
+
+[[package]]
 name = "theoria-interaction"
 version = "0.1.0"
 dependencies = [
- "theoria-canvas",
  "theoria-component",
  "theoria-event",
+ "theoria-geometry",
  "theoria-reactive",
  "theoria-renderer",
  "theoria-runtime",
@@ -1402,9 +1408,9 @@ dependencies = [
 name = "theoria-runtime"
 version = "0.1.0"
 dependencies = [
- "theoria-canvas",
  "theoria-component",
  "theoria-event",
+ "theoria-geometry",
  "theoria-reactive",
  "theoria-renderer",
 ]
@@ -1458,9 +1464,9 @@ dependencies = [
 name = "theoria-windows"
 version = "0.1.0"
 dependencies = [
- "theoria-canvas",
  "theoria-component",
  "theoria-event",
+ "theoria-geometry",
  "theoria-reactive",
  "theoria-runtime",
  "theoria-vulkan",

@@ -19,7 +19,7 @@ pub enum ArcSize {
 /// Selects the direction in which an ellipse's parameter angle changes.
 ///
 /// These names are coordinate-system-neutral: whether a positive sweep appears
-/// clockwise depends on how Canvas coordinates are eventually viewed.
+/// clockwise depends on how the coordinates are eventually viewed.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ArcSweep {
     Negative,
@@ -180,7 +180,7 @@ impl Subpath {
     }
 }
 
-/// A collection of independent Subpaths in Canvas coordinates.
+/// A collection of independent Subpaths in a shared coordinate system.
 ///
 /// Path construction is structural and infallible. Numeric validity is
 /// inspected when a renderer compiles its Subpaths into backend geometry.
