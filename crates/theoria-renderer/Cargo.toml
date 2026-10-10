@@ -19,5 +19,3 @@ naga = { version = "30.0.0", features = ["wgsl-in"], optional = true }
 [dev-dependencies]
 wgpu = "30.0.1"
 bytemuck = "1.25.0"
-half = "2.7.1"
-moxcms = { version = "0.8.1", default-features = false }

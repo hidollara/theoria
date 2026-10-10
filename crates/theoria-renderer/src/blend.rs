@@ -115,7 +115,7 @@ fn validate_module(module: &naga::Module) -> Result<(), Box<dyn Error>> {
 mod tests {
     use super::*;
     use theoria_canvas::canvas::{Blend, BlendMode, Composite, Composition, WgslBlend};
-    use theoria_color::{IccProfile, IccRenderingIntent, LinearSrgb, Srgb};
+    use theoria_color::{LinearSrgb, Srgb};
 
     fn lower(shader: &BlendShader, binding: &str) -> Result<String, Box<dyn Error>> {
         let space = ColorSpace::from(Srgb);
@@ -185,24 +185,13 @@ mod tests {
 
     #[test]
     fn composition_shader_lowers_space_transfers_without_space_numbers() {
-        let icc = IccProfile::from_bytes(include_bytes!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../theoria-color/src/color/fixtures/sRGB-v4.icc"
-        )))
-        .unwrap();
+        let space = crate::test_support::distinct_color_space(Srgb);
         let shader = BlendShader::wgsl("return backdrop * source;");
-        let composition = Composition::new(
-            Composite::SourceOver,
-            icc.color_space(IccRenderingIntent::RelativeColorimetric),
-        )
-        .with_blend_shader(
+        let composition = Composition::new(Composite::SourceOver, space.clone()).with_blend_shader(
             shader.clone(),
             crate::test_support::distinct_color_space(Srgb),
         );
-        assert_eq!(
-            composition.composite_space(),
-            &icc.color_space(IccRenderingIntent::RelativeColorimetric)
-        );
+        assert_eq!(composition.composite_space(), &space);
         assert!(composition.blend().is_some());
         let source = shader
             .wgsl_module_for_spaces(

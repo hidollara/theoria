@@ -442,9 +442,7 @@ fn wgsl_literal(value: f64) -> Result<String, TransferWgslError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use theoria_color::{
-        ColorSpace, CurveSegment, IccProfile, IccRenderingIntent, LabD50, LinearSrgb, Srgb, XyzD50,
-    };
+    use theoria_color::{ColorSpace, CurveSegment, LabD50, LinearSrgb, Srgb, XyzD50};
 
     fn validate(source: &str) {
         let module = naga::front::wgsl::parse_str(source)
@@ -753,81 +751,19 @@ mod tests {
     }
 
     #[test]
-    fn icc_profile_transfer_generates_valid_wgsl() {
-        let bytes = include_bytes!("../../theoria-color/src/color/fixtures/sRGB-v4.icc");
-        let profile = IccProfile::from_bytes(bytes).unwrap();
-        let space = profile.color_space(IccRenderingIntent::RelativeColorimetric);
-        let transfer = space.transfer_to_connection_space().unwrap();
-        let shader = transfer.wgsl_with_storage(22, 1, 4).unwrap();
-        validate(shader.source());
-    }
-
-    #[test]
-    fn icc_mpe_segmented_curves_generate_valid_wgsl() {
-        let mut curve = Vec::new();
-        curve.extend_from_slice(b"curf");
-        curve.extend_from_slice(&[0; 4]);
-        curve.extend_from_slice(&1u16.to_be_bytes());
-        curve.extend_from_slice(&[0; 2]);
-        curve.extend_from_slice(b"parf");
-        curve.extend_from_slice(&[0; 4]);
-        curve.extend_from_slice(&0u16.to_be_bytes());
-        curve.extend_from_slice(&[0; 2]);
-        for value in [1.0f32, 1.0, 0.0, 0.0] {
-            curve.extend_from_slice(&value.to_be_bytes());
-        }
-
-        let mut curve_set = Vec::new();
-        curve_set.extend_from_slice(b"cvst");
-        curve_set.extend_from_slice(&[0; 4]);
-        curve_set.extend_from_slice(&3u16.to_be_bytes());
-        curve_set.extend_from_slice(&3u16.to_be_bytes());
-        for channel in 0..3 {
-            curve_set.extend_from_slice(&(36 + channel * curve.len() as u32).to_be_bytes());
-            curve_set.extend_from_slice(&(curve.len() as u32).to_be_bytes());
-        }
-        for _ in 0..3 {
-            curve_set.extend_from_slice(&curve);
-        }
-
-        let mut tag = Vec::new();
-        tag.extend_from_slice(b"mpet");
-        tag.extend_from_slice(&[0; 4]);
-        tag.extend_from_slice(&3u16.to_be_bytes());
-        tag.extend_from_slice(&3u16.to_be_bytes());
-        tag.extend_from_slice(&1u32.to_be_bytes());
-        tag.extend_from_slice(&24u32.to_be_bytes());
-        tag.extend_from_slice(&(curve_set.len() as u32).to_be_bytes());
-        tag.extend_from_slice(&curve_set);
-
-        let mut bytes = moxcms::ColorProfile::new_srgb().encode().unwrap();
-        let count = u32::from_be_bytes(bytes[128..132].try_into().unwrap()) as usize;
-        let table_end = 132 + count * 12;
-        bytes.splice(table_end..table_end, [0; 12]);
-        for index in 0..count {
-            let position = 132 + index * 12 + 4;
-            let offset = u32::from_be_bytes(bytes[position..position + 4].try_into().unwrap());
-            bytes[position..position + 4].copy_from_slice(&(offset + 12).to_be_bytes());
-        }
-        bytes[table_end..table_end + 4].copy_from_slice(b"D2B1");
-        let tag_offset = bytes.len() as u32;
-        bytes[table_end + 4..table_end + 8].copy_from_slice(&tag_offset.to_be_bytes());
-        bytes[table_end + 8..table_end + 12].copy_from_slice(&(tag.len() as u32).to_be_bytes());
-        bytes.extend_from_slice(&tag);
-        let profile_size = bytes.len() as u32;
-        bytes[0..4].copy_from_slice(&profile_size.to_be_bytes());
-        bytes[128..132].copy_from_slice(&((count + 1) as u32).to_be_bytes());
-
-        let profile = IccProfile::from_bytes(&bytes).unwrap();
-        let transfer = profile
-            .color_space(IccRenderingIntent::RelativeColorimetric)
-            .transfer_to_connection_space()
-            .unwrap();
-        assert!(matches!(
-            &transfer.stages()[0],
-            TransferStage::Curves(curves)
-                if matches!(curves[0].kind(), TransferCurveKind::Piecewise(_))
-        ));
+    fn segmented_curves_generate_valid_wgsl() {
+        let curve = TransferCurve::piecewise([CurveSegment::new(
+            f64::INFINITY,
+            CurveSegmentKind::PowerAffine {
+                scale: 1.0,
+                offset: 0.0,
+                exponent: 1.0,
+                output_scale: 1.0,
+                output_offset: 0.0,
+            },
+        )])
+        .unwrap();
+        let transfer = Transfer::curves([curve.clone(), curve.clone(), curve]).unwrap();
         validate(&transfer.wgsl(8).unwrap());
     }
 }

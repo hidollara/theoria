@@ -50,8 +50,6 @@ pub use surface_size::SurfaceSize;
 pub use viewport::Viewport;
 
 #[cfg(test)]
-mod declaration_tests;
-#[cfg(test)]
 mod test_support;
 
 /// Color operations needed by CPU Canvas sampling without selecting a

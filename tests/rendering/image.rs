@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::raster::convert_icc8_to_linear_rgba16;
+    use crate::reference::convert_icc8_to_linear_rgba16;
     use std::sync::Arc;
     use theoria_canvas::canvas::{
         Image,
@@ -34,7 +34,7 @@ mod tests {
     fn icc_image_preserves_samples_until_renderer_conversion() {
         let profile = IccProfile::from_bytes(include_bytes!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../theoria-color/src/color/fixtures/sRGB-v4.icc"
+            "/crates/theoria-color/src/color/fixtures/sRGB-v4.icc"
         )))
         .unwrap();
         let source: Arc<[u8]> = vec![64, 128, 192, 77].into();
@@ -79,7 +79,7 @@ mod tests {
     fn icc_image_checks_sample_count_at_construction() {
         let profile = IccProfile::from_bytes(include_bytes!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../theoria-color/src/color/fixtures/sGrey-v4.icc"
+            "/crates/theoria-color/src/color/fixtures/sGrey-v4.icc"
         )))
         .unwrap();
         assert!(matches!(

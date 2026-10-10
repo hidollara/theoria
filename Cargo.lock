@@ -1326,6 +1326,8 @@ dependencies = [
 name = "theoria"
 version = "0.1.0"
 dependencies = [
+ "half",
+ "naga",
  "png",
  "theoria-canvas",
  "theoria-color",
@@ -1397,9 +1399,7 @@ name = "theoria-renderer"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
- "half",
  "lyon_tessellation",
- "moxcms",
  "naga",
  "theoria-canvas",
  "theoria-color",

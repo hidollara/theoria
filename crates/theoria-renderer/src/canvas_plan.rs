@@ -362,14 +362,9 @@ mod tests {
     }
 
     #[test]
-    fn renderer_prepares_icc_colors_before_recording() {
-        let profile = theoria_color::IccProfile::from_bytes(include_bytes!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../theoria-color/src/color/fixtures/sRGB-v4.icc"
-        )))
-        .unwrap();
+    fn renderer_prepares_dynamic_colors_before_recording() {
         let color = theoria_canvas::canvas::Color::new_in_space::<theoria_color::Rgb>(
-            profile.color_space(theoria_color::IccRenderingIntent::RelativeColorimetric),
+            crate::test_support::distinct_color_space(Srgb),
             vec![0.25, 0.5, 0.75],
             Opacity::<f32>::ONE,
         )

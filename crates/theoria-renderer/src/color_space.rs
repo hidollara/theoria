@@ -164,11 +164,6 @@ impl ColorValueExt for ColorValue {
     }
 }
 
-#[cfg(test)]
-pub(crate) fn lower_straight_color(color: &Color) -> [f32; 4] {
-    lower_straight_color_in(color, LinearSrgb)
-}
-
 pub fn lower_straight_color_in(color: &Color, space: impl Into<ColorSpace>) -> [f32; 4] {
     let [red, green, blue, alpha] = color.straight_rgba_in(space);
     [red * alpha, green * alpha, blue * alpha, alpha]
@@ -352,7 +347,7 @@ fn convert_premultiplied(
 mod tests {
     use super::*;
     use theoria_canvas::canvas::Opacity;
-    use theoria_color::{HslSrgb, IccRenderingIntent, LchD50, OklchD65, Srgb};
+    use theoria_color::{HslSrgb, LchD50, OklchD65, Srgb};
 
     #[test]
     fn a_solid_color_is_lowered_once_per_render() {
@@ -366,44 +361,45 @@ mod tests {
     }
 
     #[test]
-    fn icc_transfer_failure_is_reported_during_renderer_preparation() {
-        let mut raw = moxcms::ColorProfile::new_srgb();
-        raw.red_trc = None;
-        raw.green_trc = None;
-        raw.blue_trc = None;
-        let profile = theoria_color::IccProfile::from_bytes(&raw.encode().unwrap()).unwrap();
+    fn profile_transfer_failure_is_reported_during_renderer_preparation() {
+        use std::{any::Any, hash::Hasher};
+        use theoria_color::{
+            ColorModel, ColorProfile, ConnectionSpace, SpaceConnectionError, TransferError,
+        };
+
+        struct FailingProfile;
+        impl ColorProfile for FailingProfile {
+            fn equivalent(&self, other: &dyn ColorProfile) -> bool {
+                (other as &dyn Any).is::<Self>()
+            }
+            fn hash(&self, state: &mut dyn Hasher) {
+                state.write_u8(0);
+            }
+            fn model(&self) -> ColorModel {
+                ColorModel::Rgb
+            }
+            fn connection_space(&self) -> ConnectionSpace {
+                ConnectionSpace::XyzD65
+            }
+            fn transfer_to_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
+                Err(TransferError::InvalidCurve.into())
+            }
+            fn transfer_from_connection_space(&self) -> Result<Transfer, SpaceConnectionError> {
+                panic!("preparing a source color must not request the reverse transform")
+            }
+        }
         let color = Color::new_in_space::<theoria_color::Rgb>(
-            profile.color_space(IccRenderingIntent::RelativeColorimetric),
+            ColorSpace::new(FailingProfile),
             vec![0.25, 0.5, 0.75],
             Opacity::<f32>::ONE,
         )
         .unwrap();
-
         let mut prepared = PreparedColors::default();
-        assert!(prepared.prepare(&color).is_err());
-    }
-
-    #[test]
-    fn preparing_an_icc_color_does_not_rewrite_authored_data() {
-        let profile = theoria_color::IccProfile::from_bytes(include_bytes!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../theoria-color/src/color/fixtures/sRGB-v4.icc"
-        )))
-        .unwrap();
-        let color = Color::new_in_space::<theoria_color::Rgb>(
-            profile.color_space(IccRenderingIntent::RelativeColorimetric),
-            vec![0.25, 0.5, 0.75],
-            Opacity::<f32>::ONE,
-        )
-        .unwrap();
-        let original = color.clone();
-        let mut prepared = PreparedColors::default();
-        prepared.prepare(&color).unwrap();
-        assert_eq!(color, original);
-        assert!(prepared.lower(&color)[0] > 0.0);
         assert!(matches!(
-            color.value(),
-            ColorValue::Dynamic(coordinates, _) if coordinates.as_ref() == [0.25, 0.5, 0.75]
+            prepared.prepare(&color),
+            Err(ColorError::Connection(SpaceConnectionError::Transfer(
+                TransferError::InvalidCurve
+            )))
         ));
     }
 

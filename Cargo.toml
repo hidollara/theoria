@@ -41,6 +41,10 @@ theoria-text = { path = "crates/theoria-text" }
 theoria-vulkan = { path = "crates/theoria-vulkan", optional = true }
 theoria-webgpu = { path = "crates/theoria-webgpu", optional = true }
 
+[dev-dependencies]
+half = "2.7.1"
+naga = { version = "30.0.0", features = ["wgsl-in"] }
+
 [target.'cfg(windows)'.dependencies]
 theoria-windows = { path = "crates/theoria-windows" }
 

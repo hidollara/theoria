@@ -1,6 +1,5 @@
 #[cfg(test)]
 mod tests {
-    use crate::color_space::ColorRendererExt;
     use std::sync::Arc;
     use theoria_canvas::canvas::{Alpha, Color, ColorError, ColorValue, Opacity};
     use theoria_color::{ColorModel, ColorSpace};
@@ -8,6 +7,7 @@ mod tests {
         DisplayP3, IccProfile, IccRenderingIntent, LabD50, LinearDisplayP3, LinearSrgb, Srgb,
         XyzD50, XyzD65,
     };
+    use theoria_renderer::color_space::ColorRendererExt;
 
     // CSS Color 4 §10.9 gives these equivalent coordinates for #7654CD.
     // https://www.w3.org/TR/css-color-4/#predefined
@@ -18,8 +18,8 @@ mod tests {
 
     #[test]
     fn icc_color_preserves_device_coordinates_until_renderer_lowering() {
-        let bytes = moxcms::ColorProfile::new_srgb().encode().unwrap();
-        let profile = IccProfile::from_bytes(&bytes).unwrap();
+        let bytes = include_bytes!("../../crates/theoria-color/src/color/fixtures/sRGB-v4.icc");
+        let profile = IccProfile::from_bytes(bytes).unwrap();
         let coordinates: Arc<[f64]> = vec![0.25, 0.5, 0.75].into();
         let color = Color::new_in_space::<theoria_color::Rgb>(
             profile.color_space(IccRenderingIntent::RelativeColorimetric),
@@ -42,7 +42,7 @@ mod tests {
             assert!((actual - expected).abs() < 0.01);
         }
         assert_eq!(rgba[3], 0.5);
-        let lowered = crate::color_space::lower_straight_color(&color);
+        let lowered = theoria_renderer::color_space::lower_straight_color_in(&color, LinearSrgb);
         assert_eq!(lowered[3], 0.5);
         for (actual, straight) in lowered[..3].iter().zip(color.straight_rgba_in(LinearSrgb)) {
             assert!((actual - straight * 0.5).abs() < 1e-5);
@@ -51,9 +51,9 @@ mod tests {
 
     #[test]
     fn icc_colors_from_separately_loaded_spaces_are_not_equal() {
-        let bytes = moxcms::ColorProfile::new_srgb().encode().unwrap();
-        let first = IccProfile::from_bytes(&bytes).unwrap();
-        let second = IccProfile::from_bytes(&bytes).unwrap();
+        let bytes = include_bytes!("../../crates/theoria-color/src/color/fixtures/sRGB-v4.icc");
+        let first = IccProfile::from_bytes(bytes).unwrap();
+        let second = IccProfile::from_bytes(bytes).unwrap();
         let color = |profile: &IccProfile| {
             Color::new_in_space::<theoria_color::Rgb>(
                 profile.color_space(IccRenderingIntent::RelativeColorimetric),
@@ -68,8 +68,8 @@ mod tests {
 
     #[test]
     fn icc_color_rejects_invalid_coordinates() {
-        let bytes = moxcms::ColorProfile::new_srgb().encode().unwrap();
-        let profile = IccProfile::from_bytes(&bytes).unwrap();
+        let bytes = include_bytes!("../../crates/theoria-color/src/color/fixtures/sRGB-v4.icc");
+        let profile = IccProfile::from_bytes(bytes).unwrap();
         let opacity = Opacity::<f32>::ONE;
         assert!(matches!(
             Color::new_in_space::<theoria_color::Rgb>(
@@ -105,8 +105,8 @@ mod tests {
 
     #[test]
     fn typed_coordinates_preserve_storage_in_an_icc_space() {
-        let bytes = moxcms::ColorProfile::new_srgb().encode().unwrap();
-        let profile = IccProfile::from_bytes(&bytes).unwrap();
+        let bytes = include_bytes!("../../crates/theoria-color/src/color/fixtures/sRGB-v4.icc");
+        let profile = IccProfile::from_bytes(bytes).unwrap();
         let color = Color::new_in_space::<theoria_color::Rgb>(
             profile.color_space(IccRenderingIntent::RelativeColorimetric),
             [255_u8, 128, 64],
@@ -241,7 +241,8 @@ mod tests {
     fn xyz_and_lab_colors_remain_authored_until_renderer_lowering() {
         let opacity = Opacity::<f32>::new(0.4).unwrap();
         let original = Color::new(Srgb, CSS_SRGB, opacity);
-        let lowered_original = crate::color_space::lower_straight_color(&original);
+        let lowered_original =
+            theoria_renderer::color_space::lower_straight_color_in(&original, LinearSrgb);
 
         for (canvas, space) in [
             (
@@ -266,7 +267,8 @@ mod tests {
             {
                 assert!((actual - expected).abs() < 0.002, "{actual} != {expected}");
             }
-            let lowered = crate::color_space::lower_straight_color(&canvas);
+            let lowered =
+                theoria_renderer::color_space::lower_straight_color_in(&canvas, LinearSrgb);
             for (actual, expected) in lowered.into_iter().zip(lowered_original) {
                 assert!((actual - expected).abs() < 0.001, "{actual} != {expected}");
             }
