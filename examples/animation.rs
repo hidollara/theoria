@@ -4,7 +4,7 @@ use theoria::{
     canvas::{Canvas, CanvasView, Color, Composite, Composition, Coverage, Opacity},
     color::{LinearSrgb, Srgb},
     event::OwningSink,
-    geometry::{Offset, Point},
+    geometry::Point,
     input::pointer::{PointerButton, PointerEvent, PointerPhase},
     path::{LineJoin, Path, StrokeStyle},
     surface::SurfaceContent,
@@ -57,8 +57,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let width = size.width.max(1) as f32;
                 let height = size.height.max(1) as f32;
                 let pointer = *context.read(&pointer_value);
-                let center = pointer.map_or(Offset::new(width * 0.5, height * 0.5), |pointer| {
-                    Offset::new(pointer.position.x, pointer.position.y)
+                let center = pointer.map_or(Point::new(width * 0.5, height * 0.5), |pointer| {
+                    pointer.position
                 });
                 let pressed_scale = if pointer.is_some_and(|pointer| pointer.pressed) {
                     0.82
@@ -70,7 +70,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .expect("finite scale")
                     .then(Affine2::from_rotation(elapsed * 0.8).expect("finite rotation"))
                     .expect("finite composed transform")
-                    .then(Affine2::from_translation(center).expect("finite translation"))
+                    .then(
+                        Affine2::from_translation(center - Point::new(0.0, 0.0))
+                            .expect("finite translation"),
+                    )
                     .expect("finite composed transform");
 
                 let glow = Canvas::draw(

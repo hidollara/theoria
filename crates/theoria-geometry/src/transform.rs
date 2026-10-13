@@ -28,7 +28,7 @@ impl Affine2 {
         }
         let [[a, b, tx], [c, d, ty]] = rows;
         Some(Self::new(
-            Matrix2::from_columns(Offset::new(a, c), Offset::new(b, d)),
+            Matrix2::from_columns([a, c], [b, d]),
             Offset::new(tx, ty),
         ))
     }
@@ -57,8 +57,8 @@ impl Affine2 {
         let x = self.linear.x_axis();
         let y = self.linear.y_axis();
         [
-            [x.x, y.x, self.translation.x],
-            [x.y, y.y, self.translation.y],
+            [x[0], y[0], self.translation.x],
+            [x[1], y[1], self.translation.y],
         ]
     }
 
@@ -67,29 +67,28 @@ impl Affine2 {
     }
 
     pub fn transform_point(self, point: Point) -> Point {
-        let transformed = self.linear.transform_vector(Offset::new(point.x, point.y));
-        Point::new(
-            transformed.x + self.translation.x,
-            transformed.y + self.translation.y,
-        )
+        let [x, y] = self.linear.transform_vector([point.x, point.y]);
+        Point::new(x + self.translation.x, y + self.translation.y)
     }
 
     pub const fn transform_offset(self, vector: Offset) -> Offset {
-        self.linear.transform_vector(vector)
+        let [x, y] = self.linear.transform_vector([vector.x, vector.y]);
+        Offset::new(x, y)
     }
 
     /// Applies `self` first and `next` second; returns `None` on overflow.
     pub fn then(self, next: Self) -> Option<Self> {
         let result = Self::new(
             self.linear.then(next.linear),
-            next.linear.transform_vector(self.translation) + next.translation,
+            next.transform_offset(self.translation) + next.translation,
         );
         Self::from_rows(result.rows())
     }
 
     pub fn try_inverse(self) -> Option<Self> {
         let linear = self.linear.try_inverse()?;
-        Self::from_rows(Self::new(linear, linear.transform_vector(-self.translation)).rows())
+        let [x, y] = linear.transform_vector([-self.translation.x, -self.translation.y]);
+        Self::from_rows(Self::new(linear, Offset::new(x, y)).rows())
     }
 }
 
@@ -231,8 +230,8 @@ impl From<Affine2> for Projective2 {
         let y_axis = linear.y_axis();
         let translation = affine.translation;
         Self::new(Matrix3::from_columns(
-            Vector3::new(x_axis.x, x_axis.y, 0.0),
-            Vector3::new(y_axis.x, y_axis.y, 0.0),
+            Vector3::new(x_axis[0], x_axis[1], 0.0),
+            Vector3::new(y_axis[0], y_axis[1], 0.0),
             Vector3::new(translation.x, translation.y, 1.0),
         ))
     }
@@ -332,6 +331,24 @@ mod tests {
             inverse.transform_point(transform.transform_point(point)),
             point,
         );
+    }
+
+    #[test]
+    fn affine_translation_affects_points_but_not_offsets() {
+        let transform = Affine2::from_rows([[2.0, -0.5, 20.0], [1.0, 3.0, -10.0]]).unwrap();
+        let point = Point::new(4.0, 8.0);
+        let offset = Offset::new(4.0, 8.0);
+
+        assert_eq!(transform.transform_point(point), Point::new(24.0, 18.0));
+        assert_eq!(transform.transform_offset(offset), Offset::new(4.0, 28.0));
+        let inverse = transform.try_inverse().unwrap();
+        assert_point_near(
+            inverse.transform_point(transform.transform_point(point)),
+            point,
+        );
+        let restored = inverse.transform_offset(transform.transform_offset(offset));
+        assert!((restored.x - offset.x).abs() < 0.001);
+        assert!((restored.y - offset.y).abs() < 0.001);
     }
 
     #[test]

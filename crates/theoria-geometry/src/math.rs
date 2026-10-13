@@ -1,7 +1,5 @@
 use std::ops::{Add, Mul, Neg, Sub};
 
-use crate::geometry::Offset as Vector2;
-
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Vector3 {
     pub x: f32,
@@ -50,41 +48,41 @@ impl Mul<f32> for Vector3 {
 /// A coordinate-system-neutral 2x2 linear transformation, stored by columns.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Matrix2 {
-    x_axis: Vector2,
-    y_axis: Vector2,
+    x_axis: [f32; 2],
+    y_axis: [f32; 2],
 }
 
 impl Matrix2 {
-    pub const IDENTITY: Self = Self::from_columns(Vector2::new(1.0, 0.0), Vector2::new(0.0, 1.0));
+    pub const IDENTITY: Self = Self::from_columns([1.0, 0.0], [0.0, 1.0]);
 
-    pub const fn from_columns(x_axis: Vector2, y_axis: Vector2) -> Self {
+    pub const fn from_columns(x_axis: [f32; 2], y_axis: [f32; 2]) -> Self {
         Self { x_axis, y_axis }
     }
 
     #[cfg(test)]
-    pub const fn from_scale(scale: Vector2) -> Self {
-        Self::from_columns(Vector2::new(scale.x, 0.0), Vector2::new(0.0, scale.y))
+    pub const fn from_scale(x: f32, y: f32) -> Self {
+        Self::from_columns([x, 0.0], [0.0, y])
     }
 
     #[cfg(test)]
     pub fn from_angle(radians: f32) -> Self {
         let (sin, cos) = radians.sin_cos();
-        Self::from_columns(Vector2::new(cos, sin), Vector2::new(-sin, cos))
+        Self::from_columns([cos, sin], [-sin, cos])
     }
 
-    pub const fn x_axis(self) -> Vector2 {
+    pub const fn x_axis(self) -> [f32; 2] {
         self.x_axis
     }
 
-    pub const fn y_axis(self) -> Vector2 {
+    pub const fn y_axis(self) -> [f32; 2] {
         self.y_axis
     }
 
-    pub const fn transform_vector(self, vector: Vector2) -> Vector2 {
-        Vector2::new(
-            self.x_axis.x * vector.x + self.y_axis.x * vector.y,
-            self.x_axis.y * vector.x + self.y_axis.y * vector.y,
-        )
+    pub const fn transform_vector(self, [x, y]: [f32; 2]) -> [f32; 2] {
+        [
+            self.x_axis[0] * x + self.y_axis[0] * y,
+            self.x_axis[1] * x + self.y_axis[1] * y,
+        ]
     }
 
     /// Applies `self` first and `next` second.
@@ -96,7 +94,7 @@ impl Matrix2 {
     }
 
     pub const fn determinant(self) -> f32 {
-        self.x_axis.x * self.y_axis.y - self.y_axis.x * self.x_axis.y
+        self.x_axis[0] * self.y_axis[1] - self.y_axis[0] * self.x_axis[1]
     }
 
     pub fn try_inverse(self) -> Option<Self> {
@@ -107,14 +105,14 @@ impl Matrix2 {
 
         let inverse_determinant = determinant.recip();
         Some(Self::from_columns(
-            Vector2::new(
-                self.y_axis.y * inverse_determinant,
-                -self.x_axis.y * inverse_determinant,
-            ),
-            Vector2::new(
-                -self.y_axis.x * inverse_determinant,
-                self.x_axis.x * inverse_determinant,
-            ),
+            [
+                self.y_axis[1] * inverse_determinant,
+                -self.x_axis[1] * inverse_determinant,
+            ],
+            [
+                -self.y_axis[0] * inverse_determinant,
+                self.x_axis[0] * inverse_determinant,
+            ],
         ))
     }
 }
@@ -212,13 +210,11 @@ mod tests {
     #[test]
     fn matrix2_composition_applies_in_documented_order() {
         let rotation = Matrix2::from_angle(std::f32::consts::FRAC_PI_2);
-        let scale = Matrix2::from_scale(Vector2::new(2.0, 3.0));
-        let transformed = rotation
-            .then(scale)
-            .transform_vector(Vector2::new(1.0, 0.0));
+        let scale = Matrix2::from_scale(2.0, 3.0);
+        let [x, y] = rotation.then(scale).transform_vector([1.0, 0.0]);
 
-        assert!(transformed.x.abs() < 0.001);
-        assert!((transformed.y - 3.0).abs() < 0.001);
+        assert!(x.abs() < 0.001);
+        assert!((y - 3.0).abs() < 0.001);
     }
 
     #[test]
