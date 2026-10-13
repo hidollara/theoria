@@ -308,9 +308,7 @@ impl CanvasRenderer {
         let pipelines = self.gpu.pipelines.as_ref().unwrap();
         let present_pipeline = match (output, &shader_space) {
             (Some(_output), Some(space)) => pipelines.output(space),
-            (None, _) if preserve_working => {
-                pipelines.composite(theoria_canvas::canvas::Composite::SourceOver)
-            }
+            (None, _) if preserve_working => &pipelines.present_working,
             _ => unreachable!("an external target specifies an output image"),
         };
         let clear_color = match output {

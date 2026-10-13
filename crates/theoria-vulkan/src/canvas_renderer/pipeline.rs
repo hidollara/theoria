@@ -92,6 +92,7 @@ pub(super) struct Pipelines {
     pub(super) triangle: Pipeline,
     pub(super) image: Pipeline,
     pub(super) composites: HashMap<Composite, Pipeline>,
+    pub(super) present_working: Pipeline,
     pub(super) mask: Pipeline,
     pub(super) outputs: HashMap<ColorSpace, Pipeline>,
     pub(super) icc_images: HashMap<(ColorSpace, bool), Pipeline>,
@@ -305,7 +306,8 @@ pub(super) unsafe fn create_pipelines(
             Composite::SourceOver,
         )?
     };
-    let source_over = unsafe {
+    // CanvasImage output is single-sampled, unlike the working accumulators.
+    let present_working = unsafe {
         create_pipeline(
             device,
             working_format,
@@ -318,11 +320,8 @@ pub(super) unsafe fn create_pipelines(
             Composite::SourceOver,
         )?
     };
-    let mut composites = HashMap::from([(Composite::SourceOver, source_over)]);
+    let mut composites = HashMap::new();
     for composite in Composite::ALL {
-        if composite == Composite::SourceOver {
-            continue;
-        }
         let composite_pipeline = unsafe {
             create_pipeline(
                 device,
@@ -358,6 +357,7 @@ pub(super) unsafe fn create_pipelines(
         sample_count,
         triangle: triangle.into_pipeline(),
         image: image.into_pipeline(),
+        present_working: present_working.into_pipeline(),
         composites: composites
             .into_iter()
             .map(|(composite, pipeline)| (composite, pipeline.into_pipeline()))

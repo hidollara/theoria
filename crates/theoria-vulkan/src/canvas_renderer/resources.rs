@@ -118,12 +118,17 @@ impl CanvasGpuResources {
     fn destroy_pipelines(&mut self, device: &RenderDevice) {
         if let Some(pipelines) = self.pipelines.take() {
             unsafe {
-                for pipeline in [pipelines.triangle, pipelines.image, pipelines.mask]
-                    .into_iter()
-                    .chain(pipelines.composites.into_values())
-                    .chain(pipelines.compositions.into_values())
-                    .chain(pipelines.outputs.into_values())
-                    .chain(pipelines.icc_images.into_values())
+                for pipeline in [
+                    pipelines.triangle,
+                    pipelines.image,
+                    pipelines.mask,
+                    pipelines.present_working,
+                ]
+                .into_iter()
+                .chain(pipelines.composites.into_values())
+                .chain(pipelines.compositions.into_values())
+                .chain(pipelines.outputs.into_values())
+                .chain(pipelines.icc_images.into_values())
                 {
                     device.raw().destroy_pipeline(pipeline.handle, None);
                     device.raw().destroy_pipeline_layout(pipeline.layout, None);

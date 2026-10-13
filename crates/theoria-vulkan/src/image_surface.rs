@@ -243,6 +243,56 @@ mod tests {
     }
 
     #[test]
+    fn clipped_child_canvas_preserves_its_position_and_size() {
+        let Some(mut surface) = test_surface(SurfaceSize {
+            width: 64,
+            height: 64,
+        }) else {
+            return;
+        };
+        let rect = |x0, y0, x1, y1| {
+            Coverage::fill(theoria_canvas::path::Path::polygon([
+                Point::new(x0, y0),
+                Point::new(x1, y0),
+                Point::new(x1, y1),
+                Point::new(x0, y1),
+            ]))
+        };
+        let child = Canvas::draw(
+            Color::new(Srgb, [255_u8, 0, 0], Opacity::<u8>::ONE),
+            rect(24.0, 24.0, 56.0, 56.0),
+        );
+        let canvas = Canvas::draw(child, rect(0.0, 0.0, 48.0, 48.0));
+        let view = CanvasView::axis_aligned(Point::new(0.0, 0.0), Point::new(64.0, 64.0)).unwrap();
+        let cached =
+            theoria_canvas::canvas::CanvasImage::new(canvas.clone(), view, 64, 64).unwrap();
+        // Both the multisampled working composite and the single-sampled
+        // CanvasImage output must preserve coordinates.
+        for canvas in [canvas, Canvas::draw(cached, Coverage::all())] {
+            let image = surface
+                .render(&SurfaceContent::new(
+                    canvas,
+                    view,
+                    Color::new(Srgb, [0_u8, 0, 0], Opacity::<u8>::ONE),
+                ))
+                .unwrap();
+            for (x, y, expected) in [
+                (16, 16, [0, 0, 0, 255]),
+                (28, 28, [255, 0, 0, 255]),
+                (44, 44, [255, 0, 0, 255]),
+                (52, 52, [0, 0, 0, 255]),
+            ] {
+                let offset = (y * 64 + x) * 4;
+                assert_eq!(
+                    &image.pixels()[offset..offset + 4],
+                    &expected,
+                    "at ({x}, {y})"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn image_surface_extent_must_be_non_zero_and_fit_memory() {
         assert!(
             pixel_byte_len(SurfaceSize {
