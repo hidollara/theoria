@@ -1,5 +1,18 @@
 use super::*;
 
+#[test]
+fn horizontal_layout_exposes_width_and_height_independently() {
+    let text = Text::horizontal(TextStyle::new(&[], 16.0))
+        .wrap_width(120.0)
+        .with_height(45.0)
+        .layout()
+        .unwrap();
+
+    assert_eq!(text.width(), 120.0);
+    assert_eq!(text.height(), 45.0);
+    assert!(!text.has_typographic_overflow());
+}
+
 #[cfg(target_os = "windows")]
 #[test]
 fn style_segments_follow_bidi_visual_order_without_losing_logical_ranges() {
@@ -88,7 +101,7 @@ fn paragraph_indents_and_spacing_affect_line_boxes_without_clipping() {
         return;
     };
     let fonts = [font];
-    let word = horizontal(&fonts, 24.0, "word").layout().unwrap().size().x;
+    let word = horizontal(&fonts, 24.0, "word").layout().unwrap().width();
     let text = horizontal(&fonts, 24.0, "word word\nword")
         .wrap_width(word + 12.0)
         .with_paragraph_style(
@@ -137,7 +150,7 @@ fn break_word_is_opt_in_for_overlong_ui_labels() {
         return;
     };
     let fonts = [font];
-    let unit = horizontal(&fonts, 24.0, "un").layout().unwrap().size().x;
+    let unit = horizontal(&fonts, 24.0, "un").layout().unwrap().width();
     let normal = horizontal(&fonts, 24.0, "unbreakable")
         .wrap_width(unit)
         .layout()
@@ -160,8 +173,7 @@ fn line_limit_with_ellipsis_retains_logical_content_and_fits_the_box() {
     let width = horizontal(&fonts, 24.0, "alpha beta")
         .layout()
         .unwrap()
-        .size()
-        .x;
+        .width();
     let text = horizontal(&fonts, 24.0, "alpha beta gamma delta")
         .wrap_width(width)
         .with_maximum_lines(1)

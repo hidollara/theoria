@@ -9,8 +9,7 @@ fn balanced_line_breaking_preserves_the_paragraph_and_bounded_lines() {
     let width = horizontal(&fonts, 22.0, "alpha beta gamma")
         .layout()
         .unwrap()
-        .size()
-        .x;
+        .width();
     let text = horizontal(
         &fonts,
         22.0,
@@ -38,7 +37,7 @@ fn justification_can_cap_pathological_inter_word_expansion() {
     };
     let fonts = [font];
     let natural = horizontal(&fonts, 24.0, "a b").layout().unwrap();
-    let target = natural.size().x + 4.0;
+    let target = natural.width() + 4.0;
     let text = horizontal(&fonts, 24.0, "a b c")
         .wrap_width(target)
         .aligned(TextAlignment::Justify)
@@ -59,8 +58,8 @@ fn wrapped_text_keeps_its_layout_width_while_unwrapped_text_uses_natural_width()
         .unwrap();
     let unwrapped = horizontal(&[], 16.0, "").layout().unwrap();
 
-    assert_eq!(wrapped.size().x, 120.0);
-    assert_eq!(unwrapped.size().x, 0.0);
+    assert_eq!(wrapped.width(), 120.0);
+    assert_eq!(unwrapped.width(), 0.0);
 }
 
 #[cfg(target_os = "windows")]
@@ -73,8 +72,7 @@ fn text_layout_wraps_at_the_last_fitting_unicode_opportunity() {
     let first_line_width = horizontal(&fonts, 24.0, "one two ")
         .layout()
         .unwrap()
-        .size()
-        .x;
+        .width();
     let text = horizontal(&fonts, 24.0, "one two three")
         .wrap_width(first_line_width + 0.001)
         .layout()
@@ -97,7 +95,7 @@ fn soft_hyphen_is_invisible_without_a_break() {
         .unwrap();
 
     assert_eq!(discretionary.content(), "co\u{00ad}operate");
-    assert!((discretionary.size().x - plain.size().x).abs() < 0.001);
+    assert!((discretionary.width() - plain.width()).abs() < 0.001);
 }
 
 #[cfg(target_os = "windows")]
@@ -111,7 +109,7 @@ fn wrapping_at_soft_hyphen_materializes_a_visible_hyphen() {
     let prefix = horizontal(&fonts, 24.0, "co").layout().unwrap();
     let hyphenated_prefix = horizontal(&fonts, 24.0, "co\u{2010}").layout().unwrap();
     let text = horizontal(&fonts, 24.0, content)
-        .wrap_width(hyphenated_prefix.size().x + 0.001)
+        .wrap_width(hyphenated_prefix.width() + 0.001)
         .layout()
         .unwrap();
 
@@ -121,8 +119,8 @@ fn wrapping_at_soft_hyphen_materializes_a_visible_hyphen() {
         text.line_ranges().collect::<Vec<_>>(),
         [0.."co\u{00ad}".len(), "co\u{00ad}".len()..content.len()]
     );
-    assert!(text.lines[0].line.advance().x > prefix.size().x);
-    assert!((text.lines[0].line.advance().x - hyphenated_prefix.size().x).abs() < 0.001);
+    assert!(text.lines[0].line.advance().x > prefix.width());
+    assert!((text.lines[0].line.advance().x - hyphenated_prefix.width()).abs() < 0.001);
 }
 
 #[cfg(target_os = "windows")]
@@ -134,7 +132,7 @@ fn automatic_hyphenation_is_opt_in_and_preserves_logical_text() {
     let fonts = [font];
     let content = "extensive";
     let hyphenated_prefix = horizontal(&fonts, 24.0, "ex\u{2010}").layout().unwrap();
-    let width = hyphenated_prefix.size().x + 0.001;
+    let width = hyphenated_prefix.width() + 0.001;
     let style = TextStyle::new(&fonts, 24.0).with_language("en-US");
 
     let manual = Text::horizontal(style.clone())
@@ -153,7 +151,7 @@ fn automatic_hyphenation_is_opt_in_and_preserves_logical_text() {
     assert!(automatic.line_count() > 1);
     assert_eq!(automatic.content(), content);
     assert_eq!(automatic.line_ranges().next(), Some(0..2));
-    assert!((automatic.lines[0].line.advance().x - hyphenated_prefix.size().x).abs() < 0.001);
+    assert!((automatic.lines[0].line.advance().x - hyphenated_prefix.width()).abs() < 0.001);
 }
 
 #[cfg(target_os = "windows")]
@@ -184,8 +182,7 @@ fn automatic_hyphenation_crosses_typographic_spans_with_the_same_language() {
     let width = horizontal(&fonts, 24.0, "ex\u{2010}")
         .layout()
         .unwrap()
-        .size()
-        .x
+        .width()
         + 0.001;
     let text = Text::horizontal(default_style)
         .push(Span::new("e").with_style(alternate_style))
@@ -208,8 +205,7 @@ fn automatic_hyphenation_uses_the_layout_language_as_a_fallback() {
     let width = horizontal(&fonts, 24.0, "ex\u{2010}")
         .layout()
         .unwrap()
-        .size()
-        .x
+        .width()
         + 0.001;
     let text = horizontal(&fonts, 24.0, "extensive")
         .with_shaping_options(ShapingOptions::new().language("en"))
@@ -240,5 +236,5 @@ fn text_layout_preserves_hard_empty_lines_and_overlong_words() {
         .layout()
         .unwrap();
     assert_eq!(overlong.line_count(), 1);
-    assert!(overlong.size().x < overlong.lines[0].line.advance().x.abs());
+    assert!(overlong.width() < overlong.lines[0].line.advance().x.abs());
 }

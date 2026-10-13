@@ -24,7 +24,7 @@ fn combined_upright_places_a_horizontal_sequence_in_one_em_cell() {
             .iter()
             .all(|run| run.orientation == RunOrientation::Combined)
     );
-    assert_eq!(text.size().y, font_size);
+    assert_eq!(text.height(), font_size);
     assert!(text.coverage().is_ok());
 }
 

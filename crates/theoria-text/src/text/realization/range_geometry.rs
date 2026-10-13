@@ -144,8 +144,7 @@ mod tests {
             .push("abc ")
             .layout()
             .unwrap()
-            .size()
-            .x;
+            .width();
         let text = Text::horizontal(TextStyle::new(&fonts, 24.0))
             .push("abc def")
             .wrap_width(first_line_width + 0.001)

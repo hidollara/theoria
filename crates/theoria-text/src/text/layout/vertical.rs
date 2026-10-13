@@ -392,7 +392,8 @@ impl VerticalText {
         Ok(Text {
             content: attributed.content,
             lines,
-            size: Offset::new(width, height),
+            width,
+            height,
             writing_mode: WritingMode::Vertical,
             paint_ranges: attributed.paint_ranges,
         })

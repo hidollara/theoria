@@ -92,22 +92,24 @@ pub(super) fn apply_fixed_line_height(
         .map_or(0.0, |line| line.baseline.y + final_descent);
 }
 
-pub(super) fn layout_size(lines: &[HorizontalLine], default_style: &TextStyle) -> Offset {
-    let width = lines
+pub(super) fn layout_width(lines: &[HorizontalLine]) -> f32 {
+    lines
         .iter()
         .map(|positioned| positioned.line.advance().x.abs() + positioned.inline_insets)
-        .fold(0.0, f32::max);
+        .fold(0.0, f32::max)
+}
+
+pub(super) fn layout_height(lines: &[HorizontalLine], default_style: &TextStyle) -> f32 {
     let fallback = default_style
         .fonts()
         .first()
         .map(|font| font_line_metrics(&font.resolve(), default_style.font_size()));
-    let height = lines.last().map_or(0.0, |positioned| {
+    lines.last().map_or(0.0, |positioned| {
         let metrics = text_line_metrics(&positioned.line)
             .or(fallback)
             .unwrap_or_default();
         positioned.baseline.y + metrics.descent
-    });
-    Offset::new(width, height)
+    })
 }
 
 pub(super) fn text_line_metrics(line: &TextLine) -> Option<LineMetrics> {

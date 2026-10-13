@@ -336,16 +336,17 @@ impl HorizontalText {
             }
         }
         position_lines(&mut lines, &attributed.default_style);
-        let mut content_size = layout_size(&lines, &attributed.default_style);
+        let content_width = layout_width(&lines);
+        let mut content_height = layout_height(&lines, &attributed.default_style);
         if let Some(line_height) = self.line_height {
-            apply_fixed_line_height(&mut lines, &mut content_size.y, line_height);
+            apply_fixed_line_height(&mut lines, &mut content_height, line_height);
         }
 
-        let width = self.wrap_width.unwrap_or(content_size.x);
-        let height = self.height.unwrap_or(content_size.y);
+        let width = self.wrap_width.unwrap_or(content_width);
+        let height = self.height.unwrap_or(content_height);
         align_lines(&mut lines, width);
         let vertical_offset =
-            vertical_alignment_offset(height, content_size.y, self.vertical_alignment);
+            vertical_alignment_offset(height, content_height, self.vertical_alignment);
         shift_lines_y(&mut lines, vertical_offset);
         let lines: Arc<[PositionedTextLine]> = lines
             .into_iter()
@@ -369,7 +370,8 @@ impl HorizontalText {
         Ok(Text {
             content: attributed.content,
             lines,
-            size: Offset::new(width, height),
+            width,
+            height,
             writing_mode: WritingMode::Horizontal,
             paint_ranges: attributed.paint_ranges,
         })

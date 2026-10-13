@@ -15,7 +15,7 @@ fn vertical_letter_spacing_expands_the_inline_axis_without_a_trailing_gap() {
         .layout()
         .unwrap();
 
-    assert!((tracked.size().y - natural.size().y - 4.0).abs() < 0.001);
+    assert!((tracked.height() - natural.height() - 4.0).abs() < 0.001);
 }
 
 #[cfg(target_os = "windows")]
@@ -33,7 +33,7 @@ fn vertical_word_spacing_expands_a_separator_on_the_inline_axis() {
         .layout()
         .unwrap();
 
-    assert!((spaced.size().y - natural.size().y - 4.0).abs() < 0.001);
+    assert!((spaced.height() - natural.height() - 4.0).abs() < 0.001);
 }
 
 #[cfg(target_os = "windows")]
@@ -46,8 +46,7 @@ fn vertical_tabs_advance_to_space_based_stops() {
         .push(" ")
         .layout()
         .unwrap()
-        .size()
-        .x;
+        .width();
     let text = Text::vertical(TextStyle::new(&fonts, 32.0))
         .with_tab_size(4.0)
         .push("\t本")

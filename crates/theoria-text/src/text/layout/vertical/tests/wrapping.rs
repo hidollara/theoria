@@ -1,5 +1,17 @@
 use super::*;
 
+#[test]
+fn vertical_wrap_height_does_not_change_layout_width() {
+    let style = TextStyle::new(&[], 16.0);
+    let unwrapped = Text::vertical(style.clone()).layout().unwrap();
+    let wrapped = Text::vertical(style).wrap_height(120.0).layout().unwrap();
+
+    assert_eq!(wrapped.height(), 120.0);
+    assert_eq!(unwrapped.height(), 0.0);
+    assert_eq!(wrapped.width(), unwrapped.width());
+    assert!(!wrapped.has_typographic_overflow());
+}
+
 #[cfg(target_os = "windows")]
 #[test]
 fn vertical_wrapping_places_columns_right_to_left() {
@@ -12,7 +24,7 @@ fn vertical_wrapping_places_columns_right_to_left() {
         .unwrap();
     let text = Text::vertical(TextStyle::new(&fonts, 28.0))
         .push("日本 日本")
-        .wrap_height(one.size().y + 0.001)
+        .wrap_height(one.height() + 0.001)
         .layout()
         .unwrap();
 
@@ -45,13 +57,13 @@ fn vertical_soft_hyphen_is_visible_only_at_a_selected_break() {
     let content = "co\u{00ad}operate";
     let wrapped = Text::vertical(TextStyle::new(&fonts, 24.0))
         .push(content)
-        .wrap_height(hyphenated_prefix.size().y + 0.001)
+        .wrap_height(hyphenated_prefix.height() + 0.001)
         .layout()
         .unwrap();
 
-    assert!((unbroken.size().y - plain.size().y).abs() < 0.001);
+    assert!((unbroken.height() - plain.height()).abs() < 0.001);
     assert_eq!(wrapped.line_ranges().next(), Some(0.."co\u{00ad}".len()));
-    assert!((wrapped.lines[0].line.advance().y - hyphenated_prefix.size().y).abs() < 0.001);
+    assert!((wrapped.lines[0].line.advance().y - hyphenated_prefix.height()).abs() < 0.001);
 }
 
 #[cfg(target_os = "windows")]
@@ -67,14 +79,14 @@ fn injected_hyphenation_can_wrap_vertical_text_without_changing_content() {
         .unwrap();
     let text = Text::vertical(TextStyle::new(&fonts, 24.0).with_language("en"))
         .push(content)
-        .wrap_height(hyphenated_prefix.size().y + 0.001)
+        .wrap_height(hyphenated_prefix.height() + 0.001)
         .with_hyphenator(TestHyphenator)
         .layout()
         .unwrap();
 
     assert_eq!(text.content(), content);
     assert_eq!(text.line_ranges().next(), Some(0..2));
-    assert!((text.lines[0].line.advance().y - hyphenated_prefix.size().y).abs() < 0.001);
+    assert!((text.lines[0].line.advance().y - hyphenated_prefix.height()).abs() < 0.001);
 }
 
 #[cfg(target_os = "windows")]
@@ -87,8 +99,7 @@ fn vertical_justification_expands_nonfinal_columns() {
         .push("日 本 ")
         .layout()
         .unwrap()
-        .size()
-        .y
+        .height()
         + 0.001;
     let text = Text::vertical(TextStyle::new(&fonts, 28.0))
         .push("日 本 日本")
@@ -113,8 +124,7 @@ fn vertical_cjk_justification_does_not_require_word_spaces() {
         .push("日本")
         .layout()
         .unwrap()
-        .size()
-        .y;
+        .height();
     let height = natural_height + font_size * 0.25;
     let text = Text::vertical(TextStyle::new(&fonts, font_size))
         .push("日本日本")
@@ -139,12 +149,12 @@ fn vertical_forced_break_columns_are_not_justified() {
         .unwrap();
     let text = Text::vertical(TextStyle::new(&fonts, 28.0))
         .push("日 本\n日本")
-        .wrap_height(natural.size().y + 20.0)
+        .wrap_height(natural.height() + 20.0)
         .inline_aligned(InlineAlignment::Justify)
         .layout()
         .unwrap();
 
-    assert!((text.lines[0].line.advance().y - natural.size().y).abs() < 0.001);
+    assert!((text.lines[0].line.advance().y - natural.height()).abs() < 0.001);
 }
 
 #[cfg(target_os = "windows")]

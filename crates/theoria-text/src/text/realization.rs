@@ -32,9 +32,9 @@ impl Text {
     /// Returns the union of the positioned glyph ink boxes.
     ///
     /// The bounds are independent of clipping and can therefore extend beyond
-    /// [`Text::size`]. Intrinsic color glyphs use their corresponding OpenType
-    /// outline box, which is the stable box available without rasterizing the
-    /// presentation merely to inspect layout.
+    /// [`Text::width`] and [`Text::height`]. Intrinsic color glyphs use their
+    /// corresponding OpenType outline box, which is the stable box available
+    /// without rasterizing the presentation merely to inspect layout.
     pub fn ink_bounds(&self) -> Option<TextBounds> {
         self.lines
             .iter()

@@ -131,7 +131,8 @@ pub enum WritingMode {
 pub struct Text {
     pub(in crate::text) content: Arc<str>,
     pub(in crate::text) lines: Arc<[PositionedTextLine]>,
-    pub(super) size: Offset,
+    pub(super) width: f32,
+    pub(super) height: f32,
     pub(in crate::text) writing_mode: WritingMode,
     pub(in crate::text) paint_ranges: Arc<[PaintRange]>,
 }
@@ -190,8 +191,8 @@ impl Text {
         self.typographic_bounds().is_some_and(|bounds| {
             bounds.minimum.x < 0.0
                 || bounds.minimum.y < 0.0
-                || bounds.maximum.x > self.size.x
-                || bounds.maximum.y > self.size.y
+                || bounds.maximum.x > self.width
+                || bounds.maximum.y > self.height
         })
     }
 
@@ -200,13 +201,22 @@ impl Text {
         super::line_breaking::paragraph_ranges(&self.content).into_iter()
     }
 
-    /// Returns the ink-independent typographic layout size in Canvas units.
+    /// Returns the ink-independent typographic layout width in Canvas units.
     ///
-    /// Wrapped text keeps its requested width even when its content is shorter.
+    /// Horizontal text keeps its requested wrap width even when its content is shorter.
     /// Unbreakable content may draw beyond that width; layout does not imply
     /// clipping.
-    pub const fn size(&self) -> Offset {
-        self.size
+    pub const fn width(&self) -> f32 {
+        self.width
+    }
+
+    /// Returns the ink-independent typographic layout height in Canvas units.
+    ///
+    /// Vertical text keeps its requested wrap height even when its content is shorter.
+    /// Horizontal text keeps its explicitly requested height. Content may draw
+    /// beyond the layout height; layout does not imply clipping.
+    pub const fn height(&self) -> f32 {
+        self.height
     }
 }
 

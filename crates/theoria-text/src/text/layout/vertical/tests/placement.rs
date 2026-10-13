@@ -74,8 +74,7 @@ fn vertical_columns_can_progress_left_to_right_explicitly() {
         .push("日本")
         .layout()
         .unwrap()
-        .size()
-        .y;
+        .height();
     let rtl = Text::vertical(TextStyle::new(&fonts, 28.0))
         .push("日本日本")
         .wrap_height(one_column + 0.001)
