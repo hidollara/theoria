@@ -1,0 +1,16 @@
+[package]
+name = "organon-compiler"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+organon-format = { path = "../organon-format" }
+
+[dev-dependencies]
+theoria-canvas = { path = "../theoria-canvas" }
+theoria-text = { path = "../theoria-text" }
+theoria-reactive = { path = "../theoria-reactive" }
+theoria-component = { path = "../theoria-component" }
+syn = { version = "2", features = ["full"] }
+font-test-data = "0.8.0"

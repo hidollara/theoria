@@ -1,0 +1,15 @@
+<organon version="1">
+  <interface name="Meter">
+    <input name="choose" type="f32"/>
+    <input name="left" type="f32"/>
+    <input name="right" type="f32"/>
+    <output name="chosen" type="f32"/>
+    <output name="constant" type="String"/>
+    <output name="checked" type="Result&lt;f32&gt;"/>
+    <output name="uncached" type="f32" inline="true"/>
+  </interface>
+  <interface name="Echo">
+    <input name="value" type="Result&lt;f32&gt;"/>
+    <output name="value" type="Result&lt;f32&gt;"/>
+  </interface>
+</organon>

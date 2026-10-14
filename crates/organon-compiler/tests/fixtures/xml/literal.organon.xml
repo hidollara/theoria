@@ -1,0 +1,8 @@
+<element name="Literal" version="1">
+  <input name="fonts" type="Fonts"/>
+  <let name="drawing" export="true">
+    <Text fonts="{fonts}" font_size="20" foreground="#33669980">
+      <s t="$A &amp; &lt;A&gt; &quot;A&quot;&#10;A\A"/>
+    </Text>
+  </let>
+</element>

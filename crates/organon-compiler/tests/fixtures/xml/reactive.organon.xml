@@ -1,0 +1,22 @@
+<element name="Reactive" version="1">
+  <input name="width" type="f32"/>
+  <input name="color" type="Color"/>
+  <let name="cached" export="true">
+    <Draw source="{color}"><Fill><ref name="shape"/></Fill></Draw>
+  </let>
+  <let name="direct" inline="true" export="true">
+    <Draw source="{color}"><Fill><ref name="inline_shape"/></Fill></Draw>
+  </let>
+  <let name="consumer" export="true"><ref name="direct"/></let>
+  <let name="shape" export="true">
+    <Rect x="0" y="0" width="{extent}" height="10"/>
+  </let>
+  <let name="inline_shape" inline="true"><ref name="raw_shape"/></let>
+  <let name="raw_shape" inline="true">
+    <Rect x="0" y="0" width="{extent}" height="10"/>
+  </let>
+  <let name="extent" inline="true" export="true"><ref name="width"/></let>
+  <let name="fixed" inline="true" export="true">
+    <Draw source="#ffffff"><All/></Draw>
+  </let>
+</element>

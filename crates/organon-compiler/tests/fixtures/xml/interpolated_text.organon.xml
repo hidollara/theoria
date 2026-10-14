@@ -1,0 +1,13 @@
+<element name="InterpolatedText" version="1">
+  <input name="fonts" type="Fonts"/>
+  <input name="label" type="String"/>
+  <input name="count" type="f32"/>
+  <input name="width" type="String"/>
+  <input name="size" type="String"/>
+  <input name="ink" type="String"/>
+  <let name="drawing" export="true">
+    <Text fonts="{fonts}" font_size="{size}" foreground="{ink}" wrap_width="{width}">
+      <s t="A{{{label}}}{count} $label"/>
+    </Text>
+  </let>
+</element>

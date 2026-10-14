@@ -1,0 +1,13 @@
+<element name="Mark" version="1">
+  <let name="drawing" export="true">
+    <SourceOver space="LinearSrgb">
+      <Draw source="#49dcb1"><Fill><Rect x="0" y="0" width="72" height="80"/></Fill></Draw>
+      <Translate x="20" y="20">
+        <SourceOver space="LinearSrgb">
+          <Draw source="#659dffcc"><Fill><Rect x="0" y="0" width="72" height="80"/></Fill></Draw>
+          <Draw source="#f3c669aa"><Fill><Rect x="36" y="24" width="72" height="80"/></Fill></Draw>
+        </SourceOver>
+      </Translate>
+    </SourceOver>
+  </let>
+</element>

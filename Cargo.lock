@@ -903,6 +903,68 @@ dependencies = [
 ]
 
 [[package]]
+name = "organon"
+version = "0.1.0"
+dependencies = [
+ "organon-proc-macro",
+ "theoria-canvas",
+ "theoria-component",
+ "theoria-reactive",
+]
+
+[[package]]
+name = "organon-app"
+version = "0.1.0"
+dependencies = [
+ "font-test-data",
+ "organon",
+ "organon-format",
+ "png",
+ "theoria-canvas",
+ "theoria-component",
+ "theoria-interaction",
+ "theoria-reactive",
+ "theoria-renderer",
+ "theoria-text",
+ "theoria-vulkan",
+ "theoria-windows",
+]
+
+[[package]]
+name = "organon-compiler"
+version = "0.1.0"
+dependencies = [
+ "font-test-data",
+ "organon-format",
+ "syn 2.0.119",
+ "theoria-canvas",
+ "theoria-component",
+ "theoria-reactive",
+ "theoria-text",
+]
+
+[[package]]
+name = "organon-format"
+version = "0.1.0"
+dependencies = [
+ "roxmltree",
+]
+
+[[package]]
+name = "organon-proc-macro"
+version = "0.1.0"
+dependencies = [
+ "organon-compiler",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+ "theoria-canvas",
+ "theoria-component",
+ "theoria-reactive",
+ "theoria-text",
+]
+
+[[package]]
 name = "parking_lot"
 version = "0.12.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"

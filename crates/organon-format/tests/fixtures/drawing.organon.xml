@@ -1,0 +1,20 @@
+<element name="Drawing" version="1">
+  <input name="width" type="f32"/>
+  <input name="ink" type="Color"/>
+  <input name="extra" type="Canvas"/>
+  <input name="label" type="String"/>
+  <input name="fonts" type="Fonts"/>
+  <let name="drawing" export="true">
+    <SourceOver space="LinearSrgb">
+      <Draw source="{ink}"><Fill><Rect x="001.00" y="-0" width="{width}" height="40"/></Fill></Draw>
+      <Translate x="12" y="8">
+        <SourceOver space="Srgb">
+          <ref name="extra"/>
+          <Text fonts="{fonts}" font_size="20" foreground="#aAbBcC80" wrap_width="{width}">
+            <s t="{label}"/>
+          </Text>
+        </SourceOver>
+      </Translate>
+    </SourceOver>
+  </let>
+</element>

@@ -1,0 +1,15 @@
+<organon version="1">
+  <import path="parts/native.xml"/>
+  <import path="parts/tile.xml"/>
+  <element name="Scene">
+    <input name="width" type="f32"/>
+    <let name="path" export="true"><get name="path"><ref name="tile"/></get></let>
+    <let name="extent" export="true"><get name="extent"><ref name="tile"/></get></let>
+    <let name="original" export="true"><get name="original"><ref name="scale"/></get></let>
+    <let name="tile"><Tile width="{scale.scaled}"/></let>
+    <let name="scale"><Scale value="{input}"/></let>
+    <let name="input" inline="true"><ref name="width"/></let>
+    <let name="small"><Tile width="3"/></let>
+    <let name="literal_extent" export="true"><get name="extent"><ref name="small"/></get></let>
+  </element>
+</organon>

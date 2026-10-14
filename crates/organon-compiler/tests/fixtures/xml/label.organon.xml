@@ -1,0 +1,12 @@
+<element name="Label" version="1">
+  <input name="fonts" type="Fonts"/>
+  <input name="label" type="String"/>
+  <input name="width" type="f32"/>
+  <input name="font_size" type="f32"/>
+  <input name="ink" type="Color"/>
+  <let name="drawing" export="true">
+    <Text fonts="{fonts}" font_size="{font_size}" foreground="{ink}" wrap_width="{width}">
+      <s t="{label}"/>
+    </Text>
+  </let>
+</element>

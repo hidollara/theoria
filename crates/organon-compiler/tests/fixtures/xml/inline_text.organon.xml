@@ -1,0 +1,22 @@
+<element name="InlineText" version="1">
+  <input name="fonts" type="Fonts"/>
+  <input name="alternate" type="Fonts"/>
+  <input name="label" type="String"/>
+  <input name="size" type="f32"/>
+  <input name="ink" type="Color"/>
+  <let name="drawing" export="true">
+    <Text fonts="{fonts}" font_size="20" foreground="#336699" wrap_width="1000">
+      <s t="A"/>
+      <s t="A"/>
+      <span font_size="{size}" foreground="{ink}">
+        <s t="B"/>
+        <span font_size="10"><s t="C"/></span>
+        <s t="D" font_size="15"/>
+        <s t="E" fonts="{alternate}"/>
+        <br/>
+        <s t="{label}"/>
+      </span>
+      <s t="F&#9;G&#10;H"/>
+    </Text>
+  </let>
+</element>

@@ -1,0 +1,6 @@
+<organon version="1">
+  <interface name="Scale">
+    <input name="value" type="f32"/>
+    <output name="scaled" type="f32"/>
+  </interface>
+</organon>

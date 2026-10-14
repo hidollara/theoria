@@ -1,0 +1,10 @@
+<element name="InterpolatedRect" version="1">
+  <input name="origin" type="String"/>
+  <input name="whole" type="f32"/>
+  <input name="fraction" type="String"/>
+  <input name="rgb" type="String"/>
+  <input name="alpha" type="String"/>
+  <let name="drawing" export="true">
+    <Draw source="#{rgb}{alpha}"><Fill><Rect x="{origin}" y="0" width="{whole}.{fraction}" height="2"/></Fill></Draw>
+  </let>
+</element>

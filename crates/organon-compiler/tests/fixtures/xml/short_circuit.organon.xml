@@ -1,0 +1,8 @@
+<element name="ShortCircuit" version="1">
+  <input name="z_color" type="Color"/>
+  <input name="width" type="f32"/>
+  <let name="a_path"><Rect x="0" y="0" width="{width}" height="10"/></let>
+  <let name="drawing" export="true">
+    <Draw source="{z_color}"><Fill><ref name="a_path"/></Fill></Draw>
+  </let>
+</element>

@@ -1,0 +1,18 @@
+<element name="Badge" version="1">
+  <input name="width" type="f32"/>
+  <input name="fill" type="Color"/>
+  <let name="outline" export="true">
+    <Polygon>
+      <Point x="32" y="48"/>
+      <Point x="{width}" y="48"/>
+      <Point x="{width}" y="144"/>
+      <Point x="128" y="144"/>
+      <Point x="80" y="192"/>
+      <Point x="80" y="144"/>
+      <Point x="32" y="144"/>
+    </Polygon>
+  </let>
+  <let name="drawing" export="true">
+    <Draw source="{fill}"><Fill><ref name="outline"/></Fill></Draw>
+  </let>
+</element>

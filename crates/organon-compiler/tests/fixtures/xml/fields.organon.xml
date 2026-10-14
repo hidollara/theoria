@@ -1,0 +1,17 @@
+<element name="Fields" version="1">
+  <input name="brush" type="ColorField"/>
+  <input name="canvas" type="Canvas"/>
+  <input name="host_path" type="Path"/>
+  <input name="width" type="f32"/>
+  <let name="outline" export="true"><Rect x="2" y="3" width="{width}" height="10"/></let>
+  <let name="alias" export="true"><ref name="host_path"/></let>
+  <let name="filled" export="true">
+    <Draw source="{brush}"><Fill><ref name="outline"/></Fill></Draw>
+  </let>
+  <let name="canvas_fill" export="true">
+    <Draw source="{canvas}"><Fill><Polygon>
+      <Point x="0" y="0"/><Point x="{width}" y="0"/><Point x="0" y="10"/>
+    </Polygon></Fill></Draw>
+  </let>
+  <let name="unbounded" export="true"><Draw source="{brush}"><All/></Draw></let>
+</element>

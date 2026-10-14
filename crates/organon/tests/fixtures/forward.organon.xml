@@ -1,0 +1,6 @@
+<organon version="1">
+  <element name="Forward">
+    <input name="value" type="f32"/>
+    <let name="forwarded" export="true"><ref name="value"/></let>
+  </element>
+</organon>

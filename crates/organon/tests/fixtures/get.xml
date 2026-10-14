@@ -1,0 +1,30 @@
+<organon version="1">
+  <import path="parts/native.xml"/>
+  <import path="parts/tile.xml"/>
+  <element name="Selections">
+    <input name="width" type="f32"/>
+    <input name="caption" type="String"/>
+    <let name="scaled" export="true" inline="true"><get name="scaled"><Scale value="{width}"/></get></let>
+    <let name="text" export="true"><get name="text"><Label caption="{caption}"/></get></let>
+    <let name="drawing" export="true"><Translate x="3" y="4">
+      <get name="drawing"><Card width="{scaled}"/></get>
+    </Translate></let>
+    <let name="mask" export="true"><Draw source="#ffffff"><Fill>
+      <get name="path"><Tile width="{width}"/></get>
+    </Fill></Draw></let>
+    <let name="path" export="true"><get name="path"><ref name="tile"/></get></let>
+    <let name="extent" export="true"><get name="extent"><ref name="tile"/></get></let>
+    <let name="tile"><Tile width="{width}"/></let>
+    <let name="constant" export="true"><get name="extent"><Tile width="3"/></get></let>
+  </element>
+  <element name="Label">
+    <input name="caption" type="String"/>
+    <let name="text" export="true"><ref name="caption"/></let>
+  </element>
+  <element name="Card">
+    <input name="width" type="f32"/>
+    <let name="drawing" export="true"><Draw source="#ffffff"><Fill>
+      <get name="path"><Tile width="{width}"/></get>
+    </Fill></Draw></let>
+  </element>
+</organon>

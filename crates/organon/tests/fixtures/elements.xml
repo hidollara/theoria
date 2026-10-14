@@ -1,0 +1,44 @@
+<organon version="1">
+  <element name="Consumer">
+    <input name="button" type="Button"/>
+    <let name="button_copy" export="true"><ref name="button"/></let>
+    <let name="icon" export="true" inline="true"><get name="icon"><ref name="button"/></get></let>
+    <let name="extent" export="true"><get name="extent"><get name="icon"><ref name="button"/></get></get></let>
+    <let name="path" export="true"><get name="path"><get name="icon"><ref name="button"/></get></get></let>
+    <let name="copy" export="true"><Tile width="{button.icon.extent}"/></let>
+    <let name="attribute_extent" export="true"><get name="extent"><ref name="copy"/></get></let>
+    <let name="forward" export="true"><Forward input="{button}"/></let>
+    <let name="forward_extent" export="true"><get name="extent"><get name="icon"><get name="button"><ref name="forward"/></get></get></get></let>
+  </element>
+  <element name="NativeConsumer">
+    <input name="button" type="Button"/>
+    <input name="ready" type="f32"/>
+    <let name="bridge" export="true"><Bridge item="{button}" ready="{ready}"/></let>
+    <let name="extent" export="true"><get name="extent"><get name="icon"><get name="item"><ref name="bridge"/></get></get></get></let>
+    <let name="path" export="true"><get name="path"><get name="icon"><get name="item"><ref name="bridge"/></get></get></get></let>
+  </element>
+  <element name="NativeForward">
+    <input name="bridge" type="Bridge"/>
+    <let name="same" export="true"><ref name="bridge"/></let>
+    <let name="extent" export="true"><get name="extent"><get name="icon"><get name="item"><ref name="bridge"/></get></get></get></let>
+  </element>
+  <interface name="Bridge">
+    <input name="item" type="Button"/>
+    <input name="ready" type="f32"/>
+    <output name="item" type="Result&lt;Button&gt;" inline="true"/>
+  </interface>
+  <element name="Forward">
+    <input name="input" type="Button"/>
+    <let name="alias" inline="true"><ref name="input"/></let>
+    <let name="button" export="true"><ref name="alias"/></let>
+  </element>
+  <element name="Button">
+    <input name="tile" type="Tile"/>
+    <let name="icon" export="true"><ref name="tile"/></let>
+  </element>
+  <element name="Tile">
+    <input name="width" type="f32"/>
+    <let name="extent" export="true" inline="true"><ref name="width"/></let>
+    <let name="path" export="true"><Rect x="0" y="0" width="{width}" height="10"/></let>
+  </element>
+</organon>

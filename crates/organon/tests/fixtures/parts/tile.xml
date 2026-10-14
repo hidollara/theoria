@@ -1,0 +1,7 @@
+<organon version="1">
+  <element name="Tile">
+    <input name="width" type="f32"/>
+    <let name="path" export="true"><Rect x="0" y="0" width="{width}" height="10"/></let>
+    <let name="extent" export="true"><ref name="width"/></let>
+  </element>
+</organon>

@@ -1,0 +1,22 @@
+<element name="Lets" version="1">
+  <input name="width" type="f32"/>
+  <input name="label" type="String"/>
+  <input name="color" type="Color"/>
+  <let name="alias" export="true"><ref name="drawing"/></let>
+  <let name="copy" export="true"><ref name="drawing"/></let>
+  <let name="drawing" export="true">
+    <Draw source="{ink}"><Fill><ref name="shape"/></Fill></Draw>
+  </let>
+  <let name="shape" export="true">
+    <Rect x="0" y="0" width="{extent}" height="20"/>
+  </let>
+  <let name="moved" export="true">
+    <Translate x="2" y="3">
+      <ref name="reused"/>
+    </Translate>
+  </let>
+  <let name="reused"><ref name="drawing"/></let>
+  <let name="extent" export="true"><ref name="width"/></let>
+  <let name="caption" export="true"><ref name="label"/></let>
+  <let name="ink" export="true"><ref name="color"/></let>
+</element>
