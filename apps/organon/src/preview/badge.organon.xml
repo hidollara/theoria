@@ -1,0 +1,34 @@
+<organon version="1">
+  <import from="organon-theoria" />
+  <element name="Badge">
+    <input name="width" type="f32" />
+    <input name="fill" type="Color" />
+    <let name="outline_element">
+      <Polygon>
+        <Point x="32" y="48" />
+        <Point x="{width}" y="48" />
+        <Point x="{width}" y="144" />
+        <Point x="128" y="144" />
+        <Point x="80" y="192" />
+        <Point x="80" y="144" />
+        <Point x="32" y="144" />
+      </Polygon>
+    </let>
+    <bind path="outline">
+      <ref name="outline_element" />
+    </bind>
+    <provide name="outline" ref="outline"/>
+    <let name="drawing_element">
+      <Draw source="{fill}">
+        <Fill>
+          <ref name="outline_element" />
+        </Fill>
+      </Draw>
+    </let>
+    <bind drawing="drawing">
+      <ref name="drawing_element" />
+    </bind>
+    <provide name="drawing" ref="drawing"/>
+  </element>
+  <export name="Badge"/>
+</organon>

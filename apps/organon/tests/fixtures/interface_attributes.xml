@@ -1,0 +1,76 @@
+<organon version="1">
+  <import from="organon-theoria"/>
+  <element name="Paint">
+    <input name="field" type="ColorField"/>
+    <impl interface="ColorSource">
+      <provide name="field" ref="field"/>
+    </impl>
+  </element>
+  <element name="Painted">
+    <input name="shade" type="ColorField"/>
+    <bind drawing="drawing">
+      <Draw source="paint">
+        <All/>
+      </Draw>
+    </bind>
+    <let name="paint">
+      <Paint field="{shade}"/>
+    </let>
+    <provide name="drawing" ref="drawing"/>
+  </element>
+  <element name="RegionDrawing">
+    <input name="region" type="CoverageSource"/>
+    <bind drawing="drawing">
+      <Draw source="#ff0000">
+        <ref name="region"/>
+      </Draw>
+    </bind>
+    <provide name="drawing" ref="drawing"/>
+  </element>
+  <element name="DefaultReference">
+    <let name="draw">
+      <RegionDrawing region="all"/>
+    </let>
+    <let name="all">
+      <All/>
+    </let>
+    <bind drawing="drawing">
+      <ref name="draw"/>
+    </bind>
+    <provide name="drawing" ref="drawing"/>
+  </element>
+  <interface name="LocalPaint">
+    <output name="field" type="ColorField"/>
+  </interface>
+  <element name="LocalSource">
+    <input name="field" type="ColorField"/>
+    <impl interface="LocalPaint">
+      <provide name="field" ref="field"/>
+    </impl>
+  </element>
+  <element name="LocalConsumer">
+    <input name="paint" type="LocalPaint"/>
+    <bind field="field">
+      <ref name="paint"/>
+    </bind>
+    <provide name="field" ref="field"/>
+  </element>
+  <element name="LocalExample">
+    <input name="shade" type="ColorField"/>
+    <bind field="field">
+      <LocalConsumer paint="local"/>
+    </bind>
+    <let name="local">
+      <LocalSource field="{shade}"/>
+    </let>
+    <provide name="field" ref="field"/>
+  </element>
+  <export name="Paint"/>
+  <export name="Painted"/>
+  <export name="RegionDrawing"/>
+  <export name="DefaultReference"/>
+  <export name="LocalPaint"/>
+  <export name="LocalSource"/>
+  <export name="LocalConsumer"/>
+  <export name="LocalExample"/>
+</organon>

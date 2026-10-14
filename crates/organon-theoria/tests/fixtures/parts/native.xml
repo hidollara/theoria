@@ -1,0 +1,9 @@
+<organon version="1">
+  <import from="organon-theoria"/>
+  <declare name="Scale">
+    <input name="value" type="f32"/>
+    <output name="scaled" type="f32" inline="true"/>
+    <output name="original" type="f32"/>
+  </declare>
+  <export name="Scale"/>
+</organon>

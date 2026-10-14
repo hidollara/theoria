@@ -1,0 +1,20 @@
+<organon version="1">
+  <import from="organon-theoria" />
+  <element name="Label">
+    <input name="fonts" type="Fonts" />
+    <input name="label" type="String" />
+    <input name="width" type="f32" />
+    <input name="font_size" type="f32" />
+    <input name="ink" type="Color" />
+    <let name="drawing_element">
+      <Text fonts="fonts" font_size="{font_size}" foreground="{ink}" wrap_width="{width}">
+        <s t="{label}" />
+      </Text>
+    </let>
+    <bind drawing="drawing">
+      <ref name="drawing_element" />
+    </bind>
+    <provide name="drawing" ref="drawing"/>
+  </element>
+  <export name="Label"/>
+</organon>

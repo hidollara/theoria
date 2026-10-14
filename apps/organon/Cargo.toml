@@ -1,0 +1,27 @@
+[package]
+name = "organon-app"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "organon"
+path = "src/main.rs"
+
+[dependencies]
+organon-theoria = { path = "../../crates/organon-theoria" }
+organon-app-preview-macro = { path = "preview-macro" }
+organon-core = { path = "../../crates/organon-core" }
+organon-cargo = { path = "../../crates/organon-cargo" }
+theoria-reactive = { path = "../../crates/theoria-reactive" }
+theoria-canvas = { path = "../../crates/theoria-canvas" }
+theoria-text = { path = "../../crates/theoria-text" }
+theoria-renderer = { path = "../../crates/theoria-renderer" }
+theoria-vulkan = { path = "../../crates/theoria-vulkan" }
+png = "0.18.0"
+
+[target.'cfg(windows)'.dependencies]
+theoria-windows = { path = "../../crates/theoria-windows", features = ["vulkan"] }
+
+[dev-dependencies]
+font-test-data = "0.8.0"

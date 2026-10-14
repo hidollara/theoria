@@ -1,0 +1,14 @@
+[package]
+name = "organon-theoria"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+organon-core = { path = "../organon-core" }
+organon-theoria-proc-macro = { path = "../organon-theoria-proc-macro" }
+theoria-reactive = { path = "../theoria-reactive" }
+theoria-component = { path = "../theoria-component" }
+
+theoria-canvas = { path = "../theoria-canvas" }
+theoria-text = { path = "../theoria-text" }

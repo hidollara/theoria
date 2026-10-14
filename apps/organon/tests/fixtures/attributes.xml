@@ -1,0 +1,39 @@
+<organon version="1">
+  <import from="organon-theoria"/>
+  <element name="ForwardAttribute">
+    <bind path="path">
+      <Rect x="0" y="0" width="{width}" height="10"/>
+    </bind>
+    <input name="width" type="f32"/>
+    <provide name="path" ref="path"/>
+  </element>
+  <element name="LiteralNames">
+    <bind text="a">
+      <s t="b"/>
+    </bind>
+    <bind text="b">
+      <s t="a"/>
+    </bind>
+    <provide name="a" ref="a"/>
+    <provide name="b" ref="b"/>
+  </element>
+  <element name="CyclicAttributes">
+    <bind text="a">
+      <s t="{b}"/>
+    </bind>
+    <bind text="b">
+      <s t="{a}"/>
+    </bind>
+    <provide name="a" ref="a"/>
+  </element>
+  <element name="InvalidAttribute">
+    <bind path="path">
+      <Rect x="0" y="0" width="invalid" height="10"/>
+    </bind>
+    <provide name="path" ref="path"/>
+  </element>
+  <export name="ForwardAttribute"/>
+  <export name="LiteralNames"/>
+  <export name="CyclicAttributes"/>
+  <export name="InvalidAttribute"/>
+</organon>

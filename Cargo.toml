@@ -5,6 +5,7 @@ edition = "2024"
 
 [workspace]
 members = [
+    "apps/organon",
     "crates/theoria-geometry",
     "crates/theoria-canvas",
     "crates/theoria-text",

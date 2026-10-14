@@ -1,0 +1,203 @@
+<organon version="1">
+  <interface name="Display">
+    <output name="text" type="String"/>
+  </interface>
+  <interface name="ColorSource">
+    <output name="field" type="ColorField"/>
+  </interface>
+  <interface name="TextContent">
+    <output name="content" type="TextData" />
+    <output name="text" type="String" />
+    <output name="style" type="StyleOverride" />
+  </interface>
+  <interface name="Position">
+    <output name="point" type="PointValue" />
+  </interface>
+  <interface name="Drawable">
+    <output name="canvas" type="Canvas" fallible="true" />
+  </interface>
+  <interface name="CoverageSource">
+    <output name="coverage" type="Coverage" fallible="true" />
+  </interface>
+  <interface name="Outline">
+    <output name="path" type="Path" fallible="true" />
+  </interface>
+  <declare tag="false" name="StyleOverride" />
+  <declare tag="false" name="f32">
+    <implements interface="Display"/>
+  </declare>
+  <declare tag="false" name="String">
+    <implements interface="Display"/>
+  </declare>
+  <declare tag="false" name="Color">
+    <implements interface="ColorSource"/>
+  </declare>
+  <declare tag="false" name="ColorField">
+    <implements interface="ColorSource"/>
+  </declare>
+  <declare tag="false" name="Canvas">
+    <implements interface="ColorSource"/>
+  </declare>
+  <declare tag="false" name="Path" />
+  <declare tag="false" name="Fonts" />
+  <declare tag="false" name="Coverage" />
+  <declare tag="false" name="PointValue" />
+  <declare tag="false" name="TextData" />
+  <declare tag="false" name="Space" />
+  <declare name="Rect">
+    <input name="x" type="f32" />
+    <input name="y" type="f32" />
+    <input name="width" type="f32" />
+    <input name="height" type="f32" />
+    <output name="path" type="Path" fallible="true" />
+    <impl interface="Outline">
+      <provide name="path" ref="path" />
+    </impl>
+  </declare>
+  <declare name="Point">
+    <input name="x" type="f32" />
+    <input name="y" type="f32" />
+    <implements interface="Position" />
+  </declare>
+  <declare name="Polygon">
+    <children type="Position" min="3" />
+    <output name="path" type="Path" fallible="true" />
+    <impl interface="Outline">
+      <provide name="path" ref="path" />
+    </impl>
+  </declare>
+  <declare name="All">
+    <output name="coverage" type="Coverage" fallible="true" />
+    <impl interface="CoverageSource">
+      <provide name="coverage" ref="coverage" />
+    </impl>
+  </declare>
+  <declare name="Fill">
+    <children type="Outline" min="1" max="1" />
+    <output name="coverage" type="Coverage" fallible="true" />
+    <impl interface="CoverageSource">
+      <provide name="coverage" ref="coverage" />
+    </impl>
+  </declare>
+  <declare name="Draw">
+    <input name="source" type="ColorSource" />
+    <children type="CoverageSource" min="1" max="1" />
+    <output name="drawing" type="Canvas" fallible="true" />
+    <impl interface="Drawable">
+      <provide name="canvas" ref="drawing" />
+    </impl>
+  </declare>
+  <declare name="Translate">
+    <input name="x" type="f32" />
+    <input name="y" type="f32" />
+    <children type="Drawable" min="1" max="1" />
+    <output name="drawing" type="Canvas" fallible="true" />
+    <impl interface="Drawable">
+      <provide name="canvas" ref="drawing" />
+    </impl>
+  </declare>
+  <declare name="SourceOver">
+    <input name="space" type="Space" />
+    <children type="Drawable" min="2" max="2" />
+    <output name="drawing" type="Canvas" fallible="true" />
+    <impl interface="Drawable">
+      <provide name="canvas" ref="drawing" />
+    </impl>
+  </declare>
+  <declare name="s">
+    <input name="t" type="String" />
+    <input name="fonts" type="Fonts" optional="true" />
+    <input name="font_size" type="f32" optional="true" />
+    <input name="foreground" type="ColorSource" optional="true" />
+    <output name="content" type="TextData" />
+    <output name="text" type="String" />
+    <output name="style" type="StyleOverride" />
+    <impl interface="TextContent">
+      <provide name="content" ref="content" />
+      <provide name="text" ref="text" />
+      <provide name="style" ref="style" />
+    </impl>
+  </declare>
+  <declare name="span">
+    <input name="fonts" type="Fonts" optional="true" />
+    <input name="font_size" type="f32" optional="true" />
+    <input name="foreground" type="ColorSource" optional="true" />
+    <children type="TextContent" min="0" />
+    <output name="content" type="TextData" />
+    <output name="text" type="String" />
+    <output name="style" type="StyleOverride" />
+    <impl interface="TextContent">
+      <provide name="content" ref="content" />
+      <provide name="text" ref="text" />
+      <provide name="style" ref="style" />
+    </impl>
+  </declare>
+  <declare name="br">
+    <output name="content" type="TextData" />
+    <output name="text" type="String" />
+    <output name="style" type="StyleOverride" />
+    <impl interface="TextContent">
+      <provide name="content" ref="content" />
+      <provide name="text" ref="text" />
+      <provide name="style" ref="style" />
+    </impl>
+  </declare>
+  <declare name="Text">
+    <input name="fonts" type="Fonts" />
+    <input name="font_size" type="f32" />
+    <input name="foreground" type="ColorSource" />
+    <input name="wrap_width" type="f32" optional="true" />
+    <children type="TextContent" min="0" />
+    <output name="drawing" type="Canvas" fallible="true" />
+    <impl interface="Drawable">
+      <provide name="canvas" ref="drawing" />
+    </impl>
+  </declare>
+  <declare name="Shape">
+    <input name="path" type="Path" fallible="true" />
+    <output name="path" type="Path" fallible="true" />
+    <impl interface="Outline">
+      <provide name="path" ref="path" />
+    </impl>
+  </declare>
+  <declare name="Drawing">
+    <input name="canvas" type="Canvas" fallible="true" />
+    <output name="drawing" type="Canvas" fallible="true" />
+    <impl interface="Drawable">
+      <provide name="canvas" ref="drawing" />
+    </impl>
+  </declare>
+  <export name="Display"/>
+  <export name="ColorSource"/>
+  <export name="TextContent"/>
+  <export name="Position"/>
+  <export name="Drawable"/>
+  <export name="CoverageSource"/>
+  <export name="Outline"/>
+  <export name="StyleOverride"/>
+  <export name="f32"/>
+  <export name="String"/>
+  <export name="Color"/>
+  <export name="ColorField"/>
+  <export name="Canvas"/>
+  <export name="Path"/>
+  <export name="Fonts"/>
+  <export name="Coverage"/>
+  <export name="PointValue"/>
+  <export name="TextData"/>
+  <export name="Space"/>
+  <export name="Rect"/>
+  <export name="Point"/>
+  <export name="Polygon"/>
+  <export name="All"/>
+  <export name="Fill"/>
+  <export name="Draw"/>
+  <export name="Translate"/>
+  <export name="SourceOver"/>
+  <export name="s"/>
+  <export name="span"/>
+  <export name="br"/>
+  <export name="Text"/>
+  <export name="Shape"/>
+  <export name="Drawing"/>
+</organon>

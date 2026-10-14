@@ -1,0 +1,53 @@
+<organon version="1">
+  <use from="organon-theoria" name="f32"/>
+  <import from="./parts/native.xml"/>
+  <import from="./parts/tile.xml"/>
+  <element name="Scene">
+    <input name="width" type="f32"/>
+    <let name="path">
+      <ref name="tile_path"/>
+    </let>
+    <provide name="path" ref="path"/>
+    <let name="extent">
+      <ref name="tile_extent"/>
+    </let>
+    <provide name="extent" ref="extent"/>
+    <let name="original">
+      <ref name="scale_original"/>
+    </let>
+    <provide name="original" ref="original"/>
+    <let name="tile">
+      <Tile width="{scale_scaled}"/>
+    </let>
+    <let name="scale">
+      <Scale value="{input}"/>
+    </let>
+    <let name="input" inline="true">
+      <ref name="width"/>
+    </let>
+    <let name="small">
+      <Tile width="3"/>
+    </let>
+    <let name="literal_extent">
+      <ref name="small_extent"/>
+    </let>
+    <provide name="literal_extent" ref="literal_extent"/>
+    <bind path="tile_path">
+      <ref name="tile"/>
+    </bind>
+    <bind extent="tile_extent">
+      <ref name="tile"/>
+    </bind>
+    <bind original="scale_original">
+      <ref name="scale"/>
+    </bind>
+    <bind scaled="scale_scaled">
+      <ref name="scale"/>
+    </bind>
+    <bind extent="small_extent">
+      <ref name="small"/>
+    </bind>
+  </element>
+  <export name="Scene"/>
+  <export name="Scale"/>
+</organon>

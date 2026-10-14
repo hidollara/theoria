@@ -1,0 +1,12 @@
+[package]
+name = "organon-theoria-compiler"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+organon-core = { path = "../organon-core" }
+organon-cargo = { path = "../organon-cargo" }
+syn = { version = "2", features = ["full"] }
+quote = "1"
+proc-macro2 = "1"

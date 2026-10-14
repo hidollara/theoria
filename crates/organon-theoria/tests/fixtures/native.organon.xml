@@ -1,0 +1,30 @@
+<organon version="1">
+  <import from="organon-theoria"/>
+  <declare name="Meter">
+    <input name="choose" type="f32"/>
+    <input name="left" type="f32"/>
+    <input name="right" type="f32"/>
+    <output name="chosen" type="f32"/>
+    <output name="constant" type="String"/>
+    <output name="checked" type="f32" fallible="true"/>
+    <output name="uncached" type="f32" inline="true"/>
+  </declare>
+  <declare name="Echo">
+    <input name="value" type="f32" fallible="true"/>
+    <output name="value" type="f32" fallible="true"/>
+  </declare>
+  <element name="MeterView">
+    <input name="meter" type="Meter"/>
+    <bind chosen="chosen" uncached="uncached" checked="checked">
+      <ref name="meter"/>
+    </bind>
+    <provide name="chosen" ref="chosen"/>
+    <provide name="uncached" ref="uncached"/>
+    <provide name="alias" ref="uncached"/>
+    <provide name="checked" ref="checked"/>
+    <provide name="meter" ref="meter"/>
+  </element>
+  <export name="Meter"/>
+  <export name="Echo"/>
+  <export name="MeterView"/>
+</organon>

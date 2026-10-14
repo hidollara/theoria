@@ -1,0 +1,44 @@
+<organon version="1">
+  <import from="organon-theoria" />
+  <element name="Panel">
+    <input name="width" type="f32" />
+    <input name="height" type="f32" />
+    <input name="fill" type="Color" />
+    <let name="outline_element">
+      <Rect x="0" y="0" width="{width}" height="{height}" />
+    </let>
+    <bind path="outline">
+      <ref name="outline_element" />
+    </bind>
+    <let name="drawing_element">
+      <Draw source="{fill}">
+        <Fill>
+          <ref name="outline_element" />
+        </Fill>
+      </Draw>
+    </let>
+    <bind drawing="drawing">
+      <ref name="drawing_element" />
+    </bind>
+    <provide name="outline" ref="outline"/>
+    <provide name="drawing" ref="drawing"/>
+  </element>
+  <element name="Label">
+    <input name="fonts" type="Fonts" />
+    <input name="content" type="String" />
+    <input name="size" type="f32" />
+    <input name="foreground" type="Color" />
+    <let name="drawing_element">
+      <Text fonts="fonts" font_size="{size}" foreground="{foreground}">
+        <s t="{content}" />
+      </Text>
+    </let>
+    <bind drawing="drawing">
+      <ref name="drawing_element" />
+    </bind>
+    <provide name="text" ref="content"/>
+    <provide name="drawing" ref="drawing"/>
+  </element>
+  <export name="Panel"/>
+  <export name="Label"/>
+</organon>

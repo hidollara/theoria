@@ -1,0 +1,84 @@
+<organon version="1">
+  <import from="organon-theoria" />
+  <import from="./common.xml" />
+  <element name="Card">
+    <input name="fonts" type="Fonts" />
+    <input name="title" type="String" />
+    <input name="body" type="String" />
+    <input name="width" type="f32" />
+    <input name="height" type="f32" />
+    <input name="fill" type="Color" />
+    <bind drawing="panel_canvas" outline="panel_outline">
+      <Panel width="{width}" height="{height}" fill="{fill}" />
+    </bind>
+    <let name="heading">
+      <Label fonts="fonts" content="{title}" size="24" foreground="#202020" />
+    </let>
+    <bind drawing="heading_canvas">
+      <ref name="heading" />
+    </bind>
+    <bind drawing="body_canvas">
+      <Label fonts="fonts" content="{body}" size="16" foreground="#404040" />
+    </bind>
+    <bind drawing="footer_canvas">
+      <Label fonts="fonts" content="詳細を見る" size="12" foreground="#4488ff" />
+    </bind>
+    <let name="drawing_element">
+      <SourceOver space="Srgb">
+        <Drawing canvas="panel_canvas" />
+        <SourceOver space="Srgb">
+          <Translate x="16" y="16">
+            <Drawing canvas="heading_canvas" />
+          </Translate>
+          <SourceOver space="Srgb">
+            <Translate x="16" y="56">
+              <Drawing canvas="body_canvas" />
+            </Translate>
+            <Translate x="16" y="112">
+              <Drawing canvas="footer_canvas" />
+            </Translate>
+          </SourceOver>
+        </SourceOver>
+      </SourceOver>
+    </let>
+    <bind drawing="drawing">
+      <ref name="drawing_element" />
+    </bind>
+    <provide name="drawing" ref="drawing"/>
+    <provide name="outline" ref="panel_outline"/>
+    <provide name="background" ref="panel_canvas"/>
+    <provide name="label" ref="heading"/>
+  </element>
+  <element name="CardExample">
+    <input name="fonts" type="Fonts" />
+    <input name="title" type="String" />
+    <input name="body" type="String" />
+    <bind
+      drawing="card_canvas"
+      outline="hit_path"
+      background="background_canvas"
+      label="card_label"
+    >
+      <Card fonts="fonts" title="{title}" body="{body}" width="320" height="160" fill="#eeeeee" />
+    </bind>
+    <bind text="caption">
+      <ref name="card_label" />
+    </bind>
+    <let name="drawing_element">
+      <SourceOver space="Srgb">
+        <Drawing canvas="card_canvas" />
+        <Translate x="340" y="0">
+          <Drawing canvas="background_canvas" />
+        </Translate>
+      </SourceOver>
+    </let>
+    <bind drawing="drawing">
+      <ref name="drawing_element" />
+    </bind>
+    <provide name="drawing" ref="drawing"/>
+    <provide name="hit_path" ref="hit_path"/>
+    <provide name="caption" ref="caption"/>
+  </element>
+  <export name="Card"/>
+  <export name="CardExample"/>
+</organon>

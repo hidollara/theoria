@@ -1,0 +1,18 @@
+<organon version="1">
+  <import from="organon-theoria" />
+  <element name="Tile">
+    <input name="width" type="f32" />
+    <let name="path_element">
+      <Rect x="0" y="0" width="{width}" height="10" />
+    </let>
+    <bind path="path">
+      <ref name="path_element" />
+    </bind>
+    <provide name="path" ref="path"/>
+    <let name="extent">
+      <ref name="width" />
+    </let>
+    <provide name="extent" ref="extent"/>
+  </element>
+  <export name="Tile"/>
+</organon>

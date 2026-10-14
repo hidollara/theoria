@@ -1,0 +1,179 @@
+<organon version="1">
+  <import from="organon-theoria" />
+  <element name="Consumer">
+    <input name="button" type="Button" />
+    <let name="button_copy">
+      <ref name="button" />
+    </let>
+    <provide name="button_copy" ref="button_copy"/>
+    <let name="icon" inline="true">
+      <ref name="button_icon" />
+    </let>
+    <provide name="icon" ref="icon"/>
+    <let name="extent">
+      <ref name="button_icon_2_extent" />
+    </let>
+    <provide name="extent" ref="extent"/>
+    <let name="path">
+      <ref name="button_icon_3_path" />
+    </let>
+    <provide name="path" ref="path"/>
+    <let name="copy">
+      <Tile width="{button_icon_4_extent}" />
+    </let>
+    <provide name="copy" ref="copy"/>
+    <let name="attribute_extent">
+      <ref name="copy_extent" />
+    </let>
+    <provide name="attribute_extent" ref="attribute_extent"/>
+    <let name="forward">
+      <Forward input="button" />
+    </let>
+    <provide name="forward" ref="forward"/>
+    <let name="forward_extent">
+      <ref name="forward_button_icon_extent" />
+    </let>
+    <provide name="forward_extent" ref="forward_extent"/>
+    <bind icon="button_icon">
+      <ref name="button" />
+    </bind>
+    <bind icon="button_icon_2">
+      <ref name="button" />
+    </bind>
+    <bind extent="button_icon_2_extent">
+      <ref name="button_icon_2" />
+    </bind>
+    <bind icon="button_icon_3">
+      <ref name="button" />
+    </bind>
+    <bind path="button_icon_3_path">
+      <ref name="button_icon_3" />
+    </bind>
+    <bind icon="button_icon_4">
+      <ref name="button" />
+    </bind>
+    <bind extent="button_icon_4_extent">
+      <ref name="button_icon_4" />
+    </bind>
+    <bind extent="copy_extent">
+      <ref name="copy" />
+    </bind>
+    <bind button="forward_button">
+      <ref name="forward" />
+    </bind>
+    <bind icon="forward_button_icon">
+      <ref name="forward_button" />
+    </bind>
+    <bind extent="forward_button_icon_extent">
+      <ref name="forward_button_icon" />
+    </bind>
+  </element>
+  <element name="NativeConsumer">
+    <input name="button" type="Button" />
+    <input name="ready" type="f32" />
+    <let name="bridge">
+      <Bridge item="button" ready="{ready}" />
+    </let>
+    <provide name="bridge" ref="bridge"/>
+    <let name="extent">
+      <ref name="bridge_item_icon_extent" />
+    </let>
+    <provide name="extent" ref="extent"/>
+    <let name="path">
+      <ref name="bridge_item_2_icon_path" />
+    </let>
+    <provide name="path" ref="path"/>
+    <bind item="bridge_item">
+      <ref name="bridge" />
+    </bind>
+    <bind icon="bridge_item_icon">
+      <ref name="bridge_item" />
+    </bind>
+    <bind extent="bridge_item_icon_extent">
+      <ref name="bridge_item_icon" />
+    </bind>
+    <bind item="bridge_item_2">
+      <ref name="bridge" />
+    </bind>
+    <bind icon="bridge_item_2_icon">
+      <ref name="bridge_item_2" />
+    </bind>
+    <bind path="bridge_item_2_icon_path">
+      <ref name="bridge_item_2_icon" />
+    </bind>
+  </element>
+  <element name="NativeForward">
+    <input name="bridge" type="Bridge" />
+    <let name="same">
+      <ref name="bridge" />
+    </let>
+    <provide name="same" ref="same"/>
+    <bind item="button">
+      <ref name="bridge" />
+    </bind>
+    <bind icon="tile">
+      <ref name="button" />
+    </bind>
+    <bind extent="extent">
+      <ref name="tile" />
+    </bind>
+    <provide name="extent" ref="extent"/>
+  </element>
+  <declare name="Bridge">
+    <input name="item" type="Button" />
+    <input name="ready" type="f32" />
+    <output name="item" type="Button" fallible="true" inline="true" />
+  </declare>
+  <element name="Forward">
+    <input name="input" type="Button" />
+    <let name="alias" inline="true">
+      <ref name="input" />
+    </let>
+    <let name="button">
+      <ref name="alias" />
+    </let>
+    <provide name="button" ref="button"/>
+  </element>
+  <element name="Button">
+    <input name="tile" type="Tile" />
+    <let name="icon">
+      <ref name="tile" />
+    </let>
+    <provide name="icon" ref="icon"/>
+  </element>
+  <element name="Tile">
+    <input name="width" type="f32" />
+    <let name="extent" inline="true">
+      <ref name="width" />
+    </let>
+    <provide name="extent" ref="extent"/>
+    <let name="path_element">
+      <Rect x="0" y="0" width="{width}" height="10" />
+    </let>
+    <bind path="path">
+      <ref name="path_element" />
+    </bind>
+    <provide name="path" ref="path"/>
+  </element>
+  <element name="BoundConsumer">
+    <input name="button" type="Button" />
+    <bind icon="icon">
+      <ref name="button" />
+    </bind>
+    <bind extent="extent">
+      <ref name="icon" />
+    </bind>
+    <provide name="button_copy" ref="button"/>
+    <provide name="icon" ref="icon"/>
+    <provide name="extent" ref="extent"/>
+    <provide name="attribute_extent" ref="extent"/>
+  </element>
+  <export name="Consumer"/>
+  <export name="NativeConsumer"/>
+  <export name="NativeForward"/>
+  <export name="Bridge"/>
+  <export name="Forward"/>
+  <export name="Button"/>
+  <export name="Tile"/>
+  <export name="BoundConsumer"/>
+</organon>

@@ -1,0 +1,36 @@
+<organon version="1">
+  <import from="organon-theoria"/>
+  <element name="TextParts">
+    <input name="label" type="String"/>
+    <input name="size" type="f32"/>
+    <bind text="text" style="style">
+      <s t="{label}" font_size="{size}"/>
+    </bind>
+    <provide name="text" ref="text"/>
+    <provide name="style" ref="style"/>
+  </element>
+  <element name="CustomShape">
+    <input name="width" type="f32"/>
+    <bind path="boundary">
+      <Rect x="0" y="0" width="{width}" height="10"/>
+    </bind>
+    <provide name="boundary" ref="boundary"/>
+    <impl interface="Outline">
+      <provide name="path" ref="boundary"/>
+    </impl>
+  </element>
+  <element name="Scene">
+    <input name="width" type="f32"/>
+    <bind drawing="drawing">
+      <Draw source="#ffffff">
+        <Fill>
+          <CustomShape width="{width}"/>
+        </Fill>
+      </Draw>
+    </bind>
+    <provide name="drawing" ref="drawing"/>
+  </element>
+  <export name="TextParts"/>
+  <export name="CustomShape"/>
+  <export name="Scene"/>
+</organon>

@@ -1,0 +1,16 @@
+[package]
+name = "organon-theoria-proc-macro"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+proc-macro = true
+
+[dependencies]
+organon-core = { path = "../organon-core" }
+organon-cargo = { path = "../organon-cargo" }
+organon-theoria-compiler = { path = "../organon-theoria-compiler" }
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["full", "visit-mut"] }

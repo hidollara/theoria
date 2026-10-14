@@ -1,0 +1,101 @@
+<organon version="1">
+  <import from="organon-theoria" />
+  <import from="./parts/native.xml" />
+  <import from="./parts/tile.xml" />
+  <element name="Selections">
+    <input name="width" type="f32" />
+    <input name="caption" type="String" />
+    <let name="scaled" inline="true">
+      <ref name="scale_scaled" />
+    </let>
+    <provide name="scaled" ref="scaled"/>
+    <let name="text">
+      <ref name="label_text" />
+    </let>
+    <provide name="text" ref="text"/>
+    <let name="drawing_element">
+      <Translate x="3" y="4">
+        <Drawing canvas="card_drawing" />
+      </Translate>
+    </let>
+    <bind drawing="drawing">
+      <ref name="drawing_element" />
+    </bind>
+    <provide name="drawing" ref="drawing"/>
+    <let name="mask_element">
+      <Draw source="#ffffff">
+        <Fill>
+          <Shape path="tile_path" />
+        </Fill>
+      </Draw>
+    </let>
+    <bind drawing="mask">
+      <ref name="mask_element" />
+    </bind>
+    <provide name="mask" ref="mask"/>
+    <let name="path">
+      <ref name="tile_path_2" />
+    </let>
+    <provide name="path" ref="path"/>
+    <let name="extent">
+      <ref name="tile_extent" />
+    </let>
+    <provide name="extent" ref="extent"/>
+    <let name="tile">
+      <Tile width="{width}" />
+    </let>
+    <let name="constant">
+      <ref name="tile_extent_2" />
+    </let>
+    <provide name="constant" ref="constant"/>
+    <bind scaled="scale_scaled">
+      <Scale value="{width}" />
+    </bind>
+    <bind text="label_text">
+      <Label caption="{caption}" />
+    </bind>
+    <bind drawing="card_drawing">
+      <Card width="{scaled}" />
+    </bind>
+    <bind path="tile_path">
+      <Tile width="{width}" />
+    </bind>
+    <bind path="tile_path_2">
+      <ref name="tile" />
+    </bind>
+    <bind extent="tile_extent">
+      <ref name="tile" />
+    </bind>
+    <bind extent="tile_extent_2">
+      <Tile width="3" />
+    </bind>
+  </element>
+  <element name="Label">
+    <input name="caption" type="String" />
+    <let name="text">
+      <ref name="caption" />
+    </let>
+    <provide name="text" ref="text"/>
+  </element>
+  <element name="Card">
+    <input name="width" type="f32" />
+    <let name="drawing_element">
+      <Draw source="#ffffff">
+        <Fill>
+          <Shape path="tile_path" />
+        </Fill>
+      </Draw>
+    </let>
+    <bind drawing="drawing">
+      <ref name="drawing_element" />
+    </bind>
+    <provide name="drawing" ref="drawing"/>
+    <bind path="tile_path">
+      <Tile width="{width}" />
+    </bind>
+  </element>
+  <export name="Selections"/>
+  <export name="Scale"/>
+  <export name="Label"/>
+  <export name="Card"/>
+</organon>

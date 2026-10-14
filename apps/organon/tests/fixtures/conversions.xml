@@ -1,0 +1,20 @@
+<organon version="1">
+  <import from="organon-theoria"/>
+  <element name="Converted">
+    <input name="color" type="Color"/>
+    <input name="canvas" type="Canvas"/>
+    <bind drawing="solid">
+      <Draw source="{color}">
+        <All/>
+      </Draw>
+    </bind>
+    <bind drawing="nested">
+      <Draw source="{canvas}">
+        <All/>
+      </Draw>
+    </bind>
+    <provide name="solid" ref="solid"/>
+    <provide name="nested" ref="nested"/>
+  </element>
+  <export name="Converted"/>
+</organon>

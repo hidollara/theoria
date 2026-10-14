@@ -5,7 +5,7 @@ use theoria_event::{
     DynDispatch, EventSink, EventSource, SubmissionOutcome, Subscription, TrackedDispatch,
 };
 use theoria_reactive::{
-    Computed, Effect, ReadContext, SnapshotState, State, StateSetter, WriteContext,
+    Computed, Effect, Reactive, ReadContext, SnapshotState, State, StateSetter, WriteContext,
 };
 
 use crate::{
@@ -30,6 +30,12 @@ pub struct MountContext<'mount> {
 }
 
 impl<'mount> MountContext<'mount> {
+    /// Returns the reactive factory coordinating this component's nodes.
+    /// Nodes created directly through this factory are owned by their returned
+    /// handles, rather than retained until this component unmounts.
+    pub fn reactive(&self) -> &Reactive {
+        self.tree.reactive()
+    }
     pub(crate) fn new(
         tree: &'mount Rc<ComponentTree>,
         current: &'mount ConstructingComponent,

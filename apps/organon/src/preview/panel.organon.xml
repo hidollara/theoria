@@ -1,0 +1,34 @@
+<organon version="1">
+  <import from="organon-theoria" />
+  <element name="Panel">
+    <input name="width" type="f32" />
+    <input name="fill" type="Color" />
+    <input name="mark" type="Canvas" />
+    <let name="drawing_element">
+      <Translate x="32" y="32">
+        <SourceOver space="LinearSrgb">
+          <Draw source="#182435">
+            <Fill>
+              <Rect x="0" y="0" width="{width}" height="176" />
+            </Fill>
+          </Draw>
+          <SourceOver space="LinearSrgb">
+            <Draw source="{fill}">
+              <Fill>
+                <Rect x="0" y="0" width="8" height="176" />
+              </Fill>
+            </Draw>
+            <Translate x="36" y="48">
+              <Drawing canvas="mark" />
+            </Translate>
+          </SourceOver>
+        </SourceOver>
+      </Translate>
+    </let>
+    <bind drawing="drawing">
+      <ref name="drawing_element" />
+    </bind>
+    <provide name="drawing" ref="drawing"/>
+  </element>
+  <export name="Panel"/>
+</organon>

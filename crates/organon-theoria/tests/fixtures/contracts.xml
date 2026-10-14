@@ -1,0 +1,56 @@
+<organon version="1">
+  <import from="organon-theoria"/>
+  <interface name="Caption">
+    <output name="content" type="String"/>
+  </interface>
+  <interface name="Measure">
+    <output name="content" type="f32"/>
+  </interface>
+  <element name="Label">
+    <input name="text" type="String"/>
+    <input name="width" type="f32"/>
+    <impl interface="Caption">
+      <provide name="content" ref="text"/>
+    </impl>
+    <impl interface="Measure">
+      <provide name="content" ref="width"/>
+    </impl>
+  </element>
+  <element name="Consumer">
+    <input name="item" type="Caption"/>
+    <bind content="text">
+      <ref name="item"/>
+    </bind>
+    <provide name="text" ref="text"/>
+  </element>
+  <element name="Scene">
+    <input name="text" type="String"/>
+    <input name="width" type="f32"/>
+    <let name="label">
+      <Label text="{text}" width="{width}"/>
+    </let>
+    <bind text="text_output">
+      <Consumer item="label"/>
+    </bind>
+    <provide name="text_output" ref="text_output"/>
+  </element>
+  <element name="Forward">
+    <input name="label" type="Label"/>
+    <bind text="text">
+      <Consumer item="label"/>
+    </bind>
+    <provide name="text" ref="text"/>
+  </element>
+  <declare name="Native">
+    <input name="text" type="String"/>
+    <output name="text" type="String"/>
+    <implements interface="Caption"/>
+  </declare>
+  <export name="Caption"/>
+  <export name="Measure"/>
+  <export name="Label"/>
+  <export name="Consumer"/>
+  <export name="Scene"/>
+  <export name="Forward"/>
+  <export name="Native"/>
+</organon>
