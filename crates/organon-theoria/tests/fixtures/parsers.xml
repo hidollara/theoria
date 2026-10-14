@@ -1,0 +1,56 @@
+<organon version="1">
+  <import from="organon-theoria"/>
+  <declare-element name="StaticValue" tag="false"/>
+  <declare-element name="RuntimeValue" tag="false"/>
+  <declare-element name="Digits" tag="false"/>
+  <declare-element name="DigitSum">
+    <input name="digits" type="Digits"/>
+    <output name="value" type="number"/>
+  </declare-element>
+  <declare-element name="Sum">
+    <input name="base" type="StaticValue"/>
+    <input name="factors" type="RuntimeValue"/>
+    <output name="value" type="number"/>
+  </declare-element>
+  <declare-element name="Pass">
+    <input name="value" type="StaticValue"/>
+    <output name="value" type="StaticValue"/>
+  </declare-element>
+  <element name="Scene">
+    <input name="seed" type="StaticValue"/>
+    <bind value="result">
+      <Sum base="{later}" factors="2,3"/>
+    </bind>
+    <let name="later">
+      <ref name="seed"/>
+    </let>
+    <provide name="value" ref="result"/>
+  </element>
+  <element name="Constant">
+    <bind value="result">
+      <Sum base="seven" factors="1"/>
+    </bind>
+    <provide name="value" ref="result"/>
+  </element>
+  <element name="Cycle">
+    <bind value="cycle">
+      <Pass value="{cycle}"/>
+    </bind>
+    <provide name="value" ref="cycle"/>
+  </element>
+  <element name="Buffered">
+    <bind value="result">
+      <DigitSum digits="123456789"/>
+    </bind>
+    <provide name="value" ref="result"/>
+  </element>
+  <export name="StaticValue"/>
+  <export name="RuntimeValue"/>
+  <export name="Sum"/>
+  <export name="Pass"/>
+  <export name="Scene"/>
+  <export name="Constant"/>
+  <export name="Cycle"/>
+  <export name="Digits"/>
+  <export name="Buffered"/>
+</organon>

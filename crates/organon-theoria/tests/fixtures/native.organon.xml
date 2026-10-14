@@ -1,0 +1,39 @@
+<organon version="1">
+  <import from="organon-theoria"/>
+  <declare-element name="Meter">
+    <input name="choose" type="number"/>
+    <input name="left" type="number"/>
+    <input name="right" type="number"/>
+    <output name="chosen" type="number"/>
+    <output name="constant" type="String"/>
+    <output name="checked" type="number">
+      <error type="DrawingError"/>
+    </output>
+    <output name="doubled" type="number"/>
+    <output name="negative" type="number">
+      <error type="number"/>
+    </output>
+  </declare-element>
+  <declare-element name="Echo">
+    <input name="value" type="number">
+      <error type="DrawingError"/>
+    </input>
+    <output name="value" type="number">
+      <error type="DrawingError"/>
+    </output>
+  </declare-element>
+  <element name="MeterView">
+    <input name="meter" type="Meter"/>
+    <bind chosen="chosen" doubled="doubled" checked="checked">
+      <ref name="meter"/>
+    </bind>
+    <provide name="chosen" ref="chosen"/>
+    <provide name="doubled" ref="doubled"/>
+    <provide name="alias" ref="doubled"/>
+    <provide name="checked" ref="checked"/>
+    <provide name="meter" ref="meter"/>
+  </element>
+  <export name="Meter"/>
+  <export name="Echo"/>
+  <export name="MeterView"/>
+</organon>

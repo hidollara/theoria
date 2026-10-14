@@ -1,0 +1,11 @@
+<organon version="1">
+  <import from="organon-theoria"/>
+  <element name="Forward">
+    <input name="value" type="number"/>
+    <let name="forwarded">
+      <ref name="value"/>
+    </let>
+    <provide name="forwarded" ref="forwarded"/>
+  </element>
+  <export name="Forward"/>
+</organon>

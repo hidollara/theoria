@@ -1,0 +1,33 @@
+<organon version="1">
+  <import from="organon-theoria"/>
+  <element name="Echo">
+    <input name="text" type="String"/>
+    <provide name="text" ref="text"/>
+  </element>
+  <element name="Template">
+    <input name="label" type="String"/>
+    <input name="count" type="number"/>
+    <bind text="rendered">
+      <Echo text="こんにちは {{{later}}} / {count} / {later} 🦀"/>
+    </bind>
+    <let name="later">
+      <ref name="label"/>
+    </let>
+    <provide name="text" ref="rendered"/>
+  </element>
+  <element name="Literal">
+    <bind text="rendered">
+      <Echo text="日本語 {{}}&#10;&#9;🦀 ::theoria_reactive ::theoria_component"/>
+    </bind>
+    <provide name="text" ref="rendered"/>
+  </element>
+  <element name="Empty">
+    <bind text="rendered">
+      <Echo text=""/>
+    </bind>
+    <provide name="text" ref="rendered"/>
+  </element>
+  <export name="Template"/>
+  <export name="Literal"/>
+  <export name="Empty"/>
+</organon>

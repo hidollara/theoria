@@ -1,0 +1,9 @@
+<organon version="1">
+  <import from="organon-theoria"/>
+  <declare-element name="Scale">
+    <input name="value" type="number"/>
+    <output name="scaled" type="number"/>
+    <output name="original" type="number"/>
+  </declare-element>
+  <export name="Scale"/>
+</organon>

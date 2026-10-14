@@ -1,0 +1,109 @@
+<organon version="1">
+  <use from="organon-theoria" name="String"/>
+  <interface name="Label">
+    <output name="text" type="String"/>
+  </interface>
+  <declare-element name="Count">
+    <input name="text" type="String"/>
+    <output name="text" type="String"/>
+    <implements interface="Label"/>
+  </declare-element>
+  <declare-element name="Join" child="Label*">
+    <output name="text" type="String"/>
+  </declare-element>
+  <element name="Wrap" child="Label*">
+    <bind text="text">
+      <Join>
+        <Count text="["/>
+        <children/>
+        <Count text="/"/>
+        <children/>
+        <Count text="]"/>
+      </Join>
+    </bind>
+    <provide name="text" ref="text"/>
+  </element>
+  <element name="Relay" child="Count*">
+    <bind text="text">
+      <Wrap>
+        <children/>
+      </Wrap>
+    </bind>
+    <provide name="text" ref="text"/>
+  </element>
+  <element name="Scene">
+    <input name="label" type="String"/>
+    <bind text="text">
+      <Relay>
+        <Count text="{label}"/>
+        <Count text="b"/>
+      </Relay>
+    </bind>
+    <provide name="text" ref="text"/>
+  </element>
+  <element name="Empty">
+    <bind text="text"><Relay/></bind>
+    <provide name="text" ref="text"/>
+  </element>
+  <export name="Scene"/>
+  <export name="Empty"/>
+  <export name="Count"/>
+  <export name="Label"/>
+  <element name="OptionalWrap" child="Label?">
+    <bind text="text"><Join><children/></Join></bind>
+    <provide name="text" ref="text"/>
+  </element>
+  <element name="OptionalScene">
+    <bind text="empty"><OptionalWrap/></bind>
+    <bind text="single"><OptionalWrap><Count text="x"/></OptionalWrap></bind>
+    <provide name="empty" ref="empty"/>
+    <provide name="single" ref="single"/>
+  </element>
+  <use from="organon-theoria" name="Polygon"/>
+  <use from="organon-theoria" name="Point"/>
+  <use from="organon-theoria" name="SourceOver"/>
+  <use from="organon-theoria" name="Draw"/>
+  <use from="organon-theoria" name="All"/>
+  <use from="organon-theoria" name="Color"/>
+  <element name="DegeneratePolygons">
+    <bind path="empty"><Polygon/></bind>
+    <bind path="point">
+      <Polygon><Point x="1" y="2"/></Polygon>
+    </bind>
+    <bind path="line">
+      <Polygon><Point x="1" y="2"/><Point x="3" y="4"/></Polygon>
+    </bind>
+    <provide name="empty" ref="empty"/>
+    <provide name="point" ref="point"/>
+    <provide name="line" ref="line"/>
+  </element>
+  <element name="DrawingChildren">
+    <input name="color" type="Color"/>
+    <let name="first"><Draw source="{color}"><All/></Draw></let>
+    <let name="second"><Draw source="#00ff00"><All/></Draw></let>
+    <let name="third"><Draw source="#0000ff"><All/></Draw></let>
+    <bind drawing="original"><ref name="first"/></bind>
+    <bind drawing="empty"><SourceOver space="Srgb"/></bind>
+    <bind drawing="single">
+      <SourceOver space="Srgb"><ref name="first"/></SourceOver>
+    </bind>
+    <bind drawing="pair">
+      <SourceOver space="Srgb"><ref name="first"/><ref name="second"/></SourceOver>
+    </bind>
+    <bind drawing="many">
+      <SourceOver space="Srgb">
+        <ref name="first"/>
+        <ref name="second"/>
+        <ref name="third"/>
+      </SourceOver>
+    </bind>
+    <provide name="original" ref="original"/>
+    <provide name="empty" ref="empty"/>
+    <provide name="single" ref="single"/>
+    <provide name="pair" ref="pair"/>
+    <provide name="many" ref="many"/>
+  </element>
+  <export name="OptionalScene"/>
+  <export name="DegeneratePolygons"/>
+  <export name="DrawingChildren"/>
+</organon>
