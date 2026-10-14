@@ -1,0 +1,23 @@
+<organon version="1">
+  <import from="organon-theoria"/>
+  <element name="Host">
+    <let name="forward">
+      <Forward item="token"/>
+    </let>
+    <let name="token">
+      <Token text="token"/>
+    </let>
+    <provide name="forward" ref="forward"/>
+  </element>
+  <element name="Forward">
+    <input name="item" type="Token"/>
+    <provide name="item" ref="item"/>
+  </element>
+  <element name="Token">
+    <input name="text" type="String"/>
+    <provide name="text" ref="text"/>
+  </element>
+  <export name="Host"/>
+  <export name="Forward"/>
+  <export name="Token"/>
+</organon>

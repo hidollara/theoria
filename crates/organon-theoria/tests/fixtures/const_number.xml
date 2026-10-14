@@ -1,0 +1,25 @@
+<organon version="1">
+  <import from="organon-theoria"/>
+  <element name="Echo">
+    <input name="number" type="number"/>
+    <provide name="number" ref="number"/>
+  </element>
+  <element name="Literal">
+    <bind number="number">
+      <Echo number="1.00000005960464477539062500001"/>
+    </bind>
+    <provide name="number" ref="number"/>
+  </element>
+  <element name="Forward">
+    <input name="input" type="number"/>
+    <bind number="number">
+      <Echo number="{later}"/>
+    </bind>
+    <let name="later">
+      <ref name="input"/>
+    </let>
+    <provide name="number" ref="number"/>
+  </element>
+  <export name="Literal"/>
+  <export name="Forward"/>
+</organon>

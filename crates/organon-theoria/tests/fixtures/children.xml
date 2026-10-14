@@ -1,0 +1,52 @@
+<organon version="1">
+  <use from="organon-theoria" name="String"/>
+  <interface name="Label">
+    <output name="text" type="String"/>
+  </interface>
+  <declare-element name="Count">
+    <input name="text" type="String"/>
+    <output name="text" type="String"/>
+    <implements interface="Label"/>
+  </declare-element>
+  <declare-element name="Join" child="Label">
+    <output name="text" type="String"/>
+  </declare-element>
+  <element name="Wrap" child="Label">
+    <bind text="text">
+      <Join>
+        <Count text="["/>
+        <children/>
+        <Count text="/"/>
+        <children/>
+        <Count text="]"/>
+      </Join>
+    </bind>
+    <provide name="text" ref="text"/>
+  </element>
+  <element name="Relay" child="Count">
+    <bind text="text">
+      <Wrap>
+        <children/>
+      </Wrap>
+    </bind>
+    <provide name="text" ref="text"/>
+  </element>
+  <element name="Scene">
+    <input name="label" type="String"/>
+    <bind text="text">
+      <Relay>
+        <Count text="{label}"/>
+        <Count text="b"/>
+      </Relay>
+    </bind>
+    <provide name="text" ref="text"/>
+  </element>
+  <element name="Empty">
+    <bind text="text"><Relay/></bind>
+    <provide name="text" ref="text"/>
+  </element>
+  <export name="Scene"/>
+  <export name="Empty"/>
+  <export name="Count"/>
+  <export name="Label"/>
+</organon>

@@ -1,0 +1,212 @@
+<organon version="1">
+  <declare-element name="DrawingError" tag="false"/>
+  <export name="DrawingError"/>
+  <interface name="Display">
+    <output name="text" type="String"/>
+  </interface>
+  <interface name="ColorSource">
+    <output name="field" type="ColorField"/>
+  </interface>
+  <interface name="TextContent">
+    <output name="content" type="TextData" />
+    <output name="text" type="String" />
+    <output name="style" type="StyleOverride" />
+  </interface>
+  <interface name="Position">
+    <output name="point" type="PointValue" />
+  </interface>
+  <interface name="Drawable">
+    <output name="canvas" type="Canvas">
+      <error type="DrawingError"/>
+    </output>
+  </interface>
+  <interface name="CoverageSource">
+    <output name="coverage" type="Coverage">
+      <error type="DrawingError"/>
+    </output>
+  </interface>
+  <interface name="Outline">
+    <output name="path" type="Path">
+      <error type="DrawingError"/>
+    </output>
+  </interface>
+  <declare-element tag="false" name="StyleOverride" />
+  <declare-element tag="false" name="number">
+    <implements interface="Display"/>
+  </declare-element>
+  <declare-element tag="false" name="String">
+    <implements interface="Display"/>
+  </declare-element>
+  <declare-element tag="false" name="Color">
+    <implements interface="ColorSource"/>
+  </declare-element>
+  <declare-element tag="false" name="ColorField">
+    <implements interface="ColorSource"/>
+  </declare-element>
+  <declare-element tag="false" name="Canvas">
+    <implements interface="ColorSource"/>
+  </declare-element>
+  <declare-element tag="false" name="Path" />
+  <declare-element tag="false" name="Fonts" />
+  <declare-element tag="false" name="Coverage" />
+  <declare-element tag="false" name="PointValue" />
+  <declare-element tag="false" name="TextData" />
+  <declare-element tag="false" name="Space" />
+  <declare-element name="Rect">
+    <input name="x" type="number" />
+    <input name="y" type="number" />
+    <input name="width" type="number" />
+    <input name="height" type="number" />
+    <output name="path" type="Path">
+      <error type="DrawingError"/>
+    </output>
+    <implements interface="Outline"/>
+  </declare-element>
+  <declare-element name="Point">
+    <input name="x" type="number" />
+    <input name="y" type="number" />
+    <implements interface="Position" />
+  </declare-element>
+  <declare-element name="Polygon" child="Position" min-children="3">
+    <output name="path" type="Path">
+      <error type="DrawingError"/>
+    </output>
+    <implements interface="Outline"/>
+  </declare-element>
+  <declare-element name="All">
+    <output name="coverage" type="Coverage">
+      <error type="DrawingError"/>
+    </output>
+    <implements interface="CoverageSource"/>
+  </declare-element>
+  <declare-element
+    name="Fill"
+    child="Outline"
+    min-children="1"
+    max-children="1">
+    <output name="coverage" type="Coverage">
+      <error type="DrawingError"/>
+    </output>
+    <implements interface="CoverageSource"/>
+  </declare-element>
+  <declare-element
+    name="Draw"
+    child="CoverageSource"
+    min-children="1"
+    max-children="1">
+    <input name="source" type="ColorSource" />
+    <output name="drawing" type="Canvas">
+      <error type="DrawingError"/>
+    </output>
+    <implements interface="Drawable"/>
+  </declare-element>
+  <declare-element
+    name="Translate"
+    child="Drawable"
+    min-children="1"
+    max-children="1">
+    <input name="x" type="number" />
+    <input name="y" type="number" />
+    <output name="drawing" type="Canvas">
+      <error type="DrawingError"/>
+    </output>
+    <implements interface="Drawable"/>
+  </declare-element>
+  <declare-element
+    name="SourceOver"
+    child="Drawable"
+    min-children="2"
+    max-children="2">
+    <input name="space" type="Space" />
+    <output name="drawing" type="Canvas">
+      <error type="DrawingError"/>
+    </output>
+    <implements interface="Drawable"/>
+  </declare-element>
+  <declare-element name="s">
+    <input name="t" type="String" />
+    <input name="fonts" type="Fonts" optional="true" />
+    <input name="font_size" type="number" optional="true" />
+    <input name="foreground" type="ColorSource" optional="true" />
+    <output name="content" type="TextData" />
+    <output name="text" type="String" />
+    <output name="style" type="StyleOverride" />
+    <implements interface="TextContent"/>
+  </declare-element>
+  <declare-element name="span" child="TextContent">
+    <input name="fonts" type="Fonts" optional="true" />
+    <input name="font_size" type="number" optional="true" />
+    <input name="foreground" type="ColorSource" optional="true" />
+    <output name="content" type="TextData" />
+    <output name="text" type="String" />
+    <output name="style" type="StyleOverride" />
+    <implements interface="TextContent"/>
+  </declare-element>
+  <declare-element name="br">
+    <output name="content" type="TextData" />
+    <output name="text" type="String" />
+    <output name="style" type="StyleOverride" />
+    <implements interface="TextContent"/>
+  </declare-element>
+  <declare-element name="Text" child="TextContent">
+    <input name="fonts" type="Fonts" />
+    <input name="font_size" type="number" />
+    <input name="foreground" type="ColorSource" />
+    <input name="wrap_width" type="number" optional="true" />
+    <output name="drawing" type="Canvas">
+      <error type="DrawingError"/>
+    </output>
+    <implements interface="Drawable"/>
+  </declare-element>
+  <declare-element name="Shape">
+    <input name="path" type="Path">
+      <error type="DrawingError"/>
+    </input>
+    <output name="path" type="Path">
+      <error type="DrawingError"/>
+    </output>
+    <implements interface="Outline"/>
+  </declare-element>
+  <declare-element name="Drawing">
+    <input name="canvas" type="Canvas">
+      <error type="DrawingError"/>
+    </input>
+    <output name="drawing" type="Canvas">
+      <error type="DrawingError"/>
+    </output>
+    <implements interface="Drawable"/>
+  </declare-element>
+  <export name="Display"/>
+  <export name="ColorSource"/>
+  <export name="TextContent"/>
+  <export name="Position"/>
+  <export name="Drawable"/>
+  <export name="CoverageSource"/>
+  <export name="Outline"/>
+  <export name="StyleOverride"/>
+  <export name="number"/>
+  <export name="String"/>
+  <export name="Color"/>
+  <export name="ColorField"/>
+  <export name="Canvas"/>
+  <export name="Path"/>
+  <export name="Fonts"/>
+  <export name="Coverage"/>
+  <export name="PointValue"/>
+  <export name="TextData"/>
+  <export name="Space"/>
+  <export name="Rect"/>
+  <export name="Point"/>
+  <export name="Polygon"/>
+  <export name="All"/>
+  <export name="Fill"/>
+  <export name="Draw"/>
+  <export name="Translate"/>
+  <export name="SourceOver"/>
+  <export name="s"/>
+  <export name="span"/>
+  <export name="br"/>
+  <export name="Text"/>
+  <export name="Shape"/>
+  <export name="Drawing"/>
+</organon>

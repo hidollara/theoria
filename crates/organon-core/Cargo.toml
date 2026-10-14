@@ -1,0 +1,12 @@
+[package]
+name = "organon-core"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[features]
+default = ["xml"]
+xml = ["dep:roxmltree"]
+
+[dependencies]
+roxmltree = { version = "0.21.1", optional = true }

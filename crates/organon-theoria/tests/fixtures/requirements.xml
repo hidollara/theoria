@@ -1,0 +1,111 @@
+<organon version="1">
+  <import from="organon-theoria"/>
+  <declare-element name="Fault" tag="false"/>
+  <declare-element name="Hidden" tag="false"/>
+  <interface name="FixedBox">
+    <output name="value" type="Boxed"/>
+  </interface>
+  <declare-element name="Risk">
+    <input name="n" type="number"/>
+    <output name="n" type="number">
+      <error type="Fault"/>
+    </output>
+  </declare-element>
+  <element name="Boxed">
+    <input name="n" type="number"/>
+    <provide name="n" ref="n"/>
+  </element>
+  <element name="Probe">
+    <input name="n" type="number"/>
+    <bind n="risk">
+      <Risk n="{n}"/>
+    </bind>
+    <let name="direct">
+      <Boxed n="10"/>
+    </let>
+    <let name="branch">
+      <select type="Boxed">
+        <case result="inner">
+          <let name="inner">
+            <Boxed n="10"/>
+          </let>
+        </case>
+      </select>
+    </let>
+    <let name="dependent">
+      <Boxed n="{risk}"/>
+    </let>
+    <let name="dependentBranch">
+      <select type="Boxed">
+        <case result="inner">
+          <let name="inner">
+            <Boxed n="{risk}"/>
+          </let>
+        </case>
+      </select>
+    </let>
+    <let name="recovered">
+      <try type="number" result="{risk}">
+        <catch type="Fault" result="9"/>
+      </try>
+    </let>
+    <let name="text">
+      <select type="String">
+        <case result="n={risk}, again={risk}"/>
+      </select>
+    </let>
+    <let name="literal">
+      <select type="Hidden">
+        <case result="literal"/>
+      </select>
+    </let>
+    <let name="implicit">
+      <select type="Hidden">
+        <case result="dependency"/>
+      </select>
+    </let>
+    <provide name="direct" ref="direct"/>
+    <provide name="branch" ref="branch"/>
+    <provide name="dependent" ref="dependent"/>
+    <provide name="dependent_branch" ref="dependentBranch"/>
+    <provide name="recovered" ref="recovered"/>
+    <provide name="text" ref="text"/>
+    <provide name="literal" ref="literal"/>
+    <provide name="implicit" ref="implicit"/>
+    <impl interface="FixedBox">
+      <provide name="value" ref="branch"/>
+    </impl>
+  </element>
+  <interface name="FallibleNumber">
+    <output name="n" type="number">
+      <error type="Fault"/>
+    </output>
+  </interface>
+  <element name="FallibleForward">
+    <input name="n" type="number">
+      <error type="Fault"/>
+    </input>
+    <let name="alias">
+      <ref name="n"/>
+    </let>
+    <provide name="n" ref="alias"/>
+    <impl interface="FallibleNumber">
+      <provide name="n" ref="alias"/>
+    </impl>
+  </element>
+  <element name="FallibleProjection">
+    <input name="source" type="FallibleForward"/>
+    <bind n="n">
+      <ref name="source"/>
+    </bind>
+    <provide name="n" ref="n"/>
+    <impl interface="FallibleNumber">
+      <provide name="n" ref="n"/>
+    </impl>
+  </element>
+  <export name="FallibleNumber"/>
+  <export name="FallibleForward"/>
+  <export name="FallibleProjection"/>
+  <export name="Boxed"/>
+  <export name="Probe"/>
+</organon>
