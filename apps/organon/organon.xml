@@ -1,0 +1,8 @@
+<organon version="1">
+  <use from="./src/preview/panel.organon.xml" name="Panel" />
+  <use from="./src/preview/label.organon.xml" name="Label" />
+  <use from="./src/preview/badge.organon.xml" name="Badge" />
+  <export name="Panel" />
+  <export name="Label" />
+  <export name="Badge" />
+</organon>

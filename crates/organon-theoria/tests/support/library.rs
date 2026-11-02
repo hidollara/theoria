@@ -15,11 +15,16 @@ fn copy_tree(from: &Path, to: &Path) {
     }
 }
 
-pub fn run(suite: &str, cases: &[(&str, &[&str])]) {
-    run_checked(suite, cases, &[]);
+pub fn run(suite: &str, cases: &[(&str, &[&str])], app: bool) {
+    run_checked(suite, cases, app, &[]);
 }
 
-pub fn run_checked(suite: &str, cases: &[(&str, &[&str])], failures: &[(&str, &str, &str, &str)]) {
+pub fn run_checked(
+    suite: &str,
+    cases: &[(&str, &[&str])],
+    app: bool,
+    failures: &[(&str, &str, &str, &str)],
+) {
     let package = Path::new(env!("CARGO_MANIFEST_DIR"));
     let repository = package.ancestors().nth(2).unwrap();
     let executable = std::env::current_exe().unwrap();
@@ -89,6 +94,12 @@ pub fn run_checked(suite: &str, cases: &[(&str, &[&str])], failures: &[(&str, &s
                 .to_string_lossy()
                 .replace('\\', "/");
             manifest.push_str(&format!("{name} = {{ path = {path:?} }}\n"));
+        }
+        if app {
+            let path = package.to_string_lossy().replace('\\', "/");
+            manifest.push_str(&format!(
+                "organon-app = {{ path = {path:?} }}\nfont-test-data = \"0.8.0\"\n"
+            ));
         }
         fs::write(root.join("Cargo.toml"), manifest).unwrap();
         fs::copy(repository.join("Cargo.lock"), root.join("Cargo.lock")).unwrap();
