@@ -35,6 +35,7 @@ fn xml_elements_forward_children_without_rebuilding_them() {
     library::run(
         "theoria",
         &[("children", &["tests/fixtures/children.xml"])],
+        false,
     );
 }
 
@@ -43,6 +44,7 @@ fn decimal_literals_and_references_are_checked_at_compile_time() {
     library::run_checked(
         "theoria",
         &[("const_number", &["tests/fixtures/const_number.xml"])],
+        false,
         &[
             (
                 "tests/fixtures/const_number.xml",
@@ -83,6 +85,7 @@ fn string_templates_are_parsed_and_checked_at_compile_time() {
     library::run_checked(
         "theoria",
         &[("const_template", &["tests/fixtures/const_template.xml"])],
+        false,
         &[
             (
                 "tests/fixtures/const_template.xml",
@@ -117,6 +120,7 @@ fn attribute_preparation_requires_const_parsers_and_preserves_runtime_constructi
     library::run_checked(
         "theoria",
         &[("parsers", &["tests/fixtures/parsers.xml"])],
+        false,
         &[
             (
                 "case.rs",
@@ -172,5 +176,6 @@ fn generated_libraries_preserve_construction_and_reactive_contracts() {
             ("typed_attributes", &["tests/fixtures/typed_attributes.xml"]),
             ("unified", &["tests/fixtures/unified.xml"]),
         ],
+        false,
     );
 }

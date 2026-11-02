@@ -909,6 +909,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "organon-app"
+version = "0.1.0"
+dependencies = [
+ "font-test-data",
+ "organon-app-preview-macro",
+ "organon-cargo",
+ "organon-core",
+ "organon-theoria",
+ "png",
+ "roxmltree",
+ "theoria-canvas",
+ "theoria-reactive",
+ "theoria-renderer",
+ "theoria-text",
+ "theoria-vulkan",
+ "theoria-windows",
+]
+
+[[package]]
+name = "organon-app-preview-macro"
+version = "0.1.0"
+dependencies = [
+ "organon-cargo",
+ "organon-core",
+ "organon-theoria-compiler",
+ "proc-macro2",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "organon-cargo"
 version = "0.1.0"
 dependencies = [

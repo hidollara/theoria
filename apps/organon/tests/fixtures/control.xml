@@ -1,0 +1,323 @@
+<organon version="1">
+  <import from="organon-theoria"/>
+  <declare-predicate name="Positive">
+    <input name="value" type="number"/>
+  </declare-predicate>
+  <predicate name="Enabled">
+    <input name="value" type="number"/>
+    <Positive value="{value}"/>
+  </predicate>
+  <element name="Control">
+    <input name="number" type="number"/>
+    <let name="label">
+      <try type="String" result="{choice}">
+        <let name="choice">
+          <select type="String">
+            <case result="ready">
+              <Enabled value="{number}"/>
+            </case>
+            <case throw="number" result="{number}"/>
+          </select>
+        </let>
+        <catch type="number" name="error" throw="String" result="negative">
+          <not>
+            <Positive value="{error}"/>
+          </not>
+        </catch>
+        <catch result="handled"/>
+      </try>
+    </let>
+    <provide name="label" ref="label"/>
+  </element>
+  <declare-element name="Risk">
+    <input name="value" type="number"/>
+    <output name="checked" type="String">
+      <error type="number"/>
+    </output>
+  </declare-element>
+  <element name="Recover">
+    <input name="number" type="number"/>
+    <let name="label">
+      <try type="String" result="{checked}">
+        <bind checked="checked">
+          <Risk value="{number}"/>
+        </bind>
+        <catch type="number" name="error" result="recovered {error}"/>
+      </try>
+    </let>
+    <provide name="label" ref="label"/>
+  </element>
+  <element name="Several">
+    <input name="number" type="number"/>
+    <let name="value">
+      <select type="String">
+        <case throw="number" result="{number}">
+          <Positive value="{number}"/>
+        </case>
+        <case throw="String" result="negative"/>
+      </select>
+    </let>
+    <provide name="value" ref="value"/>
+  </element>
+  <element name="NoMatch">
+    <let name="value">
+      <try type="String" result="{missing}">
+        <let name="missing">
+          <select type="String">
+            <case result="unreachable">
+              <any/>
+            </case>
+          </select>
+        </let>
+        <catch result="should not catch a contract violation"/>
+      </try>
+    </let>
+    <provide name="value" ref="value"/>
+  </element>
+  <declare-predicate name="Broken">
+    <error type="number"/>
+  </declare-predicate>
+  <element name="CatchDisplay">
+    <let name="label">
+      <try type="String" result="{choice}">
+        <let name="choice">
+          <select type="String">
+            <case result="unused">
+              <Broken/>
+            </case>
+          </select>
+        </let>
+        <catch type="Display" name="why" result="{message}">
+          <bind text="message">
+            <ref name="why"/>
+          </bind>
+        </catch>
+      </try>
+    </let>
+    <provide name="label" ref="label"/>
+  </element>
+  <element name="ShortCircuit">
+    <let name="label">
+      <try type="String" result="{choice}">
+        <let name="choice">
+          <select type="String">
+            <case result="first">
+              <any>
+                <all/>
+                <Broken/>
+              </any>
+            </case>
+            <case result="second">
+              <Broken/>
+            </case>
+          </select>
+        </let>
+        <unreachable/>
+      </try>
+    </let>
+    <provide name="label" ref="label"/>
+  </element>
+  <export name="CatchDisplay"/>
+  <element name="ClassifyError">
+    <input name="number" type="number"/>
+    <let name="label">
+      <try type="String" result="{failed}">
+        <let name="failed">
+          <select type="String">
+            <case throw="number" result="{number}"/>
+          </select>
+        </let>
+        <catch type="number" name="reason" throw="String" result="positive">
+          <Positive value="{reason}"/>
+        </catch>
+        <catch type="number" name="reason" throw="number" result="{reason}"/>
+      </try>
+    </let>
+    <provide name="label" ref="label"/>
+  </element>
+  <export name="ClassifyError"/>
+  <element name="CheckAssumption">
+    <input name="n" type="number"/>
+    <let name="label">
+      <try type="String" result="{checked}">
+        <let name="checked">
+          <try type="String" result="{native}">
+            <bind label="native">
+              <TwoErrors n="{n}"/>
+            </bind>
+            <catch type="String" result="recovered"/>
+            <unreachable type="Display"/>
+            <catch result="too late"/>
+          </try>
+        </let>
+        <catch result="outer recovery"/>
+      </try>
+    </let>
+    <provide name="label" ref="label"/>
+  </element>
+  <export name="CheckAssumption"/>
+  <declare-element name="TwoErrors">
+    <input name="n" type="number"/>
+    <output name="label" type="String">
+      <error type="number"/>
+      <error type="String"/>
+    </output>
+  </declare-element>
+  <declare-element name="ThirdNumber" tag="false"/>
+  <export name="ThirdNumber"/>
+  <declare-predicate name="TwoPredicateErrors">
+    <error type="String"/>
+    <error type="number"/>
+  </declare-predicate>
+  <element name="ReadNativeErrors">
+    <input name="n" type="number"/>
+    <let name="label">
+      <try type="String" result="{native}">
+        <bind label="native">
+          <TwoErrors n="{n}"/>
+        </bind>
+        <catch type="String" name="s" result="{s}"/>
+        <catch type="number" name="v" result="number {v}"/>
+      </try>
+    </let>
+    <let name="predicate">
+      <try type="String" result="{choice}">
+        <let name="choice">
+          <select type="String">
+            <case result="unreachable">
+              <TwoPredicateErrors/>
+            </case>
+          </select>
+        </let>
+        <catch result="caught"/>
+      </try>
+    </let>
+    <provide name="label" ref="label"/>
+    <provide name="predicate" ref="predicate"/>
+  </element>
+  <export name="TwoErrors"/>
+  <export name="TwoPredicateErrors"/>
+  <export name="ReadNativeErrors"/>
+  <declare-element name="AcceptErrors">
+    <input name="value" type="String">
+      <error type="String"/>
+      <error type="number"/>
+    </input>
+    <output name="label" type="String"/>
+  </declare-element>
+  <element name="ForwardErrors">
+    <bind label="source">
+      <TwoErrors n="-8"/>
+    </bind>
+    <bind label="label">
+      <AcceptErrors value="{source}"/>
+    </bind>
+    <provide name="label" ref="label"/>
+  </element>
+  <export name="AcceptErrors"/>
+  <export name="ForwardErrors"/>
+  <declare-predicate name="IsReady">
+    <input name="text" type="String"/>
+  </declare-predicate>
+  <predicate name="ReadyOrRecovered">
+    <input name="reading" type="String">
+      <error type="number"/>
+    </input>
+    <let name="text">
+      <try type="String" result="{candidate}">
+        <let name="candidate">
+          <select type="String">
+            <case result="ready">
+              <ReadDirectly reading="{reading}"/>
+            </case>
+            <case result="pending"/>
+          </select>
+        </let>
+        <catch result="ready"/>
+      </try>
+    </let>
+    <IsReady text="{text}"/>
+  </predicate>
+  <predicate name="ReadDirectly">
+    <input name="reading" type="String">
+      <error type="number"/>
+    </input>
+    <IsReady text="{reading}"/>
+  </predicate>
+  <element name="PredicateInputs">
+    <input name="sample" type="String">
+      <error type="number"/>
+      <error type="String"/>
+    </input>
+    <let name="local">
+      <select type="String">
+        <case result="yes">
+          <ReadyOrRecovered reading="{sample}"/>
+        </case>
+        <case result="no"/>
+      </select>
+    </let>
+    <let name="outer">
+      <try type="String" result="{answer}">
+        <let name="answer">
+          <select type="String">
+            <case result="yes">
+              <ReadDirectly reading="{sample}"/>
+            </case>
+            <case result="no"/>
+          </select>
+        </let>
+        <catch result="caller"/>
+      </try>
+    </let>
+    <provide name="local" ref="local"/>
+    <provide name="outer" ref="outer"/>
+  </element>
+  <export name="IsReady"/>
+  <export name="PredicateInputs"/>
+  <element name="Caption">
+    <input name="text" type="String">
+      <error type="number"/>
+    </input>
+    <let name="label">
+      <try type="String" result="{text}">
+        <catch type="number" result="offline"/>
+      </try>
+    </let>
+    <provide name="label" ref="label"/>
+    <provide name="raw" ref="text"/>
+  </element>
+  <element name="RiskCaption">
+    <input name="n" type="number"/>
+    <bind checked="value">
+      <Risk value="{n}"/>
+    </bind>
+    <bind label="caption">
+      <Caption text="{value}"/>
+    </bind>
+    <provide name="caption" ref="caption"/>
+  </element>
+  <export name="Caption"/>
+  <element name="InterfaceFailure">
+    <input name="text" type="String">
+      <error type="Display"/>
+    </input>
+    <let name="label">
+      <try type="String" result="{text}">
+        <catch type="number" throw="String" result="must not downcast"/>
+        <catch type="Display" result="offline"/>
+      </try>
+    </let>
+    <provide name="label" ref="label"/>
+  </element>
+  <export name="InterfaceFailure"/>
+  <export name="RiskCaption"/>
+  <export name="ShortCircuit"/>
+  <export name="Broken"/>
+  <export name="Several"/>
+  <export name="NoMatch"/>
+  <export name="Risk"/>
+  <export name="Recover"/>
+  <export name="Control"/>
+  <export name="Positive"/>
+</organon>

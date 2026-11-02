@@ -1,0 +1,134 @@
+<organon version="1">
+  <import from="organon-theoria"/>
+  <interface name="First"/>
+  <interface name="Second"/>
+  <declare-element name="Fault" tag="false">
+    <implements interface="First"/>
+    <implements interface="Second"/>
+  </declare-element>
+  <declare-element name="Raise">
+    <output name="value" type="String">
+      <error type="Fault"/>
+    </output>
+  </declare-element>
+  <element name="FirstThenSecond">
+    <input name="value" type="String">
+      <error type="First"/>
+      <error type="Second"/>
+    </input>
+    <let name="label">
+      <try type="String" result="{value}">
+        <catch type="First" result="first"/>
+        <catch type="Second" result="second"/>
+      </try>
+    </let>
+    <provide name="label" ref="label"/>
+  </element>
+  <element name="SecondThenFirst">
+    <input name="value" type="String">
+      <error type="Second"/>
+      <error type="First"/>
+    </input>
+    <let name="label">
+      <try type="String" result="{value}">
+        <catch type="First" result="first"/>
+        <catch type="Second" result="second"/>
+      </try>
+    </let>
+    <provide name="label" ref="label"/>
+  </element>
+  <element name="Example">
+    <bind value="failure">
+      <Raise/>
+    </bind>
+    <bind label="first">
+      <FirstThenSecond value="{failure}"/>
+    </bind>
+    <bind label="second">
+      <SecondThenFirst value="{failure}"/>
+    </bind>
+    <provide name="first" ref="first"/>
+    <provide name="second" ref="second"/>
+  </element>
+  <export name="Fault"/>
+  <export name="Raise"/>
+  <export name="First"/>
+  <export name="Second"/>
+  <export name="Example"/>
+  <declare-element name="NativeFirst">
+    <input name="value" type="String">
+      <error type="First"/>
+      <error type="Second"/>
+    </input>
+    <output name="label" type="String"/>
+  </declare-element>
+  <declare-element name="NativeSecond">
+    <input name="value" type="String">
+      <error type="Second"/>
+      <error type="First"/>
+    </input>
+    <output name="label" type="String"/>
+  </declare-element>
+  <interface name="FirstOutput">
+    <output name="value" type="String">
+      <error type="First"/>
+      <error type="Second"/>
+    </output>
+  </interface>
+  <interface name="SecondOutput">
+    <output name="value" type="String">
+      <error type="Second"/>
+      <error type="First"/>
+    </output>
+  </interface>
+  <element name="Provider">
+    <bind value="failure">
+      <Raise/>
+    </bind>
+    <impl interface="FirstOutput">
+      <provide name="value" ref="failure"/>
+    </impl>
+    <impl interface="SecondOutput">
+      <provide name="value" ref="failure"/>
+    </impl>
+  </element>
+  <element name="BoundaryExample">
+    <bind value="failure">
+      <Raise/>
+    </bind>
+    <bind label="native_first">
+      <NativeFirst value="{failure}"/>
+    </bind>
+    <bind label="native_second">
+      <NativeSecond value="{failure}"/>
+    </bind>
+    <let name="provider">
+      <Provider/>
+    </let>
+    <bind value="first_value">
+      <ref name="provider" type="FirstOutput"/>
+    </bind>
+    <bind value="second_value">
+      <ref name="provider" type="SecondOutput"/>
+    </bind>
+    <let name="first_output">
+      <try type="String" result="{first_value}">
+        <catch type="First" result="first"/>
+        <catch type="Second" result="second"/>
+      </try>
+    </let>
+    <let name="second_output">
+      <try type="String" result="{second_value}">
+        <catch type="First" result="first"/>
+        <catch type="Second" result="second"/>
+      </try>
+    </let>
+    <provide name="native_first" ref="native_first"/>
+    <provide name="native_second" ref="native_second"/>
+    <provide name="first_output" ref="first_output"/>
+    <provide name="second_output" ref="second_output"/>
+  </element>
+  <export name="NativeFirst"/>
+  <export name="NativeSecond"/>
+  <export name="BoundaryExample"/>
+</organon>

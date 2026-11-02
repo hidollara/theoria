@@ -1,0 +1,136 @@
+<organon version="1">
+  <import from="organon-theoria"/>
+  <element name="Paint">
+    <input name="field" type="ColorField"/>
+    <impl interface="ColorSource">
+      <provide name="field" ref="field"/>
+    </impl>
+  </element>
+  <element name="Painted">
+    <input name="shade" type="ColorField"/>
+    <bind drawing="drawing">
+      <Draw source="paint">
+        <All/>
+      </Draw>
+    </bind>
+    <let name="paint">
+      <Paint field="{shade}"/>
+    </let>
+    <provide name="drawing" ref="drawing"/>
+  </element>
+  <element name="RegionDrawing">
+    <input name="region" type="CoverageSource"/>
+    <bind drawing="drawing">
+      <Draw source="#ff0000">
+        <ref name="region"/>
+      </Draw>
+    </bind>
+    <provide name="drawing" ref="drawing"/>
+  </element>
+  <element name="DefaultReference">
+    <let name="draw">
+      <RegionDrawing region="all"/>
+    </let>
+    <let name="all">
+      <All/>
+    </let>
+    <bind drawing="drawing">
+      <ref name="draw"/>
+    </bind>
+    <provide name="drawing" ref="drawing"/>
+  </element>
+  <interface name="LocalPaint">
+    <output name="field" type="ColorField"/>
+  </interface>
+  <element name="LocalSource">
+    <input name="field" type="ColorField"/>
+    <impl interface="LocalPaint">
+      <provide name="field" ref="field"/>
+    </impl>
+  </element>
+  <element name="LocalConsumer">
+    <input name="paint" type="LocalPaint"/>
+    <bind field="field">
+      <ref name="paint"/>
+    </bind>
+    <provide name="field" ref="field"/>
+  </element>
+  <element name="LocalExample">
+    <input name="shade" type="ColorField"/>
+    <bind field="field">
+      <LocalConsumer paint="local"/>
+    </bind>
+    <let name="local">
+      <LocalSource field="{shade}"/>
+    </let>
+    <provide name="field" ref="field"/>
+  </element>
+  <export name="Paint"/>
+  <export name="Painted"/>
+  <export name="RegionDrawing"/>
+  <export name="DefaultReference"/>
+  <export name="LocalPaint"/>
+  <export name="LocalSource"/>
+  <export name="LocalConsumer"/>
+  <export name="LocalExample"/>
+  <interface name="PaintHolder">
+    <output name="paint" type="LocalPaint"/>
+  </interface>
+  <element name="Holder">
+    <input name="local" type="LocalSource"/>
+    <impl interface="PaintHolder">
+      <provide name="paint" ref="local"/>
+    </impl>
+  </element>
+  <element name="Views">
+    <input name="shade" type="ColorField"/>
+    <let name="local">
+      <LocalSource field="{shade}"/>
+    </let>
+    <let name="holder">
+      <Holder local="local"/>
+    </let>
+    <bind paint="paint">
+      <ref name="holder" type="PaintHolder"/>
+    </bind>
+    <bind field="field">
+      <ref name="paint"/>
+    </bind>
+    <provide name="field" ref="field"/>
+  </element>
+  <export name="Views"/>
+  <interface name="HasDisplay">
+    <output name="value" type="Display">
+      <error type="number"/>
+      <error type="String"/>
+    </output>
+  </interface>
+  <declare-element name="MeasurementValue">
+    <input name="n" type="number"/>
+    <output name="reading" type="number">
+      <error type="number"/>
+    </output>
+  </declare-element>
+  <element name="Measurement">
+    <input name="n" type="number"/>
+    <bind reading="reading">
+      <MeasurementValue n="{n}"/>
+    </bind>
+    <provide name="reading" ref="reading"/>
+    <impl interface="HasDisplay">
+      <provide name="value" ref="reading"/>
+    </impl>
+  </element>
+  <element name="Caption">
+    <input name="n" type="number">
+      <error type="String"/>
+    </input>
+    <bind text="caption">
+      <ref name="n" type="Display"/>
+    </bind>
+    <provide name="caption" ref="caption"/>
+  </element>
+  <export name="Measurement"/>
+  <export name="HasDisplay"/>
+  <export name="Caption"/>
+</organon>

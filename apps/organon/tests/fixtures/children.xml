@@ -1,0 +1,35 @@
+<organon version="1">
+  <import from="organon-theoria"/>
+  <element name="Wrap" child="TextContent">
+    <bind text="text">
+      <span>
+        <s t="["/>
+        <children/>
+        <s t="/"/>
+        <children/>
+        <s t="]"/>
+      </span>
+    </bind>
+    <provide name="text" ref="text"/>
+  </element>
+  <element name="Relay" child="s">
+    <bind text="text"><Wrap><children/></Wrap></bind>
+    <provide name="text" ref="text"/>
+  </element>
+  <element name="Scene">
+    <input name="label" type="String"/>
+    <bind text="text">
+      <Relay>
+        <s t="{label}"/>
+        <s t="b"/>
+      </Relay>
+    </bind>
+    <provide name="text" ref="text"/>
+  </element>
+  <element name="Empty">
+    <bind text="text"><Relay/></bind>
+    <provide name="text" ref="text"/>
+  </element>
+  <export name="Scene"/>
+  <export name="Empty"/>
+</organon>

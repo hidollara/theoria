@@ -13,6 +13,8 @@ component mounting, events, state and evaluation timing.
 | `organon-theoria` | Theoria construction contracts, value sources, attribute interpretation and native Element implementations. |
 | `organon-theoria-compiler` | Rust generation from checked declarations; its construction plan is private. |
 | `organon-theoria-proc-macro` | Macro input syntax, diagnostics and Theoria implementation binding. |
+| `organon-app` | Source editing and XML generation, interpreting IR through native adapters, preview presentation and PNG output. |
+| `organon-app-preview-macro` | App-owned adapter generation for its IR evaluator; located under `apps/organon`. |
 
 `organon-cargo` implements core's `loader::Sources` contract with `CargoSources`.
 It owns Cargo metadata lookup, package-root `organon.xml` discovery, dependency
@@ -23,8 +25,9 @@ paths are rewritten structurally, preserving literals and qualified associated
 items; generated code uses the runtime facade from the outset. These helpers
 do not generate Theoria types or evaluation code.
 
-Compilation uses this package adapter. Core contains no Cargo feature or package
-discovery API. `library!` uses the compiler during macro expansion.
+Compilation and preview hosts use this same package adapter. Core contains no
+Cargo feature or package discovery API. The app has no direct compiler dependency;
+`library!` uses the compiler during macro expansion.
 
 Core's shared vocabulary lives outside its syntax structures: `identifier` defines
 `Identifier`, which syntax stores for definition, binding and port names, while
@@ -234,7 +237,9 @@ library authors do not need to reference `__organon` directly.
 
 `organon-theoria` does not interpret IR or retain output dictionaries. Its
 attribute registry contains type contracts used by ordinary generated code;
-it has no entry point for constructing an Element by name.
+it has no entry point for constructing an Element by name. The app owns
+`evaluation::Registry`, native construction adapters and inspectable `Object`
+outputs. Its `Value` wraps an attribute value with optional output information.
 
 ## XML construction
 
@@ -341,16 +346,41 @@ Element-level `provide` exposes a binding as an output and does not publish the 
 Importing a library reuses its Rust types and implementation identities instead
 of constructing unrelated copies of them.
 
+## Preview and editing
+
+`organon_app::Document` owns the source text, including incomplete or invalid edits.
+Its XML inspection retains source ranges and attribute order; replacing an existing
+attribute leaves surrounding comments, quotation and whitespace untouched.
+`Document::definitions()` extracts shared content for core analysis. This is not
+yet a graphical or general structural editor.
+
+`organon_app::xml::write` generates fresh XML from shared definitions using an
+app-owned presentation policy; it is not a source-preserving save. It rejects
+content that cannot be represented faithfully in XML. `LibraryPreview::from_definitions`
+accepts unsaved definition content at a source location beneath an existing directory,
+so preview does not require an existing source file, XML generation or a disk write.
+The lower-level `document::analyze` also accepts arbitrary host-owned source IDs.
+
+`organon_cargo::load(path)` supplies the loaded graph and checked IR.
+The preview maps declaration identities to a `Registry` supplied by its host,
+then calls `Registry::evaluate`. Rust implementations must already be compiled
+into that host; XML does not dynamically load arbitrary Rust code.
+
+The preview app supports a native window and PNG output. There is no graphical
+property editor, file watcher or automatic reload yet. Re-evaluation uses new
+sample inputs and the current checked definition. See the
+[app README](../apps/organon/README.md) for commands.
+
 ## Validation
 
 ```sh
-cargo test -p organon-core -p organon-cargo -p organon-theoria -p organon-theoria-compiler -p organon-theoria-proc-macro -j 1
+cargo test -p organon-core -p organon-cargo -p organon-theoria -p organon-theoria-compiler -p organon-theoria-proc-macro -p organon-app -j 1
 cargo check -p organon-core --no-default-features
 ```
 
 Tests cover ordered editing, import visibility and aliases, generated-library
 linkage, dynamic dependencies, fixed propagation and shared evaluation, attribute contracts,
-and agreement between const and dynamic attribute parsing.
+and equality of compiled and interpreted geometry.
 
 ## Cargo integration
 
@@ -668,7 +698,7 @@ There is no per-import parser override and no XML parser selector. The proc macr
 does not execute library Rust code: it emits calls in Rust const contexts. Rustc
 evaluates the parsers, and only the returned construction closures run at startup.
 
-### Interface outputs
+### Interface outputs and preview
 
 A declaration may contain `<implements interface="Numeric"/>` without declaring
 an Element-specific output. Rust implements the interface directly:
@@ -696,6 +726,22 @@ with those values. Each Element's implementation is complete in either XML or Ru
 `Rect` and `Polygon` implement Outline, Fill consumes Outline, and Draw consumes
 CoverageSource and ColorSource. `s`, `span` and `br` implement TextContent; their
 style output is a StyleOverride and their content preserves nested text structure.
+
+The preview host explicitly calls `organon_app::preview_library!("organon.xml")`
+in a module to generate its `registry()`. This emits adapters in the host using
+the providers' existing typed construction and output APIs. Providers need no
+app dependency or preview registration; `library!` emits no preview adapters.
+The app's `organon-app-preview-macro` generates these adapters at build time.
+It uses the compiler's ordinary provider-path helpers and the generated public
+`Type`, builder, output and `Provide` contracts. The framework compiler and
+proc-macro crate contain no preview entry point or adapter generator.
+
+Preview retains native values alongside output projections and uses the same
+parsers and Rust computations as compiled code. XML-defined interface outputs
+are converted into native interface values by app-owned adapters. The attribute
+runtime only sees their ordinary interface provider, never an output dictionary.
+Providers must be compiled into the host; XML cannot load arbitrary Rust code.
+The app owns editable source and interprets IR obtained from its shared definition content.
 
 ### Output ownership
 
