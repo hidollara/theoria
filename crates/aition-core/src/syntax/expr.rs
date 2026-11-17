@@ -22,6 +22,23 @@ pub enum Expr {
         callee: Box<AstNode<Expr>>,
         arguments: Vec<AstNode<Expr>>,
     },
+    /// Type-directed branching: `?(arguments)[lambdas]`.
+    ///
+    /// ```text
+    /// ?(item)[
+    ///     [panel: Panel] (drawPanel(panel)),
+    ///     [label: Label] (drawing) { drawing = drawLabel(label); },
+    /// ]
+    /// ```
+    Match {
+        /// Input expressions in source order, including multiple inputs such
+        /// as `?(left, right)`.
+        arguments: Vec<AstNode<Expr>>,
+        /// Explicit lambdas in source order, not arbitrary function expressions.
+        /// Semantic analysis determines parameter compatibility and which
+        /// input type alternatives remain after each branch.
+        branches: Vec<AstNode<Lambda>>,
+    },
     /// `<Panel width="100"/>` or `<Layer>(drawing)</Layer>`.
     Tag(AstNode<Tag>),
     /// `*(first, second)`, including the empty array `*()` and a trailing comma.
