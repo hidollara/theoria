@@ -1,4 +1,4 @@
-use super::{name::Identifier, parser::node::AstNode, types::Type};
+use super::{body::Body, lambda::Lambda, name::Identifier, parser::node::AstNode, types::Type};
 
 /// An expression as written in source, before name resolution or type checking.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -29,7 +29,9 @@ pub enum Expr {
     },
     /// `*(first, second)`, including the empty array `*()` and a trailing comma.
     Array(Vec<AstNode<Expr>>),
-    /// `(expression)`. Each explicit pair of grouping parentheses is retained.
+    /// `[width: Width] (width)` or `[width] (drawing) { drawing = makeDrawing(width); }`.
+    Lambda(AstNode<Lambda>),
+    /// `(expression)` with optional helper definitions.
     /// Parentheses belonging to a call are represented by `Call` instead.
-    Group(Box<AstNode<Expr>>),
+    Body(AstNode<Body>),
 }
