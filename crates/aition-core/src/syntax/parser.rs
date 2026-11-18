@@ -1,5 +1,6 @@
 //! Parsing lexemes into syntax, without name resolution or type checking.
 
+pub(super) mod grammar;
 pub(super) mod node;
 pub(super) mod token;
 
@@ -7,6 +8,7 @@ use std::{error::Error, fmt, ops::Range};
 
 use crate::lexer::{Cursor, LexError, LexemeIterator, Symbol};
 
+pub use self::grammar::Parser;
 pub use self::token::TokenStream;
 
 /// A type that provides a parser for constructing itself.
@@ -14,22 +16,17 @@ pub trait Parsable: Sized {
     fn parser() -> impl Parser<Output = Self>;
 }
 
-/// A parser that returns a value and the remaining input on success.
-/// An unconsumed mismatch returns `None`; an error consumes the stream.
-pub trait Parser: Sized {
-    type Output;
-
-    fn expected(&self) -> Expected;
-
-    fn read<'s, I: LexemeIterator<'s>>(
-        &self,
-        tokens: TokenStream<'s, I>,
-    ) -> Result<(Option<Self::Output>, TokenStream<'s, I>), ParseError>;
-}
-
 /// Interpret a complete token stream using `T`'s grammar.
-/// The AST remains independent of the collected trivia.
+/// Source spans accompany syntax nodes; trivia is collected separately.
 /// Both success and failure consume the stream.
+///
+/// ```
+/// use aition_core::{lexer, syntax::{parse, TokenStream, ast::{AstNode, Identifier}}};
+///
+/// let tokens = TokenStream::new(lexer::from_str("Panel"));
+/// let parsed = parse::<AstNode<Identifier>>(tokens).unwrap();
+/// assert_eq!(parsed.syntax().span.as_ref().unwrap().range, 0..5);
+/// ```
 pub fn parse<'s, T: Parsable>(
     tokens: TokenStream<'s, impl LexemeIterator<'s>>,
 ) -> Result<Parsed<T>, ParseError> {
@@ -42,7 +39,7 @@ pub fn parse<'s, T: Parsable>(
     Ok(Parsed { syntax, trivia })
 }
 
-/// Owned syntax and trivia, without retaining the original source.
+/// Owned syntax, source locations, and trivia, without retaining the original source.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Parsed<T> {
     syntax: T,
@@ -57,7 +54,7 @@ impl<T> Parsed<T> {
     pub fn trivia(&self) -> &[Trivia] {
         &self.trivia
     }
-    /// Detach the AST from the source information for transformation or editing.
+    /// Take the syntax tree, including its node spans, without the collected trivia.
     pub fn into_syntax(self) -> T {
         self.syntax
     }
@@ -85,6 +82,7 @@ pub enum TriviaKind {
 /// What the parser needed at the error location.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Expected {
+    Identifier,
     Symbol(Symbol),
     EndOfInput,
 }
@@ -121,6 +119,7 @@ impl fmt::Display for ParseError {
         };
         formatter.write_str("expected ")?;
         match expected {
+            Expected::Identifier => formatter.write_str("an identifier")?,
             Expected::Symbol(symbol) => write!(formatter, "'{symbol}'")?,
             Expected::EndOfInput => formatter.write_str("end of input")?,
         }

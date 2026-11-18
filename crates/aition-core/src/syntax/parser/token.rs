@@ -115,6 +115,10 @@ impl<'source, I: LexemeIterator<'source>> TokenStream<'source, I> {
         }
     }
 
+    pub(super) fn consumed(&self) -> usize {
+        self.consumed
+    }
+
     pub(super) fn mark(&mut self) -> Result<Mark, ParseError> {
         let start = self
             .peek()?
