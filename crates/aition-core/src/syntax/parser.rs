@@ -21,10 +21,10 @@ pub trait Parsable: Sized {
 /// Both success and failure consume the stream.
 ///
 /// ```
-/// use aition_core::{lexer, syntax::{parse, TokenStream, ast::{AstNode, Identifier}}};
+/// use aition_core::{lexer, syntax::{parse, TokenStream, ast::{AstNode, Type}}};
 ///
 /// let tokens = TokenStream::new(lexer::from_str("Panel"));
-/// let parsed = parse::<AstNode<Identifier>>(tokens).unwrap();
+/// let parsed = parse::<AstNode<Type>>(tokens).unwrap();
 /// assert_eq!(parsed.syntax().span.as_ref().unwrap().range, 0..5);
 /// ```
 pub fn parse<'s, T: Parsable>(
@@ -83,6 +83,7 @@ pub enum TriviaKind {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Expected {
     Identifier,
+    Type,
     Symbol(Symbol),
     EndOfInput,
 }
@@ -120,6 +121,7 @@ impl fmt::Display for ParseError {
         formatter.write_str("expected ")?;
         match expected {
             Expected::Identifier => formatter.write_str("an identifier")?,
+            Expected::Type => formatter.write_str("a type")?,
             Expected::Symbol(symbol) => write!(formatter, "'{symbol}'")?,
             Expected::EndOfInput => formatter.write_str("end of input")?,
         }
@@ -139,3 +141,6 @@ impl Error for ParseError {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
