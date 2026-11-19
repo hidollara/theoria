@@ -1,4 +1,6 @@
 use super::{
+    body::Body,
+    lambda::Lambda,
     name::Identifier,
     node::AstNode,
     parser::{ParseError, Parser, Syntax, choice, list, optional, sequence, string, symbol},
@@ -36,9 +38,11 @@ pub enum Expr {
     },
     /// `*(first, second)`, including the empty array `*()` and a trailing comma.
     Array(Vec<AstNode<Expr>>),
-    /// `(expression)`. Each explicit pair of grouping parentheses is retained.
+    /// `[width: Width] (width)` or `[width] (drawing) { drawing = makeDrawing(width); }`.
+    Lambda(AstNode<Lambda>),
+    /// `(expression)` with optional helper definitions.
     /// Parentheses belonging to a call are represented by `Call` instead.
-    Group(Box<AstNode<Expr>>),
+    Body(AstNode<Body>),
 }
 
 impl Syntax for Expr {
@@ -111,16 +115,11 @@ fn primary() -> impl Parser<Output = Expr> {
         ),
     ]
     .map(|((), items)| Expr::Array(items));
-    let group = sequence![
-        symbol(Symbol::OpenParen),
-        AstNode::<Expr>::parser(),
-        symbol(Symbol::CloseParen),
-    ]
-    .map(|((), expr, ())| Expr::Group(Box::new(expr)));
     choice![
         literal,
         array,
-        group,
+        AstNode::<Body>::parser().map(Expr::Body),
+        AstNode::<Lambda>::parser().map(Expr::Lambda),
         AstNode::<Identifier>::parser().map(Expr::Name)
     ]
 }

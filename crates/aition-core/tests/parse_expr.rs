@@ -103,12 +103,16 @@ fn explicit_expression_parentheses_are_retained_independently_of_calls() {
         panic!("expected call")
     };
     assert_name(&arguments[0], "x");
-    let Expr::Group(inner) = callee.value else {
-        panic!("expected outer group")
+    let Expr::Body(outer) = callee.value else {
+        panic!("expected outer body")
     };
-    let Expr::Group(name) = inner.value else {
-        panic!("expected inner group")
+    let inner = outer.value.result;
+    let Expr::Body(body) = inner.value else {
+        panic!("expected inner body")
     };
+    let name = body.value.result;
+    assert!(outer.value.bindings.is_none());
+    assert!(body.value.bindings.is_none());
     assert_name(&name, "f");
     assert_eq!(callee.span.unwrap().range(), 0..5);
     assert_eq!(inner.span.unwrap().range(), 1..4);
