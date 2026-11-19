@@ -1,4 +1,4 @@
-use super::{ParseError, Parser, Rule};
+use super::{ParseError, Parser, Rule, empty, or};
 
 /// Read `R = (item R) or ε` iteratively, with one consuming item per step.
 pub fn repeated<R: Rule>(rule: R) -> impl Rule<Output = Vec<R::Output>> {
@@ -16,9 +16,10 @@ impl<R: Rule> Rule for Repeated<R> {
 
     fn read(&self, parser: &mut Parser<'_, '_>) -> Result<Option<Self::Output>, ParseError> {
         let mut values = Vec::new();
+        let step = or((&self.0).map(Some), empty().map(|()| None));
         loop {
             let consumed = parser.consumed();
-            let value = self.0.read(parser)?;
+            let value = parser.read(&step)?;
             let Some(value) = value else {
                 return Ok(Some(values));
             };
@@ -30,3 +31,6 @@ impl<R: Rule> Rule for Repeated<R> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -1,16 +1,33 @@
 //! Parsing tokens into syntax, without name resolution or type checking.
+//!
+//! A terminal consumes one matching token via `Parser::next_if`. A `rule`
+//! closure sequences reads in source order. `or`, `empty`, and `defer` provide
+//! ordered alternatives, empty success, and references to other productions.
+//! Repetition and delimited lists build on those operations.
 
+mod closure;
+mod located;
+mod map;
+mod name;
+mod primitive;
 mod repeated;
 mod rule;
+mod symbol;
 mod trivia;
+mod word;
 
 use super::lexer::{LexError, Token, TokenKind, TokenStream, TokenStreamItem};
 use crate::input::Cursor;
 use std::{error::Error, fmt};
 
+pub(super) use self::closure::rule;
+use self::located::located;
+use self::primitive::{defer, empty, or};
 pub(super) use self::repeated::repeated;
 pub use self::rule::Rule;
+pub(super) use self::symbol::symbol;
 pub(super) use self::trivia::trivia;
+pub(super) use self::word::word;
 
 /// Reads a token stream and applies grammar rules at the current position.
 pub struct Parser<'s, 'input> {
@@ -41,6 +58,18 @@ impl<'s, 'input> Parser<'s, 'input> {
             TokenStreamItem::Token(token) => token.start,
             TokenStreamItem::Eoi(end) => *end,
         })
+    }
+
+    fn evaluate<T>(
+        &mut self,
+        f: impl FnOnce(&mut Self) -> Result<T, ParseError>,
+    ) -> Result<Option<T>, ParseError> {
+        let start = self.consumed;
+        let result = f(self);
+        if self.consumed == start && matches!(result, Err(ParseError::Unexpected { .. })) {
+            return Ok(None);
+        }
+        result.map(Some)
     }
 
     /// Read a required construct at the current token.

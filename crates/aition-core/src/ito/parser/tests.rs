@@ -1,6 +1,31 @@
+mod name;
+
 use super::{ParseError, Parser, Rule, repeated, trivia};
 use crate::ito::lexer::{self, LexError, TokenKind, TokenStream, TokenStreamItem};
-use crate::syntax::ast::TriviaKind;
+use crate::syntax::ast::{AstNode, NodeSource, TriviaKind};
+
+pub(super) fn read_complete<'s, T>(
+    mut tokens: impl TokenStream<'s>,
+    rule: impl Rule<Output = (T, NodeSource)>,
+) -> Result<AstNode<T>, ParseError> {
+    let mut parser = Parser::new(&mut tokens);
+    let node = parser.read(rule)?;
+    if let TokenStreamItem::Token(next) = parser.peek()? {
+        return Err(ParseError::expected("end of input".into(), next.start));
+    }
+    Ok(node.into())
+}
+
+fn node_source<T>(node: &AstNode<T>) -> &NodeSource {
+    node.source
+        .as_ref()
+        .expect("parsed node must have source information")
+}
+
+fn node_bytes<T>(node: &AstNode<T>) -> std::ops::Range<usize> {
+    let source = node_source(node);
+    source.start.offset..source.end.offset
+}
 
 impl<'source, F> TokenStream<'source> for F
 where
@@ -71,6 +96,20 @@ fn reading_trivia_and_peeking_preserve_lexical_errors() {
     let error = tokens.peek().unwrap_err();
     assert!(matches!(error, ParseError::Lexical(LexError::Input(_))));
 }
+
+pub(super) trait ReadFragment: super::Rule {
+    fn read_fragment<'s, 'input>(
+        &self,
+        tokens: &'input mut dyn TokenStream<'s>,
+    ) -> Result<(Option<Self::Output>, super::Parser<'s, 'input>), super::ParseError> {
+        let mut parser = Parser::new(tokens);
+        parser.read(repeated(trivia()))?;
+        let value = self.read(&mut parser)?;
+        Ok((value, parser))
+    }
+}
+
+impl<R: super::Rule> ReadFragment for R {}
 
 #[test]
 fn trivia_matches_one_token_and_leaves_a_word_or_eoi_untouched() {
