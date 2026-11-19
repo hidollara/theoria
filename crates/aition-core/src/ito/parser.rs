@@ -5,7 +5,10 @@
 //! ordered alternatives, empty success, and references to other productions.
 //! Repetition and delimited lists build on those operations.
 
+mod choice;
 mod closure;
+mod label;
+mod list;
 mod located;
 mod map;
 mod name;
@@ -14,13 +17,16 @@ mod repeated;
 mod rule;
 mod symbol;
 mod trivia;
+mod types;
 mod word;
 
 use super::lexer::{LexError, Token, TokenKind, TokenStream, TokenStreamItem};
 use crate::input::Cursor;
 use std::{error::Error, fmt};
 
+pub(super) use self::choice::choice;
 pub(super) use self::closure::rule;
+use self::list::list;
 use self::located::located;
 use self::primitive::{defer, empty, or};
 pub(super) use self::repeated::repeated;

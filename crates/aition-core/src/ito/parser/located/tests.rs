@@ -1,7 +1,8 @@
 use super::super::{ParseError, Parser, Rule, defer, repeated, trivia};
+use super::super::{choice, rule, symbol};
 use super::located;
 use crate::ito::lexer::{self, Symbol, TokenKind, TokenStream};
-use crate::ito::parser::tests::ReadFragment;
+use crate::ito::parser::tests::{ReadFragment, read_complete};
 use crate::syntax::ast::{NodeSource, Trivia};
 use std::cell::Cell;
 
@@ -105,4 +106,42 @@ fn located_rule_starts_after_trivia_read_by_its_caller() {
     assert!(source.trivia.is_empty());
     assert_eq!(before[0].start.offset..before[0].end.offset, 0..9);
     assert_eq!(after[1].start.offset..after[1].end.offset, 12..20);
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct Nested(usize);
+
+fn nested() -> impl Rule<Output = (Nested, NodeSource)> {
+    located(choice![
+        rule("'.'", |parser| {
+            let end = parser.read(symbol(Symbol::Dot))?;
+            Ok((Nested(0), Vec::new(), end))
+        }),
+        rule("'('", |parser| {
+            parser.read(symbol(Symbol::OpenParen))?;
+            let mut gaps = parser.read(repeated(trivia()))?;
+            let (inner, source) = parser.read(defer(nested))?;
+            gaps.extend(source.trivia);
+            gaps.extend(parser.read(repeated(trivia()))?);
+            let end = parser.read(symbol(Symbol::CloseParen))?;
+            Ok((Nested(inner.0 + 1), gaps, end))
+        }),
+    ])
+}
+
+#[test]
+fn recursive_grammar_is_built_from_combinators_without_a_read_wrapper() {
+    let text = format!("{} . {}", "(".repeat(32), ")".repeat(32));
+    let nested = read_complete(lexer::from_str(&text), nested()).unwrap();
+    assert_eq!(nested.value, Nested(32));
+}
+
+#[test]
+fn recursive_grammar_reports_the_missing_closing_symbol() {
+    let error = read_complete(lexer::from_str("((.)"), nested()).unwrap_err();
+    assert_eq!(error.cursor().offset, 4);
+    let ParseError::Unexpected { expected, .. } = error else {
+        panic!("expected a syntax error");
+    };
+    assert_eq!(expected, symbol(Symbol::CloseParen).description());
 }

@@ -34,6 +34,13 @@ pub(super) struct Or<R, Q> {
     separator: &'static str,
 }
 
+impl<R, Q> Or<R, Q> {
+    pub(super) fn separator(mut self, separator: &'static str) -> Self {
+        self.separator = separator;
+        self
+    }
+}
+
 impl<R: Rule, Q: Rule<Output = R::Output>> Rule for Or<R, Q> {
     type Output = R::Output;
 

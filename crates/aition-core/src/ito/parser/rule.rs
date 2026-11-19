@@ -1,3 +1,4 @@
+use super::label;
 use super::map;
 use super::{ParseError, Parser};
 
@@ -12,6 +13,11 @@ pub trait Rule: Sized {
     /// the syntax needed at the failure position in `read` itself.
     fn description(&self) -> String;
     fn read(&self, parser: &mut Parser<'_, '_>) -> Result<Option<Self::Output>, ParseError>;
+
+    /// Name an unconsumed mismatch without replacing errors within the construct.
+    fn label(self, description: &'static str) -> impl Rule<Output = Self::Output> {
+        label::label(self, description)
+    }
 
     /// Transform a matched result without changing the consumed input.
     fn map<O>(self, f: impl Fn(Self::Output) -> O) -> impl Rule<Output = O> {

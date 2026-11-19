@@ -1,4 +1,4 @@
-use super::super::{ParseError, Rule, repeated, symbol, trivia};
+use super::super::{ParseError, Rule, choice, repeated, symbol, trivia};
 use super::rule;
 use crate::ito::lexer::{self, LexError, Symbol, TokenKind, TokenStreamItem};
 use crate::ito::parser::Parser;
@@ -165,6 +165,72 @@ fn lexical_and_input_errors_are_fatal_even_before_consumption() {
     ));
     let error = rule
         .read_fragment(&mut lexer::from_reader(&b"\xff"[..]))
+        .err()
+        .unwrap();
+    assert!(matches!(error, ParseError::Lexical(LexError::Input(_))));
+}
+
+#[test]
+fn nested_misses_are_recoverable_only_before_consumption() {
+    let first = rule("'('", |parser| {
+        parser.read(rule("'('", |parser| {
+            parser.read(symbol(Symbol::OpenParen))?;
+            parser.read(symbol(Symbol::CloseParen))
+        }))
+    });
+    let rule = choice![first, symbol(Symbol::Comma)];
+    let mut stream = lexer::from_str(",");
+    let (value, mut parser) = rule.read_fragment(&mut stream).unwrap();
+    assert!(value.is_some());
+    assert!(matches!(parser.peek().unwrap(), TokenStreamItem::Eoi(_)));
+    let error = rule
+        .read_fragment(&mut lexer::from_str("(,"))
+        .err()
+        .unwrap();
+    assert!(matches!(error, ParseError::Unexpected { expected, cursor }
+        if expected == "')'" && cursor.offset == 1));
+}
+
+#[test]
+fn rules_return_none_only_for_an_unconsumed_mismatch() {
+    let rule = rule("'['", |parser| {
+        parser.read(symbol(Symbol::OpenBracket))?;
+        parser.read(repeated(trivia()))?;
+        let present = rule("'('", |parser| {
+            parser.read(symbol(Symbol::OpenParen))?;
+            parser.read(symbol(Symbol::CloseParen))
+        })
+        .read(parser)?;
+        parser.read(repeated(trivia()))?;
+        parser.read(symbol(Symbol::CloseBracket))?;
+        Ok(present)
+    });
+    for (source, expected) in [
+        ("[]", None),
+        ("[ // absent\n ]", None),
+        ("[ // present\n () ]", Some(())),
+    ] {
+        let mut stream = lexer::from_str(source);
+        let (value, mut parser) = rule.read_fragment(&mut stream).unwrap();
+        assert_eq!(value.map(|inner| inner.map(|_| ())), Some(expected));
+        assert!(matches!(parser.peek().unwrap(), TokenStreamItem::Eoi(_)));
+    }
+    let error = rule
+        .read_fragment(&mut lexer::from_str("[(]"))
+        .err()
+        .unwrap();
+    assert!(matches!(error, ParseError::Unexpected { expected, cursor }
+        if expected == "')'" && cursor.offset == 2));
+    let error = rule
+        .read_fragment(&mut lexer::from_str("[\"unfinished"))
+        .err()
+        .unwrap();
+    assert!(matches!(
+        error,
+        ParseError::Lexical(LexError::UnterminatedString { .. })
+    ));
+    let error = rule
+        .read_fragment(&mut lexer::from_reader(&b"[\xff"[..]))
         .err()
         .unwrap();
     assert!(matches!(error, ParseError::Lexical(LexError::Input(_))));
