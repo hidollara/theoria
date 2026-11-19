@@ -7,6 +7,7 @@
 
 mod choice;
 mod closure;
+mod expr;
 mod label;
 mod list;
 mod located;
@@ -15,6 +16,7 @@ mod name;
 mod primitive;
 mod repeated;
 mod rule;
+mod string;
 mod symbol;
 mod trivia;
 mod types;
@@ -31,6 +33,7 @@ use self::located::located;
 use self::primitive::{defer, empty, or};
 pub(super) use self::repeated::repeated;
 pub use self::rule::Rule;
+pub(super) use self::string::string;
 pub(super) use self::symbol::symbol;
 pub(super) use self::trivia::trivia;
 pub(super) use self::word::word;

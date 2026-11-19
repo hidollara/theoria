@@ -1,3 +1,4 @@
+mod expr;
 mod name;
 mod source_locations;
 mod trivia_ownership;

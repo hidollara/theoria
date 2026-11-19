@@ -39,7 +39,7 @@ impl Cursor {
         self
     }
 
-    fn advance(&mut self, ch: char) {
+    pub(crate) fn advance(&mut self, ch: char) {
         self.offset += ch.len_utf8();
         match ch {
             '\r' => {
