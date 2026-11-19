@@ -1,6 +1,9 @@
 //! Parsing lexemes into syntax, without name resolution or type checking.
 
+mod choice;
+mod list;
 mod map;
+mod optional;
 mod repeated;
 mod sequence;
 mod symbol;
@@ -10,6 +13,9 @@ use super::token::{TokenStream, Trivia};
 use crate::lexer::{Cursor, LexError, LexemeIterator};
 use std::{error::Error, fmt};
 
+pub(super) use self::choice::{choice, choice_pair};
+pub(super) use self::list::list;
+pub(super) use self::optional::optional;
 pub(super) use self::repeated::repeated;
 pub(super) use self::sequence::{sequence, sequence_pair};
 pub(super) use self::symbol::symbol;

@@ -4,12 +4,14 @@
 pub mod ast {
     pub use super::name::{Identifier, InvalidIdentifier, QualifiedName};
     pub use super::node::AstNode;
+    pub use super::types::Type;
 }
 
 mod name;
 mod node;
 mod parser;
 mod token;
+mod types;
 
 use self::parser::{Parser, Syntax};
 use crate::lexer::LexemeIterator;
