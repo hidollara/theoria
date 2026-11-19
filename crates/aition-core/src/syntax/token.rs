@@ -87,6 +87,10 @@ impl<'source, I: LexemeIterator<'source>> TokenStream<'source, I> {
         Ok(Some(token))
     }
 
+    pub(super) fn consumed(&self) -> usize {
+        self.consumed
+    }
+
     pub(super) fn mark(&mut self) -> Result<Mark, LexError> {
         let start = self.peek()?.cursor();
         Ok(Mark {

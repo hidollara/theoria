@@ -1,8 +1,19 @@
 //! Parsing lexemes into syntax, without name resolution or type checking.
 
+mod map;
+mod repeated;
+mod sequence;
+mod symbol;
+mod word;
+
 use super::token::{TokenStream, Trivia};
 use crate::lexer::{Cursor, LexError, LexemeIterator};
 use std::{error::Error, fmt};
+
+pub(super) use self::repeated::repeated;
+pub(super) use self::sequence::{sequence, sequence_pair};
+pub(super) use self::symbol::symbol;
+pub(super) use self::word::word;
 
 /// A grammatical construct with a parser that builds its representation.
 pub trait Syntax: Sized {
@@ -22,6 +33,20 @@ pub trait Parser: Sized {
         &self,
         tokens: TokenStream<'s, I>,
     ) -> Result<(Option<Self::Output>, TokenStream<'s, I>), ParseError>;
+
+    /// Transform a matched result without changing the consumed input.
+    fn map<O>(self, f: impl Fn(Self::Output) -> O) -> impl Parser<Output = O> {
+        map::map(self, f)
+    }
+
+    /// Validate a matched result, reporting rejection at its starting position.
+    fn try_map<O>(
+        self,
+        description: &'static str,
+        f: impl Fn(Self::Output) -> Option<O>,
+    ) -> impl Parser<Output = O> {
+        map::try_map(self, description, f)
+    }
 }
 
 /// Require EOF after trailing trivia, then collect the retained trivia.

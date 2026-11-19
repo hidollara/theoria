@@ -2,9 +2,11 @@
 
 /// Public syntax structures.
 pub mod ast {
+    pub use super::name::{Identifier, InvalidIdentifier, QualifiedName};
     pub use super::node::AstNode;
 }
 
+mod name;
 mod node;
 mod parser;
 mod token;
