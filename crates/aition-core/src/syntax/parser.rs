@@ -6,6 +6,7 @@ mod map;
 mod optional;
 mod repeated;
 mod sequence;
+mod string;
 mod symbol;
 mod word;
 
@@ -18,6 +19,7 @@ pub(super) use self::list::list;
 pub(super) use self::optional::optional;
 pub(super) use self::repeated::repeated;
 pub(super) use self::sequence::{sequence, sequence_pair};
+pub(super) use self::string::string;
 pub(super) use self::symbol::symbol;
 pub(super) use self::word::word;
 

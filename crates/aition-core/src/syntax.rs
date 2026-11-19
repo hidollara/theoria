@@ -2,11 +2,15 @@
 
 /// Public syntax structures.
 pub mod ast {
+    pub use super::binding::{Binding, BindingBody};
+    pub use super::expr::Expr;
     pub use super::name::{Identifier, InvalidIdentifier, QualifiedName};
     pub use super::node::AstNode;
     pub use super::types::Type;
 }
 
+mod binding;
+mod expr;
 mod name;
 mod node;
 mod parser;
