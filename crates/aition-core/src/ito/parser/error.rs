@@ -7,13 +7,17 @@ use std::{error::Error, fmt};
 pub enum ParseError {
     Lexical(LexError),
     Unexpected {
-        /// A diagnostic description of the syntax expected at this position.
+        /// A description of the expected syntax, empty if all candidates were silent.
         expected: String,
         cursor: Cursor,
     },
 }
 
 impl ParseError {
+    pub(super) fn expected_keyword(keyword: &str, cursor: Cursor) -> Self {
+        Self::expected(format_args!("{keyword:?}"), cursor)
+    }
+
     /// Report a grammar expectation at the position selected by the parser.
     pub(super) fn expected(expected: impl fmt::Display, cursor: Cursor) -> Self {
         Self::Unexpected {
@@ -45,9 +49,14 @@ impl fmt::Display for ParseError {
                 expected, cursor, ..
             } => (expected, cursor),
         };
+        if expected.is_empty() {
+            formatter.write_str("unexpected input")?;
+        } else {
+            write!(formatter, "expected {expected}")?;
+        }
         write!(
             formatter,
-            "expected {expected} at line {}, column {}",
+            " at line {}, column {}",
             cursor.line, cursor.column
         )
     }
