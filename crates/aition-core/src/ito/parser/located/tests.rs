@@ -2,7 +2,8 @@ use super::super::{ParseError, Parser, Rule, defer, repeated, trivia};
 use super::super::{choice, rule, symbol};
 use super::located;
 use crate::ito::lexer::{self, Symbol, TokenKind, TokenStream};
-use crate::ito::parser::tests::{ReadFragment, read_complete};
+use crate::ito::parser::read_complete;
+use crate::ito::parser::tests::ReadFragment;
 use crate::syntax::ast::{NodeSource, Trivia};
 use std::cell::Cell;
 

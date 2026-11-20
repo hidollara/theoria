@@ -4,21 +4,9 @@ mod source_locations;
 mod trivia_ownership;
 mod types;
 
-use super::{ParseError, Parser, Rule, repeated, trivia};
+use super::{ParseError, Parser, Rule, read_complete, repeated, trivia};
 use crate::ito::lexer::{self, LexError, TokenKind, TokenStream, TokenStreamItem};
 use crate::syntax::ast::{AstNode, NodeSource, TriviaKind};
-
-pub(super) fn read_complete<'s, T>(
-    mut tokens: impl TokenStream<'s>,
-    rule: impl Rule<Output = (T, NodeSource)>,
-) -> Result<AstNode<T>, ParseError> {
-    let mut parser = Parser::new(&mut tokens);
-    let node = parser.read(rule)?;
-    if let TokenStreamItem::Token(next) = parser.peek()? {
-        return Err(ParseError::expected("end of input".into(), next.start));
-    }
-    Ok(node.into())
-}
 
 fn node_source<T>(node: &AstNode<T>) -> &NodeSource {
     node.source

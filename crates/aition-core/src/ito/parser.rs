@@ -12,6 +12,7 @@ mod label;
 mod list;
 mod located;
 mod map;
+mod module;
 mod name;
 mod primitive;
 mod repeated;
@@ -23,13 +24,17 @@ mod types;
 mod word;
 
 use super::lexer::{LexError, Token, TokenKind, TokenStream, TokenStreamItem};
-use crate::input::Cursor;
+use crate::{
+    input::Cursor,
+    syntax::ast::{AstNode, NodeSource},
+};
 use std::{error::Error, fmt};
 
 pub(super) use self::choice::choice;
 pub(super) use self::closure::rule;
 use self::list::list;
 use self::located::located;
+pub(super) use self::module::module;
 use self::primitive::{defer, empty, or};
 pub(super) use self::repeated::repeated;
 pub use self::rule::Rule;
@@ -37,6 +42,19 @@ pub(super) use self::string::string;
 pub(super) use self::symbol::symbol;
 pub(super) use self::trivia::trivia;
 pub(super) use self::word::word;
+
+/// Read one production and require it to account for the entire input.
+pub(super) fn read_complete<'s, T>(
+    mut tokens: impl TokenStream<'s>,
+    rule: impl Rule<Output = (T, NodeSource)>,
+) -> Result<AstNode<T>, ParseError> {
+    let mut parser = Parser::new(&mut tokens);
+    let node = parser.read(rule)?;
+    if let TokenStreamItem::Token(next) = parser.peek()? {
+        return Err(ParseError::expected("end of input".into(), next.start));
+    }
+    Ok(node.into())
+}
 
 /// Reads a token stream and applies grammar rules at the current position.
 pub struct Parser<'s, 'input> {
