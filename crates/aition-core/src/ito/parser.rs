@@ -1,8 +1,10 @@
 //! Parsing tokens into syntax, without name resolution or type checking.
 
 mod error;
+mod identifier;
 mod module;
 mod rule;
+mod types;
 mod util;
 
 use super::lexer::Lexer;
