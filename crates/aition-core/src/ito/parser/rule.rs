@@ -96,6 +96,22 @@ pub(super) fn word() -> Rule<(Box<str>, Cursor)> {
     })
 }
 
+pub(super) fn quoted_text() -> Rule<(Box<str>, Cursor)> {
+    Rule::new(|tokens| {
+        if !matches!(tokens.peek()?, Some(Token::String(_))) {
+            return Err(ParseError::expected(
+                "a string literal",
+                tokens.next_start()?,
+            ));
+        }
+        let Token::String(quoted) = tokens.commit() else {
+            unreachable!("the peeked token was a string");
+        };
+        let start = quoted.content_start();
+        Ok((quoted.content.into(), start))
+    })
+}
+
 pub(super) fn keyword(expected: &'static str) -> Rule<Cursor> {
     Rule::new(move |tokens| {
         if !matches!(tokens.peek()?, Some(Token::Word { text, .. }) if text == expected) {

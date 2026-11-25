@@ -1,3 +1,4 @@
+use super::expr::expr;
 use super::identifier::identifier;
 use super::rule::{Rule, choice, keyword, list, optional, repeated, sequence, symbol};
 use super::types::{ty, type_parameter};
@@ -54,10 +55,12 @@ fn type_declaration() -> Rule<ModuleItem> {
 }
 
 fn binding() -> Rule<ModuleItem> {
-    sequence![identifier(), symbol(Symbol::Colon), ty()].map(|(name, _, ty)| ModuleItem::Binding {
-        name,
-        body: BindingBody::Declaration(ty),
-    })
+    let declaration =
+        sequence![symbol(Symbol::Colon), ty()].map(|(_, ty)| BindingBody::Declaration(ty));
+    let definition =
+        sequence![symbol(Symbol::Equal), expr()].map(|(_, expr)| BindingBody::Definition(expr));
+    sequence![identifier(), choice([declaration, definition])]
+        .map(|(name, body)| ModuleItem::Binding { name, body })
 }
 
 #[cfg(test)]

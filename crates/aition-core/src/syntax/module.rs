@@ -1,3 +1,4 @@
+use super::expr::Expr;
 use super::name::Identifier;
 use super::types::{Type, TypeParameter};
 
@@ -9,7 +10,7 @@ pub struct Module {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ModuleItem {
-    /// A module-level binding, such as `draw: [Panel](Drawing)`.
+    /// A module-level binding declaration or definition.
     Binding { name: Identifier, body: BindingBody },
     /// A type declaration such as `type Width: {}` or `type Br: [] {}`.
     Type {
@@ -24,6 +25,7 @@ pub enum ModuleItem {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BindingBody {
     Declaration(Type),
+    Definition(Expr),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

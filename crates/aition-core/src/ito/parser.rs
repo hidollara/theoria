@@ -1,6 +1,7 @@
 //! Parsing tokens into syntax, without name resolution or type checking.
 
 mod error;
+mod expr;
 mod identifier;
 mod module;
 mod rule;

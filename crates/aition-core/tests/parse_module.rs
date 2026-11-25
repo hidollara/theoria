@@ -2,8 +2,8 @@ use aition_core::{
     input::Cursor,
     ito::{LexError, ParseError, parse, parse_from_str},
     syntax::{
-        BindingBody, ContractRef, Identifier, Module, ModuleItem, NamedType, QualifiedName, Type,
-        TypeMember, TypeParameter,
+        BindingBody, Body, ContractRef, Expr, Identifier, Lambda, Module, ModuleItem, NamedType,
+        Parameter, QualifiedName, Tag, TagArgument, Type, TypeMember, TypeParameter,
     },
 };
 use std::io::{BufReader, ErrorKind};
@@ -19,6 +19,10 @@ impl Source<'_> {
         Identifier::new(name)
             .unwrap()
             .with_cursor(self.cursor(offset))
+    }
+
+    fn name(&self, offset: usize, name: &str) -> Expr {
+        Expr::Name(self.id(offset, name))
     }
 
     fn assert_items(&self, items: Vec<ModuleItem>) {
@@ -89,8 +93,8 @@ fn function_types_can_appear_in_constructors_and_members() {
 }
 
 #[test]
-fn binding_declarations_accept_function_types_in_module_order() {
-    let source = Source("type A: {}\nmake: [A](A)\nempty: [](A)");
+fn binding_declarations_and_definitions_keep_module_order() {
+    let source = Source("type A: {}\nmake: [A](A)\nempty: [](A)\nvalue = make");
     source.assert_items(vec![
         ModuleItem::Type {
             name: source.id(5, "A"),
@@ -111,6 +115,10 @@ fn binding_declarations_accept_function_types_in_module_order() {
                 parameters: vec![],
                 result: Box::new(source.ty(34, "A")),
             }),
+        },
+        ModuleItem::Binding {
+            name: source.id(37, "value"),
+            body: BindingBody::Definition(source.name(45, "make")),
         },
     ]);
 }
@@ -256,6 +264,181 @@ fn array_prefix_binds_more_tightly_than_union_unless_grouped() {
     }]);
 }
 
+fn member(base: Expr, name: Identifier) -> Expr {
+    Expr::Member {
+        base: Box::new(base),
+        name,
+    }
+}
+
+fn call(callee: Expr, arguments: Vec<Expr>) -> Expr {
+    Expr::Call {
+        callee: Box::new(callee),
+        arguments,
+    }
+}
+
+#[test]
+fn a_binding_chains_calls_and_members_in_source_order() {
+    let s = Source(
+        "type Canvas: {} drawing = panel.paint(make(width), height,).canvas() copy = drawing",
+    );
+    let paint = member(s.name(26, "panel"), s.id(32, "paint"));
+    let width = call(s.name(38, "make"), vec![s.name(43, "width")]);
+    let painted = call(paint, vec![width, s.name(51, "height")]);
+    let canvas = member(painted, s.id(60, "canvas"));
+
+    s.assert_items(vec![
+        ModuleItem::Type {
+            name: s.id(5, "Canvas"),
+            parameters: None,
+            constructor: None,
+            members: vec![],
+        },
+        ModuleItem::Binding {
+            name: s.id(16, "drawing"),
+            body: BindingBody::Definition(call(canvas, vec![])),
+        },
+        ModuleItem::Binding {
+            name: s.id(69, "copy"),
+            body: BindingBody::Definition(s.name(76, "drawing")),
+        },
+    ]);
+}
+
+#[test]
+fn unfinished_expressions_report_the_missing_part() {
+    let expression_start = "an identifier, a string literal, (, [, *, <, or ?";
+    for (text, expected, offset) in [
+        ("x =", expression_start, 3),
+        ("x = f.", "an identifier", 6),
+        ("x = f(a", ")", 7),
+        ("x = f(,)", expression_start, 6),
+        ("x = f(a,,b)", expression_start, 8),
+        ("x = f():", "*, (, [, or an identifier", 8),
+    ] {
+        let error = parse_from_str(text).unwrap_err();
+        assert!(
+            matches!(&error, ParseError::Unexpected { expected: actual, cursor }
+            if actual == expected && cursor.offset == offset),
+            "{text:?}: {error}"
+        );
+    }
+}
+
+#[test]
+fn branching_keeps_lambdas_local_bindings_and_annotated_literals() {
+    let source = Source(r#"x = ?(a,b)[[p: Panel, q] (out) { out = *(p, q, "幅\n":Text,) },]"#);
+    source.assert_items(vec![ModuleItem::Binding {
+        name: source.id(0, "x"),
+        body: BindingBody::Definition(Expr::Match {
+            arguments: vec![source.name(6, "a"), source.name(8, "b")],
+            branches: vec![Lambda {
+                parameters: vec![
+                    Parameter {
+                        name: source.id(12, "p"),
+                        ty: Some(source.ty(15, "Panel")),
+                    },
+                    Parameter {
+                        name: source.id(22, "q"),
+                        ty: None,
+                    },
+                ],
+                body: Body {
+                    result: Box::new(source.name(26, "out")),
+                    bindings: Some(vec![(
+                        source.id(33, "out"),
+                        Expr::Array(vec![
+                            source.name(41, "p"),
+                            source.name(44, "q"),
+                            Expr::Ascribed {
+                                expr: Box::new(Expr::Literal("幅\n".into())),
+                                ty: source.ty(source.0.find("Text").unwrap(), "Text"),
+                            },
+                        ]),
+                    )]),
+                },
+            }],
+        }),
+    }]);
+}
+
+#[test]
+fn tag_children_keep_adjacent_bodies_separate() {
+    let source = Source(r#"x = <ui.Row width=("1":Width)>(a)(b)<Leaf/>"text"</ui.Row>"#);
+    source.assert_items(vec![ModuleItem::Binding {
+        name: source.id(0, "x"),
+        body: BindingBody::Definition(Expr::Tag(Tag {
+            name: source.qualified_name(5, "ui.Row"),
+            arguments: vec![TagArgument {
+                name: source.id(12, "width"),
+                value: Expr::Body(Body {
+                    result: Box::new(Expr::Ascribed {
+                        expr: Box::new(Expr::Literal("1".into())),
+                        ty: source.ty(23, "Width"),
+                    }),
+                    bindings: None,
+                }),
+            }],
+            children: Some(vec![
+                Expr::Body(Body {
+                    result: Box::new(source.name(31, "a")),
+                    bindings: None,
+                }),
+                Expr::Body(Body {
+                    result: Box::new(source.name(34, "b")),
+                    bindings: None,
+                }),
+                Expr::Tag(Tag {
+                    name: source.qualified_name(37, "Leaf"),
+                    arguments: vec![],
+                    children: None,
+                }),
+                Expr::Literal("text".into()),
+            ]),
+        })),
+    }]);
+}
+
+#[test]
+fn a_type_annotation_applies_to_the_call_before_member_access() {
+    let source = Source("x = (f(): A | B).member");
+    source.assert_items(vec![ModuleItem::Binding {
+        name: source.id(0, "x"),
+        body: BindingBody::Definition(Expr::Member {
+            base: Box::new(Expr::Body(Body {
+                result: Box::new(Expr::Ascribed {
+                    expr: Box::new(Expr::Call {
+                        callee: Box::new(source.name(5, "f")),
+                        arguments: vec![],
+                    }),
+                    ty: Type::Union(vec![source.ty(10, "A"), source.ty(14, "B")]),
+                }),
+                bindings: None,
+            })),
+            name: source.id(17, "member"),
+        }),
+    }]);
+}
+
+#[test]
+fn malformed_tags_and_invalid_escapes_report_their_positions() {
+    for (text, expected, offset) in [
+        ("x = <Row></Leaf>", "closing tag </Row>", 11),
+        ("x = < Row/>", "an adjacent token", 5),
+        ("x = <Row/ >", "an adjacent token", 9),
+        ("x = <Row>< /Row>", "an adjacent token", 10),
+        (r#"x = <P width="1":Width/>"#, "/ or >", 16),
+        (r#"x = "幅\q""#, "a valid string escape", 8),
+    ] {
+        assert!(matches!(
+            parse_from_str(text),
+            Err(ParseError::Unexpected { expected: actual, cursor })
+                if actual == expected && cursor == Source(text).cursor(offset)
+        ));
+    }
+}
+
 #[test]
 fn malformed_signatures_report_the_missing_part() {
     let type_start = "*, (, [, or an identifier";
@@ -301,7 +484,7 @@ fn malformed_signatures_report_the_missing_part() {
 #[test]
 fn malformed_type_declarations_report_the_expected_token_at_its_position() {
     for (text, expected, offset) in [
-        ("typeName", ":", 8),
+        ("typeName", ": or =", 8),
         ("type )", "an identifier", 5),
         ("type ", "an identifier", 5),
         ("type A:{} type", "an identifier", 14),
@@ -347,12 +530,12 @@ fn both_parse_apis_report_the_closing_paren_after_trivia() {
 
     let text_error = parse_from_str(text).unwrap_err();
     assert!(
-        matches!(text_error, ParseError::Unexpected { cursor, .. } if cursor.offset == closing_paren)
+        matches!(text_error, ParseError::Unexpected { expected, cursor } if expected == "end of input" && cursor.offset == closing_paren)
     );
 
     let reader_error = parse(text.as_bytes()).unwrap_err();
     assert!(
-        matches!(reader_error, ParseError::Unexpected { cursor, .. } if cursor.offset == closing_paren)
+        matches!(reader_error, ParseError::Unexpected { expected, cursor } if expected == "end of input" && cursor.offset == closing_paren)
     );
 }
 
