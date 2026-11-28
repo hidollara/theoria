@@ -2,11 +2,10 @@ use super::identifier::identifier;
 use super::rule::{Rule, choice, keyword, list, optional, repeated, sequence, symbol};
 use super::types::{ty, type_parameter};
 use crate::ito::lexer::Symbol;
-use crate::syntax::{Module, ModuleItem, TypeMember};
+use crate::syntax::{BindingBody, Module, ModuleItem, TypeMember};
 
 pub(super) fn body() -> Rule<Module> {
-    let item = choice([type_declaration()]);
-    repeated(item).map(|items| Module { items })
+    repeated(choice([type_declaration(), binding()])).map(|items| Module { items })
 }
 
 fn type_declaration() -> Rule<ModuleItem> {
@@ -52,6 +51,13 @@ fn type_declaration() -> Rule<ModuleItem> {
                 .collect(),
         },
     )
+}
+
+fn binding() -> Rule<ModuleItem> {
+    sequence![identifier(), symbol(Symbol::Colon), ty()].map(|(name, _, ty)| ModuleItem::Binding {
+        name,
+        body: BindingBody::Declaration(ty),
+    })
 }
 
 #[cfg(test)]

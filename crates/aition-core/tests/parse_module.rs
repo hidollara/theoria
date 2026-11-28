@@ -2,8 +2,8 @@ use aition_core::{
     input::Cursor,
     ito::{LexError, ParseError, parse, parse_from_str},
     syntax::{
-        ContractRef, Identifier, Module, ModuleItem, NamedType, QualifiedName, Type, TypeMember,
-        TypeParameter,
+        BindingBody, ContractRef, Identifier, Module, ModuleItem, NamedType, QualifiedName, Type,
+        TypeMember, TypeParameter,
     },
 };
 use std::io::{BufReader, ErrorKind};
@@ -86,6 +86,33 @@ fn function_types_can_appear_in_constructors_and_members() {
             },
         }],
     }]);
+}
+
+#[test]
+fn binding_declarations_accept_function_types_in_module_order() {
+    let source = Source("type A: {}\nmake: [A](A)\nempty: [](A)");
+    source.assert_items(vec![
+        ModuleItem::Type {
+            name: source.id(5, "A"),
+            parameters: None,
+            constructor: None,
+            members: vec![],
+        },
+        ModuleItem::Binding {
+            name: source.id(11, "make"),
+            body: BindingBody::Declaration(Type::Function {
+                parameters: vec![source.ty(18, "A")],
+                result: Box::new(source.ty(21, "A")),
+            }),
+        },
+        ModuleItem::Binding {
+            name: source.id(24, "empty"),
+            body: BindingBody::Declaration(Type::Function {
+                parameters: vec![],
+                result: Box::new(source.ty(34, "A")),
+            }),
+        },
+    ]);
 }
 
 #[test]
@@ -274,7 +301,7 @@ fn malformed_signatures_report_the_missing_part() {
 #[test]
 fn malformed_type_declarations_report_the_expected_token_at_its_position() {
     for (text, expected, offset) in [
-        ("typeName", "end of input", 0),
+        ("typeName", ":", 8),
         ("type )", "an identifier", 5),
         ("type ", "an identifier", 5),
         ("type A:{} type", "an identifier", 14),

@@ -9,6 +9,8 @@ pub struct Module {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ModuleItem {
+    /// A module-level binding, such as `draw: [Panel](Drawing)`.
+    Binding { name: Identifier, body: BindingBody },
     /// A type declaration such as `type Width: {}` or `type Br: [] {}`.
     Type {
         name: Identifier,
@@ -17,6 +19,11 @@ pub enum ModuleItem {
         constructor: Option<Vec<Type>>,
         members: Vec<TypeMember>,
     },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum BindingBody {
+    Declaration(Type),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
