@@ -3,7 +3,7 @@ use aition_core::{
     ito::{LexError, ParseError, parse, parse_from_str},
     syntax::{
         BindingBody, Body, ContractRef, Expr, Identifier, Lambda, Module, ModuleItem, NamedType,
-        Parameter, QualifiedName, Tag, TagArgument, Type, TypeMember, TypeParameter,
+        Parameter, QualifiedName, Tag, TagArgument, Type, TypeBody, TypeMember, TypeParameter,
     },
 };
 use std::io::{BufReader, ErrorKind};
@@ -65,6 +65,52 @@ fn empty_input_returns_an_empty_module() {
 }
 
 #[test]
+fn type_definitions_keep_constructor_parameters_and_local_bindings() {
+    let source = Source(
+        "type Panel<T> = [width: Width,] {\n    base = compute(width)\n    drawing = render(base)\n}\ntype Br = [] {}",
+    );
+    source.assert_items(vec![
+        ModuleItem::Type {
+            name: source.id(5, "Panel"),
+            parameters: Some(vec![TypeParameter {
+                name: source.id(11, "T"),
+                bounds: vec![],
+            }]),
+            body: TypeBody::Definition {
+                constructor: vec![Parameter {
+                    name: source.id(17, "width"),
+                    ty: Some(source.ty(24, "Width")),
+                }],
+                bindings: vec![
+                    (
+                        source.id(38, "base"),
+                        Expr::Call {
+                            callee: Box::new(source.name(45, "compute")),
+                            arguments: vec![source.name(53, "width")],
+                        },
+                    ),
+                    (
+                        source.id(64, "drawing"),
+                        Expr::Call {
+                            callee: Box::new(source.name(74, "render")),
+                            arguments: vec![source.name(81, "base")],
+                        },
+                    ),
+                ],
+            },
+        },
+        ModuleItem::Type {
+            name: source.id(94, "Br"),
+            parameters: None,
+            body: TypeBody::Definition {
+                constructor: vec![],
+                bindings: vec![],
+            },
+        },
+    ]);
+}
+
+#[test]
 fn function_types_can_appear_in_constructors_and_members() {
     let source = Source(
         "type Pipeline: [[Input, Context,](Output | Failure)] { next: []([Output](Result)) }",
@@ -72,23 +118,25 @@ fn function_types_can_appear_in_constructors_and_members() {
     source.assert_items(vec![ModuleItem::Type {
         name: source.id(5, "Pipeline"),
         parameters: None,
-        constructor: Some(vec![Type::Function {
-            parameters: vec![source.ty(17, "Input"), source.ty(24, "Context")],
-            result: Box::new(Type::Union(vec![
-                source.ty(34, "Output"),
-                source.ty(43, "Failure"),
-            ])),
-        }]),
-        members: vec![TypeMember {
-            name: source.id(55, "next"),
-            ty: Type::Function {
-                parameters: vec![],
-                result: Box::new(Type::Function {
-                    parameters: vec![source.ty(65, "Output")],
-                    result: Box::new(source.ty(73, "Result")),
-                }),
-            },
-        }],
+        body: TypeBody::Declaration {
+            constructor: Some(vec![Type::Function {
+                parameters: vec![source.ty(17, "Input"), source.ty(24, "Context")],
+                result: Box::new(Type::Union(vec![
+                    source.ty(34, "Output"),
+                    source.ty(43, "Failure"),
+                ])),
+            }]),
+            members: vec![TypeMember {
+                name: source.id(55, "next"),
+                ty: Type::Function {
+                    parameters: vec![],
+                    result: Box::new(Type::Function {
+                        parameters: vec![source.ty(65, "Output")],
+                        result: Box::new(source.ty(73, "Result")),
+                    }),
+                },
+            }],
+        },
     }]);
 }
 
@@ -99,8 +147,10 @@ fn binding_declarations_and_definitions_keep_module_order() {
         ModuleItem::Type {
             name: source.id(5, "A"),
             parameters: None,
-            constructor: None,
-            members: vec![],
+            body: TypeBody::Declaration {
+                constructor: None,
+                members: vec![],
+            },
         },
         ModuleItem::Binding {
             name: source.id(11, "make"),
@@ -130,14 +180,18 @@ fn type_declarations_keep_their_names_and_source_order() {
         ModuleItem::Type {
             name: s.id(21, "Canvas"),
             parameters: None,
-            constructor: None,
-            members: vec![],
+            body: TypeBody::Declaration {
+                constructor: None,
+                members: vec![],
+            },
         },
         ModuleItem::Type {
             name: s.id(49, "_Width2"),
             parameters: None,
-            constructor: None,
-            members: vec![],
+            body: TypeBody::Declaration {
+                constructor: None,
+                members: vec![],
+            },
         },
     ]);
 }
@@ -153,29 +207,35 @@ fn constructor_and_member_lists_keep_their_order_and_source() {
         ModuleItem::Type {
             name: s.id(5, "Panel"),
             parameters: None,
-            constructor: Some(vec![s.ty(13, "ui.Width"), s.ty(23, "Height")]),
-            members: vec![
-                TypeMember {
-                    name: s.id(45, "width"),
-                    ty: s.ty(52, "ui.layout.Width"),
-                },
-                TypeMember {
-                    name: s.id(69, "height"),
-                    ty: s.ty(77, "Height"),
-                },
-            ],
+            body: TypeBody::Declaration {
+                constructor: Some(vec![s.ty(13, "ui.Width"), s.ty(23, "Height")]),
+                members: vec![
+                    TypeMember {
+                        name: s.id(45, "width"),
+                        ty: s.ty(52, "ui.layout.Width"),
+                    },
+                    TypeMember {
+                        name: s.id(69, "height"),
+                        ty: s.ty(77, "Height"),
+                    },
+                ],
+            },
         },
         ModuleItem::Type {
             name: s.id(92, "Br"),
             parameters: None,
-            constructor: Some(vec![]),
-            members: vec![],
+            body: TypeBody::Declaration {
+                constructor: Some(vec![]),
+                members: vec![],
+            },
         },
         ModuleItem::Type {
             name: s.id(115, "Size"),
             parameters: None,
-            constructor: None,
-            members: vec![],
+            body: TypeBody::Declaration {
+                constructor: None,
+                members: vec![],
+            },
         },
     ]);
 }
@@ -186,8 +246,10 @@ fn explicit_empty_type_parameters_and_arguments_are_preserved() {
     s.assert_items(vec![ModuleItem::Type {
         name: s.id(5, "A"),
         parameters: Some(vec![]),
-        constructor: Some(vec![s.applied(11, "A", vec![]), s.ty(16, "A")]),
-        members: vec![],
+        body: TypeBody::Declaration {
+            constructor: Some(vec![s.applied(11, "A", vec![]), s.ty(16, "A")]),
+            members: vec![],
+        },
     }]);
 }
 
@@ -220,11 +282,13 @@ fn type_parameters_keep_bounds_and_type_arguments_in_order() {
                 bounds: vec![],
             },
         ]),
-        constructor: Some(vec![s.ty(36, "T"), s.ty(39, "U")]),
-        members: vec![TypeMember {
-            name: s.id(44, "values"),
-            ty: s.applied(52, "ui.List", vec![pair]),
-        }],
+        body: TypeBody::Declaration {
+            constructor: Some(vec![s.ty(36, "T"), s.ty(39, "U")]),
+            members: vec![TypeMember {
+                name: s.id(44, "values"),
+                ty: s.applied(52, "ui.List", vec![pair]),
+            }],
+        },
     }]);
 }
 
@@ -234,14 +298,16 @@ fn union_types_keep_their_alternatives_in_constructor_and_member_positions() {
     s.assert_items(vec![ModuleItem::Type {
         name: s.id(5, "Panel"),
         parameters: None,
-        constructor: Some(vec![
-            Type::Union(vec![s.ty(13, "A"), s.ty(15, "ui.B"), s.ty(20, "A")]),
-            s.ty(23, "C"),
-        ]),
-        members: vec![TypeMember {
-            name: s.id(28, "width"),
-            ty: Type::Union(vec![s.ty(35, "D"), s.ty(39, "E")]),
-        }],
+        body: TypeBody::Declaration {
+            constructor: Some(vec![
+                Type::Union(vec![s.ty(13, "A"), s.ty(15, "ui.B"), s.ty(20, "A")]),
+                s.ty(23, "C"),
+            ]),
+            members: vec![TypeMember {
+                name: s.id(28, "width"),
+                ty: Type::Union(vec![s.ty(35, "D"), s.ty(39, "E")]),
+            }],
+        },
     }]);
 }
 
@@ -256,11 +322,13 @@ fn array_prefix_binds_more_tightly_than_union_unless_grouped() {
     s.assert_items(vec![ModuleItem::Type {
         name: s.id(5, "Layer"),
         parameters: None,
-        constructor: Some(vec![Type::Union(vec![array, s.ty(18, "B")])]),
-        members: vec![TypeMember {
-            name: s.id(23, "children"),
-            ty: Type::Array(Box::new(inner)),
-        }],
+        body: TypeBody::Declaration {
+            constructor: Some(vec![Type::Union(vec![array, s.ty(18, "B")])]),
+            members: vec![TypeMember {
+                name: s.id(23, "children"),
+                ty: Type::Array(Box::new(inner)),
+            }],
+        },
     }]);
 }
 
@@ -292,8 +360,10 @@ fn a_binding_chains_calls_and_members_in_source_order() {
         ModuleItem::Type {
             name: s.id(5, "Canvas"),
             parameters: None,
-            constructor: None,
-            members: vec![],
+            body: TypeBody::Declaration {
+                constructor: None,
+                members: vec![],
+            },
         },
         ModuleItem::Binding {
             name: s.id(16, "drawing"),
@@ -443,7 +513,9 @@ fn malformed_tags_and_invalid_escapes_report_their_positions() {
 fn malformed_signatures_report_the_missing_part() {
     let type_start = "*, (, [, or an identifier";
     for (text, expected, offset) in [
-        ("type Br", ":", 7),
+        ("type Br", ": or =", 7),
+        ("type Br = {}", "[", 10),
+        ("type Br = [] { x: A }", "=", 16),
         ("type Br<,>", "an identifier", 8),
         ("type Br<T U>", ">", 10),
         ("type Br<T:", "an identifier", 10),

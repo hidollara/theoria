@@ -1,4 +1,4 @@
-use super::expr::Expr;
+use super::expr::{Expr, Parameter};
 use super::name::Identifier;
 use super::types::{Type, TypeParameter};
 
@@ -12,13 +12,24 @@ pub struct Module {
 pub enum ModuleItem {
     /// A module-level binding declaration or definition.
     Binding { name: Identifier, body: BindingBody },
-    /// A type declaration such as `type Width: {}` or `type Br: [] {}`.
+    /// A type declaration or definition.
     Type {
         name: Identifier,
         parameters: Option<Vec<TypeParameter>>,
+        body: TypeBody,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TypeBody {
+    Declaration {
         /// An explicit `[]` declares a zero-argument constructor.
         constructor: Option<Vec<Type>>,
         members: Vec<TypeMember>,
+    },
+    Definition {
+        constructor: Vec<Parameter>,
+        bindings: Vec<(Identifier, Expr)>,
     },
 }
 

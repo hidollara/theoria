@@ -1,18 +1,17 @@
-use super::expr::expr;
+use super::expr::{expr, parameter};
 use super::identifier::identifier;
 use super::rule::{Rule, choice, keyword, list, optional, repeated, sequence, symbol};
 use super::types::{ty, type_parameter};
+use super::util::delimited;
 use crate::ito::lexer::Symbol;
-use crate::syntax::{BindingBody, Module, ModuleItem, TypeMember};
+use crate::syntax::{BindingBody, Module, ModuleItem, TypeBody, TypeMember};
 
 pub(super) fn body() -> Rule<Module> {
-    repeated(choice([type_declaration(), binding()])).map(|items| Module { items })
+    repeated(choice([type_item(), binding()])).map(|items| Module { items })
 }
 
-fn type_declaration() -> Rule<ModuleItem> {
-    use Symbol::{
-        CloseAngle, CloseBrace, CloseBracket, Colon, Comma, OpenAngle, OpenBrace, OpenBracket,
-    };
+fn type_item() -> Rule<ModuleItem> {
+    use Symbol::{CloseAngle, Comma, OpenAngle};
 
     let parameters = list(
         symbol(OpenAngle),
@@ -20,6 +19,22 @@ fn type_declaration() -> Rule<ModuleItem> {
         symbol(Comma),
         symbol(CloseAngle),
     );
+    sequence![
+        keyword("type"),
+        identifier(),
+        optional(parameters),
+        choice([type_declaration(), type_definition()]),
+    ]
+    .map(|(_, name, parameters, body)| ModuleItem::Type {
+        name,
+        parameters,
+        body,
+    })
+}
+
+fn type_declaration() -> Rule<TypeBody> {
+    use Symbol::{CloseBrace, CloseBracket, Colon, Comma, OpenBrace, OpenBracket};
+
     let constructor = list(
         symbol(OpenBracket),
         ty(),
@@ -32,26 +47,39 @@ fn type_declaration() -> Rule<ModuleItem> {
         symbol(Comma),
         symbol(CloseBrace),
     );
-    let declaration = sequence![
-        keyword("type"),
-        identifier(),
-        optional(parameters),
-        symbol(Colon),
-        optional(constructor),
-        members,
-    ];
-
-    declaration.map(
-        |(_, name, parameters, _, constructor, members)| ModuleItem::Type {
-            name,
-            parameters,
+    sequence![symbol(Colon), optional(constructor), members].map(|(_, constructor, members)| {
+        TypeBody::Declaration {
             constructor,
             members: members
                 .into_iter()
                 .map(|(name, _, ty)| TypeMember { name, ty })
                 .collect(),
-        },
-    )
+        }
+    })
+}
+
+fn type_definition() -> Rule<TypeBody> {
+    use Symbol::{CloseBrace, CloseBracket, Comma, Equal, OpenBrace, OpenBracket};
+
+    let constructor = list(
+        symbol(OpenBracket),
+        parameter(),
+        symbol(Comma),
+        symbol(CloseBracket),
+    );
+    let bindings = delimited(
+        symbol(OpenBrace),
+        repeated(
+            sequence![identifier(), symbol(Equal), expr()].map(|(name, _, expr)| (name, expr)),
+        ),
+        symbol(CloseBrace),
+    );
+    sequence![symbol(Equal), constructor, bindings].map(|(_, constructor, bindings)| {
+        TypeBody::Definition {
+            constructor,
+            bindings,
+        }
+    })
 }
 
 fn binding() -> Rule<ModuleItem> {
@@ -70,7 +98,7 @@ mod tests {
     use crate::ito::Cursor;
     use crate::ito::lexer::{Lexer, Symbol};
     use crate::ito::parser::rule::{sequence, symbol};
-    use crate::syntax::{Identifier, Module, ModuleItem};
+    use crate::syntax::{Identifier, Module, ModuleItem, TypeBody};
 
     #[test]
     fn empty_body_leaves_the_closing_brace_unread() {
@@ -126,8 +154,10 @@ mod tests {
                             .unwrap()
                             .with_cursor(Cursor::default().advanced("type ".chars())),
                         parameters: None,
-                        constructor: None,
-                        members: vec![],
+                        body: TypeBody::Declaration {
+                            constructor: None,
+                            members: vec![],
+                        },
                     }],
                 },
                 Cursor::default().advanced("type Canvas:{}// trailing\n".chars())

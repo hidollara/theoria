@@ -110,13 +110,20 @@ fn body(expr: Rule<Expr>) -> Rule<Body> {
 }
 
 fn lambda(expr: Rule<Expr>) -> Rule<Lambda> {
-    let annotation = optional(sequence![symbol(Colon), ty()].map(|(_, ty)| ty));
-    let parameter = sequence![identifier(), annotation].map(|(name, ty)| Parameter { name, ty });
     let parameters = list(
         symbol(OpenBracket),
-        parameter,
+        parameter(),
         symbol(Comma),
         symbol(CloseBracket),
     );
     sequence![parameters, body(expr)].map(|(parameters, body)| Lambda { parameters, body })
+}
+
+pub(super) fn parameter() -> Rule<Parameter> {
+    sequence![identifier(), optional(sequence![symbol(Colon), ty()])].map(|(name, annotation)| {
+        Parameter {
+            name,
+            ty: annotation.map(|(_, ty)| ty),
+        }
+    })
 }
