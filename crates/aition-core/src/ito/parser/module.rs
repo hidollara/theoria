@@ -1,13 +1,25 @@
 use super::expr::{expr, parameter};
 use super::identifier::identifier;
-use super::rule::{Rule, choice, keyword, list, optional, repeated, sequence, symbol};
+use super::rule::{Rule, choice, keyword, list, optional, recursive, repeated, sequence, symbol};
 use super::types::{ty, type_parameter};
 use super::util::delimited;
 use crate::ito::lexer::Symbol;
 use crate::syntax::{BindingBody, Module, ModuleItem, TypeBody, TypeMember};
 
 pub(super) fn body() -> Rule<Module> {
-    repeated(choice([type_item(), binding()])).map(|items| Module { items })
+    recursive(|body| {
+        repeated(choice([module_definition(body), type_item(), binding()]))
+            .map(|items| Module { items })
+    })
+}
+
+fn module_definition(body: Rule<Module>) -> Rule<ModuleItem> {
+    sequence![
+        keyword("module"),
+        identifier(),
+        delimited(symbol(Symbol::OpenBrace), body, symbol(Symbol::CloseBrace)),
+    ]
+    .map(|(_, name, body)| ModuleItem::Module { name, body })
 }
 
 fn type_item() -> Rule<ModuleItem> {

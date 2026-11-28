@@ -65,6 +65,45 @@ fn empty_input_returns_an_empty_module() {
 }
 
 #[test]
+fn inline_modules_preserve_nesting_and_leave_following_items_at_root() {
+    let source = Source(
+        "module ui { module controls { type Panel: {} } }\nmodule empty {}\npanel = <ui.controls.Panel/>",
+    );
+    source.assert_items(vec![
+        ModuleItem::Module {
+            name: source.id(7, "ui"),
+            body: Module {
+                items: vec![ModuleItem::Module {
+                    name: source.id(19, "controls"),
+                    body: Module {
+                        items: vec![ModuleItem::Type {
+                            name: source.id(35, "Panel"),
+                            parameters: None,
+                            body: TypeBody::Declaration {
+                                constructor: None,
+                                members: vec![],
+                            },
+                        }],
+                    },
+                }],
+            },
+        },
+        ModuleItem::Module {
+            name: source.id(56, "empty"),
+            body: Module { items: vec![] },
+        },
+        ModuleItem::Binding {
+            name: source.id(65, "panel"),
+            body: BindingBody::Definition(Expr::Tag(Tag {
+                name: source.qualified_name(74, "ui.controls.Panel"),
+                arguments: vec![],
+                children: None,
+            })),
+        },
+    ]);
+}
+
+#[test]
 fn type_definitions_keep_constructor_parameters_and_local_bindings() {
     let source = Source(
         "type Panel<T> = [width: Width,] {\n    base = compute(width)\n    drawing = render(base)\n}\ntype Br = [] {}",

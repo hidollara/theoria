@@ -10,6 +10,8 @@ pub struct Module {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ModuleItem {
+    /// An inline module, such as `module controls { ... }`.
+    Module { name: Identifier, body: Module },
     /// A module-level binding declaration or definition.
     Binding { name: Identifier, body: BindingBody },
     /// A type declaration or definition.
