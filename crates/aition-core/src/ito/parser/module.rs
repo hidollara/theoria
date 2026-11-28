@@ -1,5 +1,5 @@
 use super::expr::{expr, parameter};
-use super::identifier::identifier;
+use super::identifier::{identifier, qualified_name};
 use super::rule::{Rule, choice, keyword, list, optional, recursive, repeated, sequence, symbol};
 use super::types::{ty, type_parameter};
 use super::util::delimited;
@@ -8,8 +8,13 @@ use crate::syntax::{BindingBody, Module, ModuleItem, TypeBody, TypeMember};
 
 pub(super) fn body() -> Rule<Module> {
     recursive(|body| {
-        repeated(choice([module_definition(body), type_item(), binding()]))
-            .map(|items| Module { items })
+        repeated(choice([
+            module_definition(body),
+            alias(),
+            type_item(),
+            binding(),
+        ]))
+        .map(|items| Module { items })
     })
 }
 
@@ -20,6 +25,16 @@ fn module_definition(body: Rule<Module>) -> Rule<ModuleItem> {
         delimited(symbol(Symbol::OpenBrace), body, symbol(Symbol::CloseBrace)),
     ]
     .map(|(_, name, body)| ModuleItem::Module { name, body })
+}
+
+fn alias() -> Rule<ModuleItem> {
+    sequence![
+        keyword("alias"),
+        identifier(),
+        symbol(Symbol::Equal),
+        qualified_name()
+    ]
+    .map(|(_, name, _, target)| ModuleItem::Alias { name, target })
 }
 
 fn type_item() -> Rule<ModuleItem> {

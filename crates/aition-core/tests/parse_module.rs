@@ -65,6 +65,46 @@ fn empty_input_returns_an_empty_module() {
 }
 
 #[test]
+fn aliases_preserve_local_names_and_qualified_targets() {
+    let source =
+        Source("module ui { alias Card = panels.Panel }\nalias Controls = ui\ncard = <ui.Card/>");
+    source.assert_items(vec![
+        ModuleItem::Module {
+            name: source.id(7, "ui"),
+            body: Module {
+                items: vec![ModuleItem::Alias {
+                    name: source.id(18, "Card"),
+                    target: source.qualified_name(25, "panels.Panel"),
+                }],
+            },
+        },
+        ModuleItem::Alias {
+            name: source.id(46, "Controls"),
+            target: source.qualified_name(57, "ui"),
+        },
+        ModuleItem::Binding {
+            name: source.id(60, "card"),
+            body: BindingBody::Definition(Expr::Tag(Tag {
+                name: source.qualified_name(68, "ui.Card"),
+                arguments: vec![],
+                children: None,
+            })),
+        },
+    ]);
+}
+
+#[test]
+fn aliases_require_an_equal_sign_before_the_target() {
+    let source = Source("alias Card panels.Panel");
+    let error = parse_from_str(source.0).unwrap_err();
+    assert!(matches!(
+        error,
+        ParseError::Unexpected { expected, cursor }
+            if expected == "=" && cursor == source.cursor(11)
+    ));
+}
+
+#[test]
 fn inline_modules_preserve_nesting_and_leave_following_items_at_root() {
     let source = Source(
         "module ui { module controls { type Panel: {} } }\nmodule empty {}\npanel = <ui.controls.Panel/>",

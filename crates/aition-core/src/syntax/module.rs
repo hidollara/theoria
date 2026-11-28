@@ -1,5 +1,5 @@
 use super::expr::{Expr, Parameter};
-use super::name::Identifier;
+use super::name::{Identifier, QualifiedName};
 use super::types::{Type, TypeParameter};
 
 /// The contents of a module, with items in source order.
@@ -12,6 +12,11 @@ pub struct Module {
 pub enum ModuleItem {
     /// An inline module, such as `module controls { ... }`.
     Module { name: Identifier, body: Module },
+    /// An alias, such as `alias Card = panels.Panel`.
+    Alias {
+        name: Identifier,
+        target: QualifiedName,
+    },
     /// A module-level binding declaration or definition.
     Binding { name: Identifier, body: BindingBody },
     /// A type declaration or definition.
