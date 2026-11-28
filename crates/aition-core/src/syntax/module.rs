@@ -25,6 +25,12 @@ pub enum ModuleItem {
         parameters: Option<Vec<TypeParameter>>,
         body: TypeBody,
     },
+    /// A contract such as `contract eq<Rhs>: [Rhs](Bool)`.
+    Contract {
+        name: Identifier,
+        parameters: Option<Vec<TypeParameter>>,
+        result: Type,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

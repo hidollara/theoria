@@ -65,6 +65,35 @@ fn empty_input_returns_an_empty_module() {
 }
 
 #[test]
+fn contracts_keep_type_parameters_and_result_types() {
+    let source =
+        Source("contract drawingOf: gfx.Canvas\nmodule compare { contract eq<Rhs>: [Rhs](Bool) }");
+    source.assert_items(vec![
+        ModuleItem::Contract {
+            name: source.id(9, "drawingOf"),
+            parameters: None,
+            result: source.ty(20, "gfx.Canvas"),
+        },
+        ModuleItem::Module {
+            name: source.id(38, "compare"),
+            body: Module {
+                items: vec![ModuleItem::Contract {
+                    name: source.id(57, "eq"),
+                    parameters: Some(vec![TypeParameter {
+                        name: source.id(60, "Rhs"),
+                        bounds: vec![],
+                    }]),
+                    result: Type::Function {
+                        parameters: vec![source.ty(67, "Rhs")],
+                        result: Box::new(source.ty(72, "Bool")),
+                    },
+                }],
+            },
+        },
+    ]);
+}
+
+#[test]
 fn aliases_preserve_local_names_and_qualified_targets() {
     let source =
         Source("module ui { alias Card = panels.Panel }\nalias Controls = ui\ncard = <ui.Card/>");

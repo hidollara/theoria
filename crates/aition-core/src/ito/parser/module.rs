@@ -4,7 +4,7 @@ use super::rule::{Rule, choice, keyword, list, optional, recursive, repeated, se
 use super::types::{ty, type_parameter};
 use super::util::delimited;
 use crate::ito::lexer::Symbol;
-use crate::syntax::{BindingBody, Module, ModuleItem, TypeBody, TypeMember};
+use crate::syntax::{BindingBody, Module, ModuleItem, TypeBody, TypeMember, TypeParameter};
 
 pub(super) fn body() -> Rule<Module> {
     recursive(|body| {
@@ -12,6 +12,7 @@ pub(super) fn body() -> Rule<Module> {
             module_definition(body),
             alias(),
             type_item(),
+            contract(),
             binding(),
         ]))
         .map(|items| Module { items })
@@ -38,18 +39,10 @@ fn alias() -> Rule<ModuleItem> {
 }
 
 fn type_item() -> Rule<ModuleItem> {
-    use Symbol::{CloseAngle, Comma, OpenAngle};
-
-    let parameters = list(
-        symbol(OpenAngle),
-        type_parameter(),
-        symbol(Comma),
-        symbol(CloseAngle),
-    );
     sequence![
         keyword("type"),
         identifier(),
-        optional(parameters),
+        optional(type_parameters()),
         choice([type_declaration(), type_definition()]),
     ]
     .map(|(_, name, parameters, body)| ModuleItem::Type {
@@ -57,6 +50,30 @@ fn type_item() -> Rule<ModuleItem> {
         parameters,
         body,
     })
+}
+
+fn contract() -> Rule<ModuleItem> {
+    sequence![
+        keyword("contract"),
+        identifier(),
+        optional(type_parameters()),
+        symbol(Symbol::Colon),
+        ty(),
+    ]
+    .map(|(_, name, parameters, _, result)| ModuleItem::Contract {
+        name,
+        parameters,
+        result,
+    })
+}
+
+fn type_parameters() -> Rule<Vec<TypeParameter>> {
+    list(
+        symbol(Symbol::OpenAngle),
+        type_parameter(),
+        symbol(Symbol::Comma),
+        symbol(Symbol::CloseAngle),
+    )
 }
 
 fn type_declaration() -> Rule<TypeBody> {
